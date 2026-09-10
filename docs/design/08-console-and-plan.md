@@ -38,6 +38,13 @@ Shows the winning bid with its evidence, the runners-up, and every outstanding q
 **Warnings** — R-201, R-168, R-028.
 Rendered inline where they apply, dismissible, never blocking. The persistence warning uses the observed directory when available: *"Your app wrote to `/app/data` during setup. That data won't survive a redeploy unless you add a volume here."* Warnings and blockers are visually distinct — a warning must never look like an error, or people learn to ignore both.
 
+**[D]** Nothing warns about stacked logins (R-171). An app that presents its own login page behind
+Pando's is that app working correctly, and Pando has no basis for calling a working app a problem.
+This is the general rule the warning set is held to: a warning describes something that will bite the
+user later — data that will not survive a redeploy, routing that will break — not something that
+merely looks unusual. Warnings that fire on correct behavior are how users learn to dismiss the ones
+that matter.
+
 **Sharing** — R-076, R-077.
 The anonymous grant is never labeled "public." It reads *anyone on the internet, without signing in*, with a confirmation step. When host policy forbids it (R-076), the option is visible but disabled with an explanation of who to ask — not hidden, because a hidden option produces a support ticket instead of understanding.
 

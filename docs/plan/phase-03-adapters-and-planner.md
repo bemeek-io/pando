@@ -18,6 +18,8 @@ mid-deploy crash.
 - [ ] `adapter_configs` migration and endpoints; `GET /adapters` returns **live** capabilities
 - [ ] Docker runtime adapter: apply, observe, stop, destroy, volumes, logs, exec, capacity
 - [ ] Loopback routing adapter (port mode, no TLS — the laptop default)
+- [ ] `DefaultMode` per routing adapter (R-162) — this is what makes an install feel like proxy mode
+      or per-hostname (design 03 §4.1); neither topology is a global setting
 - [ ] Local secrets adapter, encrypted at rest, key on disk (R-190)
 - [ ] Host policy evaluation and the `host_policy` singleton
 - [ ] The planner: steps 1–7 of the deployment pipeline, side-effect-free

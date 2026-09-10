@@ -10,8 +10,8 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | | Count | Of total |
 |---|---:|---:|
 | Requirements | 207 | — |
-| Specified in a design doc | 133 | 64% |
-| Assigned to a phase | 103 | 49% |
+| Specified in a design doc | 139 | 67% |
+| Assigned to a phase | 105 | 50% |
 | Covered by a named test | 0 | 0% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
@@ -26,7 +26,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-002** | D | The defining economic property: setup cost is paid once, at the host. | 1. What Pando Is | 00 | — | — |
 | **R-003** | D | Pando serves two audiences with one product and no tiers: | 1. What Pando Is | — | — | — |
 | **R-004** | D | There are no SKUs, editions, or paywalled features. | 1. What Pando Is | — | — | — |
-| **R-005** | D | The enterprise deployer may be non-technical. | 1. What Pando Is | 08 | 06, 08 | — |
+| **R-005** | D | The enterprise deployer may be non-technical. | 1. What Pando Is | 03, 08 | 06, 08 | — |
 | **R-010** | D | Pando is not a scheduler. | 2. Non-Goals | 02 | — | — |
 | **R-011** | D | Pando does not test. | 2. Non-Goals | — | — | — |
 | **R-012** | D | Pando is not a marketplace. | 2. Non-Goals | — | — | — |
@@ -102,7 +102,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-101** | D | There is always a bottom escape hatch: supply an image reference and a command, skipping… | 7.2 Detection | 01 | 02, 06 | — |
 | **R-102** | D | Ask, never guess. | 7.3 When detection cannot decide | 03, 04, 08 | 08 | — |
 | **R-103** | D | The number of questions is the product metric. | 7.3 When detection cannot decide | 01, 08 | 06, 08 | — |
-| **R-104** | D | Questions are blockers; everything else is configuration. | 7.3 When detection cannot decide | 08 | 08 | — |
+| **R-104** | D | Questions are blockers; everything else is configuration. | 7.3 When detection cannot decide | 03, 08 | 08 | — |
 | **R-105** | D | Every question must be self-contained and pasteable. | 7.3 When detection cannot decide | 00, 03, 04, 07, 08 | 03, 06, 08 | — |
 | **R-106** | D | AI assistance is optional supporting functionality, never required. | 7.3 When detection cannot decide | — | — | — |
 | **R-107** | D | The correct failure: a repo needs Postgres and never mentions it anywhere — no compose… | 7.3 When detection cannot decide | 01 | 06 | — |
@@ -112,7 +112,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-113** | D | Build code has no access to Pando's state store, no access to any other app's secrets, and no… | 8. Build | — | — | — |
 | **R-114** | D | Build isolation class is declared and enforced independently of runtime isolation class. | 8. Build | 00, 01, 03, 05, 07 | 03 | — |
 | **R-115** | P | Isolation classes, weakest to strongest: `container` (shared kernel), `sandboxed`… | 8. Build | — | — | — |
-| **R-116** | P | Where a runtime adapter can provision an isolated environment per app (e.g. | 8. Build | — | — | — |
+| **R-116** | P | Where a runtime adapter can provision an isolated environment per app (e.g. | 8. Build | 03 | — | — |
 | **R-117** | P | Build filesystem is discarded after the build. | 8. Build | 03, 07 | 04 | — |
 | **R-118** | P | Build egress defaults to open, on the grounds that build output is reviewed before it runs. | 8. Build | 01, 03, 07 | 04 | — |
 | **R-119** | P | Build timeout: 30 minutes, per-app override. | 8. Build | 01 | 04 | — |
@@ -139,21 +139,21 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-153** | D | One app, one place (R-010). | 10.5 Scale | — | — | — |
 | **R-160** | D | Routing is an adapter category. | 11. Networking and Routing | — | — | — |
 | **R-161** | D | Each routing adapter advertises which addressing modes it supports: subdomain, path prefix,… | 11. Networking and Routing | — | — | — |
-| **R-162** | D | Each routing adapter declares a default mode (e.g. | 11. Networking and Routing | 03 | — | — |
+| **R-162** | D | Each routing adapter declares a default mode (e.g. | 11. Networking and Routing | 03 | 03 | — |
 | **R-163** | D | Deviating from the default requires `app.routing.override`. | 11. Networking and Routing | 01 | — | — |
-| **R-164** | D | Proxy mode is a supported topology: one hostname, one certificate, one thing to open on the… | 11. Networking and Routing | — | — | — |
-| **R-165** | D | In the non-proxy topology, apps have their own hostnames; users bookmark URLs and carry a… | 11. Networking and Routing | — | — | — |
+| **R-164** | D | Proxy mode is a supported topology: one hostname, one certificate, one thing to open on the… | 11. Networking and Routing | 03 | — | — |
+| **R-165** | D | In the non-proxy topology, apps have their own hostnames; users bookmark URLs and carry a… | 11. Networking and Routing | 03 | — | — |
 | **R-166** | D | Subdomain is preferred where a wildcard is available. | 11. Networking and Routing | — | — | — |
 | **R-167** | D | Under path routing, Pando strips the prefix before forwarding and sends `X-Forwarded-Prefix`. | 11. Networking and Routing | 03, 06, 07 | 05 | — |
 | **R-168** | D | Where Pando can detect a likely path-routing incompatibility, it shows a dismissible warning,… | 11. Networking and Routing | 01, 07, 08 | 06, 08 | — |
 | **R-169** | O-5 | TLS issuance (built-in ACME, wildcard requirement, self-signed local) is a per-adapter concern… | 11. Networking and Routing | — | — | — |
 | **R-170** | P | The proxy must support websockets, server-sent events, streaming responses, and large uploads. | 11. Networking and Routing | 06, 07 | 05 | — |
-| **R-171** | P | An app with its own login page is stacked behind Pando's auth by default; the user sees two… | 11. Networking and Routing | — | — | — |
+| **R-171** | D | An app with its own login page is stacked behind Pando's auth by default; the user sees two… | 11. Networking and Routing | 08 | — | — |
 | **R-180** | D | Apps are isolated from each other (R-025). | 12. Egress and Isolation | — | — | — |
 | **R-181** | D | Egress defaults to allow-all. | 12. Egress and Isolation | — | — | — |
-| **R-182** | D | There is an install-wide allowlist. | 12. Egress and Isolation | 01 | 02, 03 | — |
-| **R-183** | D | Because app lists replace rather than narrow, the install-wide allowlist is a default, not a… | 12. Egress and Isolation | — | — | — |
-| **R-184** | P | Defining an app-level allowlist is gated by a verb, so an admin can restrict it. | 12. Egress and Isolation | — | — | — |
+| **R-182** | D | There is an install-wide allowlist. | 12. Egress and Isolation | 01, 06 | 02, 03 | — |
+| **R-183** | D | Because app lists replace rather than narrow, the install-wide allowlist is a default, not a… | 12. Egress and Isolation | 06 | — | — |
+| **R-184** | P | Defining an app-level allowlist is gated by a verb, so an admin can restrict it. | 12. Egress and Isolation | 06 | 01 | — |
 | **R-190** | D V1 | Local secret storage: encrypted at rest with a key on the same disk. | 13. Secrets | 02, 03 | 03, 04 | — |
 | **R-191** | D | The threat model must be stated, not implied: this protects a leaked backup file or copied… | 13. Secrets | 02 | — | — |
 | **R-192** | D | Environment variables are the default injection mechanism, since slot detection keys on them… | 13. Secrets | — | — | — |
@@ -211,7 +211,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-271** | D | Configuration may be supplied by: a YAML file loaded at startup, environment variables, the… | 20. Configuration and Policy | 00 | 00 | — |
 | **R-272** | D | The general pattern, applied throughout: a setting has a permissive default; host policy can… | 20. Configuration and Policy | 06 | 01 | — |
 | **R-273** | D LATER | Premade setting profiles for common postures (hobbyist, hardened, regulated), usable as-is or… | 20. Configuration and Policy | — | — | — |
-| **R-274** | D | Host policy may be applied to an install with running apps. | 20. Configuration and Policy | 01, 02, 04 | 02, 03 | — |
+| **R-274** | D | Host policy may be applied to an install with running apps. | 20. Configuration and Policy | 01, 02, 03, 04 | 02, 03 | — |
 | **R-280** | D | Losing access to an app destroys that user's per-app data (relevant to per-user instances, §22). | 21. Data Destruction | 02 | — | — |
 | **R-281** | D | Losing access to Pando means losing access to every app the user had. | 21. Data Destruction | — | — | — |
 | **R-282** | D | Suspended is not deleted (R-049). | 21. Data Destruction | 02, 04 | 01 | — |
@@ -259,7 +259,6 @@ Check each against the categories above before treating it as a gap.
 - **R-110** (8. Build) — Builds never run on the host (R-024).
 - **R-113** (8. Build) — Build code has no access to Pando's state store, no access to any other app's secrets, and no…
 - **R-115** (8. Build) — Isolation classes, weakest to strongest: `container` (shared kernel), `sandboxed`…
-- **R-116** (8. Build) — Where a runtime adapter can provision an isolated environment per app (e.g.
 - **R-130** (9. Slots and Services) — An environment variable in `.env.example` is a hole with a type.
 - **R-133** (9. Slots and Services) — Distinguishing required from optional slots is unresolved.
 - **R-135** (9. Slots and Services) — A provisioned service's data follows the app's volume rules (§12), including the…
@@ -268,15 +267,10 @@ Check each against the categories above before treating it as a gap.
 - **R-153** (10.5 Scale) — One app, one place (R-010).
 - **R-160** (11. Networking and Routing) — Routing is an adapter category.
 - **R-161** (11. Networking and Routing) — Each routing adapter advertises which addressing modes it supports: subdomain, path prefix,…
-- **R-164** (11. Networking and Routing) — Proxy mode is a supported topology: one hostname, one certificate, one thing to open on the…
-- **R-165** (11. Networking and Routing) — In the non-proxy topology, apps have their own hostnames; users bookmark URLs and carry a…
 - **R-166** (11. Networking and Routing) — Subdomain is preferred where a wildcard is available.
 - **R-169** (11. Networking and Routing) — TLS issuance (built-in ACME, wildcard requirement, self-signed local) is a per-adapter concern…
-- **R-171** (11. Networking and Routing) — An app with its own login page is stacked behind Pando's auth by default; the user sees two…
 - **R-180** (12. Egress and Isolation) — Apps are isolated from each other (R-025).
 - **R-181** (12. Egress and Isolation) — Egress defaults to allow-all.
-- **R-183** (12. Egress and Isolation) — Because app lists replace rather than narrow, the install-wide allowlist is a default, not a…
-- **R-184** (12. Egress and Isolation) — Defining an app-level allowlist is gated by a verb, so an admin can restrict it.
 - **R-192** (13. Secrets) — Environment variables are the default injection mechanism, since slot detection keys on them…
 - **R-200** (14. Persistence and Volumes) — Persistence declared in a compose file is imported and honored.
 - **R-206** (14. Persistence and Volumes) — Restore is in-place only.

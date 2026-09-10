@@ -224,6 +224,7 @@ These are load-bearing. Violating any of them is a design failure, not a tradeof
 | `app.grants.manage` | Grant and revoke access |
 | `app.routing.override` | Deviate from the provider's default routing mode |
 | `app.resources.override` | Deviate from host default resource limits |
+| `app.egress.override` | Define an app-level egress allowlist, replacing the install-wide one (R-184) |
 | `app.delete` | Delete the app |
 
 **R-081 [D]** Three **immutable** built-in roles ship out of the box. They cannot be edited; Pando may add newly-introduced verbs to them across versions.
@@ -412,7 +413,7 @@ These are load-bearing. Violating any of them is a design failure, not a tradeof
 
 **R-170 [P]** The proxy must support websockets, server-sent events, streaming responses, and large uploads. Body size caps and idle timeouts are configurable per app with permissive defaults.
 
-**R-171 [P]** An app with its own login page is stacked behind Pando's auth by default; the user sees two logins. This is expected and not remediated (R-028).
+**R-171 [D]** An app with its own login page is stacked behind Pando's auth by default; the user sees two logins. This is expected and not remediated (R-028), and it is **not warned about** — an app presenting its own login page is that app working correctly. Pando has no basis for treating a working app as a problem, and a warning here would train users to dismiss warnings that do matter.
 
 ---
 

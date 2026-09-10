@@ -20,7 +20,8 @@ phase where the two-plane distinction is either established correctly or quietly
       principal, appears in `grants`) — R-058, R-059, R-060; secret shown once (R-063)
 - [ ] `roles` seeded by migration with the immutability trigger (R-081)
 - [ ] The verb catalog (design 06 §5) and custom roles as arbitrary subsets (R-082) — **no implication
-      graph**
+      graph**. Thirteen verbs, including `app.egress.override` (R-184); the three `*.override` verbs
+      are Owner-only, not Operator
 - [ ] `grants` table; app creation writes two rows, one per plane (R-073)
 - [ ] The authorizer: `CheckControl` and `CheckData`, in the fixed evaluation order
 - [ ] Live group resolution with the documented cache TTL (R-079)

@@ -4,52 +4,62 @@ Found by reading `../traceability/requirements-index.md` against the design docu
 **distinct from `open-decisions.md`** — an open decision is a question the design deliberately left
 unanswered and tracked; a gap is a requirement that nobody noticed was unaddressed.
 
-Seventy-four requirements carry no design reference. Most are correctly uncovered — philosophy
+Of the ~74 requirements carrying no design reference, most are correctly uncovered — philosophy
 (R-002), non-goals (R-010–R-016), `[LATER]` (R-290+), licensing (R-300+) — or are covered in substance
-by a design section that simply does not cite the ID. The list below is what survived that filter.
+by a design section that simply does not cite the ID. Four survived that filter. **All four are now
+closed.**
 
-## Needs an answer before the phase that builds it
+## Closed
 
-**R-184 — the egress verb does not exist.** R-184 says defining an app-level egress allowlist is
-gated by a verb so an admin can restrict it. The verb catalog in design 06 §5 has twelve verbs and
-none of them is that one. Needs a name (`app.egress.override` would match the existing
-`app.routing.override` / `app.resources.override` pattern) and a decision about which built-in roles
-hold it. **Wanted before phase 1**, because built-in roles are seeded by migration and changing them
-afterward is itself a migration (R-081).
+**R-184 — the egress verb did not exist.** R-184 requires that defining an app-level egress allowlist
+be gated by a verb so an admin can restrict it. The verb catalog had twelve verbs and none was that
+one, so the requirement had no mechanism.
 
-**R-171 — the double-login experience has no console treatment.** An app with its own login page is
-stacked behind Pando's auth, so the user sees two login screens. R-171 is tagged `[P]` and says this
-is expected and not remediated, consistent with R-028 (Pando does not rewrite app behavior). But
-nothing says whether the *console* mentions it — at share time, at deploy time, or not at all. For an
-audience that may not know what a port is, two consecutive login screens reads as a broken app.
-**Phase 8.** A warning code alongside the existing `WARN_*` set is the cheap answer.
+*Resolved:* `app.egress.override` added to the catalog (design 06 §5) and to R-080's table. It joins
+`app.routing.override` and `app.resources.override` as the third "deviate from a default the host
+operator chose" verb, and like those two it sits with **Owner only** — not Operator. This matters
+beyond tidiness: an app-level allowlist *replaces* the install-wide list rather than narrowing it
+(R-182, R-183), so defining one is an escalation. Ungated, the install-wide list would be advisory.
 
-## Worth a paragraph, not a decision
+**R-171 — stacked logins had no console treatment.** An app with its own login page sits behind
+Pando's auth and the user sees two login screens.
 
-**R-164 / R-165 — the two topologies are described in requirements and nowhere in design.** Proxy mode
-(one hostname, one certificate, one firewall rule, all apps behind a Pando login) versus per-hostname
-(apps have their own hostnames, Pando invisible except at login). The *mechanism* exists —
-`RoutingCapabilities.DefaultMode`, `Routing.Mode`, `ModeSource` — but no design document says which
-topology an install should default to or how the console explains the choice. R-164 calls proxy mode
-"the recommended enterprise topology because it is far easier to get approved than N public
-hostnames," and that recommendation currently lives only in the requirements. **Phase 3 sets the
-adapter defaults; phase 8 surfaces the choice.**
+*Resolved: no warning.* An app presenting its own login page is that app working correctly, and Pando
+has no basis for calling a working app a problem. R-171 is promoted `[P]` → `[D]` with that rationale,
+and design 08 §1.3 now states the general rule the whole warning set is held to: a warning describes
+something that will bite the user later, not something that merely looks unusual. Warnings that fire
+on correct behavior are how users learn to dismiss the ones that matter.
 
-**R-116 — building inside a runtime-provided isolated environment.** Where a runtime adapter can
-provision an isolated environment per app, building inside it is preferred, since build isolation
-comes free from the same boundary. No design home. **Not v1-blocking** — it only becomes real when a
-VM-class runtime adapter exists, and v1 ships Docker only. Worth a line in design 03 §3 so the next
-person does not rediscover it.
+**R-164 / R-165 — the two topologies were described in requirements and nowhere in design.**
 
-## Already tracked elsewhere
+*Resolved:* design 03 §4.1. Proxy mode (one hostname, one certificate, one firewall rule) versus
+per-hostname (apps have their own hostnames, Pando invisible except at login). Neither is a global
+setting — topology is the aggregate of each app's `Routing.Mode`, and an install can mix them. What
+makes an install feel like one or the other is the routing adapter's `DefaultMode` (R-162), which is
+why that field exists and why deviating from it is gated. The choice is not surfaced during setup
+(R-005, R-104); `ModeSource` records whether a mode was inherited or chosen.
 
-These show as undesigned because the design *deliberately* did not settle them. They are in
-`open-decisions.md` and need no separate action here: R-133 (O-4, required vs optional slots), R-217
-(O-6, backup destination), R-257 (O-8, runtime adapter swap), R-266 (O-9, share notifications).
+**R-116 — building inside a runtime-provided isolated environment had no design home.**
+
+*Resolved:* design 03 §3, tagged `[P]`. Not v1 work — v1 ships a Docker runtime whose isolation class
+is `container`, so BuildKit supplies the build boundary independently. The note exists so that
+whoever writes the first VM-class runtime adapter considers borrowing that boundary before building a
+parallel one.
+
+## Still open, tracked elsewhere
+
+These show as undesigned because the design *deliberately* did not settle them. They live in
+[`open-decisions.md`](open-decisions.md) and need no action here: R-133 (O-4, required vs optional
+slots), R-217 (O-6, backup destination), R-257 (O-8, runtime adapter swap), R-266 (O-9, share
+notifications). **O-11 remains the only decision blocking phase 0.**
 
 ## How to keep this file honest
 
-Regenerate the index (`make requirements-index`) after any design change, then re-read the orphan
-list at the bottom of it. A requirement that moves out of the orphan list because someone cited its ID
-in passing has not necessarily been designed — and one that stays in it has not necessarily been
-missed. The index narrows where to look; it does not do the reading.
+Regenerate the index (`make requirements-index`) after any design change, then re-read the orphan list
+at the bottom of it. A requirement that leaves the orphan list because someone cited its ID in passing
+has not necessarily been designed — and one that stays in it has not necessarily been missed. The
+index narrows where to look; it does not do the reading.
+
+One known limitation, now handled: the design docs cite adjacent requirements as `R-070/071`, and the
+generator originally matched only the first half, reporting the second as undesigned. If a new compound
+citation format appears, the generator needs teaching.

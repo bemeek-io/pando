@@ -273,6 +273,15 @@ type BuildResult struct {
 
 **[D]** A builder implementation must never receive or request a container runtime socket (R-112). This cannot be enforced by the type system; it is a review checklist item and an integration test that asserts the build environment has no socket mounted.
 
+**[P]** R-116: where a runtime adapter can provision an isolated environment per app — Incus, a
+Firecracker VM — building *inside that environment* is preferred, because build isolation then comes
+free from the boundary that already exists rather than from a second mechanism layered beside it. This
+is not v1 work: v1 ships a Docker runtime whose isolation class is `container`, so BuildKit supplies
+the build boundary independently. The note is here so that whoever writes the first VM-class runtime
+adapter considers it before building a parallel isolation path. `BuilderCapabilities.IsolationClass`
+stays independent of the runtime's either way (R-114) — a builder that borrows the runtime's boundary
+reports the class it actually gets.
+
 ---
 
 ## 4. Routing
@@ -305,6 +314,31 @@ type RouteRequest struct {
 **[D]** `ProxyUpstream` is in the request rather than discovered by the adapter, so the contract is explicit: an adapter is told where to point, and that destination is always the proxy. R-023 has no exceptions and this field is where that is made obvious to an adapter author.
 
 **[D]** Path-mode adapters must strip the prefix and set `X-Forwarded-Prefix` (R-167). They must not rewrite response bodies (R-028).
+
+### 4.1 Two topologies
+
+R-164 and R-165 describe two ways an install can be reached. Both are supported; they are not adapter
+choices so much as postures the routing configuration expresses.
+
+**Proxy mode** — one hostname, one certificate, one thing to open on the firewall. Every app is
+reached by logging into Pando first and following a path or a menu. **[D]** This is the recommended
+enterprise topology, and the reason is procurement rather than engineering: one public hostname is far
+easier to get approved than N of them. An install that cannot get a wildcard DNS record or a second
+firewall rule can still run every app.
+
+**Per-hostname** — each app has its own hostname; users bookmark URLs and carry a session. Pando is
+invisible except at login. Better for apps that feel like products in their own right, and required
+for anything where the URL is shared outside the organization.
+
+**[D]** Neither is a global setting. The topology is the aggregate of each app's `Routing.Mode`, and an
+install can mix them — an internal tool on a path and a customer-facing app on its own hostname, on
+one Pando. What makes an install feel like one topology or the other is the routing adapter's
+`DefaultMode` (R-162), which is why that field exists and why deviating from it is gated by
+`app.routing.override`.
+
+**[D]** The choice is not surfaced during setup (R-005, R-104). A user adding an app gets the
+adapter's default; `ModeSource` records whether the mode was inherited or deliberately chosen, so the
+console can later show which apps deviate and host policy can restrict overrides (R-274, O-10).
 
 ---
 

@@ -149,9 +149,16 @@ var Verbs = []Verb{
     "app.view", "app.logs.read", "app.deploy", "app.restart",
     "app.spec.edit", "app.secrets.write", "app.secrets.read",
     "app.exec", "app.grants.manage", "app.routing.override",
-    "app.resources.override", "app.delete",
+    "app.resources.override", "app.egress.override", "app.delete",
 }
 ```
+
+**[D]** The three `*.override` verbs form a set: routing, resources, and egress. Each one permits
+deviating from a default the host operator chose, which is why none of them is in Operator and all
+three sit with Owner. `app.egress.override` is what R-184 requires — an app-level allowlist
+**replaces** the install-wide list rather than narrowing it (R-182, R-183), so defining one is an
+escalation and has to be gated. Adding it to the catalog without gating it would make the install-wide
+list advisory.
 
 **[D]** Built-in roles (R-081) are seeded by migration and trigger-protected. When a new verb is introduced in a later Pando version, a migration adds it to the appropriate built-in roles. That is the upgrade mechanism R-081 promises, and it is the only sanctioned way built-in role contents change.
 
