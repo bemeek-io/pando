@@ -27,6 +27,12 @@ riskiest work happens while it is still cheap to change.
 4. Work the tasks. Write the `TestR###_…` acceptance tests as you go, not at the end.
 5. Report against the *Done when* condition explicitly, including any part you did not meet.
 
+## Before you start a phase
+
+Check [`open-decisions.md`](open-decisions.md) for unresolved questions your phase depends on, and
+[`design-gaps.md`](design-gaps.md) for requirements the design does not yet address. Two of the gaps
+there want answers before phases 1 and 8 respectively.
+
 ## What "done" is not
 
 A phase is not done because its tasks are checked off. It is done when its *Done when* condition holds

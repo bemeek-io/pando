@@ -22,7 +22,10 @@ DESIGN_DIR = ROOT / "docs" / "design"
 PLAN_DIR = ROOT / "docs" / "plan"
 OUT = ROOT / "docs" / "traceability" / "requirements-index.md"
 
-RID = re.compile(r"R-\d{3}")
+# Matches R-123 and the compound form the design docs use for adjacent
+# requirements: R-070/071, R-204/205. Without the suffix group the second half of
+# every compound reference reads as an undesigned requirement.
+RID = re.compile(r"R-\d{3}(?:/\d{3})*")
 DEFINITION = re.compile(r"^\*\*(R-\d{3})\s*((?:\[[^\]]+\]\s*)*)\*\*\s*(.*)$")
 HEADING = re.compile(r"^##+\s+(.*)$")
 TEST_NAME = re.compile(r"func\s+(TestR(\d{3})\w*)\s*\(")
@@ -69,8 +72,10 @@ def references(directory: Path, pattern: str) -> dict[str, set[str]]:
     out: dict[str, set[str]] = defaultdict(set)
     for path in sorted(directory.glob(pattern)):
         text = path.read_text()
-        for rid in set(RID.findall(text)):
-            out[rid].add(path.stem)
+        for match in set(RID.findall(text)):
+            head, *rest = match.split("/")
+            for rid in [head] + [f"R-{n}" for n in rest]:
+                out[rid].add(path.stem)
     return out
 
 

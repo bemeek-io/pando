@@ -10,7 +10,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | | Count | Of total |
 |---|---:|---:|
 | Requirements | 207 | — |
-| Specified in a design doc | 132 | 63% |
+| Specified in a design doc | 133 | 64% |
 | Assigned to a phase | 103 | 49% |
 | Covered by a named test | 0 | 0% |
 
@@ -71,7 +71,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-062** | P | Tokens record a last-used timestamp so stale credentials are reviewable. | 5.5 Tokens (non-human principals) | 02 | — | — |
 | **R-063** | P | Token secrets are displayed once at creation and never retrievable afterward. | 5.5 Tokens (non-human principals) | 02, 04 | 01 | — |
 | **R-070** | D | Data plane — permission to use an app. | 6.1 Two planes | 02, 04 | 01 | — |
-| **R-071** | D | Control plane — permission to administer an app: deploy, configure, read logs, exec, share,… | 6.1 Two planes | 02 | — | — |
+| **R-071** | D | Control plane — permission to administer an app: deploy, configure, read logs, exec, share,… | 6.1 Two planes | 02, 04 | — | — |
 | **R-072** | D | The planes are separate grants, with one implication only: an app's owner has data-plane… | 6.1 Two planes | 06, 07 | 01, 05 | — |
 | **R-073** | D | At app creation the creator receives both grants, recorded as two separate records. | 6.1 Two planes | 02, 07 | 01, 02 | — |
 | **R-074** | D | Grants may be issued to: a user, a group, or anonymous. | 6.2 Subjects | 02 | — | — |
@@ -205,7 +205,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-262** | D | MCP is a real deliverable, so an agent can deploy directly. | 19. Surfaces | 04 | 10 | — |
 | **R-263** | D | End users — people who were granted use of an app and nothing else — do not need the console. | 19. Surfaces | — | — | — |
 | **R-264** | D | The console is an Okta-style launcher. | 19. Surfaces | 04, 08 | 08 | — |
-| **R-265** | D | Users holding any administrative verb see an Admin entry point from the launcher, exposing the… | 19. Surfaces | — | 08 | — |
+| **R-265** | D | Users holding any administrative verb see an Admin entry point from the launcher, exposing the… | 19. Surfaces | 08 | 08 | — |
 | **R-266** | O-9 | Whether sharing an app notifies the recipient is unresolved. | 19. Surfaces | — | — | — |
 | **R-270** | D | Pando ships permissive defaults. | 20. Configuration and Policy | — | — | — |
 | **R-271** | D | Configuration may be supplied by: a YAML file loaded at startup, environment variables, the… | 20. Configuration and Policy | 00 | 00 | — |
@@ -292,7 +292,6 @@ Check each against the categories above before treating it as a gap.
 - **R-257** (18. Adapters) — Whether a runtime adapter can be swapped under a running app (Docker → Incus), and whether…
 - **R-260** (19. Surfaces) — Four first-class administrative surfaces, all shipping: API, CLI, MCP, web console.
 - **R-263** (19. Surfaces) — End users — people who were granted use of an app and nothing else — do not need the console.
-- **R-265** (19. Surfaces) — Users holding any administrative verb see an Admin entry point from the launcher, exposing the…
 - **R-266** (19. Surfaces) — Whether sharing an app notifies the recipient is unresolved.
 - **R-270** (20. Configuration and Policy) — Pando ships permissive defaults.
 - **R-273** (20. Configuration and Policy) — Premade setting profiles for common postures (hobbyist, hardened, regulated), usable as-is or…
