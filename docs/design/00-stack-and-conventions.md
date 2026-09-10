@@ -1,0 +1,169 @@
+# 00 — Stack, Layout, Conventions
+
+Companion to `../requirements.md`. Requirement IDs (`R-###`) refer to that document. Tags carry the same meaning: **[D]** decided, **[P]** proposed, **[O]** open.
+
+---
+
+## 1. Stack
+
+**[D]** Backend: **Go**. HTTP routing: **chi**. Logging: **zap**.
+**[D]** State store: **PostgreSQL**.
+**[D]** Console: **React + TypeScript + Vite**.
+
+### 1.1 Postgres vs. the single-binary promise
+
+**Flag this before building.** R-253 says Pando ships as a single binary and R-002 says setup cost is paid once. Requiring an operator to stand up Postgres before installing Pando adds a prerequisite to the hobbyist path that Pando exists to eliminate.
+
+Three ways out, pick one:
+
+- **[P] Bundled Postgres.** `pando install` starts a Postgres container Pando manages, on the same runtime adapter it uses for apps. One command, no prerequisite, still Postgres. Cost: Pando's own state depends on the runtime adapter being healthy, which complicates bootstrap ordering and DR (§05, restore).
+- **Bring your own.** Connection string required at install. Clean separation, worse first-run experience.
+- **Embedded Postgres binary.** `embedded-postgres`-style, unpacked and supervised by Pando itself. No container dependency, adds ~100 MB to the distribution and platform-specific binaries.
+
+**[O-11]** Unresolved. Everything downstream assumes Postgres regardless; only the install path changes.
+
+### 1.2 Library choices [P]
+
+| Concern | Choice | Note |
+|---|---|---|
+| HTTP router | `go-chi/chi/v5` | **[D]** |
+| Logging | `uber-go/zap` | **[D]** Structured, one logger threaded through context |
+| DB driver | `jackc/pgx/v5` | Native protocol, better types than `lib/pq` |
+| Query layer | `sqlc` | Generates typed Go from SQL. No ORM. |
+| Migrations | `golang-migrate` | Versioned, up/down, embedded in the binary |
+| Validation | `go-playground/validator` | Struct tags on API payloads |
+| JWT | `go-jose/v4` | Assertion signing (R-052), JWKS (R-057) |
+| Config | `spf13/viper` | YAML + env + flags, per R-271 |
+| CLI | `spf13/cobra` | |
+| Container runtime | `docker/docker` client | Local runtime + builder adapters |
+| BuildKit | `moby/buildkit` client | R-111 |
+| Proxy | `net/http/httputil.ReverseProxy` | Wrap, don't adopt. See §1.3 |
+| Testing | stdlib + `testify/require` | |
+| Integration tests | `testcontainers-go` | Real Postgres, real Docker |
+
+### 1.3 The proxy is ours [D]
+
+R-023 makes the proxy the single enforcement point for every request to every app. Delegating that to an external proxy would put the authorization decision outside core, violating R-027.
+
+So: Pando implements the identity-aware proxy itself, on `httputil.ReverseProxy`. Routing adapters (Traefik, Cloudflare) place traffic **in front of** the Pando proxy; they never route around it. A routing adapter's job is to get requests to Pando's proxy with the right hostname or path, not to reach the workload.
+
+This must be stated in every routing adapter's contract, because an adapter author's instinct will be to point Traefik straight at the container.
+
+---
+
+## 2. Repository layout [P]
+
+```
+pando/
+├── cmd/
+│   ├── pando/            # CLI (cobra) — also the server entrypoint
+│   └── pandod/           # server, if split from CLI later
+├── internal/
+│   ├── core/
+│   │   ├── authz/        # verb evaluation. NEVER importable by adapters.
+│   │   ├── audit/        # append-only event log
+│   │   ├── assertion/    # JWT minting, JWKS
+│   │   ├── spec/         # AppSpec types, validation, diffing
+│   │   ├── planner/      # spec + policy + adapters -> plan, or plan-time error
+│   │   ├── reconciler/   # the loop
+│   │   ├── policy/       # host policy evaluation
+│   │   └── state/        # sqlc-generated queries + repository types
+│   ├── adapter/
+│   │   ├── api/          # the seven interface definitions. No implementations.
+│   │   ├── identity/local/
+│   │   ├── routing/{loopback,traefik}/
+│   │   ├── builder/buildkit/
+│   │   ├── runtime/docker/
+│   │   ├── secrets/local/
+│   │   ├── services/     # provisioned slot fillers
+│   │   └── notify/console/
+│   ├── detect/           # the auction, detectors, trial run
+│   ├── proxy/            # identity-aware reverse proxy
+│   ├── httpapi/          # chi handlers, the REST surface
+│   ├── mcp/              # MCP server, a client of httpapi's service layer
+│   └── console/          # embedded static assets from the Vite build
+├── migrations/
+├── console/              # React/TS/Vite source
+└── docs/
+```
+
+**[D]** `internal/adapter/api` defines interfaces only. Adapter packages may import it and nothing else from `internal/core`. Enforce with an import-lint rule in CI — this is R-027 made mechanical.
+
+---
+
+## 3. Conventions
+
+### 3.1 IDs [P]
+
+Prefixed, sortable, opaque: `app_01HQ8...`, `spec_...`, `usr_...`, `tok_...`, `vol_...`, `grant_...`. ULID body. Prefixes make log lines and error messages self-describing and make copy-paste mistakes visible.
+
+### 3.2 Errors [D]
+
+Every error crossing an API boundary carries a stable machine code, a human message, and where relevant a remediation hint. R-242 and R-254 both promise "fail at plan time with a readable error" — that promise needs a type, not a convention.
+
+```go
+type Error struct {
+    Code       Code           `json:"code"`
+    Message    string         `json:"message"`     // human, specific, no jargon
+    Remedy     string         `json:"remedy,omitempty"`
+    Details    map[string]any `json:"details,omitempty"`
+    RequestID  string         `json:"request_id"`
+}
+```
+
+Message text is held to the R-105 standard where a user might act on it: self-contained, pasteable into an assistant, no undefined terms.
+
+**Code taxonomy [P]:**
+
+| Prefix | Class | HTTP |
+|---|---|---|
+| `AUTH_*` | Authentication failed or absent | 401 |
+| `PERM_*` | Authenticated, not permitted | 403 |
+| `POLICY_*` | Blocked by host policy | 403 |
+| `VALID_*` | Malformed request | 400 |
+| `PLAN_*` | Deployment cannot proceed as specified | 409 |
+| `STATE_*` | Object in the wrong state for this action | 409 |
+| `ADAPTER_*` | Adapter failed or is unavailable | 502 |
+| `BUILD_*` | Build failed | 422 |
+| `CAPACITY_*` | Insufficient host resources | 409 |
+| `NOT_FOUND` | | 404 |
+| `INTERNAL` | | 500 |
+
+Named codes that must exist, since requirements promise them:
+
+- `PLAN_SLOT_UNFILLED` — R-132. Details name each unfilled slot.
+- `PLAN_NO_ADAPTER_MEETS_POLICY` — R-024, R-114. Details name the required floor and each configured adapter's class.
+- `PLAN_CAPABILITY_UNSUPPORTED` — R-254. Details name the capability and the adapter lacking it.
+- `POLICY_SOURCE_NOT_ALLOWED` — R-092. Raised **before clone**.
+- `POLICY_EXEC_DISABLED` — R-085.
+- `POLICY_ANONYMOUS_GRANT_FORBIDDEN` — R-076.
+- `CAPACITY_WOULD_OVERSUBSCRIBE` — R-242. Details carry requested, allocated, and adapter-reported total.
+- `PLAN_COMPOSE_CONSTRUCT_REJECTED` — R-099. Details name the construct and why.
+
+### 3.3 Logging [P]
+
+zap, structured, one logger in context. Every log line inside a request carries `request_id`, `principal_id`, and where applicable `app_id`. Adapter calls log at debug with a `adapter` and `category` field.
+
+**Secrets never reach a log line.** Secret values are wrapped in a `secret.Value` type whose `String()`, `MarshalJSON()`, and `MarshalLogObject()` all return `[redacted]`. This is how R-194 is enforced structurally rather than by review.
+
+### 3.4 Context [P]
+
+`context.Context` carries: request ID, principal, logger, and a deadline. Adapters receive a context on every call and must honor cancellation — the reconciler cancels work when a spec changes underneath it.
+
+### 3.5 Time [P]
+
+All timestamps UTC, `timestamptz` in Postgres, RFC 3339 on the wire. A `Clock` interface in core so the reconciler's backoff (R-149) is testable without sleeping.
+
+---
+
+## 4. Acceptance criteria convention [P]
+
+Requirements currently have no way to be called done. Convention going forward: each requirement that is testable gets at least one acceptance test named for it.
+
+```go
+// TestR132_UnfilledRequiredSlotBlocksDeploy asserts R-132.
+```
+
+CI reports which R-IDs have coverage. Requirements with no test are either philosophy (R-002), deferred (R-290), or a gap.
+
+The four sequences in `07-sequences.md` are the integration-level acceptance tests. If those four pass end to end against real Postgres and real Docker, v1 works.

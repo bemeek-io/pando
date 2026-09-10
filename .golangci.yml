@@ -1,0 +1,76 @@
+# Lint configuration for Pando. golangci-lint v2 format.
+#
+# The depguard block below is not style enforcement — it is R-027 made mechanical.
+# See docs/design/03-adapter-interfaces.md §9 and internal/adapter/CLAUDE.md.
+#
+# errcheck, govet, ineffassign, staticcheck and unused are enabled by default in v2
+# and are not repeated here.
+
+version: "2"
+
+linters:
+  enable:
+    - bodyclose
+    - contextcheck
+    - depguard
+    - errorlint
+    - nilerr
+    - rowserrcheck
+    - sqlclosecheck
+
+  settings:
+    depguard:
+      rules:
+        # R-027: adapters cannot touch authorization, audit, or state.
+        #
+        # An adapter that can read the state store can authorize itself; one that can
+        # write the audit log can erase itself. This boundary is the whole point of the
+        # adapter model, so it is enforced here rather than left to code review.
+        adapters-must-not-import-core:
+          list-mode: lax
+          files:
+            - '**/internal/adapter/**'
+          deny:
+            - pkg: github.com/bemeek-io/pando/internal/core/authz
+              desc: 'R-027: adapters must not import core/authz. Core authorizes; adapters translate.'
+            - pkg: github.com/bemeek-io/pando/internal/core/audit
+              desc: 'R-027: adapters must not import core/audit. The audit log is written by core only.'
+            - pkg: github.com/bemeek-io/pando/internal/core/state
+              desc: 'R-027: adapters must not import core/state. Adapters receive fully-resolved requests.'
+            - pkg: github.com/bemeek-io/pando/internal/core/policy
+              desc: 'R-027: adapters must not evaluate policy. The planner does, before the adapter is called.'
+
+        # The adapter interface package is a contract, not a place for logic (design 03).
+        adapter-api-defines-only:
+          list-mode: lax
+          files:
+            - '**/internal/adapter/api/**'
+          deny:
+            - pkg: github.com/bemeek-io/pando/internal/core
+              desc: 'internal/adapter/api holds interface definitions only (design 03).'
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

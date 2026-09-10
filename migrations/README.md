@@ -1,0 +1,24 @@
+# Migrations
+
+`golang-migrate`, versioned up/down, embedded in the binary.
+
+Naming: `{version}_{description}.{up|down}.sql`, e.g. `000001_audit_events.up.sql`.
+
+## Migrations are a requirement-enforcement mechanism here
+
+Several requirements are enforced by DDL rather than by code, because a code review will eventually
+miss the thing they catch. When you write a migration, these are not optional extras:
+
+| DDL | Enforces |
+|---|---|
+| `REVOKE UPDATE, DELETE ON audit_events` from the app role | R-027 — the audit log is not rewritable |
+| Trigger rejecting `UPDATE`/`DELETE` on `spec_revisions` | R-152 — rollback is always to something that provably existed |
+| Trigger protecting `roles` where `builtin = true` | R-081 — built-in roles change only by migration |
+| `host_policy.id integer PRIMARY KEY DEFAULT 1 CHECK (id = 1)` | R-015 — one install, one org |
+| `volumes.app_id … ON DELETE RESTRICT` | R-204 — volumes survive app deletion |
+
+**Adding a verb to a built-in role is done by migration, and only by migration** (R-081). That is the
+upgrade mechanism the requirement promises; there is no runtime path.
+
+See `docs/design/02-data-model.md` for the full schema and `internal/core/state/CLAUDE.md` for the
+constraints that must not be relaxed.

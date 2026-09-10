@@ -1,0 +1,273 @@
+# 04 — API
+
+R-261: the API is the product. Console, CLI, and MCP are clients of it. None may have a capability the API lacks.
+
+**[D]** Enforcement: handlers contain no business logic. Everything lives in a service layer under `internal/core`, and `httpapi` and `mcp` both call it. A capability that exists in one and not the other means someone put logic in a handler.
+
+---
+
+## 1. Conventions
+
+**[P]** Base path `/api/v1`. JSON in and out. chi router.
+
+**Authentication**, in precedence order:
+1. `Authorization: Bearer tok_...` — a token principal (§02 2.1)
+2. Session cookie `pando_session=ses_...`
+
+**Errors** use the envelope from §00 3.2. Every response carries `X-Request-Id`.
+
+**Pagination [P]:** cursor-based. `?limit=50&cursor=...`, response carries `next_cursor`.
+
+**Idempotency [P]:** `POST` endpoints that create infrastructure accept `Idempotency-Key`. Required for MCP, where an agent retry must not deploy twice.
+
+---
+
+## 2. Resources
+
+### 2.1 Apps
+
+```
+GET    /api/v1/apps                      list (filtered by app.view)
+POST   /api/v1/apps                      create — begins onboarding
+GET    /api/v1/apps/{id}
+PATCH  /api/v1/apps/{id}                 name, owner
+DELETE /api/v1/apps/{id}                 R-204/205 — see below
+POST   /api/v1/apps/{id}:start
+POST   /api/v1/apps/{id}:stop
+POST   /api/v1/apps/{id}:restart
+```
+
+**Create** takes a source and, optionally, routing and runtime choices. It does not deploy. It returns an app in `draft` with a detection job started.
+
+```json
+POST /api/v1/apps
+{
+  "name": "team-notes",
+  "source": { "type": "git", "url": "https://github.com/acme/notes", "ref": "main" },
+  "routing": { "adapter_ref": "rte_traefik" },
+  "runtime": { "adapter_ref": "rt_docker" }
+}
+```
+
+**[D]** The source allowlist (R-092) is evaluated **here**, before any clone. A blocked source returns `POLICY_SOURCE_NOT_ALLOWED` and nothing touches disk.
+
+**Delete** implements R-204/205:
+
+```
+DELETE /api/v1/apps/{id}?backup=true|false&force=true
+```
+
+- `backup` omitted, `force` absent → `409 STATE_BACKUP_DECISION_REQUIRED`. The console uses this to raise the prompt.
+- `force=true` → delete without backup (R-205).
+- `backup=true` → snapshot volumes and provisioned services first, retained until explicitly discarded (R-204).
+
+**[D]** The 409-on-ambiguity design is what makes the interactive prompt and the non-interactive default coexist without two code paths.
+
+### 2.2 Detection and proposals
+
+```
+GET  /api/v1/apps/{id}/detection          current auction result
+POST /api/v1/apps/{id}/detection:rerun    explicit re-detection (R-022)
+GET  /api/v1/apps/{id}/detection/diff     against the pinned spec
+POST /api/v1/apps/{id}/detection/answers  answer outstanding questions
+POST /api/v1/apps/{id}/detection:accept   pin the proposal → spec revision 1
+```
+
+```json
+GET /api/v1/apps/{id}/detection
+{
+  "status": "needs_answers",
+  "winning_bid": {
+    "adapter": "buildkit",
+    "strategy": "dockerfile",
+    "confidence": 0.92,
+    "evidence": ["Dockerfile at repository root", "EXPOSE 3000"]
+  },
+  "runners_up": [ { "adapter": "buildkit", "strategy": "buildpack", "confidence": 0.4 } ],
+  "questions": [
+    {
+      "key": "primary_port",
+      "prompt": "This repository builds two services. Pando could not determine which one serves the app's web interface. Valid answer: the name of one service, either 'web' or 'admin'.",
+      "why": "Pando needs to know which service to route your app's URL to.",
+      "kind": "choice",
+      "options": ["web", "admin"]
+    }
+  ],
+  "draft_spec": { }
+}
+```
+
+**[D]** `runners_up` is returned so the review UI can show what else bid, satisfying "ask, never guess" (R-102) transparently — the user can see the auction rather than being handed a verdict.
+
+**[D]** `questions[].prompt` is held to R-105. The console shows a copy button on it, because the expected workflow is pasting it into the assistant that wrote the app.
+
+### 2.3 Specs and deployments
+
+```
+GET  /api/v1/apps/{id}/specs                     revision list
+GET  /api/v1/apps/{id}/specs/{rev}
+POST /api/v1/apps/{id}/specs                     create a new revision (edit)
+GET  /api/v1/apps/{id}/specs/{a}/diff/{b}        classified diff (§01 4)
+
+POST /api/v1/apps/{id}/deployments                deploy a revision
+GET  /api/v1/apps/{id}/deployments
+GET  /api/v1/apps/{id}/deployments/{did}
+GET  /api/v1/apps/{id}/deployments/{did}/logs     SSE stream of build output
+POST /api/v1/apps/{id}/deployments:rollback       to a prior revision (R-152)
+POST /api/v1/apps/{id}:plan                       dry run — plan without applying
+```
+
+**[D]** `:plan` exists as its own endpoint because every plan-time failure in the requirements (R-024, R-132, R-242, R-254) is more useful before a user commits than during a deploy. The console calls it on every spec edit.
+
+```json
+POST /api/v1/apps/{id}:plan
+→ 409
+{
+  "code": "PLAN_SLOT_UNFILLED",
+  "message": "This app needs a Redis, and one hasn't been chosen yet.",
+  "remedy": "Choose how to fill the REDIS_URL slot: provision one inside this app, connect to an existing Redis, or paste a connection string.",
+  "details": { "slots": [ { "key": "REDIS_URL", "type": "redis" } ] },
+  "request_id": "req_..."
+}
+```
+
+### 2.4 Slots, secrets, volumes
+
+```
+GET   /api/v1/apps/{id}/slots
+PUT   /api/v1/apps/{id}/slots/{key}          set resolution (R-131)
+
+GET   /api/v1/apps/{id}/secrets              keys and metadata only — never values
+PUT   /api/v1/apps/{id}/secrets/{key}        requires app.secrets.write
+GET   /api/v1/apps/{id}/secrets/{key}/value  requires app.secrets.read; audited
+DELETE /api/v1/apps/{id}/secrets/{key}
+
+GET   /api/v1/apps/{id}/volumes
+POST  /api/v1/apps/{id}/volumes              add one after the R-201 warning
+```
+
+**[D]** Reading a secret value is a **separate endpoint** from listing secrets, so R-083's split between write and read is enforced by routing rather than by a field-level check that someone will forget.
+
+### 2.5 Access
+
+```
+GET    /api/v1/apps/{id}/grants
+POST   /api/v1/apps/{id}/grants
+DELETE /api/v1/apps/{id}/grants/{gid}
+```
+
+```json
+POST /api/v1/apps/{id}/grants
+{ "plane": "data",    "principal_kind": "group", "principal_id": "grp_..." }
+{ "plane": "control", "principal_kind": "user",  "principal_id": "usr_...", "role_id": "role_operator" }
+{ "plane": "data",    "principal_kind": "anonymous" }
+```
+
+**[D]** The anonymous grant is the same endpoint, not a special toggle (R-075). Host policy may reject it with `POLICY_ANONYMOUS_GRANT_FORBIDDEN` (R-076). The console renders this grant with the R-077 wording — *anyone on the internet, without signing in* — never the word "public" alone.
+
+### 2.6 Runtime access
+
+```
+GET  /api/v1/apps/{id}/logs?follow=true      SSE
+POST /api/v1/apps/{id}/exec                  WebSocket upgrade; requires app.exec
+GET  /api/v1/apps/{id}/status                observed state, health, restarts
+```
+
+**[D]** `POST /exec` checks `app.exec`, then host policy (R-085, returning `POLICY_EXEC_DISABLED`), then writes the audit event, **then** opens the session. Audit before access, so an aborted session is still recorded.
+
+### 2.7 Identity and principals
+
+```
+GET    /api/v1/users
+POST   /api/v1/users                      local adapter only
+PATCH  /api/v1/users/{id}                 status: active | suspended (R-049)
+DELETE /api/v1/users/{id}                 triggers §21 destruction rules
+
+GET    /api/v1/groups
+POST   /api/v1/groups
+PUT    /api/v1/groups/{id}/members
+
+GET    /api/v1/tokens
+POST   /api/v1/tokens                     secret returned once (R-063)
+DELETE /api/v1/tokens/{id}
+
+GET    /api/v1/roles
+POST   /api/v1/roles                      custom roles (R-082)
+GET    /api/v1/verbs                      the verb catalog, for building custom roles
+```
+
+**[D]** `PATCH /users/{id}` with `status: suspended` must not trigger data destruction. `DELETE` does. The API shape makes R-049/R-282 explicit rather than a flag on one endpoint.
+
+### 2.8 Platform
+
+```
+GET  /api/v1/adapters                     configured instances + live capabilities
+POST /api/v1/adapters
+GET  /api/v1/capacity                     aggregated from adapters (R-243)
+GET  /api/v1/policy
+PUT  /api/v1/policy                       R-274; see O-10
+GET  /api/v1/audit                        filterable
+GET  /api/v1/backups
+POST /api/v1/backups                      trigger; kind = rolling | dr_bundle
+POST /api/v1/backups/{id}:verify          R-216
+POST /api/v1/backups/{id}:restore         verifies first (R-215)
+GET  /api/v1/.well-known/jwks.json        assertion keys (R-057)
+```
+
+**[D]** `GET /adapters` returns live capabilities, not stored config, so the console can grey out routing modes an adapter doesn't support instead of offering choices that fail at plan time.
+
+### 2.9 End-user surface
+
+```
+GET /api/v1/me                            profile, groups
+GET /api/v1/me/apps                       the launcher tiles (R-264)
+```
+
+**[D]** `/me/apps` returns apps where the caller holds a **data-plane** grant. It is not the same list as `GET /apps`, which is control-plane scoped. Two planes, two endpoints (R-070/071).
+
+---
+
+## 3. MCP surface
+
+**[D]** R-262. The MCP server exposes the same service layer. Tools map to endpoints:
+
+| Tool | Endpoint |
+|---|---|
+| `pando_list_apps` | `GET /apps` |
+| `pando_get_app` | `GET /apps/{id}` |
+| `pando_create_app` | `POST /apps` |
+| `pando_get_detection` | `GET /apps/{id}/detection` |
+| `pando_answer_detection` | `POST /apps/{id}/detection/answers` |
+| `pando_accept_proposal` | `POST /apps/{id}/detection:accept` |
+| `pando_plan` | `POST /apps/{id}:plan` |
+| `pando_deploy` | `POST /apps/{id}/deployments` |
+| `pando_get_logs` | `GET /apps/{id}/logs` |
+| `pando_get_status` | `GET /apps/{id}/status` |
+
+**[D]** An agent holds a token and is a principal like any other (R-262). No MCP tool bypasses authorization, and every action lands in the audit log under the token's owner.
+
+**[D] Not exposed via MCP:** exec, secret value reads, grant mutation, policy mutation, user deletion. Rationale — these are the highest-consequence actions in the system and R-086 already concedes exec is not bounded by the verb list. An agent should not hold the most dangerous capabilities by default. **[O-12]** whether this is a hard exclusion or a policy-controlled default is unresolved.
+
+---
+
+## 4. CLI shape [P]
+
+```
+pando login
+pando app list
+pando app add <url> [--routing=...] [--runtime=...]
+pando app show <app>
+pando deploy <app|path>
+pando plan <app>
+pando logs <app> [-f]
+pando exec <app> [workload] -- <cmd>
+pando secret set <app> <key>
+pando slot set <app> <key> --provision|--bind=<target>|--literal
+pando grant add <app> --user=<u> --plane=data
+pando rollback <app> [--to=<rev>]
+pando export <app>
+pando backup create|verify|restore
+pando policy show|set
+```
+
+**[D]** `pando deploy ./` must work from a local path, since R-262's agent workflow depends on it — a generated app cannot drop a config file, but an agent can invoke a command.

@@ -1,0 +1,671 @@
+# Pando — Product Requirements
+
+**Status:** Draft 1, derived from design interview
+**Date:** 2026-09-08
+
+---
+
+## Legend
+
+Each requirement is tagged so its authority is unambiguous.
+
+| Tag | Meaning |
+|---|---|
+| **[D]** | Decided. Settled in design discussion. Changing it changes the product. |
+| **[P]** | Proposed. A default filled in to make the system buildable. Override freely. |
+| **[O]** | Open. Explicitly unresolved; listed in §23. |
+| **[V1]** | In the first release. |
+| **[LATER]** | Designed for, deliberately deferred. |
+
+Requirement IDs are stable. Refer to them rather than to section numbers.
+
+---
+
+## 1. What Pando Is
+
+**R-001 [D]** Pando hosts your apps without you having to set up deployment pipelines, tunnels, or DNS more than once. You give Pando access to a host and to a repo, point it at the repo, and it builds and runs the app for you.
+
+**R-002 [D]** The defining economic property: **setup cost is paid once, at the host.** Deploying the tenth app must feel like nothing. Any feature that adds per-app setup burden is suspect and must justify itself against this.
+
+**R-003 [D]** Pando serves two audiences with one product and no tiers:
+- **Hobbyist** — a person who builds apps and does not want to spend as long deploying them as building them.
+- **Enterprise** — a person, often non-technical, who built something useful and needs it hosted somewhere secure and shared with coworkers or the public.
+
+**R-004 [D]** There are no SKUs, editions, or paywalled features. All functionality is available to all users at all times. Enterprise capability comes from *host configuration*, not from a different product.
+
+**R-005 [D]** The enterprise deployer may be non-technical. They may not know what a port is. This constrains the console, the detection pipeline, and every error message in the system. See §7.
+
+---
+
+## 2. Non-Goals
+
+These are permanent. A request falling into one of these is answered "no," not "later."
+
+**R-010 [D]** **Pando is not a scheduler.** It places; it does not schedule. One app lives in one place. No cross-host bin-packing, no autoscaling groups, no service mesh, no rescheduling on node failure.
+
+**R-011 [D]** **Pando does not test.** It builds and deploys. It does not run your test suite and does not gate deploys on test results.
+
+**R-012 [D]** **Pando is not a marketplace.** No catalog of one-click apps, no curated app store.
+
+**R-013 [D]** **Pando is not a disaster-recovery product.** It takes backups sufficient to recover from recent mistakes and host loss. It does not offer RPO/RTO guarantees, continuous replication, or point-in-time recovery.
+
+**R-014 [D]** **No multi-AZ or multi-region.** Possibly revisited if a cloud provider adapter is built. Not now.
+
+**R-015 [D]** **One Pando install serves one organization.** There is no tenant object. Multi-org means multiple Pando installs. "Install-wide" and "host-wide" are the correct terms; "tenant-wide" means install-wide.
+
+**R-016 [D]** Pando is not a source host, not an APM product, and not a database-as-a-service. It provisions services to fill declared slots; it does not offer them as a product with its own SLA.
+
+---
+
+## 3. Core Invariants
+
+These are load-bearing. Violating any of them is a design failure, not a tradeoff.
+
+**R-020 [D]** **Nothing lives in the repo.** There is no `pando.yaml`. The source tree is strictly read-only input. Pando looks at it and never asks it for permission. Consequence: Pando's state store is the sole record of how every app runs, which makes export, backup, and audit day-one requirements rather than polish.
+
+**R-021 [D]** **Pando fills declared slots; it never invents topology.** If the repo declares what it needs, Pando's job is to satisfy that declaration. If it doesn't declare, Pando does not go hunting through imports to guess.
+
+**R-022 [D]** **Detection never re-runs implicitly.** Re-detection is an explicit action that shows a diff against the pinned spec.
+
+**R-023 [D]** **Every request to every app passes through Pando's identity-aware proxy.** There is no bypass path — not for public apps, not for anonymous access, not as a performance optimization. Upstream enforcement (e.g. Cloudflare Access) is an optimization layered on top, never the only gate.
+
+**R-024 [D]** **Builds never execute on the host.** Every build runs inside an isolation boundary supplied by a builder adapter. There is no "just build it here" fallback. If no builder is configured or none meets policy, deployment fails at plan time.
+
+**R-025 [D]** **Apps are isolated from each other.** No app can reach another app's private network. The only path from one app to another is through the proxy, authenticated like any other client.
+
+**R-026 [D]** **Non-exposed workloads are unreachable from outside their bundle.** Only services explicitly marked exposed receive an endpoint.
+
+**R-027 [D]** **Authorization decisions, the audit log, the state store, and the identity assertion path live in core.** No adapter can influence or rewrite any of them.
+
+**R-028 [D]** **Pando observes and reports; it does not remediate the app.** It will warn that something looks wrong. It will not rewrite requests, inject configuration, or patch the application to make it work.
+
+**R-029 [D]** **Control plane and data plane are separate grants** (§6), with one exception: owning an app grants use of that app (R-072).
+
+---
+
+## 4. Object Model
+
+**R-030 [D]** The following are first-class objects in Pando's state:
+
+| Object | Notes |
+|---|---|
+| **App** | The unit of deployment. Owns a spec, grants, revisions, volumes, secrets. |
+| **Spec** | The pinned description of how an app is built and run. Produced by detection, edited by humans, versioned. |
+| **Bundle** | The set of workloads comprising one app, on one private network. |
+| **Workload** | A single process/container/VM within a bundle. Exposed or internal. |
+| **Volume** | Persistent storage attached to a workload. |
+| **Slot** | A declared, typed dependency (a Redis, a Postgres) awaiting resolution. |
+| **User** | A principal originating from an identity adapter. |
+| **Group** | A collection of users. May be Pando-native or pushed from an IdP. |
+| **Token** | A non-human principal. Two kinds (R-057, R-059). |
+| **Role** | A named set of control-plane verbs. Three built-in, plus custom. |
+| **Grant** | Binds a principal to an app on either the control or data plane. |
+| **Adapter config** | A configured instance of an adapter (this Traefik, that Cloudflare account). |
+| **Policy** | Host-level constraints. See §20. |
+| **Audit event** | Immutable record of a mutation or privileged action. |
+
+**R-031 [P]** An app has exactly one owner of record at any time, plus any number of additional grants. Ownership is transferable.
+
+---
+
+## 5. Identity and Authentication
+
+### 5.1 Adapter model
+
+**R-040 [D]** Identity is an adapter category like any other. Local username/password is one adapter, not a special case.
+
+**R-041 [D] [V1]** **Local users** — username and password, stored by Pando. This is the v1 identity adapter and the default on a fresh install.
+
+**R-042 [D]** Local users must be *secure* but are not claimed to be the most secure option. The documentation must say plainly that installs with real security requirements are expected to configure an external provider.
+
+**R-043 [D] [LATER]** Additional identity adapters: GitHub OAuth, generic OIDC, SAML.
+
+**R-044 [D]** Identity adapters perform **authentication only**. Authorization is always core.
+
+**R-045 [P]** Multiple identity adapters may be configured simultaneously. Each user record records its originating adapter. Two identities from different adapters are two users unless an admin explicitly links them. **[O-1]** — linking semantics unspecified.
+
+### 5.2 Bootstrap
+
+**R-046 [P]** First run creates a single administrative local user. The initial credential is generated and displayed once on the console/CLI, and must be changed on first login.
+
+### 5.3 Sessions and revocation
+
+**R-047 [D]** Each identity adapter declares its own session policy and revocation mechanism, documented in that adapter's spec. There is no single global answer. **[O-2]**
+
+**R-048 [D] [LATER]** **SCIM support** is the enterprise revocation and provisioning path. Where an IdP supports SCIM, Pando accepts pushed user and group lifecycle events.
+
+**R-049 [D]** **Suspended is not deleted.** Pando must model at minimum: active, suspended, deleted. A suspended user loses access immediately but their data-destruction rules (R-104) do not fire.
+
+**R-050 [P]** For adapters that cannot push revocation, Pando falls back to expiry at next token refresh. The adapter's declared session lifetime is therefore the effective revocation window and must be documented as such.
+
+### 5.4 Identity assertion to apps
+
+**R-051 [D]** Pando **always** forwards a signed identity assertion to the upstream app on every proxied request. Apps are free to ignore it. Apps that wish to do per-user separation opt in by verifying it.
+
+**R-052 [D]** The assertion is a **JWT** in a dedicated header, signed by Pando.
+
+**R-053 [D]** Plain convenience headers (user, email, groups) are sent alongside the JWT. These are documented as **unverified** — an app that trusts them is trusting the network boundary, which is a legitimate but explicit choice.
+
+**R-054 [D]** Claims:
+
+| Claim | Content |
+|---|---|
+| `sub` | Pando's stable internal user ID. **Not** the email — an email change must not orphan an app's data. |
+| `email` | Current email, if known. |
+| `name` | Display name. |
+| `groups` | Group identifiers the user currently holds. |
+| `aud` | The app ID the assertion was minted for. Prevents replay against a different app. |
+| `iat` / `exp` / `iss` | Standard. |
+
+**R-055 [P]** Assertion lifetime is short — on the order of 1–2 minutes. The proxy mints a fresh assertion per request, so no refresh mechanism is needed and a leaked assertion is near-useless.
+
+**R-056 [D]** Anonymous requests receive an assertion with `sub: anonymous`, a **constant**, not a per-visitor identifier. Public apps needing per-visitor sessions set their own cookie. Consequence: **absence of the header means the request did not come through Pando**, which is an unambiguous signal an app may reject on.
+
+**R-057 [P]** Signing keys are published at a JWKS endpoint. Keys carry IDs; rotation is an overlap, not a cutover.
+
+### 5.5 Tokens (non-human principals)
+
+**R-058 [D]** **Delegated tokens.** A user creates a token and gives it to a machine. Actions taken with it are actions by that user, recorded as such.
+
+**R-059 [D]** A delegated token's access is **continuously derived from its owner's live grants**, never frozen at creation. If the owner loses access to an app, the token loses it. If the owner is deleted, the token dies. *Operational consequence, accepted by design: integrations break at offboarding.*
+
+**R-060 [D]** **Account-level tokens.** Created by Pando admins. The token is **its own principal** — it appears in ACLs and in the audit log under its own name, and it survives its creator. This exists so that not every automation needs a service account.
+
+**R-061 [D]** Account-level tokens have an expiry. A never-expires option exists; host policy may forbid it.
+
+**R-062 [P]** Tokens record a last-used timestamp so stale credentials are reviewable.
+
+**R-063 [P]** Token secrets are displayed once at creation and never retrievable afterward.
+
+---
+
+## 6. Authorization
+
+### 6.1 Two planes
+
+**R-070 [D]** **Data plane** — permission to *use* an app. Binary.
+
+**R-071 [D]** **Control plane** — permission to administer an app: deploy, configure, read logs, exec, share, delete.
+
+**R-072 [D]** The planes are separate grants, with one implication only: **an app's owner has data-plane access to their own app.** No other control-plane role implies use. Holding operator on app A grants nothing on app B, and being a Pando admin does not grant use of apps you don't own.
+
+**R-073 [D]** At app creation the creator receives both grants, recorded as two separate records. Either may be removed independently.
+
+### 6.2 Subjects
+
+**R-074 [D]** Grants may be issued to: a user, a group, or **anonymous**.
+
+**R-075 [D]** Anonymous is a real ACL subject, not a bypass. An anonymous request is still proxied, logged, rate-limited, and given an assertion (R-056).
+
+**R-076 [D]** Any app owner may grant to anonymous by default. Host policy may restrict this to admins.
+
+**R-077 [P]** The console must never present this as the bare word "public." It states the consequence: *anyone on the internet, without signing in.*
+
+### 6.3 Groups
+
+**R-078 [D]** Groups may be Pando-native or pushed from an IdP (R-048). **Permissions attached to a group are defined in Pando**, never inherited from the IdP. The IdP says who is in a group; Pando says what the group can do.
+
+**R-079 [D]** Group membership is evaluated **live** at request time, not expanded to a member list at grant time. Otherwise upstream removals do not take effect.
+
+### 6.4 Verbs and roles
+
+**R-080 [D]** Control-plane permissions are individual verbs. Proposed set:
+
+| Verb | Grants |
+|---|---|
+| `app.view` | See the app exists and read its configuration |
+| `app.logs.read` | Read application logs |
+| `app.deploy` | Trigger a build and deploy |
+| `app.restart` | Restart workloads |
+| `app.spec.edit` | Modify the pinned spec |
+| `app.secrets.write` | Set or rotate secret values |
+| `app.secrets.read` | Read existing secret values |
+| `app.exec` | Open a terminal in a workload |
+| `app.grants.manage` | Grant and revoke access |
+| `app.routing.override` | Deviate from the provider's default routing mode |
+| `app.resources.override` | Deviate from host default resource limits |
+| `app.delete` | Delete the app |
+
+**R-081 [D]** Three **immutable** built-in roles ship out of the box. They cannot be edited; Pando may add newly-introduced verbs to them across versions.
+
+| Role | Verbs |
+|---|---|
+| **Viewer** | `app.view`, `app.logs.read` |
+| **Operator** | Viewer + `app.deploy`, `app.restart`, `app.spec.edit`, `app.secrets.write` |
+| **Owner** | All verbs |
+
+**R-082 [D]** Custom roles may be composed from the verb list and assigned to users or groups.
+
+**R-083 [D]** `app.secrets.write` is deliberately separable from `app.secrets.read` — rotating a credential and reading it are different levels of trust. Secrets are write-only after creation for anyone below owner.
+
+**R-084 [D]** `app.exec` is its own verb, not bundled into app-admin. A custom role may grant deploy and logs without a terminal.
+
+**R-085 [D]** Host policy may **disable exec install-wide**.
+
+**R-086 [D]** Exec is the highest-privilege action in the system. A holder can read the database directly, read injected environment including secrets, and modify a running workload in ways that never appear in the spec. The documentation must state this plainly rather than implying the verb list is a security boundary against someone holding `app.exec`.
+
+**R-087 [D]** Pando does not claim to defend against its own host operator. A host admin has root and can reach any container outside Pando entirely. What Pando guarantees is that the **supported path** requires a grant — so unauthorized access requires deliberately leaving the tool, which is a materially different thing to detect and audit.
+
+---
+
+## 7. Onboarding an App
+
+### 7.1 Input
+
+**R-090 [D]** The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting choices made in the Pando console. Nothing is read from the repo for permission or policy.
+
+**R-091 [D] [LATER]** Private repos are in scope, supporting the credential mechanisms GitHub offers (PAT, GitHub App installation, deploy keys). **[O-3]** — whether a credential belongs to the app or to the user who supplied it is unresolved; note that user-owned credentials die at offboarding like delegated tokens.
+
+**R-092 [D]** **Source allowlist.** Host policy may restrict deployable sources — to named orgs, named repos, a specific forge, or registry namespaces. Evaluated as admission control **before anything is cloned**, so a blocked source never touches disk. Default is empty, meaning anything.
+
+### 7.2 Detection
+
+**R-093 [D]** Detection is a **detector auction**. Every builder adapter inspects the source and bids with a confidence score and a draft spec. Highest bid wins and produces a **proposal**, not a deployment.
+
+**R-094 [D]** Confidence ladder, highest first:
+1. **Already-published image** — check the repo's namespace on ghcr.io and Docker Hub before building anything.
+2. **Explicit deployment artifacts** — Dockerfile, compose file, Procfile, `devcontainer.json`, Nix flake, release binaries.
+3. **CI workflows** — `.github/workflows` contains the maintainer's own build commands.
+4. **Ecosystem manifests** — `package.json` + lockfile, `go.mod`, `Cargo.toml`, `pyproject.toml` plus framework markers, `pom.xml`, `Gemfile`.
+5. **Static** — `index.html` at root, or a known SSG config.
+
+**R-095 [P]** For tier 4, wrap an existing buildpack implementation (Paketo, nixpacks) rather than reimplementing convention-matching.
+
+**R-096 [D]** A **compose file is a complete answer**, not a hint. Import it verbatim as a bundle: services, `depends_on` ordering, healthchecks, named volumes, internal network.
+
+**R-097 [D]** A **trial run** in throwaway isolation is part of detection. Port discovery happens by observing what the process binds, not by asking.
+
+**R-098 [D]** The user reviews the proposal, then it **pins**. Detection does not re-run implicitly (R-022).
+
+**R-099 [D]** Compose constructs incompatible with the boundary are rejected or rewritten, with the reason shown: `network_mode: host`, `privileged: true`, bind mounts to host paths, `deploy.replicas`. Host policy governs whether an admin may override (R-190).
+
+**R-100 [D]** A user may **promote** a compose-declared service to a Pando-managed one — e.g. binding an ad-hoc Postgres to a real one. Shown as an explicit diff, never automatic.
+
+**R-101 [D]** There is always a bottom escape hatch: supply an image reference and a command, skipping detection.
+
+### 7.3 When detection cannot decide
+
+**R-102 [D]** **Ask, never guess.** If no adapter bids above threshold, or two bid equally, Pando asks a specific question. It does not pick.
+
+**R-103 [D]** **The number of questions is the product metric.** If a normal repo requires six questions to deploy, Pando has failed its premise regardless of how good the questions are.
+
+**R-104 [D]** **Questions are blockers; everything else is configuration.** Pando asks only when it genuinely cannot proceed. Anything with a reasonable default gets the default and is changeable later in settings. Memory limits, restart policy, log retention, auto-deploy are configuration, not questions.
+
+**R-105 [D]** **Every question must be self-contained and pasteable.** It states what is being asked, why, what a valid answer looks like, and enough context that a model which cannot see the repo can answer it. The expected workflow for a non-technical user is to paste the question into the assistant that wrote the app and paste the answer back. This is a hard requirement on question text, and it is what makes AI support useful without making it required.
+
+**R-106 [D]** AI assistance is optional supporting functionality, never required. It may be applied to reading README prose, disambiguating monorepo entrypoints, and proposing repairs from a failed build log. It emits the same spec object and passes the same review gate. With no model configured, each tap degrades to a question, not a dead end.
+
+**R-107 [D]** The correct failure: a repo needs Postgres and never mentions it anywhere — no compose service, no `DATABASE_URL` in any sample. The trial run crashes. Pando shows the log and stops. That is the right outcome, not a gap to close with inference.
+
+---
+
+## 8. Build
+
+**R-110 [D]** Builds never run on the host (R-024).
+
+**R-111 [D] [V1]** The default local builder is **rootless BuildKit in its own container**. Pando starts it, hands it source, receives an image.
+
+**R-112 [D]** **The build path never exposes a container runtime socket to build code.** Mounting the Docker socket into a build is a host compromise and is categorically forbidden.
+
+**R-113 [D]** Build code has no access to Pando's state store, no access to any other app's secrets, and no route to the internal network or other bundles.
+
+**R-114 [D]** **Build isolation class is declared and enforced independently of runtime isolation class.** A strong runtime does not imply a strong build. Host policy may set a floor on each.
+
+**R-115 [P]** Isolation classes, weakest to strongest: `container` (shared kernel), `sandboxed` (gVisor/Kata), `vm` (Firecracker/Incus), `dedicated-host`.
+
+**R-116 [P]** Where a runtime adapter can provision an isolated environment per app (e.g. Incus), building *inside that environment* is preferred, since build isolation then comes free from the same boundary.
+
+**R-117 [P]** Build filesystem is discarded after the build. Layer cache is namespaced per app; no cross-app cache sharing.
+
+**R-118 [P]** Build egress defaults to open, on the grounds that build output is reviewed before it runs. Host policy may restrict it to a package-registry allowlist, accepting that some repos will then fail to build.
+
+**R-119 [P]** Build timeout: 30 minutes, per-app override.
+
+**R-120 [P]** Deploy pins a commit SHA. Auto-deploy triggers (R-141) advance the pin explicitly.
+
+---
+
+## 9. Slots and Services
+
+**R-130 [D]** An environment variable in `.env.example` is **a hole with a type**. `REDIS_URL` tells Pando the app needs a Redis; it does not tell Pando which one. Typing comes from the URL scheme in the sample value, the variable name, or a compose image name.
+
+**R-131 [D]** A slot is resolved exactly three ways, chosen by the user:
+- **Provisioned** — Pando stands one up inside the bundle. Hobbyist default.
+- **Bound** — point at an external instance, or one already running on this host. Enterprise default.
+- **Literal** — paste a value.
+
+**R-132 [D]** Resolution is never silent. **An unfilled required slot blocks deployment** rather than launching something that crashloops on connection refused.
+
+**R-133 [O-4]** Distinguishing required from optional slots is unresolved. A `.env.example` with forty keys where six matter is the common case, and getting this wrong means either blocking on nothing or crashlooping.
+
+**R-134 [P]** Provisioned services live inside the bundle and are not addressable from outside it. Two apps do not share a provisioned service; sharing is done by binding both to one external instance.
+
+**R-135 [P]** A provisioned service's data follows the app's volume rules (§12), including the backup-or-discard prompt at delete.
+
+---
+
+## 10. Runtime and Lifecycle
+
+### 10.1 States
+
+**R-140 [P]** App states: `draft` → `proposed` → `running` | `degraded` | `stopped` | `failed` | `archived`.
+
+### 10.2 Deploy triggers
+
+**R-141 [D]** **Manual deploy is the default.** Auto-deploy is opt-in, with two distinct triggers, chosen separately:
+- default branch updated
+- new release tagged
+
+**R-142 [P]** Trigger delivery is by polling by default, since inbound connectivity cannot be assumed. Webhook delivery is available where the host is reachable.
+
+**R-143 [P] [LATER]** Watch for new tags on an upstream image, for apps deployed from a published image rather than source.
+
+### 10.3 Deploy strategy
+
+**R-144 [D]** **Recreate is the default strategy.** Stop the old workload, start the new one. Accepts downtime. Correct for anything holding an exclusive lock or a local database file.
+
+**R-145 [D]** **Start-then-swap is available as an explicit opt-in.** Not a bare toggle — the console must state the constraint in plain terms: *two copies of your app run at the same time during a deploy. Do not enable this if your app writes to a local file or runs migrations on startup.*
+
+### 10.4 Failure handling
+
+**R-146 [D]** **Build failure:** nothing is replaced. The running version continues serving. Report and stop.
+
+**R-147 [D]** **Automatic rollback is disabled by default**, available as opt-in. Rationale: not every app has a meaningful health check, and reachability does not imply correctness, so auto-rollback is helpful but not defensible as a default. It is also actively wrong where a schema migration has already run.
+
+**R-148 [D]** **Reconcile when possible; report when not.** If observed state diverges from the spec — a container deleted by hand, a workload that exited — Pando restores it. If it cannot, it reports.
+
+**R-149 [P]** Restart backoff: immediate, then 5s, 15s, 60s, capped at 5 minutes.
+
+**R-150 [P]** Ten failures within 30 minutes marks the app `failed`.
+
+**R-151 [D]** **A `failed` app stays failed until a human intervenes.** Pando does not keep retrying on a long interval. No silent self-healing days later.
+
+**R-152 [P]** Revision history retains the last 10 pinned specs for rollback.
+
+### 10.5 Scale
+
+**R-153 [D]** One app, one place (R-010). Replica counts from compose are rejected (R-099).
+
+---
+
+## 11. Networking and Routing
+
+**R-160 [D]** Routing is an adapter category. **[V1]** loopback and Traefik.
+
+**R-161 [D]** Each routing adapter advertises which addressing modes it supports: subdomain, path prefix, port.
+
+**R-162 [D]** Each routing adapter declares a **default mode** (e.g. subdomain for Cloudflare). Adding an app uses the default without asking.
+
+**R-163 [D]** Deviating from the default requires `app.routing.override`. Host policy governs who holds it.
+
+**R-164 [D]** **Proxy mode** is a supported topology: one hostname, one certificate, one thing to open on the firewall, all apps reached by logging into Pando first. This is the recommended enterprise topology because it is far easier to get approved than N public hostnames.
+
+**R-165 [D]** In the non-proxy topology, apps have their own hostnames; users bookmark URLs and carry a session. Pando is invisible except at login.
+
+**R-166 [D]** **Subdomain is preferred where a wildcard is available. Path prefix is the fallback.**
+
+**R-167 [D]** Under path routing, Pando strips the prefix before forwarding and sends `X-Forwarded-Prefix`. It does **not** rewrite response bodies. Apps built on frameworks that respect a base path will work; apps that hardcode absolute paths will not.
+
+**R-168 [D]** Where Pando can detect a likely path-routing incompatibility, it shows a **dismissible warning**, not a fix: *"No persistent volume found…"*-style phrasing — e.g. *"Does your app need path prefix routing?"* Consistent with R-028.
+
+**R-169 [O-5]** TLS issuance (built-in ACME, wildcard requirement, self-signed local) is a per-adapter concern and unspecified here.
+
+**R-170 [P]** The proxy must support websockets, server-sent events, streaming responses, and large uploads. Body size caps and idle timeouts are configurable per app with permissive defaults.
+
+**R-171 [P]** An app with its own login page is stacked behind Pando's auth by default; the user sees two logins. This is expected and not remediated (R-028).
+
+---
+
+## 12. Egress and Isolation
+
+**R-180 [D]** Apps are isolated from each other (R-025). If something gets into an app, it cannot get out of that app into another.
+
+**R-181 [D]** **Egress defaults to allow-all.** Host configuration may change the mode to allow-internet-but-block-private-ranges, or default-deny with an allowlist.
+
+**R-182 [D]** There is an **install-wide allowlist**. An app owner may enable an **app-specific allowlist**, which **replaces** the install-wide one for that app rather than intersecting with it.
+
+**R-183 [D]** Because app lists replace rather than narrow, the install-wide allowlist is **a default, not a security boundary**. Enforcement comes from host policy forcing apps to use their own list, and from gating who may define one.
+
+**R-184 [P]** Defining an app-level allowlist is gated by a verb, so an admin can restrict it.
+
+---
+
+## 13. Secrets
+
+**R-190 [D] [V1]** **Local secret storage:** encrypted at rest with a key on the same disk.
+
+**R-191 [D]** The threat model must be stated, not implied: this protects a leaked backup file or copied volume. **It does not protect against a compromised host** — a Pando that can inject secrets can decrypt them. Installs with real requirements are expected to use an external secrets adapter.
+
+**R-192 [D]** Environment variables are the default injection mechanism, since slot detection keys on them and every app already reads them. File-based injection is available for apps that want it.
+
+**R-193 [D]** On the env path, **rotation implies a restart.** Changing a secret and redeploying are effectively the same operation.
+
+**R-194 [P]** Secret values are redacted in logs, in spec exports, and in the audit log. The audit log records that a secret changed, never its value.
+
+---
+
+## 14. Persistence and Volumes
+
+**R-200 [D]** Persistence declared in a compose file is imported and honored. Nothing special happens.
+
+**R-201 [D]** Where no volume is declared, Pando shows a warning at setup rather than inferring one:
+> *No persistent volume found. If your app doesn't store data, you can ignore this. Otherwise define one here.*
+
+**R-202 [P]** The trial run improves this warning: where Pando observed the app writing to a directory outside any declared volume, the warning names that directory.
+
+**R-203 [D]** Rationale for treating this specially: an undeclared **Postgres** fails loudly on first boot. Undeclared **persistence** works perfectly until the second deploy, then silently discards everything while reporting healthy. It is the worst failure mode in the system, so it earns a warning even though inference is otherwise forbidden.
+
+**R-204 [D]** **On delete, Pando asks whether to keep a final backup or discard it.** The kept backup is retained until explicitly discarded; it does not age out.
+
+**R-205 [D]** Non-interactive delete (CLI, API, MCP) **backs up by default.** `--force` skips the backup.
+
+**R-206 [D]** **Restore is in-place only.** A backup restores to an app recreated from the same spec, matched by Pando's own identity for it. Backups are not portable to arbitrary apps — Pando cannot know what is inside a volume, and promising portable restore means promising semantics it cannot verify.
+
+---
+
+## 15. Backup and Disaster Recovery
+
+**R-210 [D]** **Per-app rolling backups** of app data. Scope is "recover from a recent mistake," not a DR product (R-013).
+
+**R-211 [P]** Default: daily, 7 retained.
+
+**R-212 [D]** **Full-host DR bundle.** A complete backup of the Pando install — state database, encryption key, configuration, everything needed to reconstitute the host without pain.
+
+**R-213 [D]** The DR bundle is **encrypted under a separate passphrase or key supplied at backup time**, never one stored on the host. Rationale: bundling the encryption key with the encrypted database makes the bundle plaintext for anyone holding it — every secret for every app in one file. This is also structurally necessary, since a restore onto a fresh machine cannot unwrap keys held by the old machine.
+
+**R-214 [D]** Consequence, accepted: **DR restore is deliberately interactive.** Losing the passphrase makes the bundle useless.
+
+**R-215 [D]** **Restore verifies before applying.** A corrupt or incomplete bundle is detected before it clobbers a running install.
+
+**R-216 [P]** Verification should also be invocable against a bundle without committing it, so a backup can be checked before it is needed rather than at the moment of disaster.
+
+**R-217 [O-6]** Backup destination. Local disk by default is nearly useless for the disk-failure case; a configurable remote destination (S3, mounted share) is expected but unspecified.
+
+---
+
+## 16. Health, Logs, Audit, Notifications
+
+### 16.1 Health
+
+**R-220 [D]** Pando runs health listeners — health endpoints, uptime checks — so you know when an app goes down. This is in scope and distinct from testing (R-011).
+
+**R-221 [P]** Health signal sources, in order: compose healthcheck if declared, HTTP endpoint if configured, TCP connect, process liveness.
+
+### 16.2 Logs
+
+**R-222 [D]** **Log retention is bounded by size, not time**, so a chatty app cannot fill a disk shared with twenty others.
+
+**R-223 [P]** Default cap: 100 MB per app, oldest discarded first.
+
+**R-224 [D]** **Retention must respect total host disk**, in aggregate across all apps. Pando must not be able to brick a host through accumulated logs and backups.
+
+**R-225 [D]** Log masking is out of scope for now. Rationale: a holder of `app.exec` can read the data directly anyway, so masking logs does not create a boundary that otherwise exists. **[LATER]** auto-masking may be revisited.
+
+### 16.3 Audit
+
+**R-226 [D]** The audit log is in core and cannot be written or rewritten by an adapter (R-027).
+
+**R-227 [P]** Auditable events: every spec mutation, every grant change, every deploy, every secret write, every token creation and use, every exec session, every policy change, every delete.
+
+**R-228 [P]** Exec sessions are audited as a distinct event type — principal, app, workload, start and end. Command contents are **not** recorded. **[O-7]**
+
+**R-229 [P]** Actions taken by a delegated token are recorded under the owning user, annotated with the token. Actions by an account-level token are recorded under the token's own name (R-060).
+
+### 16.4 Notifications
+
+**R-230 [D]** Notification is an adapter category.
+
+**R-231 [D] [V1]** Default is **console-only**.
+
+**R-232 [D] [LATER]** Built-in adapters for SMTP and SendGrid.
+
+---
+
+## 17. Resources and Capacity
+
+**R-240 [D]** Default CPU, memory, and disk limits are set at the host. Every new app inherits them.
+
+**R-241 [D]** Per-app override is available, gated by `app.resources.override`.
+
+**R-242 [D]** **Pando tracks total allocation against host capacity** and must refuse a deploy that would oversubscribe, failing at plan time with a readable message rather than letting the kernel resolve it with OOM kills.
+
+**R-243 [D]** **Capacity is adapter-reported, not host-inspected.** The local Docker adapter reports the machine it runs on; a clustered adapter reports what its cluster has. Core does not read `/proc`.
+
+**R-244 [P] [LATER]** Per-user quotas (max apps, max disk) as a policy knob. The counting required already exists for R-242.
+
+---
+
+## 18. Adapters
+
+**R-250 [D]** **The app declares requirements; adapters translate.** An app never says "Incus config." It says *this is what I need for hosting*, or *this is what I need for routing*. For each provider we write an adapter that normalizes those requirements to that provider's vocabulary. To core, every provider looks the same.
+
+**R-251 [D]** Core never learns a provider's vocabulary. A requirement crossing the interface is expressed in Pando's terms — "2 GB, one persistent volume, one exposed HTTP port" — and the adapter turns it into a VM profile or container arguments.
+
+**R-252 [D]** Adapter categories: identity, routing/ingress, builder, runtime, secrets, services, notification.
+
+**R-253 [D]** **Adapters are compiled in-tree.** Pando ships as a single binary. Third parties contribute adapters by pull request. There is no external plugin protocol and none is planned.
+
+**R-254 [D]** Every adapter **advertises capabilities as data** — `isolation_class`, `supports_persistent_volumes`, `supports_wildcard_tls`, supported addressing modes, and so on. The planner uses these to **fail at plan time with a readable error** rather than halfway through a deploy.
+
+**R-255 [D]** Runtime adapters declare an isolation class. Host policy may require a minimum (R-114).
+
+**R-256 [P]** Multi-machine capability comes entirely from adapters that span machines (e.g. Incus placing VMs across a cluster). Pando remains a single control plane, models no host objects, and performs no placement logic. The scope line (R-010) holds: Pando delegates to something that schedules; it does not schedule.
+
+**R-257 [O-8]** Whether a runtime adapter can be swapped under a running app (Docker → Incus), and whether that is a migration or a redeploy, is unresolved.
+
+---
+
+## 19. Surfaces
+
+**R-260 [D]** Four first-class administrative surfaces, all shipping: **API, CLI, MCP, web console.**
+
+**R-261 [D]** **The API is the product.** The console, CLI, and MCP are clients of it. None may have a capability the API lacks, and anything the API can do is reachable from all three.
+
+**R-262 [D]** MCP is a real deliverable, so an agent can deploy directly. An agent holds a token and is therefore a principal subject to every token rule (§5.5): it acts as its owner, is bounded by their live grants, and its actions land in the audit log under their name.
+
+**R-263 [D]** **End users** — people who were granted use of an app and nothing else — do not need the console. In the per-domain topology they bookmark a URL and carry a session.
+
+**R-264 [D]** **The console is an Okta-style launcher.** Logging in shows tiles for every app you can reach. This is what proxy mode's root looks like, and it is available in the per-domain topology too.
+
+**R-265 [D]** Users holding any administrative verb see an **Admin** entry point from the launcher, exposing the console scoped to whatever privileges they hold.
+
+**R-266 [O-9]** Whether sharing an app notifies the recipient is unresolved.
+
+---
+
+## 20. Configuration and Policy
+
+**R-270 [D]** **Pando ships permissive defaults.** Configuration narrows them.
+
+**R-271 [D]** Configuration may be supplied by: a YAML file loaded at startup, environment variables, the CLI, or the console.
+
+**R-272 [D]** **The general pattern, applied throughout:** a setting has a permissive default; host policy can raise the floor; app-level configuration can only move within what policy allows. This applies to isolation class, egress mode, exec, anonymous grants, routing override, resource limits, token expiry, and data destruction.
+
+**R-273 [D] [LATER]** Premade setting profiles for common postures (hobbyist, hardened, regulated), usable as-is or as a starting point.
+
+**R-274 [D]** Host policy may be applied to an install with running apps. **[O-10]** — behavior when newly-applied policy is violated by an existing app is unresolved: block deploys, force a change, or report.
+
+---
+
+## 21. Data Destruction
+
+**R-280 [D]** Losing access to an **app** destroys that user's per-app data (relevant to per-user instances, §22). Default behavior is destroy and reclaim space.
+
+**R-281 [D]** Losing access to **Pando** means losing access to every app the user had.
+
+**R-282 [D]** **Suspended is not deleted** (R-049). Suspension revokes access without triggering destruction.
+
+**R-283 [D]** An option to back up before destroying exists, off by default. **Installs using an external IdP are expected to enable it** — offboarding is exactly when someone needs the data later.
+
+**R-284 [D]** Because the correct value differs by install, this belongs to **host policy**, not per-app configuration. An admin sets "never destroy without backup" once and app owners cannot override downward.
+
+---
+
+## 22. Per-User Instances [LATER]
+
+**R-290 [D]** An app may be configured so that **each user gets their own dedicated instance**, with Pando routing them to it. **Off by default.**
+
+**R-291 [D]** This is the feature that makes "vibe code it and share it with your team" work for apps written single-user, which is most of them.
+
+**R-292 [D]** **Instances are created lazily, on first access.** Not eagerly on grant — sharing with a 200-person department must not create 200 containers.
+
+**R-293 [D] [LATER]** Idle reaping is a per-app option, not a global default. The right interval depends entirely on the app, and a chat UI and a long-running simulation want opposite answers.
+
+**R-294 [D]** Data destruction on revoke follows §21.
+
+**R-295 [P]** The cold-start path needs specification: a first request arrives with nothing running, and must either hold the connection or present a waiting page.
+
+**R-296 [D]** This does not violate R-010. There is still no bin-packing, no autoscaling, and no rescheduling — but it is the first thing Pando does that creates a workload on demand, and the document notes it deliberately.
+
+---
+
+## 23. Open Decisions
+
+| ID | Question | Notes |
+|---|---|---|
+| **O-1** | Identity linking across adapters | Two identities from different adapters — same person or two users? |
+| **O-2** | Per-adapter session lifetime and revocation | Deliberately deferred to each adapter's spec (R-047) |
+| **O-3** | Private repo credential ownership | App-owned or user-owned; user-owned dies at offboarding |
+| **O-4** | Required vs optional slot detection | The forty-key `.env.example` problem (R-133) |
+| **O-5** | TLS issuance | Per-adapter; ACME, wildcards, local self-signed |
+| **O-6** | Backup destination | Local-only is useless for disk failure |
+| **O-7** | Exec command recording | Session-only audit, or full command capture |
+| **O-8** | Runtime adapter swap under a running app | Migration or redeploy |
+| **O-9** | Share notifications | Does being granted access notify you |
+| **O-10** | Retroactive policy application | Newly-violating running apps: block, force, or report |
+
+---
+
+## 24. v1 Scope
+
+Confirmed for the first release:
+
+- Core: state, authorization, audit, identity assertion path, reconciler
+- **Identity:** local users (username/password)
+- **Routing:** loopback and Traefik
+- **Secrets:** local encrypted storage
+- **Source:** public GitHub repos
+- **Builder:** rootless BuildKit in a container
+- **Runtime:** local (Docker)
+- **Notification:** console only
+- All four surfaces: API, CLI, MCP, console
+- Detection pipeline, trial run, compose import, slots
+- Recreate deploy, reconcile loop, health monitoring
+- Volumes with the undeclared-persistence warning
+- Rolling backups + full-host DR bundle
+
+Explicitly deferred: per-user instances, SCIM, external identity adapters, private repos, cloud routing adapters, external secrets adapters, VM runtime adapters, setting profiles, per-user quotas, notification adapters, log masking.
+
+---
+
+## 25. Licensing and Governance
+
+**R-300 [D]** **AGPL, dual-licensed with commercial exceptions available.** All functionality is available to everyone under the AGPL; nothing is paywalled. Companies that cannot accept AGPL terms purchase an exception. What is sold is a license, never a feature.
+
+**R-301 [D]** A **CLA is required from the first outside contribution**, implemented with CLA Assistant as a GitHub Action. A DCO is insufficient — it certifies provenance but grants no relicensing rights, so it cannot support dual licensing.
+
+**R-302 [D]** Rationale for starting here: AGPL → MIT is reversible; MIT → AGPL is not. Code released permissively stays permissive forever and can be forked from that commit.
+
+**R-303 [D]** Accepted cost: some enterprises decline AGPL on blanket policy rather than analysis, which cuts against R-003. Retrofitting a CLA later means chasing every prior contributor, which is why it must be in place from the start.
+
+**R-304 [D] [LATER]** MIT may be reconsidered if adoption proves more valuable than the revenue path.

@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      # Includes the depguard rule enforcing R-027: adapters may not import
+      # core/authz, core/audit, core/state, or core/policy.
+      #
+      # .golangci.yml is v2 format, which needs golangci-lint v2 and action v7+.
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.13.2
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      # Design 00 §4: CI reports which requirements have a named acceptance test.
+      # Informational for now — it will read 0/207 until phase 0 lands.
+      - name: Requirement coverage
+        run: make requirements-coverage
+
+      - name: Traceability index is up to date
+        run: |
+          make requirements-index
+          git diff --exit-code docs/traceability/requirements-index.md \
+            || { echo "::error::Run 'make requirements-index' and commit the result."; exit 1; }
+
+  integration:
+    runs-on: ubuntu-latest
+    # Real Postgres and real Docker, via testcontainers. The four sequences in
+    # docs/design/07-sequences.md are the acceptance criteria for v1.
+    if: false  # enable once phase 4 lands
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - run: make test-integration

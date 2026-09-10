@@ -1,0 +1,17 @@
+# sqlc generates typed Go from SQL. No ORM (design 02).
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations
+    queries: internal/core/state/queries
+    gen:
+      go:
+        package: state
+        out: internal/core/state
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        emit_prepared_queries: false
+        overrides:
+          # IDs are prefixed ULIDs stored as text (design 02 §1). Keep them strings.
+          - db_type: "timestamptz"
+            go_type: "time.Time"

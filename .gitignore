@@ -1,0 +1,26 @@
+# Build output
+/bin/
+/dist/
+pando
+
+# Console build, embedded into internal/console at build time
+/internal/console/dist/
+/console/node_modules/
+/console/dist/
+
+# Local development
+*.local.yaml
+.env
+.env.*
+!.env.example
+
+# Secrets and keys — nothing of this shape belongs in the repo (R-190, R-194)
+*.pem
+*.key
+!**/testdata/**/*.pem
+!**/testdata/**/*.key
+
+# Tooling
+.DS_Store
+coverage.out
+*.test
