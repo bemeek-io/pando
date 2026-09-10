@@ -1,0 +1,53 @@
+# Pando's install topology (design 00 §1.1).
+#
+# Two services that start together. The operator runs `docker compose up` and never
+# encounters a connection string. This is what resolved O-11: Pando does not start
+# Postgres — this file does — so Pando needs no runtime adapter to reach its own
+# state store, and phase 0 depends on nothing from phase 3.
+#
+# To use an existing Postgres instead, drop the postgres service and set
+# PANDO_DATABASE_URL. Read the privilege contract in design 00 §1.1 first: Pando
+# must be able to create and constrain its restricted application role, or the
+# audit log's immutability guarantee (R-027) does not hold. Pando verifies this at
+# startup and refuses to run if it cannot.
+#
+# SCAFFOLD — phase 0 builds the image this references. See docs/plan/phase-00-skeleton.md.
+
+services:
+  pando:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Compose starts both services at once. Pando also retries on its own rather
+      # than trusting this healthcheck — see phase 0.
+      PANDO_DATABASE_URL: postgres://pando:${POSTGRES_PASSWORD:-pando}@postgres:5432/pando?sslmode=disable
+    ports:
+      - "${PANDO_PORT:-8080}:8080"
+    volumes:
+      # The runtime adapter needs this. Builds do NOT get it (R-112) — the builder
+      # runs rootless and containerized with no socket, which is asserted by an
+      # integration test in phase 4.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - pando-data:/var/lib/pando
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: pando
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pando}
+      POSTGRES_DB: pando
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pando -d pando"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pando-data:
+  postgres-data:

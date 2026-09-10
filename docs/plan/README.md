@@ -5,7 +5,7 @@ riskiest work happens while it is still cheap to change.
 
 | Phase | File | Produces | Blocked by |
 |---|---|---|---|
-| 0 | `phase-00-skeleton.md` | A server that starts and an audit event that provably cannot be modified | **O-11** |
+| 0 | `phase-00-skeleton.md` | A server that starts and an audit event that provably cannot be modified | — |
 | 1 | `phase-01-identity-and-authz.md` | Login, tokens, roles, the authorizer | 0 |
 | 2 | `phase-02-spec-and-state.md` | Apps and specs that validate, version, and diff | 1 |
 | 3 | `phase-03-adapters-and-planner.md` | Every plan-time error path, on real adapters | 2 |
@@ -29,7 +29,8 @@ riskiest work happens while it is still cheap to change.
 
 ## Before you start a phase
 
-Check [`open-decisions.md`](open-decisions.md) for unresolved questions your phase depends on, and
+**Nothing is blocking; phase 0 can start.** Check [`open-decisions.md`](open-decisions.md) for
+unresolved questions your phase depends on, and
 [`design-gaps.md`](design-gaps.md) for requirements the design does not yet address. Two of the gaps
 there want answers before phases 1 and 8 respectively.
 

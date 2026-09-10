@@ -48,4 +48,12 @@ These are requirements a code review will eventually fail to catch. Each has a m
 
 ## Blocking
 
-**O-11 (how Postgres is supplied) blocks phase 0.** Everything downstream assumes Postgres; only the install path changes. Decide before writing migrations.
+**Nothing.** O-11 — how Postgres is supplied — is resolved (§00 1.1): Pando ships a Compose file
+defining a `pando` service and a `postgres` service that start together, with an external database
+supported by configuration. Phase 0 can begin.
+
+The earlier framing of O-11 said to decide it *before writing migrations*, which was wrong in a way
+worth recording: the migration SQL is identical under every option, because Postgres is Postgres.
+What actually depended on the answer was whether Pando would hold administrative rights on its
+database — and therefore whether the audit grant in §02 2.6 was achievable — and whether Pando would
+need a runtime adapter in order to reach its own state store.

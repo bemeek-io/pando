@@ -103,7 +103,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-102** | D | Ask, never guess. | 7.3 When detection cannot decide | 03, 04, 08 | 08 | — |
 | **R-103** | D | The number of questions is the product metric. | 7.3 When detection cannot decide | 01, 08 | 06, 08 | — |
 | **R-104** | D | Questions are blockers; everything else is configuration. | 7.3 When detection cannot decide | 03, 08 | 08 | — |
-| **R-105** | D | Every question must be self-contained and pasteable. | 7.3 When detection cannot decide | 00, 03, 04, 07, 08 | 03, 06, 08 | — |
+| **R-105** | D | Every question must be self-contained and pasteable. | 7.3 When detection cannot decide | 00, 03, 04, 07, 08 | 00, 03, 06, 08 | — |
 | **R-106** | D | AI assistance is optional supporting functionality, never required. | 7.3 When detection cannot decide | — | — | — |
 | **R-107** | D | The correct failure: a repo needs Postgres and never mentions it anywhere — no compose… | 7.3 When detection cannot decide | 01 | 06 | — |
 | **R-110** | D | Builds never run on the host (R-024). | 8. Build | — | — | — |

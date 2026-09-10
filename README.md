@@ -19,8 +19,7 @@ host configuration, not from a different edition.
 **Design complete, implementation not started.** This repository is a scaffold: the directory
 structure, the tooling, and the documents that specify the system. There is no working binary yet.
 
-Phase 0 is blocked on one decision — how Postgres is supplied. See
-[`docs/plan/open-decisions.md`](docs/plan/open-decisions.md).
+Nothing is blocking — [phase 0](docs/plan/phase-00-skeleton.md) can start.
 
 ## Where things are
 

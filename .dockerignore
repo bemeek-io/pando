@@ -1,0 +1,9 @@
+.git
+.github
+bin
+dist
+docs
+console/node_modules
+console/dist
+internal/console/dist
+*.md

@@ -51,7 +51,7 @@ parallel one.
 These show as undesigned because the design *deliberately* did not settle them. They live in
 [`open-decisions.md`](open-decisions.md) and need no action here: R-133 (O-4, required vs optional
 slots), R-217 (O-6, backup destination), R-257 (O-8, runtime adapter swap), R-266 (O-9, share
-notifications). **O-11 remains the only decision blocking phase 0.**
+notifications). **O-11 is resolved and nothing is blocking** — see [`open-decisions.md`](open-decisions.md).
 
 ## How to keep this file honest
 

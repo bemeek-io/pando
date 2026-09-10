@@ -123,7 +123,7 @@ The remaining surfaces and the second routing adapter.
 | Detection quality below the R-103 bar | 6 | Build a corpus of 30 real repos early. Track questions-per-deploy as a tracked metric, not a vibe. |
 | Docker socket leaks into a build | 4 | Integration test asserting the build container's mount list. Non-negotiable. |
 | Header spoofing through the proxy | 5 | Explicit test with forged headers. |
-| Postgres prerequisite undermines the hobbyist install | 0 | Resolve O-11 before phase 0 ships. |
+| Postgres prerequisite undermines the hobbyist install | 0 | **Resolved.** Compose supplies Postgres beside Pando; no prerequisite beyond the container runtime v1 already requires. |
 | Routing abstraction is Docker/Traefik-shaped | 10 | Sketch the Cloudflare adapter on paper during phase 3, before the interface is fixed. |
 | Required-vs-optional slots (O-4) | 6 | Trial-run promotion fallback (§01 2.5). Measure false-block rate against the corpus. |
 | The two planes get conflated again | 1 | The comment in `CheckData` explaining that this was reversed once, plus a test asserting an operator on someone else's app is denied use. |
@@ -136,9 +136,9 @@ These extend §23 of the requirements document.
 
 | ID | Question | Where |
 |---|---|---|
-| **O-11** | How Postgres is supplied — bundled container, BYO, or embedded binary | §00 1.1 |
+| **O-11** | ~~How Postgres is supplied~~ — **resolved:** the install topology supplies it (Compose), with an external-database override | §00 1.1 |
 | **O-12** | Whether the MCP exclusion list is hard or policy-controlled | §04 3 |
 | **O-13** | Session revocation mid-websocket | §06 4.2 |
 | **O-14** | DR restore bootstrap ordering when Pando's own Postgres is a managed container | §07 D |
 
-**O-11 blocks phase 0.** The others can be resolved in the phase that needs them.
+**Nothing blocks phase 0.** O-11 is resolved (§00 1.1) and O-14 largely dissolves with it. The rest can be resolved in the phase that needs them.

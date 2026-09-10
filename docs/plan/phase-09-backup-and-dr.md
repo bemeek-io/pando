@@ -37,7 +37,8 @@ R-204, R-205, R-211–R-216, R-224.
 - After restore, the assertion signing key is the original, so apps that cached JWKS still verify.
 - After restore, every app returns to its pinned spec **without human intervention** beyond the
   restore itself.
-- **[O-14] is unresolved:** if Pando's own Postgres runs as a container on the runtime adapter,
-  restore must start Postgres before it has a state store telling it how. The restore path needs a
-  bootstrap mode reading adapter configuration from the bundle itself. This is coupled to O-11 —
-  resolve them together.
+- **[O-14] is largely dissolved.** It existed only under the bundled-container option, where restore
+  would have had to start Postgres before having a state store to say how. O-11 resolved to Compose
+  supplying the database, so restore writes into a Postgres the topology already brought up. Confirm
+  during this phase that nothing else in the restore path needs adapter configuration before the
+  database is available; if something does, that is ordinary sequencing, not a paradox.

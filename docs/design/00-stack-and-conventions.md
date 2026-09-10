@@ -12,15 +12,57 @@ Companion to `../requirements.md`. Requirement IDs (`R-###`) refer to that docum
 
 ### 1.1 Postgres vs. the single-binary promise
 
-**Flag this before building.** R-253 says Pando ships as a single binary and R-002 says setup cost is paid once. Requiring an operator to stand up Postgres before installing Pando adds a prerequisite to the hobbyist path that Pando exists to eliminate.
+R-253 says Pando ships as a single binary and R-002 says setup cost is paid once. Requiring an operator to stand up Postgres before installing Pando adds a prerequisite to the hobbyist path that Pando exists to eliminate.
 
-Three ways out, pick one:
+Three options were considered, and the resolution below is a fourth. They are kept because the costs they name are what the fourth option had to avoid:
 
 - **[P] Bundled Postgres.** `pando install` starts a Postgres container Pando manages, on the same runtime adapter it uses for apps. One command, no prerequisite, still Postgres. Cost: Pando's own state depends on the runtime adapter being healthy, which complicates bootstrap ordering and DR (§05, restore).
 - **Bring your own.** Connection string required at install. Clean separation, worse first-run experience.
 - **Embedded Postgres binary.** `embedded-postgres`-style, unpacked and supervised by Pando itself. No container dependency, adds ~100 MB to the distribution and platform-specific binaries.
 
-**[O-11]** Unresolved. Everything downstream assumes Postgres regardless; only the install path changes.
+**[D] Resolved (O-11): Postgres is supplied by the install topology, not by Pando.**
+
+Pando ships a Compose file defining two services: `pando` and `postgres`. They start together. The
+operator runs one command and has never heard of a connection string. Configuration accepts an
+external database (`PANDO_DATABASE_URL`) for installs that already run Postgres and want Pando to use
+it.
+
+This is a fourth option, and it takes the first option's experience without its cost. The distinction
+that matters: **Pando does not start Postgres — the install topology does.** Pando connects to a
+database that is already coming up beside it, exactly as it would to an external one. It therefore
+needs no runtime adapter to reach its own state store, which is what made the bundled-container option
+expensive:
+
+- **No bootstrap inversion.** Phase 0 needs nothing from phase 3. Had Pando managed the Postgres
+  container itself, starting up would have meant reading from Postgres to learn which runtime adapter
+  to use to start Postgres.
+- **No dependency of Pando's state on the runtime adapter's health.** A Docker daemon problem would
+  otherwise take out the state store — the one thing that would have to survive to record it.
+- **[O-14] largely dissolves.** DR restore no longer has to bring up a database before it has a state
+  store telling it how; the database comes up with the topology and restore writes into it.
+- **Pando keeps administrative rights on a fresh cluster**, which is what makes the audit grant in
+  §02 2.6 achievable — see below.
+
+**This adds no prerequisite.** Pando's v1 runtime and builder adapters are both containerized (§03
+10), so a container runtime is table stakes already. The Compose file uses a dependency Pando cannot
+run without; it does not introduce one. R-253's single binary is unaffected — the binary is still one
+binary, and Compose is an install method rather than a change to the artifact.
+
+**[D] The external-database path carries a privilege contract.** Pando's audit guarantee (R-027) is a
+database grant: a restricted application role with `INSERT` on `audit_events` and no `UPDATE` or
+`DELETE`. Creating that role requires administrative rights, which Pando has on a cluster it was
+handed fresh and may not have on someone else's. So the external path must document the privileges it
+requires and **verify them at startup, failing loudly** rather than silently running with an audit log
+that can be rewritten. A degraded-but-running mode is not acceptable here: the whole value of the
+grant is that it holds without anyone checking.
+
+**[P]** Both services start at once, so Pando must tolerate Postgres not yet accepting connections —
+connect with bounded retry at startup rather than assuming readiness. This is the standard Compose
+race and the standard fix.
+
+**[O]** Whether a non-Docker install topology (Incus, Podman, bare host) ships an equivalent, or is
+simply expected to use the external-database path, is unspecified. The external path covers it
+functionally; only the first-run experience differs.
 
 ### 1.2 Library choices [P]
 

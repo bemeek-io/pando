@@ -164,11 +164,12 @@ works.**
 Phases are sequenced so each produces something runnable and the riskiest work lands while it is
 still cheap to change.
 
-**Phase 0 is blocked on O-11** — how Postgres is supplied (bundled container, bring-your-own, or
-embedded binary). Everything downstream assumes Postgres either way; only the install path changes.
-Decide it before writing migrations. See `docs/plan/open-decisions.md`.
+**Nothing is blocking. Phase 0 can start.** O-11 — how Postgres is supplied — resolved to the
+install topology supplying it: a Compose file with a `pando` service and a `postgres` service that
+start together, plus an external-database override in configuration. Pando does not start Postgres,
+so phase 0 needs nothing from phase 3. See `docs/design/00-stack-and-conventions.md` §1.1.
 
-Do not skip ahead to a later phase to avoid a blocked one without saying so in your report.
+Do not skip ahead to a later phase without saying so in your report.
 
 ---
 
