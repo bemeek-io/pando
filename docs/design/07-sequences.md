@@ -189,7 +189,15 @@ Admin → POST /api/v1/backups/{id}:restore { passphrase }
 - After restore, every app returns to its pinned spec without human intervention beyond the restore itself.
 - The restored install's assertion signing key is the original, so apps that cached JWKS still verify.
 
-**[D] Bootstrap ordering problem, unresolved.** If Pando's own Postgres runs as a container on the runtime adapter (§00 1.1 bundled option), restore must start Postgres before it has a state store telling it how. The restore path needs a bootstrap mode that reads adapter configuration from the bundle itself before the database is up. **[O-14]**
+**[D] Bootstrap ordering, largely dissolved (O-14).** The problem existed only under the
+bundled-container option: if Pando managed its own Postgres container, restore would have had to start
+that container before it had a state store telling it how. O-11 resolved to the install topology
+supplying Postgres (§00 1.1), so the database is already up when restore runs and restore writes into
+it.
+
+What remains is ordinary sequencing, not a paradox: confirm during phase 9 that nothing else in the
+restore path needs adapter configuration before the database is available. If something does, it reads
+that configuration from the bundle — a normal ordering fix rather than a bootstrap mode.
 
 ---
 

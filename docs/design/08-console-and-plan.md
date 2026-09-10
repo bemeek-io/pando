@@ -12,6 +12,16 @@ React + TypeScript + Vite. Built to static assets, embedded in the Go binary via
 
 **[D]** The launcher is not a separate build. A user with no admin verbs simply never sees the admin routes. This matters because it means a non-technical user's first experience is a page of tiles, not a dashboard.
 
+**[D] Resolved (O-9): the launcher is the notification.** Being granted access to an app does not send
+a message. The app appears in the recipient's tiles the next time they load the launcher (R-264), and
+that is the whole mechanism for v1.
+
+A separate notification would be delivered by the notify adapter, which is console-only in v1 (R-231)
+— so it would arrive as a message in the console, next to the tile that already appeared. For a
+recipient who has never signed in, a console-only notification is invisible in a way a tile is not:
+the tile is waiting for them whenever they arrive. Reconsider when an SMTP adapter exists and a share
+can reach someone who is not already looking at Pando; the interface for it is already there (R-232).
+
 ### 1.2 Stack [P]
 
 | Concern | Choice |
@@ -137,8 +147,15 @@ These extend §23 of the requirements document.
 | ID | Question | Where |
 |---|---|---|
 | **O-11** | ~~How Postgres is supplied~~ — **resolved:** the install topology supplies it (Compose), with an external-database override | §00 1.1 |
-| **O-12** | Whether the MCP exclusion list is hard or policy-controlled | §04 3 |
-| **O-13** | Session revocation mid-websocket | §06 4.2 |
-| **O-14** | DR restore bootstrap ordering when Pando's own Postgres is a managed container | §07 D |
+| **O-12** | ~~Whether the MCP exclusion list is hard or policy-controlled~~ — **resolved:** policy-controlled, default-closed, expressed as host policy per verb rather than a second mechanism | §04 3 |
+| **O-13** | ~~Session revocation mid-websocket~~ — **resolved:** re-authorize on the assertion lifetime, close on failure; falls out of the single revocation window in §06 3.1 | §06 4.2 |
+| **O-14** | ~~DR restore bootstrap ordering~~ — **largely dissolved** by O-11; confirm sequencing in phase 9 | §07 D |
 
-**Nothing blocks phase 0.** O-11 is resolved (§00 1.1) and O-14 largely dissolves with it. The rest can be resolved in the phase that needs them.
+**All four are resolved.** Of the ten in requirements §23, three remain open: O-4 (slot detection,
+awaiting measurement rather than decision), O-5 (TLS issuance, genuinely per-adapter), and O-6 (which
+backup destinations ship — provider-shaped; that a destination is *not* an adapter category is settled
+in §03 8.1). None blocks any phase.
+
+A second review also closed three fragilities that were not on any list: the unreconciled revocation
+window (§06 3.1), `markUnobservable` having no field to write to (§02 2.3), and R-193's rotation
+restart having no detection mechanism (§02 2.4). See `../plan/design-gaps.md`.

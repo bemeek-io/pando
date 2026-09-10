@@ -35,7 +35,10 @@ and Traefik routes an app end to end **without any change to the routing interfa
   contract, because an adapter author's instinct is to point it straight at the container.
 - **Not exposed via MCP:** exec, secret value reads, grant mutation, policy mutation, user deletion.
   These are the highest-consequence actions in the system and an agent should not hold them by
-  default. **[O-12] unresolved:** whether this is a hard exclusion or a policy-controlled default.
+  default. **[O-12] resolved:** policy-controlled and default-closed, expressed as **host policy per
+  verb** rather than an MCP-specific list. An agent holding a token can call the REST API directly, so
+  an MCP-layer block is a speed bump, not a boundary — enforcement lives where every surface passes
+  through it. Do not build a second exclusion mechanism.
 - An agent holds a token and is a principal like any other. **No MCP tool bypasses authorization**,
   and every action lands in the audit log under the token's owner (R-229).
 - No surface may have a capability the API lacks (R-261). If the CLI can do something MCP cannot,

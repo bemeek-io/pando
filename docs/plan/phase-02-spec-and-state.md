@@ -13,7 +13,8 @@ right.
 
 - [ ] `AppSpec` types per design 01 §2, with `schema_version`
 - [ ] Validation, every rule in design 01 §3, each with its `VALID_*` / `PLAN_*` code
-- [ ] The classified differ: `benign` / `restart` / `rebuild` / `destructive` (design 01 §4)
+- [ ] The classified differ: `benign` / `restart` / `rebuild` / `destructive` (design 01 §4).
+      A changed runtime adapter is `destructive` (R-257, O-8) — not a migration path
 - [ ] `apps` and `spec_revisions` migrations, with the append-only trigger
 - [ ] Grants wired to app creation — two rows (R-073)
 - [ ] App CRUD endpoints, including the `409 STATE_BACKUP_DECISION_REQUIRED` delete shape (R-204/205)

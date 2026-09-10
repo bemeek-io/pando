@@ -51,7 +51,21 @@ CREATE TABLE users (
 
 **[D]** `status` is three-valued because suspended is not deleted (R-049, R-282). Destruction rules (R-280) fire on `deleted`, never on `suspended`.
 
-**[O-1]** No identity linking. If it lands, it is a `user_identities` join table and `users.adapter_id`/`external_id` move there.
+**[D] Resolved (O-1): linking aliases, it never merges.** No identity linking in v1. When it lands it
+is a `user_identities` join table and `users.adapter_id`/`external_id` move there — but the constraint
+that matters is what linking may *do*, and it has to be decided now because getting it wrong later is
+unrecoverable.
+
+Linking a second identity to a user attaches an alias. It does **not** merge two `users` rows, and
+`users.id` never changes and is never retired. Merging is the obvious implementation and it breaks
+R-054: `users.id` is the assertion `sub` claim, apps key their data on it, and Pando has no way to
+reach into an app and rewrite the rows it stored under the losing ID. A merge would silently orphan a
+person's data inside every app they had ever used.
+
+So: an admin linking `alice@corp` (OIDC) to an existing local `alice` picks which `users.id` survives
+as primary, every linked identity authenticates *to* that primary, and assertions always carry the
+primary. The unlinked-from row is marked as an alias, never deleted — a deletion would free its
+`external_id` for reuse by a different human.
 
 ```sql
 CREATE TABLE groups (
@@ -137,6 +151,8 @@ CREATE TABLE apps (
     state          text NOT NULL,             -- see 05-reconciler
     pinned_spec_id text REFERENCES spec_revisions(id),
     desired_state  text NOT NULL,             -- running | stopped
+    unobservable_since timestamptz,           -- adapter unreachable; NOT an app state
+    applied_env_fingerprint text,             -- see 2.4, secret rotation
     created_at     timestamptz NOT NULL DEFAULT now(),
     updated_at     timestamptz NOT NULL DEFAULT now(),
     deleted_at     timestamptz
@@ -156,6 +172,14 @@ CREATE INDEX ON spec_revisions (app_id, revision DESC);
 ```
 
 **[D]** Append-only. Enforced by a trigger rejecting `UPDATE` and `DELETE`, so R-152's rollback is always to something that provably existed.
+
+**[D]** `unobservable_since` is a third field alongside `state` and `desired_state`, for the same
+reason those two are separate: it answers a different question. `state` is what is true of the app;
+`desired_state` is what a human asked for; `unobservable_since` is whether Pando currently knows
+either. An adapter being unreachable is a platform problem, not an app state (§05 2), and folding it
+into `state` would mean either lying — reporting `running` for an app nobody can see — or inventing an
+`unknown` state that every consumer of the state machine then has to handle. The console renders it as
+a banner over the app's last known state, not as a replacement for it.
 
 **[P]** Pruning past `Retention.SpecRevisions` is a background job that deletes only revisions never pinned. A revision that was ever live is kept.
 
@@ -206,7 +230,17 @@ CREATE TABLE secrets (
 
 **[D]** No plaintext column exists anywhere. The local adapter stores ciphertext; external adapters store only a reference (R-190, R-191).
 
-**[D]** `version` increments on rotation so the reconciler can detect that a restart is required (R-193).
+**[D]** `version` increments on rotation so the reconciler can detect that a restart is required
+(R-193). **The detection is state-side, not observed.** `Observe` returns no environment — see
+§03 2.2 — so there is no way to see that a running workload holds a stale secret by looking at it. The
+reconciler instead compares `apps.applied_env_fingerprint`, written at apply time, against the
+fingerprint of the currently-resolved environment. A mismatch is reconcilable drift and the workload is
+recreated.
+
+**[D]** The fingerprint is a hash over `(key, version)` pairs and literal env values — **never over
+secret values.** It has to be comparable without decrypting anything and must not become a place a
+secret can leak into (R-194). Hashing the resolved values would put a verifier for every secret in the
+state store, which is a worse position than not having the feature.
 
 ```sql
 CREATE TABLE provisioned_services (

@@ -118,7 +118,22 @@ func (r *Reconciler) reconcileOne(ctx context.Context, app App) {
 }
 ```
 
-**[D]** An adapter being unreachable is not app failure. `markUnobservable` sets a flag and surfaces it as a platform problem; it does not increment the app's restart counter or move it toward `failed`. Otherwise a Docker daemon restart marks every app on the host as failed.
+**[D]** An adapter being unreachable is not app failure. `markUnobservable` stamps
+`apps.unobservable_since` (§02 2.3) and surfaces it as a platform problem; it does not increment the
+app's restart counter or move it toward `failed`. Otherwise a Docker daemon restart marks every app on
+the host as failed.
+
+**[D]** `unobservable_since` is deliberately not a value of `state`. An app whose adapter is
+unreachable has not changed — Pando has merely stopped being able to see it, and the honest rendering
+is the last known state plus a notice that it is stale. Adding an `unknown` state would push that
+distinction into every consumer of the state machine. The field clears on the first successful
+`Observe`.
+
+**[D]** Environment drift is the one form of drift that cannot be observed, because `ObservedWorkload`
+carries no environment and deliberately should not — see §02 2.4 for the fingerprint comparison that
+stands in for it. This is worth knowing before adding env to the observation struct: doing so would
+require every runtime adapter to read back resolved environment, which is exactly the secret-bearing
+data the adapter interface works to keep out of adapters' hands.
 
 ### 2.1 What counts as reconcilable drift
 
@@ -126,6 +141,8 @@ func (r *Reconciler) reconcileOne(ctx context.Context, app App) {
 - A workload is present in spec, absent in reality → recreate it
 - A workload exists but is stopped → start it
 - A workload exists with the wrong image digest → recreate it
+- A workload is running against a stale environment — `apps.applied_env_fingerprint` does not match
+  the current resolution, which is how a rotated secret (R-193) becomes visible → recreate it
 - A route is missing → re-`Ensure` it
 - A volume is missing and has never held data → create it
 
@@ -182,6 +199,24 @@ A deployment is a foreground operation, not the reconciler's work. The reconcile
 ```
 
 **[D]** Steps 1–7 are the `:plan` endpoint (§04 2.3). Everything before the plan boundary is side-effect-free, which is what makes plan-time failure meaningful rather than a label on a mid-deploy crash.
+
+**[D] Resolved (O-10): newly-violating apps keep running and fail at the next plan.** The question was
+what happens when policy is applied to an install with running apps that violate it — block, force a
+change, or report. The answer falls out of two decisions already made rather than needing a mechanism
+of its own.
+
+Running apps are untouched, because the reconciler may create and start things but never destroys
+anything a human may have wanted (§2.1). Killing a running app because an admin saved a policy is the
+most destructive thing Pando could do, and it would do it to *every* violating app at once.
+
+The next deploy of a violating app fails at step 2 with a `POLICY_*` error, because policy is
+evaluated live at plan time and is deliberately not stored in the spec (§01 1) — which is exactly what
+R-274 asks for. So the effect is: report now, block on next deploy. Nothing is forced, nothing is
+killed, and the violation is visible immediately rather than discovered at deploy time.
+
+**[D]** The console lists violating apps when a policy is saved, before it is saved. An admin
+tightening a policy is entitled to know it will block four apps' next deploy, and finding out one
+deploy at a time is how a policy gets rolled back in anger.
 
 **[D]** Step 9 failing leaves the running app untouched (R-146). Steps 12–14 failing is where recreate's downtime cost is paid.
 

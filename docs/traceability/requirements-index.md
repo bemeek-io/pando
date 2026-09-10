@@ -10,8 +10,8 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | | Count | Of total |
 |---|---:|---:|
 | Requirements | 207 | — |
-| Specified in a design doc | 139 | 67% |
-| Assigned to a phase | 105 | 50% |
+| Specified in a design doc | 140 | 67% |
+| Assigned to a phase | 107 | 51% |
 | Covered by a named test | 0 | 0% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
@@ -27,7 +27,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-003** | D | Pando serves two audiences with one product and no tiers: | 1. What Pando Is | — | — | — |
 | **R-004** | D | There are no SKUs, editions, or paywalled features. | 1. What Pando Is | — | — | — |
 | **R-005** | D | The enterprise deployer may be non-technical. | 1. What Pando Is | 03, 08 | 06, 08 | — |
-| **R-010** | D | Pando is not a scheduler. | 2. Non-Goals | 02 | — | — |
+| **R-010** | D | Pando is not a scheduler. | 2. Non-Goals | 01, 02 | — | — |
 | **R-011** | D | Pando does not test. | 2. Non-Goals | — | — | — |
 | **R-012** | D | Pando is not a marketplace. | 2. Non-Goals | — | — | — |
 | **R-013** | D | Pando is not a disaster-recovery product. | 2. Non-Goals | — | — | — |
@@ -86,7 +86,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-083** | D | `app.secrets.write` is deliberately separable from `app.secrets.read` — rotating a credential… | 6.4 Verbs and roles | 04 | — | — |
 | **R-084** | D | `app.exec` is its own verb, not bundled into app-admin. | 6.4 Verbs and roles | 03 | — | — |
 | **R-085** | D | Host policy may disable exec install-wide. | 6.4 Verbs and roles | 00, 03, 04, 06 | — | — |
-| **R-086** | D | Exec is the highest-privilege action in the system. | 6.4 Verbs and roles | 04 | — | — |
+| **R-086** | D | Exec is the highest-privilege action in the system. | 6.4 Verbs and roles | 03, 04 | — | — |
 | **R-087** | D | Pando does not claim to defend against its own host operator. | 6.4 Verbs and roles | 06 | 01, 05 | — |
 | **R-090** | D | The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting… | 7.1 Input | — | — | — |
 | **R-091** | D LATER | Private repos are in scope, supporting the credential mechanisms GitHub offers (PAT, GitHub… | 7.1 Input | 01 | — | — |
@@ -157,15 +157,15 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-190** | D V1 | Local secret storage: encrypted at rest with a key on the same disk. | 13. Secrets | 02, 03 | 03, 04 | — |
 | **R-191** | D | The threat model must be stated, not implied: this protects a leaked backup file or copied… | 13. Secrets | 02 | — | — |
 | **R-192** | D | Environment variables are the default injection mechanism, since slot detection keys on them… | 13. Secrets | — | — | — |
-| **R-193** | D | On the env path, rotation implies a restart. | 13. Secrets | 02 | — | — |
-| **R-194** | P | Secret values are redacted in logs, in spec exports, and in the audit log. | 13. Secrets | 00 | 00, 04 | — |
+| **R-193** | D | On the env path, rotation implies a restart. | 13. Secrets | 02, 05, 08 | 07 | — |
+| **R-194** | P | Secret values are redacted in logs, in spec exports, and in the audit log. | 13. Secrets | 00, 02 | 00, 04 | — |
 | **R-200** | D | Persistence declared in a compose file is imported and honored. | 14. Persistence and Volumes | — | — | — |
 | **R-201** | D | Where no volume is declared, Pando shows a warning at setup rather than inferring one: | 14. Persistence and Volumes | 01, 04, 07, 08 | 02, 06, 08 | — |
 | **R-202** | P | The trial run improves this warning: where Pando observed the app writing to a directory… | 14. Persistence and Volumes | 01, 03, 07 | 06 | — |
 | **R-203** | D | Rationale for treating this specially: an undeclared Postgres fails loudly on first boot. | 14. Persistence and Volumes | 05 | 07 | — |
-| **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 02, 04, 05 | 02, 09 | — |
+| **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 04, 05 | 02, 09 | — |
 | **R-205** | D | Non-interactive delete (CLI, API, MCP) backs up by default. | 14. Persistence and Volumes | 04 | 02, 09 | — |
-| **R-206** | D | Restore is in-place only. | 14. Persistence and Volumes | — | — | — |
+| **R-206** | D | Restore is in-place only. | 14. Persistence and Volumes | 01 | — | — |
 | **R-210** | D | Per-app rolling backups of app data. | 15. Backup and Disaster Recovery | — | — | — |
 | **R-211** | P | Default: daily, 7 retained. | 15. Backup and Disaster Recovery | 01, 05 | 07, 09 | — |
 | **R-212** | D | Full-host DR bundle. | 15. Backup and Disaster Recovery | 01, 07 | 09 | — |
@@ -185,8 +185,8 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-228** | P | Exec sessions are audited as a distinct event type — principal, app, workload, start and end. | 16.3 Audit | 03 | — | — |
 | **R-229** | P | Actions taken by a delegated token are recorded under the owning user, annotated with the token. | 16.3 Audit | 02 | 01, 10 | — |
 | **R-230** | D | Notification is an adapter category. | 16.4 Notifications | — | — | — |
-| **R-231** | D V1 | Default is console-only. | 16.4 Notifications | 03 | 10 | — |
-| **R-232** | D LATER | Built-in adapters for SMTP and SendGrid. | 16.4 Notifications | 03 | 10 | — |
+| **R-231** | D V1 | Default is console-only. | 16.4 Notifications | 03, 08 | 10 | — |
+| **R-232** | D LATER | Built-in adapters for SMTP and SendGrid. | 16.4 Notifications | 03, 08 | 10 | — |
 | **R-240** | D | Default CPU, memory, and disk limits are set at the host. | 17. Resources and Capacity | 01 | — | — |
 | **R-241** | D | Per-app override is available, gated by `app.resources.override`. | 17. Resources and Capacity | 01 | 02 | — |
 | **R-242** | D | Pando tracks total allocation against host capacity and must refuse a deploy that would… | 17. Resources and Capacity | 00, 04, 05, 07 | 03 | — |
@@ -199,19 +199,19 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-254** | D | Every adapter advertises capabilities as data — `isolation_class`,… | 18. Adapters | 00, 03, 04, 05, 07 | 03 | — |
 | **R-255** | D | Runtime adapters declare an isolation class. | 18. Adapters | 03 | 03 | — |
 | **R-256** | P | Multi-machine capability comes entirely from adapters that span machines (e.g. | 18. Adapters | 02 | — | — |
-| **R-257** | O-8 | Whether a runtime adapter can be swapped under a running app (Docker → Incus), and whether… | 18. Adapters | — | — | — |
+| **R-257** | D | A runtime adapter may be swapped under an existing app, and it is neither a migration nor a… | 18. Adapters | — | 02 | — |
 | **R-260** | D | Four first-class administrative surfaces, all shipping: API, CLI, MCP, web console. | 19. Surfaces | — | 10 | — |
 | **R-261** | D | The API is the product. | 19. Surfaces | 04, 08 | 02, 08, 10 | — |
 | **R-262** | D | MCP is a real deliverable, so an agent can deploy directly. | 19. Surfaces | 04 | 10 | — |
 | **R-263** | D | End users — people who were granted use of an app and nothing else — do not need the console. | 19. Surfaces | — | — | — |
 | **R-264** | D | The console is an Okta-style launcher. | 19. Surfaces | 04, 08 | 08 | — |
 | **R-265** | D | Users holding any administrative verb see an Admin entry point from the launcher, exposing the… | 19. Surfaces | 08 | 08 | — |
-| **R-266** | O-9 | Whether sharing an app notifies the recipient is unresolved. | 19. Surfaces | — | — | — |
+| **R-266** | D | Sharing an app sends no message. | 19. Surfaces | — | — | — |
 | **R-270** | D | Pando ships permissive defaults. | 20. Configuration and Policy | — | — | — |
 | **R-271** | D | Configuration may be supplied by: a YAML file loaded at startup, environment variables, the… | 20. Configuration and Policy | 00 | 00 | — |
 | **R-272** | D | The general pattern, applied throughout: a setting has a permissive default; host policy can… | 20. Configuration and Policy | 06 | 01 | — |
 | **R-273** | D LATER | Premade setting profiles for common postures (hobbyist, hardened, regulated), usable as-is or… | 20. Configuration and Policy | — | — | — |
-| **R-274** | D | Host policy may be applied to an install with running apps. | 20. Configuration and Policy | 01, 02, 03, 04 | 02, 03 | — |
+| **R-274** | D | Host policy may be applied to an install with running apps. | 20. Configuration and Policy | 01, 02, 03, 04, 05 | 02, 03 | — |
 | **R-280** | D | Losing access to an app destroys that user's per-app data (relevant to per-user instances, §22). | 21. Data Destruction | 02 | — | — |
 | **R-281** | D | Losing access to Pando means losing access to every app the user had. | 21. Data Destruction | — | — | — |
 | **R-282** | D | Suspended is not deleted (R-049). | 21. Data Destruction | 02, 04 | 01 | — |
@@ -273,7 +273,6 @@ Check each against the categories above before treating it as a gap.
 - **R-181** (12. Egress and Isolation) — Egress defaults to allow-all.
 - **R-192** (13. Secrets) — Environment variables are the default injection mechanism, since slot detection keys on them…
 - **R-200** (14. Persistence and Volumes) — Persistence declared in a compose file is imported and honored.
-- **R-206** (14. Persistence and Volumes) — Restore is in-place only.
 - **R-210** (15. Backup and Disaster Recovery) — Per-app rolling backups of app data.
 - **R-217** (15. Backup and Disaster Recovery) — Backup destination.
 - **R-220** (16.1 Health) — Pando runs health listeners — health endpoints, uptime checks — so you know when an app goes…
@@ -283,10 +282,10 @@ Check each against the categories above before treating it as a gap.
 - **R-230** (16.4 Notifications) — Notification is an adapter category.
 - **R-244** (17. Resources and Capacity) — Per-user quotas (max apps, max disk) as a policy knob.
 - **R-252** (18. Adapters) — Adapter categories: identity, routing/ingress, builder, runtime, secrets, services,…
-- **R-257** (18. Adapters) — Whether a runtime adapter can be swapped under a running app (Docker → Incus), and whether…
+- **R-257** (18. Adapters) — A runtime adapter may be swapped under an existing app, and it is neither a migration nor a…
 - **R-260** (19. Surfaces) — Four first-class administrative surfaces, all shipping: API, CLI, MCP, web console.
 - **R-263** (19. Surfaces) — End users — people who were granted use of an app and nothing else — do not need the console.
-- **R-266** (19. Surfaces) — Whether sharing an app notifies the recipient is unresolved.
+- **R-266** (19. Surfaces) — Sharing an app sends no message.
 - **R-270** (20. Configuration and Policy) — Pando ships permissive defaults.
 - **R-273** (20. Configuration and Policy) — Premade setting profiles for common postures (hobbyist, hardened, regulated), usable as-is or…
 - **R-281** (21. Data Destruction) — Losing access to Pando means losing access to every app the user had.

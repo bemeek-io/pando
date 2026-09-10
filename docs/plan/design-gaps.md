@@ -46,12 +46,48 @@ is `container`, so BuildKit supplies the build boundary independently. The note 
 whoever writes the first VM-class runtime adapter considers borrowing that boundary before building a
 parallel one.
 
+## Second pass — fragilities, not omissions
+
+A later review looked for choices with the same shape as O-11: several local decisions, each
+defensible, that together produce an unstated global property. Three turned up. All are closed.
+
+**Four revocation windows that nobody added up.** Session validity was checked per request, group
+membership cached 60s, assertions lived 120s, long-lived connections were never re-checked, and each
+component's documentation implied its own delay was the answer. The effective window is the *largest*
+of them, and nothing computed it.
+
+*Resolved:* design 06 §3.1. One number — 120 seconds — with the long-lived-connection interval set to
+exactly the assertion lifetime rather than an independently chosen value, because two clocks measuring
+the same thing drift apart the first time someone tunes one. The console states the window wherever
+access is revoked; implying revocation is instant was the real failure mode. **This resolved O-13 as a
+consequence.**
+
+**`markUnobservable` had nowhere to live.** The reconciler was specified to flag an app whose adapter
+is unreachable — correctly treating it as a platform problem rather than app failure — but no such
+field existed in the schema, and `apps.state` had no value for it.
+
+*Resolved:* `apps.unobservable_since`, a third field alongside `state` and `desired_state`, mirroring a
+split the design already uses. Folding it into `state` would mean either reporting `running` for an app
+nobody can see, or inventing an `unknown` state every consumer then has to handle. The console renders
+it as a banner over the last known state.
+
+**R-193 had no mechanism.** "Rotation implies a restart" — but the reconciler detects drift by
+comparing desired against *observed*, and `ObservedWorkload` carries no environment. Nothing could see
+that a running workload held a stale secret.
+
+*Resolved:* `apps.applied_env_fingerprint`, compared state-side, listed in the reconcilable-drift set
+in design 05 §2.1. The fingerprint hashes `(key, version)` pairs and literal values, **never secret
+values** — hashing those would put a verifier for every secret in the state store, which is worse than
+not having the feature. Adding environment to `ObservedWorkload` was the alternative and would have
+required every runtime adapter to read back resolved environment, which is exactly the secret-bearing
+data the adapter interface works to keep out of adapters' hands.
+
 ## Still open, tracked elsewhere
 
-These show as undesigned because the design *deliberately* did not settle them. They live in
-[`open-decisions.md`](open-decisions.md) and need no action here: R-133 (O-4, required vs optional
-slots), R-217 (O-6, backup destination), R-257 (O-8, runtime adapter swap), R-266 (O-9, share
-notifications). **O-11 is resolved and nothing is blocking** — see [`open-decisions.md`](open-decisions.md).
+Three questions remain, none blocking: **O-4** (slot detection — has a `[P]` answer awaiting
+measurement), **O-5** (TLS issuance — genuinely per-adapter), and **O-6** (which backup destinations
+ship — provider-shaped; the design half, that a destination is *not* an adapter category, is settled in
+design 03 §8.1). See [`open-decisions.md`](open-decisions.md).
 
 ## How to keep this file honest
 

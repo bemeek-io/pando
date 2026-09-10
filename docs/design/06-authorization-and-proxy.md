@@ -85,6 +85,41 @@ func (a *Authorizer) CheckData(ctx context.Context, p Principal, appID string) e
 
 **[P]** Cached per session with a short TTL (60s), invalidated immediately on a SCIM push (R-048). The TTL is the effective propagation delay for a group removal on adapters without push, and must be documented as such rather than implied to be instant.
 
+### 3.1 The revocation window
+
+**[D]** Access does not stop the instant it is revoked, and the design contains four separate delays
+that were each chosen locally and never added up:
+
+| Source | Delay | Effect |
+|---|---|---|
+| Session validity check | none by default — one indexed lookup per request (§02 2.7) | 0 |
+| Group membership cache | 60s, or 0 on a SCIM push (R-048) | up to 60s |
+| Assertion lifetime | 120s (R-055) | up to 120s, if the app caches it for its full life |
+| Long-lived connections | re-authorized on an interval (§4.2) | up to that interval |
+
+**The effective revocation window is the largest of these, not the smallest.** Revoking a grant while
+an app holds a 120-second assertion means the app may honor that assertion for its remaining life.
+Nothing in the system was computing this number, and each component's documentation implied its own
+delay was the answer.
+
+**[D] One number: 120 seconds.** Everything above is set to that or below it, and the long-lived
+connection interval is set to *exactly* the assertion lifetime rather than to an independently chosen
+value — two clocks measuring the same thing will drift apart the first time someone tunes one of them.
+The 60s group cache stays where it is because a value below the window does not widen it; if it is
+ever raised, it must not be raised past 120.
+
+**[D]** The console displays this window wherever access is revoked — removing a grant, suspending a
+user, removing someone from a group — as a plain statement that access stops within two minutes.
+Implying revocation is instant is the failure mode here, and §03 5's per-adapter `SessionPolicy`
+display must show the effective window rather than only the adapter's own lifetime.
+
+**[D]** The window is a floor on Pando's side, not a promise about the app. An app that caches
+identity from an assertion for longer than the assertion's life has extended the window itself, which
+is one more reason the app-developer documentation states that assertions are per-request and short.
+
+**[P]** If the session check is ever cached for throughput, its TTL joins this table and the window is
+recomputed. It does not get to be a hidden fifth delay.
+
 ---
 
 ## 4. The proxy
@@ -138,7 +173,16 @@ type Assertion struct {
 
 **[D]** R-170: websockets, SSE, and large uploads must work. Concretely — no response buffering, `Flush()` on every write for SSE, hijack for websocket upgrade, and no default body size limit.
 
-**[O-13]** Behavior when a session is revoked mid-websocket. A long-lived connection authorized once stays open indefinitely. Options: periodic re-authorization on a timer with connection close on failure, or accept it and document the window. Not resolved.
+**[D] Resolved (O-13).** A long-lived connection is re-authorized on a timer and closed when
+authorization fails. The interval is the assertion lifetime — 120s, the same number as §3.1 — because
+a long-lived connection is the one case where the per-request check that normally enforces `CheckData`
+never fires again. Accepting the alternative (leave it open, document the gap) would have made a
+websocket the one way to hold access indefinitely after revocation, which is precisely the property an
+attacker would look for.
+
+Re-authorization runs the same `CheckData` as a fresh request. On failure the connection closes with a
+normal WebSocket close frame carrying a policy-violation status, not an abrupt reset, so a client can
+tell revocation from a network fault.
 
 ---
 

@@ -13,7 +13,12 @@ stays failed.
       `failed` / `archived`, with `desired_state` kept separate from observed `state`
 - [ ] The loop: 15s interval [P], 8 concurrent [P], per-app advisory lock so two ticks cannot overlap
 - [ ] Drift classification — reconcilable vs report-only (design 05 §2.1)
-- [ ] `markUnobservable`: an adapter being down is a **platform** problem, not app failure
+- [ ] Stale-environment drift via `apps.applied_env_fingerprint` — this is the only mechanism R-193
+      has, because `Observe` returns no environment and deliberately should not. Hash `(key, version)`
+      pairs and literal values, **never secret values**
+- [ ] `markUnobservable`: an adapter being down is a **platform** problem, not app failure. It stamps
+      `apps.unobservable_since`, a third field beside `state` and `desired_state` — not a state value,
+      and not an `unknown` state; clears on the first successful `Observe`
 - [ ] Backoff (R-149), capped at 5 minutes
 - [ ] Give-up threshold: 10 failures in 30 minutes [P] → `failed`, notify, audit, **stop** (R-150)
 - [ ] Auto-deploy as a **separate scheduled job** (R-141): creates a spec revision and enqueues a

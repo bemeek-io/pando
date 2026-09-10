@@ -32,6 +32,8 @@ from phase 3.
       with a rewritable audit log is not acceptable; the value of the grant is that it holds without
       anyone checking. Error text is held to R-105
 - [ ] `audit_events` table, and `REVOKE UPDATE, DELETE` from the application role
+- [ ] `apps.unobservable_since` and `apps.applied_env_fingerprint` when the apps table lands in phase
+      2 — noted here so the columns are not discovered late (design 02 §2.3)
 - [ ] sqlc wired up and generating
 - [ ] chi router, `/healthz`
 - [ ] The adapter import-lint rule in CI (`.golangci.yml` depguard) — design 03 §9

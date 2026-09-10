@@ -20,6 +20,9 @@ and the one where a mistake is worst.
 - [ ] Path mode: strip prefix, set `X-Forwarded-Prefix` (R-167)
 - [ ] Streaming: no buffering, `Flush()` per SSE write, websocket hijack, no body size limit (R-170)
 - [ ] Anonymous assertion with the constant `sub: "anonymous"` (R-056)
+- [ ] Long-lived connection re-authorization (O-13, resolved): re-run `CheckData` on the assertion
+      lifetime — the same 120s, not a second number — and close with a policy-violation close frame
+      so a client can tell revocation from a network fault
 
 ## Requirements in scope
 
@@ -38,4 +41,7 @@ R-023, R-026, R-051–R-057, R-072, R-075, R-079, R-087, R-167, R-170.
   asserting the anonymous path still increments the audit/metrics counter.
 - Absence of the assertion header means the request did not come through Pando. Say so explicitly in
   the app-developer documentation; apps may reject on that basis.
-- **[O-13] is unresolved:** session revocation mid-websocket. Raise it, do not pick silently.
+- **[O-13] is resolved:** re-authorize long-lived connections on the assertion lifetime and close on
+  failure. Leaving them open would have made a websocket the one way to hold access indefinitely
+  after revocation — precisely the property an attacker looks for. Use the *same* constant as the
+  assertion lifetime, not a copy of its value.

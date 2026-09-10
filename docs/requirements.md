@@ -552,7 +552,7 @@ These are load-bearing. Violating any of them is a design failure, not a tradeof
 
 **R-256 [P]** Multi-machine capability comes entirely from adapters that span machines (e.g. Incus placing VMs across a cluster). Pando remains a single control plane, models no host objects, and performs no placement logic. The scope line (R-010) holds: Pando delegates to something that schedules; it does not schedule.
 
-**R-257 [O-8]** Whether a runtime adapter can be swapped under a running app (Docker → Incus), and whether that is a migration or a redeploy, is unresolved.
+**R-257 [D]** A runtime adapter may be swapped under an existing app, and it is **neither a migration nor a plain redeploy**: it is a destructive spec change requiring explicit confirmation, with volumes resolved through the keep-or-discard flow (R-204). Pando does not move volume contents between adapters — it cannot know what is inside a volume (R-206), and relocating running workloads is one step from the scheduling R-010 forbids.
 
 ---
 
@@ -570,7 +570,7 @@ These are load-bearing. Violating any of them is a design failure, not a tradeof
 
 **R-265 [D]** Users holding any administrative verb see an **Admin** entry point from the launcher, exposing the console scoped to whatever privileges they hold.
 
-**R-266 [O-9]** Whether sharing an app notifies the recipient is unresolved.
+**R-266 [D]** Sharing an app sends no message. The app appears in the recipient's launcher tiles (R-264), and for v1 that is the notification. A notify-adapter message would be console-only (R-231) and so would arrive beside the tile that already appeared — and would be invisible to a recipient who has never signed in, which a waiting tile is not. Revisit when an adapter can reach someone who is not already looking at Pando (R-232).
 
 ---
 
@@ -624,16 +624,16 @@ These are load-bearing. Violating any of them is a design failure, not a tradeof
 
 | ID | Question | Notes |
 |---|---|---|
-| **O-1** | Identity linking across adapters | Two identities from different adapters — same person or two users? |
+| **O-1** | ~~Identity linking across adapters~~ | **Resolved.** Not in v1; when it lands, linking *aliases* and never merges — `users.id` is never retired, because merging would orphan app data keyed on the losing ID (R-054). Design 02 §2.1. |
 | **O-2** | Per-adapter session lifetime and revocation | Deliberately deferred to each adapter's spec (R-047) |
-| **O-3** | Private repo credential ownership | App-owned or user-owned; user-owned dies at offboarding |
+| **O-3** | ~~Private repo credential ownership~~ | **Resolved.** App-owned, with the supplying principal recorded in audit; deletion of that user flags affected apps for rotation rather than breaking their deploys. Design 01 §2.1. |
 | **O-4** | Required vs optional slot detection | The forty-key `.env.example` problem (R-133) |
 | **O-5** | TLS issuance | Per-adapter; ACME, wildcards, local self-signed |
-| **O-6** | Backup destination | Local-only is useless for disk failure |
-| **O-7** | Exec command recording | Session-only audit, or full command capture |
-| **O-8** | Runtime adapter swap under a running app | Migration or redeploy |
-| **O-9** | Share notifications | Does being granted access notify you |
-| **O-10** | Retroactive policy application | Newly-violating running apps: block, force, or report |
+| **O-6** | Backup destination | Local-only is useless for disk failure. Which destinations ship is open; **that a destination is not an adapter category is settled** (design 03 §8.1). |
+| **O-7** | ~~Exec command recording~~ | **Resolved.** The command is recorded at session open; the PTY stream is not. A captured stream is a durable store of every secret typed into it, and cannot be redacted. Design 03 §2.3. |
+| **O-8** | ~~Runtime adapter swap under a running app~~ | **Resolved.** Neither: a destructive spec change with the existing keep-or-discard volume flow. R-257, design 01 §4. |
+| **O-9** | ~~Share notifications~~ | **Resolved.** No message; the launcher tile is the notification. R-266, design 08 §1.1. |
+| **O-10** | ~~Retroactive policy application~~ | **Resolved.** Running apps are untouched; the next deploy fails at plan time with `POLICY_*`. Report now, block on next deploy. Design 05 §3. |
 
 ---
 

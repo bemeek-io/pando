@@ -193,6 +193,23 @@ type ExecSession interface {
 
 **[D]** Core opens an exec session only after `app.exec` is checked and policy is consulted (R-084, R-085), and writes the audit event before the session opens (R-228). The adapter does not authorize.
 
+**[D] Resolved (O-7): the command is recorded, the stream is not.** `ExecRequest.Command` goes into
+the audit event at session open, along with the workload and the principal. The PTY stream is not
+captured.
+
+The argument for full capture is that `app.exec` is the highest-privilege action in the system and
+R-086 already concedes the verb list is not a boundary against someone holding it. The arguments
+against are decisive: a terminal stream contains secrets — the operator will `env`, will `psql`, will
+paste a token — so capturing it builds a durable, searchable store of every secret in the install and
+puts it in the audit log, which is the one table deliberately readable by anyone holding audit access.
+It also cannot be redacted, because `secret.Value` protects values Pando handles and a stream is
+bytes Pando never parses.
+
+Recording the command preserves what the audit log is for — *who did what, when, on which app* — and
+answers the question an investigation actually asks first. It does not pretend to answer what was
+typed after the shell opened, and the documentation must say so rather than implying exec is fully
+audited (R-086's standard).
+
 ### 2.4 Capacity
 
 ```go
@@ -439,6 +456,25 @@ type Notification struct {
 ```
 
 **[D]** v1 ships console-only (R-231). The interface exists so SMTP and SendGrid (R-232) drop in without touching core.
+
+---
+
+## 8.1 What is deliberately not an adapter category
+
+**[D] Backup destinations are not an eighth category.** Writing a DR bundle to local disk, S3, or a
+mounted share is a choice of byte sink, resolved from a URL scheme in configuration. It gets a small
+`Destination` interface over `io.Writer`/`io.Reader` and nothing more.
+
+The adapter model exists for two things: capability negotiation and vocabulary translation. A runtime
+adapter has capabilities the planner must check and a vocabulary core must never learn. A destination
+has neither — it accepts bytes and returns them, there is nothing to negotiate, and no plan-time
+decision depends on which one is configured. Making it a category would give it a `Capabilities()` no
+caller consults and a `HealthCheck()` whose failure means nothing until a backup runs.
+
+This is the general test to apply before adding a category: **does the planner need to ask it a
+question, and does it have a vocabulary worth hiding?** If neither, it is a library, and the eight
+categories stay seven plus config. Which destinations ship is a separate, provider-shaped question
+(O-6) and does not change this answer.
 
 ---
 

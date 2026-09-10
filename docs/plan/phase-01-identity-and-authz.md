@@ -25,6 +25,9 @@ phase where the two-plane distinction is either established correctly or quietly
 - [ ] `grants` table; app creation writes two rows, one per plane (R-073)
 - [ ] The authorizer: `CheckControl` and `CheckData`, in the fixed evaluation order
 - [ ] Live group resolution with the documented cache TTL (R-079)
+- [ ] **The revocation window** (design 06 §3.1): one number, 120s. Session check, group cache,
+      assertion lifetime and long-lived-connection re-auth all sit at or below it, and the effective
+      window is the largest of them — not the smallest
 - [ ] Audit every **denial**, not only successes
 
 ## Requirements in scope
@@ -34,7 +37,8 @@ R-044, R-047, R-048, R-049, R-058–R-063, R-070–R-082, R-087, R-229, R-272.
 ## Done when
 
 The evaluation order in design 06 §2 is **fully covered by unit tests**, including a delegated token
-orphaned by its owner's deletion.
+orphaned by its owner's deletion. Plus: a test asserting the effective revocation window is what design
+06 §3.1 says it is, so that raising any one cache later fails a test rather than silently widening it.
 
 ## Traps
 

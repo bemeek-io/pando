@@ -246,7 +246,22 @@ GET /api/v1/me/apps                       the launcher tiles (R-264)
 
 **[D]** An agent holds a token and is a principal like any other (R-262). No MCP tool bypasses authorization, and every action lands in the audit log under the token's owner.
 
-**[D] Not exposed via MCP:** exec, secret value reads, grant mutation, policy mutation, user deletion. Rationale — these are the highest-consequence actions in the system and R-086 already concedes exec is not bounded by the verb list. An agent should not hold the most dangerous capabilities by default. **[O-12]** whether this is a hard exclusion or a policy-controlled default is unresolved.
+**[D] Not exposed via MCP:** exec, secret value reads, grant mutation, policy mutation, user deletion. Rationale — these are the highest-consequence actions in the system and R-086 already concedes exec is not bounded by the verb list. An agent should not hold the most dangerous capabilities by default.
+
+**[D] Resolved (O-12): policy-controlled, default-closed, and expressed as host policy — not as an MCP
+list.** The exclusions above are the shipped default and an install can lift them, but the knob is the
+existing per-verb host policy rather than a second mechanism that happens to gate the same actions.
+
+A dedicated MCP exclusion list would be the second place in the system that answers "may this
+principal exec," and the two would disagree the first time someone edited one. Host policy is already
+evaluated before grants for every principal (§06 2, step 5) and an agent is a principal like any other
+(R-262) — so the honest expression of "agents may not exec here" is a policy scoped to token
+principals, which also covers the CLI token an agent could otherwise use to route around an
+MCP-specific block.
+
+**[D]** That last point is the reason this cannot stay a hard-coded list: an agent holding a token can
+call the REST API directly. An MCP-layer exclusion is a speed bump, not a boundary. Enforcement has to
+live where every surface passes through it.
 
 ---
 

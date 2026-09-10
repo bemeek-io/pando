@@ -70,11 +70,23 @@ type Source struct {
     Subdir string     `json:"subdir,omitempty"`  // monorepo entrypoint
     Image  string     `json:"image,omitempty"`   // when Type == image
     Digest string     `json:"digest,omitempty"`  // resolved, pinned
-    CredentialRef string `json:"credential_ref,omitempty"` // LATER, R-091
+    CredentialRef string `json:"credential_ref,omitempty"` // LATER, R-091. App-owned; see below.
 }
 ```
 
 **[D]** `Ref` is what the user asked for; `Commit` is what runs. Auto-deploy (R-141) advances `Commit` and creates a revision. A deploy never resolves `Ref` implicitly at runtime.
+
+**[D] Resolved (O-3): source credentials are app-owned and attributed.** The question was whether a
+private-repo credential belongs to the app or to the person who supplied it. User-owned is the
+intuitive answer and the wrong one: it means an app stops deploying when its author leaves, and it
+fails at the worst time — during an offboarding, when nobody remembers which apps depended on that
+person. App-owned means an app keeps working.
+
+The cost of app-owned is losing track of whose credential it is, so it is stored as an ordinary
+app-scoped secret **with the supplying principal recorded in the audit event**, not in the spec. On
+that user's deletion, §21's destruction rules surface every app holding a credential they supplied and
+flag it for rotation. The credential keeps working — this is a prompt, not a revocation, because
+breaking deploys is the failure mode being avoided.
 
 ### 2.2 Build
 
@@ -309,9 +321,21 @@ Diff operates on the spec tree and classifies each change:
 | `benign` | Retention, warnings, display-only | Collapsed |
 | `restart` | Env, resources, health | Shown; requires restart |
 | `rebuild` | Source, build config | Shown; triggers a build |
-| `destructive` | Volume removed, slot resolution changed from provisioned to bound, routing mode changed | **Shown prominently, requires explicit confirmation** |
+| `destructive` | Volume removed, slot resolution changed from provisioned to bound, routing mode changed, **runtime adapter changed** | **Shown prominently, requires explicit confirmation** |
 
 **[D]** Re-detection (R-022) presents this diff. So does promoting a compose service to Pando-managed (R-100). Same machinery.
+
+**[D] Resolved (O-8): changing the runtime adapter is a destructive spec change, not a migration.**
+The question was whether swapping an app's runtime (Docker → Incus) migrates state or forces a
+redeploy. Neither, as posed: it is classified `destructive` in the table above, requiring explicit
+confirmation, and volumes go through the existing keep-or-discard flow (R-204) rather than a bespoke
+transfer path.
+
+Building a migration would mean moving volume contents between adapters that have no common
+representation of a volume — Pando cannot know what is inside one (R-206) — and would put Pando in the
+business of relocating running workloads, which is one step from the scheduling R-010 forbids. The
+honest operation is: confirm, keep the volumes, redeploy onto the new runtime, reattach. The existing
+machinery already does every part of that.
 
 ---
 

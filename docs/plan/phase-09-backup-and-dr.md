@@ -17,6 +17,8 @@
 - [ ] Restore: decrypt → **verify against manifest** → confirm destructive intent → restore → let the
       reconciler converge
 - [ ] `POST /backups/{id}:verify` (R-216)
+- [ ] Destination as a `Destination` over `io.Writer`/`io.Reader`, resolved from a URL scheme in
+      config — **not an eighth adapter category** (design 03 §8.1). Which destinations ship is O-6
 - [ ] GC integration: aggregate disk budget (R-224)
 
 ## Requirements in scope
