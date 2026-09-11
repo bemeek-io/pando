@@ -60,6 +60,23 @@ type RuntimeCapabilities struct {
 
 	// MaxWorkloadsPerBundle is 0 for unlimited.
 	MaxWorkloadsPerBundle int
+
+	// SupportsTrialRun means Trial can start a throwaway workload and report
+	// whether it stayed up (R-097). A runtime without it makes detection skip
+	// the trial, which turns deferred questions back into real ones rather
+	// than into a failure.
+	SupportsTrialRun bool
+
+	// SupportsPortObservation means Trial reports ObservedPorts. This is the
+	// capability R-097 is really about — "port discovery happens by observing
+	// what the process binds, not by asking" — so a runtime without it costs
+	// the user a question per app.
+	SupportsPortObservation bool
+
+	// SupportsWriteObservation means Trial reports ObservedWrites, which is
+	// what lets the persistence warning name the directory (R-202) instead of
+	// being generic (R-201).
+	SupportsWriteObservation bool
 }
 
 // RoutingCapabilities describes what a routing adapter can do.
@@ -147,6 +164,85 @@ type RuntimeAdapter interface {
 
 	Logs(ctx context.Context, ref WorkloadRef, opts LogOptions) (io.ReadCloser, error)
 	Exec(ctx context.Context, ref WorkloadRef, req ExecRequest) (ExecSession, error)
+
+	// Trial starts a workload in throwaway isolation and reports what it did
+	// (R-097): which ports it bound, what it wrote outside its declared
+	// storage, and — if it crashed — the log, which is the whole output when a
+	// repository needs something it never declared (R-107).
+	//
+	// This is on the runtime rather than the builder, though design 03 §3 put
+	// ObservedPorts and ObservedWrites on BuildResult. A builder cannot do it:
+	// starting a container needs a container runtime socket, and R-112 says the
+	// build path never gets one, categorically. Sequence A already had it as
+	// its own step after the auction; the field placement was the error.
+	//
+	// Every runtime implements it, because a runtime that can Apply a bundle
+	// can start one and throw it away. What varies is how much it can observe,
+	// and that is declared in RuntimeCapabilities rather than discovered by
+	// type assertion — a missing capability and a missing adapter must not look
+	// alike.
+	Trial(ctx context.Context, req TrialRequest) (TrialResult, error)
+}
+
+// TrialRequest asks a runtime to start something once and watch it.
+type TrialRequest struct {
+	// TrialID names the throwaway bundle, so a trial that is interrupted leaves
+	// something identifiable to clean up rather than an anonymous container.
+	TrialID string
+
+	Image      string
+	Command    []string
+	Entrypoint []string
+	WorkingDir string
+	Env        map[string]secret.Value
+
+	// DeclaredPaths are the container paths the draft spec declares storage
+	// for. Writes underneath them are expected; a write anywhere else is what
+	// R-202 asks to have named in the persistence warning.
+	DeclaredPaths []string
+
+	// Timeout bounds the observation. An app that is still running when it
+	// expires has passed: it started and stayed up, which is what was being
+	// checked.
+	Timeout        time.Duration
+	IsolationFloor IsolationClass
+
+	LogSink io.Writer
+}
+
+// TrialResult is what the runtime saw.
+type TrialResult struct {
+	// Started means the workload reached a running state at all. A workload
+	// that never started and one that started and exited are different
+	// situations: the first is usually a bad image or command, the second is
+	// usually a missing dependency (R-107).
+	Started bool
+
+	// ExitCode is nil while the workload was still running when observation
+	// ended — which is the healthy outcome, not a missing value.
+	ExitCode *int
+
+	// ObservedPorts carry Source "observed" into the spec, which is the
+	// distinction the review UI shows (R-097): watched, not guessed.
+	ObservedPorts []int
+
+	// LoopbackPorts are ports the app bound to 127.0.0.1 rather than to an
+	// address traffic can arrive on.
+	//
+	// Separate from ObservedPorts because routing to one would not work, and
+	// reporting none at all would be misleading. An app listening only on
+	// loopback is a common and quiet failure — it is a dev-server default, the
+	// container reports itself healthy, and every request times out with
+	// nothing in the log to say why.
+	LoopbackPorts []int
+
+	// ObservedWrites are directories written outside DeclaredPaths (R-202).
+	ObservedWrites []string
+
+	// Log is captured whether or not the trial crashed, because on a crash it
+	// is the entire answer Pando has and R-107 says showing it and stopping is
+	// the correct outcome rather than a gap to close with inference.
+	Log string
 }
 
 // BundleRef identifies an app's bundle to an adapter.
@@ -489,15 +585,16 @@ type BuildRequest struct {
 }
 
 // BuildResult is what a build produced.
+//
+// It carries no trial-run output, though design 03 §3 put ObservedPorts and
+// ObservedWrites here. Producing them means starting a container, starting a
+// container means a container runtime socket, and R-112 forbids the build path
+// ever having one — categorically, with an integration test asserting the build
+// container's mount list. The trial run is RuntimeAdapter.Trial instead, called
+// as its own step, which is what Sequence A described all along.
 type BuildResult struct {
 	ImageRef string
 	Digest   string
-
-	// ObservedPorts and ObservedWrites are the trial run's output — the
-	// mechanism behind R-097's "watch what it binds, don't ask" and R-202's
-	// improved persistence warning.
-	ObservedPorts  []int
-	ObservedWrites []string
 }
 
 // --- secrets ---------------------------------------------------------------

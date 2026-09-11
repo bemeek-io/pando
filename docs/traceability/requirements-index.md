@@ -12,7 +12,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | Requirements | 207 | — |
 | Specified in a design doc | 142 | 68% |
 | Assigned to a phase | 107 | 51% |
-| Covered by a named test | 49 | 23% |
+| Covered by a named test | 54 | 26% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -95,7 +95,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-094** | D | Confidence ladder, highest first: | 7.2 Detection | 07 | 06 | — |
 | **R-095** | P | For tier 4, wrap an existing buildpack implementation (Paketo, nixpacks) rather than… | 7.2 Detection | — | — | — |
 | **R-096** | D | A compose file is a complete answer, not a hint. | 7.2 Detection | 01 | — | `TestR096_AComposeFileIsImportedNotInterpreted` |
-| **R-097** | D | A trial run in throwaway isolation is part of detection. | 7.2 Detection | 01, 03, 07 | 06 | — |
+| **R-097** | D | A trial run in throwaway isolation is part of detection. | 7.2 Detection | 01, 03, 07 | 06 | `TestR097_ATrialRunObservesTheBoundPort`, `TestR097_AWatchedPortAnswersTheQuestionInsteadOfAPerson`, `TestR097_ObservedPortsAreMarkedObservedNotFramework` |
 | **R-098** | D | The user reviews the proposal, then it pins. | 7.2 Detection | — | — | — |
 | **R-099** | D | Compose constructs incompatible with the boundary are rejected or rewritten, with the reason… | 7.2 Detection | 00, 01 | 06 | `TestR099_APublishedHostPortIsRewrittenNotHonored`, `TestR099_ARejectedComposeFileDoesNotSilentlyBecomeABuildpackGuess`, `TestR099_ConstructsThatBreakTheBoundaryAreRejectedWithReasons` |
 | **R-100** | D | A user may promote a compose-declared service to a Pando-managed one — e.g. | 7.2 Detection | 01 | 02 | — |
@@ -105,7 +105,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-104** | D | Questions are blockers; everything else is configuration. | 7.3 When detection cannot decide | 03, 08 | 08 | — |
 | **R-105** | D | Every question must be self-contained and pasteable. | 7.3 When detection cannot decide | 00, 03, 04, 07, 08 | 00, 03, 06, 08 | `TestR105_EveryQuestionAnyDetectorProducesIsSelfContained`, `TestR105_ValidatorCatchesTheRealFailureModes`, `TestR105_ValidatorRejectsTheDesignsCounterExample` |
 | **R-106** | D | AI assistance is optional supporting functionality, never required. | 7.3 When detection cannot decide | — | — | — |
-| **R-107** | D | The correct failure: a repo needs Postgres and never mentions it anywhere — no compose… | 7.3 When detection cannot decide | 01 | 06 | — |
+| **R-107** | D | The correct failure: a repo needs Postgres and never mentions it anywhere — no compose… | 7.3 When detection cannot decide | 01 | 06 | `TestR107_ACrashDoesNotInventASlotTheRepoNeverDeclared`, `TestR107_ACrashingTrialReturnsItsLog` |
 | **R-110** | D | Builds never run on the host (R-024). | 8. Build | — | — | — |
 | **R-111** | D V1 | The default local builder is rootless BuildKit in its own container. | 8. Build | 00, 03 | 04 | — |
 | **R-112** | D | The build path never exposes a container runtime socket to build code. | 8. Build | 03, 05, 07 | 04 | `TestR112_BuildContainerCannotReachDocker`, `TestR112_BuildContainerHasNoRuntimeSocket` |
@@ -145,7 +145,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-165** | D | In the non-proxy topology, apps have their own hostnames; users bookmark URLs and carry a… | 11. Networking and Routing | 03 | — | — |
 | **R-166** | D | Subdomain is preferred where a wildcard is available. | 11. Networking and Routing | — | — | — |
 | **R-167** | D | Under path routing, Pando strips the prefix before forwarding and sends `X-Forwarded-Prefix`. | 11. Networking and Routing | 03, 06, 07 | 05 | `TestR167_PathModeStripsThePrefix`, `TestR167_PathPrefixIsStrippedAndDeclared` |
-| **R-168** | D | Where Pando can detect a likely path-routing incompatibility, it shows a dismissible warning,… | 11. Networking and Routing | 01, 07, 08 | 06, 08 | — |
+| **R-168** | D | Where Pando can detect a likely path-routing incompatibility, it shows a dismissible warning,… | 11. Networking and Routing | 01, 07, 08 | 06, 08 | `TestR168_NothingToCheckIsNotAWarning`, `TestR168_RelativeAssetsAreFine`, `TestR168_RootAbsoluteAssetsRaiseADismissibleWarning` |
 | **R-169** | O-5 | TLS issuance (built-in ACME, wildcard requirement, self-signed local) is a per-adapter concern… | 11. Networking and Routing | — | — | — |
 | **R-170** | P | The proxy must support websockets, server-sent events, streaming responses, and large uploads. | 11. Networking and Routing | 06, 07 | 05 | `TestR170_SSEIsNotBuffered` |
 | **R-171** | D | An app with its own login page is stacked behind Pando's auth by default; the user sees two… | 11. Networking and Routing | 08 | — | — |
@@ -160,8 +160,8 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-193** | D | On the env path, rotation implies a restart. | 13. Secrets | 02, 05, 08 | 07 | `TestR193_ChangedEnvironmentCausesRecreate` |
 | **R-194** | P | Secret values are redacted in logs, in spec exports, and in the audit log. | 13. Secrets | 00, 02 | 00, 04 | `TestR194_CredentialsDoNotAppearInErrors`, `TestR194_ErrorStringsDoNotLeak`, `TestR194_RevealIsTheOnlyWayOut`, `TestR194_RoundTrippingARedactedPayloadDoesNotSetTheSecret`, `TestR194_SecretInDetailsDoesNotSerialize`, `TestR194_UnmarshalAcceptsARealSecret`, `TestR194_ValueNeverReachesALogLine`, `TestR194_ValueNeverRendersThroughAnyFormattingVerb`, `TestR194_ValueNeverRendersWhenNested` |
 | **R-200** | D | Persistence declared in a compose file is imported and honored. | 14. Persistence and Volumes | — | — | — |
-| **R-201** | D | Where no volume is declared, Pando shows a warning at setup rather than inferring one: | 14. Persistence and Volumes | 01, 04, 07, 08 | 02, 06, 08 | — |
-| **R-202** | P | The trial run improves this warning: where Pando observed the app writing to a directory… | 14. Persistence and Volumes | 01, 03, 07 | 06 | — |
+| **R-201** | D | Where no volume is declared, Pando shows a warning at setup rather than inferring one: | 14. Persistence and Volumes | 01, 04, 07, 08 | 02, 06, 08 | `TestR201_NoDeclaredVolumeWarnsEvenWithNothingObserved` |
+| **R-202** | P | The trial run improves this warning: where Pando observed the app writing to a directory… | 14. Persistence and Volumes | 01, 03, 07 | 06 | `TestR202_ATrialRunObservesWritesOutsideDeclaredStorage`, `TestR202_TheWarningNamesTheDirectoryTheAppActuallyWrote` |
 | **R-203** | D | Rationale for treating this specially: an undeclared Postgres fails loudly on first boot. | 14. Persistence and Volumes | 05 | 07 | — |
 | **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 04, 05 | 02, 09 | `TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes`, `TestR204_DestroyKeepsVolumesByDefault` |
 | **R-205** | D | Non-interactive delete (CLI, API, MCP) backs up by default. | 14. Persistence and Volumes | 04 | 02, 09 | — |
@@ -196,7 +196,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-251** | D | Core never learns a provider's vocabulary. | 18. Adapters | 01, 03, 06 | 02, 03, 10 | — |
 | **R-252** | D | Adapter categories: identity, routing/ingress, builder, runtime, secrets, services,… | 18. Adapters | — | — | — |
 | **R-253** | D | Adapters are compiled in-tree. | 18. Adapters | 00, 03, 08 | 00, 03 | — |
-| **R-254** | D | Every adapter advertises capabilities as data — `isolation_class`,… | 18. Adapters | 00, 03, 04, 05, 07 | 03 | `TestR254_CapabilitiesAreHonest`, `TestR254_CapabilityUnsupportedBlocksDeploy` |
+| **R-254** | D | Every adapter advertises capabilities as data — `isolation_class`,… | 18. Adapters | 00, 03, 04, 05, 07 | 03 | `TestR254_CapabilitiesAreHonest`, `TestR254_CapabilityUnsupportedBlocksDeploy`, `TestR254_TrialCapabilitiesAreDeclaredNotAssumed` |
 | **R-255** | D | Runtime adapters declare an isolation class. | 18. Adapters | 03 | 03 | — |
 | **R-256** | P | Multi-machine capability comes entirely from adapters that span machines (e.g. | 18. Adapters | 02 | — | — |
 | **R-257** | D | A runtime adapter may be swapped under an existing app, and it is neither a migration nor a… | 18. Adapters | — | 02 | `TestR257_RuntimeSwapSaysStorageDoesNotMove` |

@@ -1,0 +1,270 @@
+package detect_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/bemeek-io/pando/internal/detect"
+)
+
+func fullyObservant() api.RuntimeCapabilities {
+	return api.RuntimeCapabilities{
+		SupportsTrialRun: true, SupportsPortObservation: true, SupportsWriteObservation: true,
+	}
+}
+
+// R-097: the port is watched, not asked about. This is the requirement that
+// makes R-005 survivable — the person deploying may not know what a port is.
+func TestR097_AWatchedPortAnswersTheQuestionInsteadOfAPerson(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{"package.json": `{"name":"app"}`})
+	require.NoError(t, err)
+	require.Len(t, detect.Asked(result.Questions), 1, "before the trial: the start command")
+
+	draft, questions := detect.ApplyTrial(result.Winner.Draft, result.Questions,
+		detect.FromTrialResult(fullyObservant(), api.TrialResult{
+			Started: true, ObservedPorts: []int{8080},
+		}))
+
+	for _, q := range questions {
+		require.NotEqual(t, api.QuestionPort, q.Kind, "nobody is asked a question that was answered")
+	}
+
+	primary := draft.Workloads[0]
+	require.Equal(t, []spec.Port{{Number: 8080, Protocol: "http", Source: spec.PortObserved}},
+		primary.Ports,
+		"the framework guess of 3000 is superseded, not joined — one port, and it was watched")
+}
+
+// The distinction the review UI shows.
+func TestR097_ObservedPortsAreMarkedObservedNotFramework(t *testing.T) {
+	result, _ := auction().Run(context.Background(), memSource{"go.mod": "module app\n"})
+	require.Equal(t, spec.PortFramework, result.Winner.Draft.Workloads[0].Ports[0].Source)
+
+	draft, _ := detect.ApplyTrial(result.Winner.Draft, result.Questions,
+		detect.FromTrialResult(fullyObservant(), api.TrialResult{Started: true, ObservedPorts: []int{9000}}))
+	require.Equal(t, spec.PortObserved, draft.Workloads[0].Ports[0].Source)
+}
+
+// A question deferred to a trial that never ran must not vanish.
+func TestADeferredQuestionSurvivesATrialThatDidNotHappen(t *testing.T) {
+	result, _ := auction().Run(context.Background(), memSource{"package.json": `{"name":"app"}`})
+
+	_, questions := detect.ApplyTrial(result.Winner.Draft, result.Questions, detect.Trial{Ran: false})
+
+	require.Len(t, detect.Asked(questions), 2,
+		"with no trial, the port question is one a person answers after all")
+	for _, q := range questions {
+		require.False(t, q.Deferred)
+	}
+}
+
+// A runtime that cannot observe ports is not the same as an app with no port.
+func TestARuntimeThatCannotObservePortsLeavesTheQuestionStanding(t *testing.T) {
+	result, _ := auction().Run(context.Background(), memSource{"package.json": `{"name":"app"}`})
+
+	blind := api.RuntimeCapabilities{SupportsTrialRun: true}
+	_, questions := detect.ApplyTrial(result.Winner.Draft, result.Questions,
+		detect.FromTrialResult(blind, api.TrialResult{Started: true, ObservedPorts: []int{8080}}))
+
+	require.Len(t, detect.Asked(questions), 2,
+		"a runtime that does not report ports must not have its silence read as an answer")
+}
+
+// The trial ran, watched, and saw nothing. The question comes back saying so.
+func TestAnAppThatOpensNoPortGetsAQuestionThatSaysPandoLooked(t *testing.T) {
+	result, _ := auction().Run(context.Background(), memSource{"package.json": `{"name":"app"}`})
+
+	_, questions := detect.ApplyTrial(result.Winner.Draft, result.Questions,
+		detect.FromTrialResult(fullyObservant(), api.TrialResult{Started: true}))
+
+	var port detect.Question
+	for _, q := range questions {
+		if q.Kind == api.QuestionPort {
+			port = q
+		}
+	}
+	require.NotEmpty(t, port.Key)
+	require.False(t, port.Deferred)
+	require.Contains(t, port.Prompt, "watched it",
+		"a question that reappears without explanation looks like Pando forgot it had checked")
+	require.NoError(t, port.Validate(), "it is a real question now, so R-105 applies")
+}
+
+// --- O-4: slot promotion ----------------------------------------------------
+
+func envSlots() []spec.Slot {
+	return []spec.Slot{
+		{Key: "DATABASE_URL", Type: spec.SlotPostgres, Evidence: []string{"declared in .env.example"}},
+		{Key: "LOG_LEVEL", Type: spec.SlotUnknown, Evidence: []string{"declared in .env.example"}},
+		{Key: "FEATURE_X", Type: spec.SlotUnknown, Evidence: []string{"declared in .env.example"}},
+	}
+}
+
+// The O-4 fallback: the trial run settles what no heuristic reliably derives.
+func TestO4_ACrashThatNamesASlotPromotesThatSlot(t *testing.T) {
+	draft, _ := detect.ApplyTrial(
+		detect.Draft{Slots: envSlots(), Volumes: []spec.Volume{{Name: "data"}}},
+		nil,
+		detect.Trial{
+			Ran: true, Started: true, Crashed: true,
+			Log: "FATAL: could not connect to server: DATABASE_URL is not set\n",
+		})
+
+	require.True(t, draft.Slots[0].Required, "the app said this one was missing")
+	require.Contains(t, draft.Slots[0].Evidence[1], "DATABASE_URL",
+		"the evidence says what was observed, so a user can see why it became required")
+}
+
+// The restraint is the point: this is the false-block rate the phase plan says
+// to measure rather than assume away.
+func TestO4_ACrashThatNamesNothingPromotesNothing(t *testing.T) {
+	draft, _ := detect.ApplyTrial(
+		detect.Draft{Slots: envSlots(), Volumes: []spec.Volume{{Name: "data"}}},
+		nil,
+		detect.Trial{
+			Ran: true, Started: true, Crashed: true,
+			Log: "SyntaxError: Unexpected token '}' at server.js:12\n",
+		})
+
+	for _, slot := range draft.Slots {
+		require.False(t, slot.Required,
+			"one syntax error must not become three required slots and three deploy blockers")
+	}
+}
+
+// R-107: the log is the answer, and Pando does not invent what was never said.
+func TestR107_ACrashDoesNotInventASlotTheRepoNeverDeclared(t *testing.T) {
+	draft, _ := detect.ApplyTrial(
+		detect.Draft{Volumes: []spec.Volume{{Name: "data"}}},
+		nil,
+		detect.Trial{
+			Ran: true, Started: true, Crashed: true,
+			Log: "could not connect to postgres at localhost:5432: connection refused\n",
+		})
+
+	require.Empty(t, draft.Slots,
+		"a repository that never mentioned Postgres does not acquire a Postgres slot because "+
+			"its log did — showing the log and stopping is the correct outcome")
+}
+
+// A slot the app names by service rather than by variable is still promoted.
+func TestO4_AServiceNamedInTheLogPromotesItsSlot(t *testing.T) {
+	draft, _ := detect.ApplyTrial(
+		detect.Draft{
+			Slots:   []spec.Slot{{Key: "CACHE_ENDPOINT", Type: spec.SlotRedis}},
+			Volumes: []spec.Volume{{Name: "data"}},
+		},
+		nil,
+		detect.Trial{Ran: true, Started: true, Crashed: true, Log: "Error: Redis connection to 127.0.0.1:6379 failed"},
+	)
+	require.True(t, draft.Slots[0].Required)
+}
+
+// An already-filled slot is not promoted; there is nothing to promote it for.
+func TestAFilledSlotIsLeftAlone(t *testing.T) {
+	filled := []spec.Slot{{
+		Key: "DATABASE_URL", Type: spec.SlotPostgres,
+		Resolution: &spec.Resolution{Mode: spec.ResolutionProvisioned},
+	}}
+	draft, _ := detect.ApplyTrial(
+		detect.Draft{Slots: filled, Volumes: []spec.Volume{{Name: "data"}}}, nil,
+		detect.Trial{Ran: true, Crashed: true, Log: "DATABASE_URL something went wrong"})
+	require.False(t, draft.Slots[0].Required)
+}
+
+// --- R-201, R-202: persistence ----------------------------------------------
+
+// R-202: the trial run improves the warning by naming the directory.
+func TestR202_TheWarningNamesTheDirectoryTheAppActuallyWrote(t *testing.T) {
+	draft, _ := detect.ApplyTrial(
+		detect.Draft{Volumes: []spec.Volume{{Name: "declared"}}}, nil,
+		detect.Trial{Ran: true, Started: true, ObservedWrites: []string{"/app/uploads"}})
+
+	require.True(t, hasWarning(draft.Warnings, spec.WarnNoPersistentVolume, "/app/uploads"))
+	require.True(t, hasWarning(draft.Warnings, spec.WarnNoPersistentVolume, "reporting itself healthy"),
+		"R-203: the reason this earns a warning is that the failure looks like success")
+}
+
+// R-201: with no trial observation, the generic warning still fires.
+func TestR201_NoDeclaredVolumeWarnsEvenWithNothingObserved(t *testing.T) {
+	draft, _ := detect.ApplyTrial(detect.Draft{}, nil,
+		detect.Trial{Ran: true, Started: true})
+
+	require.True(t, hasWarning(draft.Warnings, spec.WarnNoPersistentVolume, "you can ignore this"))
+}
+
+// A declared volume and nothing written outside it is the quiet case.
+func TestNoWarningWhenStorageIsDeclaredAndNothingElseIsWritten(t *testing.T) {
+	draft, _ := detect.ApplyTrial(
+		detect.Draft{Volumes: []spec.Volume{{Name: "data"}}}, nil,
+		detect.Trial{Ran: true, Started: true})
+	require.Empty(t, draft.Warnings)
+}
+
+// --- R-168: path routing ----------------------------------------------------
+
+// R-168 is a warning, never a fix — R-028 forbids rewriting response bodies.
+func TestR168_RootAbsoluteAssetsRaiseADismissibleWarning(t *testing.T) {
+	warnings := detect.PathRoutingWarning(memSource{
+		"index.html": `<html><head><script src="/static/app.js"></script></head></html>`,
+	}, detect.Draft{})
+
+	require.Len(t, warnings, 1)
+	require.Equal(t, spec.WarnPathRoutingIncompatible, warnings[0].Code)
+	require.Contains(t, warnings[0].Message, "/static/app.js", "it names what it found")
+	require.Contains(t, warnings[0].Message, "does not rewrite",
+		"the warning has to say Pando will not fix this, because R-028 says it must not")
+	require.False(t, warnings[0].Dismissed)
+}
+
+func TestR168_RelativeAssetsAreFine(t *testing.T) {
+	require.Empty(t, detect.PathRoutingWarning(memSource{
+		"index.html": `<html><script src="./app.js"></script><a href="about.html">a</a></html>`,
+	}, detect.Draft{}))
+}
+
+func TestR168_NothingToCheckIsNotAWarning(t *testing.T) {
+	require.Empty(t, detect.PathRoutingWarning(memSource{"main.go": "package main"}, detect.Draft{}))
+}
+
+// An app bound only to loopback is healthy, unreachable, and silent about it.
+func TestAnAppListeningOnlyOnLoopbackIsToldSoExplicitly(t *testing.T) {
+	result, _ := auction().Run(context.Background(), memSource{"package.json": `{"name":"app"}`})
+
+	_, questions := detect.ApplyTrial(result.Winner.Draft, result.Questions,
+		detect.FromTrialResult(fullyObservant(), api.TrialResult{
+			Started: true, LoopbackPorts: []int{3000},
+		}))
+
+	var port detect.Question
+	for _, q := range questions {
+		if q.Kind == api.QuestionPort {
+			port = q
+		}
+	}
+	require.NotEmpty(t, port.Key)
+	require.Contains(t, port.Prompt, "3000")
+	require.Contains(t, port.Prompt, "0.0.0.0",
+		"the question should say what to change, not just that something is wrong")
+	require.NotContains(t, port.Prompt, "no network port at all",
+		"it did open a port — saying otherwise is both wrong and less useful")
+	require.NoError(t, port.Validate())
+}
+
+// An app that never started says so, rather than claiming it opened no port.
+func TestAnAppThatNeverStartedSaysThatRatherThanBlamingThePort(t *testing.T) {
+	result, _ := auction().Run(context.Background(), memSource{"package.json": `{"name":"app"}`})
+
+	_, questions := detect.ApplyTrial(result.Winner.Draft, result.Questions,
+		detect.FromTrialResult(fullyObservant(), api.TrialResult{Started: false}))
+
+	for _, q := range questions {
+		if q.Kind == api.QuestionPort {
+			require.Contains(t, q.Prompt, "did not start")
+		}
+	}
+}

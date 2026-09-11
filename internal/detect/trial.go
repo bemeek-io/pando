@@ -1,0 +1,353 @@
+package detect
+
+import (
+	"fmt"
+	"io"
+	"sort"
+	"strings"
+
+	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/spec"
+)
+
+// Trial is what a trial run told detection (R-097).
+type Trial struct {
+	// Ran is false when no trial happened — no runtime configured, or one that
+	// does not support it. Distinguished from a trial that ran and observed
+	// nothing, because the first leaves questions unanswered and the second is
+	// information.
+	Ran bool
+
+	Started bool
+	Crashed bool
+
+	ObservedPorts  []int
+	LoopbackPorts  []int
+	ObservedWrites []string
+	Log            string
+}
+
+// FromTrialResult reads an adapter's result, given what the runtime said it
+// could observe.
+//
+// Capabilities are consulted rather than inferred from empty fields: a runtime
+// that cannot observe ports and one that observed no listening port both return
+// an empty slice, and they mean opposite things. The first leaves the question
+// for a person; the second is evidence the app does not serve HTTP.
+func FromTrialResult(caps api.RuntimeCapabilities, r api.TrialResult) Trial {
+	t := Trial{
+		Ran:     true,
+		Started: r.Started,
+		Crashed: r.ExitCode != nil && *r.ExitCode != 0,
+		Log:     r.Log,
+	}
+	if caps.SupportsPortObservation {
+		t.ObservedPorts = r.ObservedPorts
+		t.LoopbackPorts = r.LoopbackPorts
+	}
+	if caps.SupportsWriteObservation {
+		t.ObservedWrites = r.ObservedWrites
+	}
+	return t
+}
+
+// ApplyTrial folds a trial run's observations into a draft and its questions.
+//
+// This is where R-097 pays for itself. A port that was going to be a question
+// becomes an observation, and the question disappears rather than being asked
+// of someone R-005 says may not know what a port is.
+func ApplyTrial(draft Draft, questions []Question, t Trial) (Draft, []Question) {
+	if !t.Ran {
+		// No trial means no answers. Anything that was waiting on one has to be
+		// asked after all — deferring a question to something that never
+		// happened would drop it silently.
+		return draft, undefer(questions)
+	}
+
+	draft = applyObservedPorts(draft, t)
+	questions = resolvePortQuestions(questions, t)
+
+	draft.Slots = promoteSlots(draft.Slots, t)
+	draft.Warnings = append(draft.Warnings, persistenceWarnings(draft, t)...)
+
+	return draft, questions
+}
+
+// applyObservedPorts replaces guessed ports with watched ones.
+//
+// An observed port supersedes rather than joins: a framework default of 3000
+// sitting beside an observed 8080 would leave the review UI showing two ports
+// where the app has one, and the user deciding between a fact and a guess.
+func applyObservedPorts(draft Draft, t Trial) Draft {
+	if len(t.ObservedPorts) == 0 {
+		return draft
+	}
+
+	ports := make([]spec.Port, 0, len(t.ObservedPorts))
+	for _, n := range t.ObservedPorts {
+		// Source is what the review UI shows, and it is the whole point of
+		// R-097: this was watched, not guessed.
+		ports = append(ports, spec.Port{Number: n, Protocol: "http", Source: spec.PortObserved})
+	}
+
+	for i, w := range draft.Workloads {
+		if !w.Primary {
+			continue
+		}
+		draft.Workloads[i].Ports = ports
+		break
+	}
+	return draft
+}
+
+// resolvePortQuestions drops port questions the trial answered, and promotes
+// the ones it did not.
+func resolvePortQuestions(questions []Question, t Trial) []Question {
+	observed := len(t.ObservedPorts) > 0
+
+	var out []Question
+	for _, q := range questions {
+		if q.Kind != api.QuestionPort {
+			out = append(out, q)
+			continue
+		}
+		if observed {
+			// Answered. Nobody is asked.
+			continue
+		}
+		// The trial ran and saw nothing traffic could reach. That is now a real
+		// question, and it has to say what was tried — a question that
+		// reappears without explanation looks like Pando forgot it had already
+		// checked.
+		q.Deferred = false
+		q.Prompt += " " + whatTheTrialSaw(t)
+		out = append(out, q)
+	}
+	return out
+}
+
+// whatTheTrialSaw explains why the port still has to be asked about.
+//
+// An app bound only to 127.0.0.1 is the case worth spelling out. It is a dev
+// server default, the container reports itself healthy, and every request times
+// out with nothing anywhere saying why — so "it opened no port" would be both
+// wrong and the least useful thing Pando could say when it knows better.
+func whatTheTrialSaw(t Trial) string {
+	if len(t.LoopbackPorts) > 0 {
+		return fmt.Sprintf(
+			"Pando started the app and watched it. The app is listening on %s, but only on its own "+
+				"internal address (127.0.0.1), which nothing outside the app can reach — so requests "+
+				"to it would time out even though the app looks healthy. Apps usually have a setting "+
+				"for which address to listen on; it normally needs to be 0.0.0.0 rather than "+
+				"127.0.0.1 or localhost.",
+			joinPorts(t.LoopbackPorts))
+	}
+	if !t.Started {
+		return "Pando tried to start the app and it did not start, so this could not be worked out " +
+			"automatically."
+	}
+	return "Pando started the app and watched it, and saw it open no network port at all, so this " +
+		"could not be worked out automatically."
+}
+
+func joinPorts(ports []int) string {
+	parts := make([]string, 0, len(ports))
+	for _, p := range ports {
+		parts = append(parts, fmt.Sprint(p))
+	}
+	if len(parts) == 1 {
+		return "port " + parts[0]
+	}
+	return "ports " + strings.Join(parts, ", ")
+}
+
+// undefer turns every deferred question back into one a person answers.
+func undefer(questions []Question) []Question {
+	out := make([]Question, 0, len(questions))
+	for _, q := range questions {
+		q.Deferred = false
+		out = append(out, q)
+	}
+	return out
+}
+
+// promoteSlots is the O-4 fallback (design 01 §2.5).
+//
+// `Required` has no reliable derivation, so everything not typed to a known
+// service starts optional and the trial run settles it: a slot whose absence
+// crashes the app becomes required, with the crash log as the evidence.
+//
+// The restraint is the important part. Promoting every unfilled slot on any
+// crash would turn one syntax error into forty required slots and forty
+// PLAN_SLOT_UNFILLED blockers — the false-block rate the phase plan says to
+// measure rather than assume away. So a slot is promoted only when the app
+// itself named it in the log.
+//
+// That is not the inference R-107 forbids. R-107 is about a repository that
+// needs Postgres and never mentions it anywhere; Pando must show the log and
+// stop rather than invent a database. This is the opposite situation: the slot
+// was already declared, and the running app said it was missing.
+func promoteSlots(slots []spec.Slot, t Trial) []spec.Slot {
+	if !t.Crashed || t.Log == "" {
+		return slots
+	}
+	log := strings.ToLower(t.Log)
+
+	for i, slot := range slots {
+		if slot.Required || slot.Resolution != nil {
+			continue
+		}
+		mention, found := mentionedIn(log, slot)
+		if !found {
+			continue
+		}
+		slots[i].Required = true
+		slots[i].Evidence = append(slots[i].Evidence,
+			fmt.Sprintf("the app failed to start and its log mentions %s", mention))
+	}
+	return slots
+}
+
+// mentionedIn reports whether a crash log names this slot.
+func mentionedIn(lowercaseLog string, slot spec.Slot) (string, bool) {
+	if key := strings.ToLower(slot.Key); key != "" && strings.Contains(lowercaseLog, key) {
+		return slot.Key, true
+	}
+
+	// A Postgres driver's connection error usually names the database rather
+	// than the environment variable that was supposed to configure it.
+	for _, word := range serviceWords[slot.Type] {
+		if strings.Contains(lowercaseLog, word) {
+			return word, true
+		}
+	}
+	return "", false
+}
+
+var serviceWords = map[spec.SlotType][]string{
+	spec.SlotPostgres: {"postgres", "postgresql", "pg_hba", "libpq"},
+	spec.SlotMySQL:    {"mysql", "mariadb"},
+	spec.SlotRedis:    {"redis", "valkey"},
+	spec.SlotS3:       {"s3", "bucket"},
+	spec.SlotSMTP:     {"smtp"},
+}
+
+// persistenceWarnings produces WARN_NO_PERSISTENT_VOLUME (R-201, R-202).
+//
+// R-203 is why this exists at all, when inference is otherwise forbidden: an
+// undeclared Postgres fails loudly on first boot, but undeclared persistence
+// works perfectly until the second deploy and then silently discards everything
+// while reporting healthy. It is the worst failure mode in the system, so it
+// earns a warning even though Pando will not act on it.
+func persistenceWarnings(draft Draft, t Trial) []spec.Warning {
+	if len(draft.Volumes) > 0 && len(t.ObservedWrites) == 0 {
+		return nil
+	}
+
+	// R-202: the trial run improves the warning by naming the directory. A
+	// warning that says "somewhere" is one people dismiss; one that says
+	// /app/uploads is one they act on.
+	if len(t.ObservedWrites) > 0 {
+		dirs := append([]string(nil), t.ObservedWrites...)
+		sort.Strings(dirs)
+		return []spec.Warning{{
+			Code: spec.WarnNoPersistentVolume,
+			Message: fmt.Sprintf(
+				"While Pando was testing this app, it wrote to %s — %s outside any storage the app "+
+					"declares it wants to keep. Anything written there is discarded the next time "+
+					"the app is deployed, and the app will keep reporting itself healthy while that "+
+					"happens. If that directory holds data you need, define a volume for it here. "+
+					"If it does not, you can dismiss this.",
+				strings.Join(dirs, ", "), plural(len(dirs), "a directory", "directories")),
+		}}
+	}
+
+	if len(draft.Volumes) == 0 {
+		return []spec.Warning{{
+			Code: spec.WarnNoPersistentVolume,
+			Message: "No persistent volume found. If your app doesn't store data, you can ignore " +
+				"this. Otherwise define one here.",
+		}}
+	}
+	return nil
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// PathRoutingWarning produces WARN_PATH_ROUTING_INCOMPATIBLE (R-168).
+//
+// A warning, never a fix. R-028 is the rule it serves: Pando does not rewrite
+// an app's response bodies to make path routing work, because an app that only
+// works because its HTML was rewritten in flight is an app that breaks in ways
+// nobody can debug. So where this is likely to bite, it is said out loud and
+// left to the user.
+//
+// The signal is an asset reference rooted at "/" in the app's own HTML. Served
+// under a path prefix, "/static/app.js" resolves against the domain rather than
+// the prefix, and the app loads a blank page with no error anywhere.
+func PathRoutingWarning(src api.SourceView, draft Draft) []spec.Warning {
+	var checked string
+	for _, candidate := range []string{"index.html", "public/index.html", "dist/index.html", "site/index.html"} {
+		if info, err := src.Stat(candidate); err == nil && !info.IsDir {
+			checked = candidate
+			break
+		}
+	}
+	if checked == "" {
+		return nil
+	}
+
+	body, ok := readLimited(src, checked, 512<<10)
+	if !ok {
+		return nil
+	}
+
+	var refs []string
+	for _, attr := range []string{`src="/`, `href="/`, `src='/`, `href='/`} {
+		if idx := strings.Index(body, attr); idx >= 0 {
+			refs = append(refs, sample(body[idx+len(attr)-1:]))
+		}
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+
+	return []spec.Warning{{
+		Code: spec.WarnPathRoutingIncompatible,
+		Message: fmt.Sprintf(
+			"This app loads files using addresses that start at the top of a domain, such as %q in %s. "+
+				"If you give the app an address ending in a path — example.com/notes rather than "+
+				"notes.example.com — the browser will look for those files at the top of the domain "+
+				"instead, and the page will come up blank with nothing in the logs to say why. "+
+				"Pando does not rewrite pages to work around this. Giving the app its own subdomain "+
+				"avoids it entirely; otherwise the app needs to be built with a base path set.",
+			refs[0], checked),
+	}}
+}
+
+func sample(s string) string {
+	end := strings.IndexAny(s, `"'`)
+	if end <= 0 || end > 60 {
+		end = min(60, len(s))
+	}
+	return s[:end]
+}
+
+func readLimited(src api.SourceView, name string, limit int64) (string, bool) {
+	f, err := src.Open(name)
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = f.Close() }()
+
+	raw, err := io.ReadAll(io.LimitReader(f, limit))
+	if err != nil {
+		return "", false
+	}
+	return string(raw), true
+}

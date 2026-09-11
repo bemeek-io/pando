@@ -33,6 +33,11 @@ const (
 	labelBundle   = "io.pando.bundle"
 	labelWorkload = "io.pando.workload"
 	labelManaged  = "io.pando.managed"
+
+	// labelTrial marks everything a trial run creates (R-097), so that a trial
+	// interrupted by Pando restarting can be found and removed rather than
+	// leaving a running copy of someone's app with nothing tracking it.
+	labelTrial = "io.pando.trial"
 )
 
 // Adapter runs workloads as Docker containers.
@@ -131,6 +136,14 @@ func (a *Adapter) Capabilities(context.Context) (api.RuntimeCapabilities, error)
 		SupportsImageImport: true,
 
 		MaxWorkloadsPerBundle: 0,
+
+		// The trial run (R-097). Port observation works on any image, including
+		// one with no shell, because the sockets are read from a sidecar sharing
+		// the container's network namespace rather than by exec-ing inside it.
+		// Write observation is ContainerDiff, which the daemon computes itself.
+		SupportsTrialRun:         true,
+		SupportsPortObservation:  true,
+		SupportsWriteObservation: true,
 	}, nil
 }
 
