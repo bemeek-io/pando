@@ -7,3 +7,4 @@ console/node_modules
 console/dist
 internal/console/dist
 *.md
+!entrypoint.sh

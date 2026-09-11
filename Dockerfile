@@ -12,18 +12,18 @@ COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pando ./cmd/pando
 
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata \
+RUN apk add --no-cache ca-certificates tzdata su-exec \
     && adduser -D -u 10001 pando \
     && mkdir -p /var/lib/pando \
     && chown pando:pando /var/lib/pando
 
-# Runs unprivileged. The runtime adapter reaches Docker through the mounted
-# socket, which is a group membership question at deploy time, not a reason to
-# run this process as root.
-USER pando
 WORKDIR /var/lib/pando
 
 COPY --from=build /out/pando /usr/local/bin/pando
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
+# The entrypoint starts as root only long enough to join the runtime socket's
+# group — whose ID differs per host and so cannot be baked in — then drops to
+# the unprivileged pando user. The server itself never runs as root.
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/pando"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh", "/usr/local/bin/pando"]

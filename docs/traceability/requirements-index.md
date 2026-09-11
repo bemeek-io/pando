@@ -12,7 +12,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | Requirements | 207 | — |
 | Specified in a design doc | 140 | 67% |
 | Assigned to a phase | 107 | 51% |
-| Covered by a named test | 23 | 11% |
+| Covered by a named test | 32 | 15% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -38,9 +38,9 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-021** | D | Pando fills declared slots; it never invents topology. | 3. Core Invariants | 01 | 06 | — |
 | **R-022** | D | Detection never re-runs implicitly. | 3. Core Invariants | 01, 04 | — | — |
 | **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 06 | 05 | — |
-| **R-024** | D | Builds never execute on the host. | 3. Core Invariants | 00, 04, 05, 07 | 03 | — |
-| **R-025** | D | Apps are isolated from each other. | 3. Core Invariants | — | — | — |
-| **R-026** | D | Non-exposed workloads are unreachable from outside their bundle. | 3. Core Invariants | 01, 03 | 02, 05 | — |
+| **R-024** | D | Builds never execute on the host. | 3. Core Invariants | 00, 04, 05, 07 | 03 | `TestR024_NoAdapterMeetsPolicyBlocksDeploy`, `TestR024_SourceThatMustBeBuiltNeedsABuilder` |
+| **R-025** | D | Apps are isolated from each other. | 3. Core Invariants | — | — | `TestR025_EachBundleGetsItsOwnNetwork` |
+| **R-026** | D | Non-exposed workloads are unreachable from outside their bundle. | 3. Core Invariants | 01, 03 | 02, 05 | `TestR026_NoPortsArePublishedToTheHost` |
 | **R-027** | D | Authorization decisions, the audit log, the state store, and the identity assertion path live… | 3. Core Invariants | 00, 02, 03, 06 | 00 | `TestR027_AnOwningRoleCanUndoTheRevoke`, `TestR027_ApplicationRoleDoesNotOwnTheSchema`, `TestR027_AuditLogIsNotRewritable`, `TestR027_AuditRemainsImmutableAcrossRestarts` |
 | **R-028** | D | Pando observes and reports; it does not remediate the app. | 3. Core Invariants | 03, 05, 08 | 08 | — |
 | **R-029** | D | Control plane and data plane are separate grants (§6), with one exception: owning an app… | 3. Core Invariants | 06 | — | `TestR029_ControlPlaneRoleDoesNotGrantDataPlaneUse`, `TestR029_OwnerRoleAloneDoesNotGrantUse` |
@@ -90,7 +90,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-087** | D | Pando does not claim to defend against its own host operator. | 6.4 Verbs and roles | 06 | 01, 05 | — |
 | **R-090** | D | The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting… | 7.1 Input | — | — | — |
 | **R-091** | D LATER | Private repos are in scope, supporting the credential mechanisms GitHub offers (PAT, GitHub… | 7.1 Input | 01 | — | — |
-| **R-092** | D | Source allowlist. | 7.1 Input | 00, 04, 05, 07 | 06 | — |
+| **R-092** | D | Source allowlist. | 7.1 Input | 00, 04, 05, 07 | 06 | `TestR092_BlockedSourceFailsBeforeAnythingElse` |
 | **R-093** | D | Detection is a detector auction. | 7.2 Detection | 03, 07 | 06 | — |
 | **R-094** | D | Confidence ladder, highest first: | 7.2 Detection | 07 | 06 | — |
 | **R-095** | P | For tier 4, wrap an existing buildpack implementation (Paketo, nixpacks) rather than… | 7.2 Detection | — | — | — |
@@ -110,7 +110,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-111** | D V1 | The default local builder is rootless BuildKit in its own container. | 8. Build | 00, 03 | 04 | — |
 | **R-112** | D | The build path never exposes a container runtime socket to build code. | 8. Build | 03, 05, 07 | 04 | — |
 | **R-113** | D | Build code has no access to Pando's state store, no access to any other app's secrets, and no… | 8. Build | — | — | — |
-| **R-114** | D | Build isolation class is declared and enforced independently of runtime isolation class. | 8. Build | 00, 01, 03, 05, 07 | 03 | — |
+| **R-114** | D | Build isolation class is declared and enforced independently of runtime isolation class. | 8. Build | 00, 01, 03, 05, 07 | 03 | `TestR114_BuildIsolationFloorIsIndependent` |
 | **R-115** | P | Isolation classes, weakest to strongest: `container` (shared kernel), `sandboxed`… | 8. Build | — | — | — |
 | **R-116** | P | Where a runtime adapter can provision an isolated environment per app (e.g. | 8. Build | 03 | — | — |
 | **R-117** | P | Build filesystem is discarded after the build. | 8. Build | 03, 07 | 04 | — |
@@ -119,7 +119,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-120** | P | Deploy pins a commit SHA. | 8. Build | 01, 07 | 02, 04 | — |
 | **R-130** | D | An environment variable in `.env.example` is a hole with a type. | 9. Slots and Services | — | — | — |
 | **R-131** | D | A slot is resolved exactly three ways, chosen by the user: | 9. Slots and Services | 03, 04, 07 | 02, 06 | — |
-| **R-132** | D | Resolution is never silent. | 9. Slots and Services | 00, 01, 04, 05, 07 | 02, 03, 06 | `TestR132_SlotUnfilledCarriesRemedyAndDetails` |
+| **R-132** | D | Resolution is never silent. | 9. Slots and Services | 00, 01, 04, 05, 07 | 02, 03, 06 | `TestR132_EveryUnfilledSlotIsNamed`, `TestR132_SlotUnfilledCarriesRemedyAndDetails`, `TestR132_UnfilledRequiredSlotBlocksDeploy` |
 | **R-133** | O-4 | Distinguishing required from optional slots is unresolved. | 9. Slots and Services | — | — | — |
 | **R-134** | P | Provisioned services live inside the bundle and are not addressable from outside it. | 9. Slots and Services | 02, 03, 07 | — | — |
 | **R-135** | P | A provisioned service's data follows the app's volume rules (§12), including the… | 9. Slots and Services | — | — | — |
@@ -157,13 +157,13 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-190** | D V1 | Local secret storage: encrypted at rest with a key on the same disk. | 13. Secrets | 02, 03 | 03, 04 | — |
 | **R-191** | D | The threat model must be stated, not implied: this protects a leaked backup file or copied… | 13. Secrets | 02 | — | — |
 | **R-192** | D | Environment variables are the default injection mechanism, since slot detection keys on them… | 13. Secrets | — | — | — |
-| **R-193** | D | On the env path, rotation implies a restart. | 13. Secrets | 02, 05, 08 | 07 | — |
+| **R-193** | D | On the env path, rotation implies a restart. | 13. Secrets | 02, 05, 08 | 07 | `TestR193_ChangedEnvironmentCausesRecreate` |
 | **R-194** | P | Secret values are redacted in logs, in spec exports, and in the audit log. | 13. Secrets | 00, 02 | 00, 04 | `TestR194_CredentialsDoNotAppearInErrors`, `TestR194_ErrorStringsDoNotLeak`, `TestR194_RevealIsTheOnlyWayOut`, `TestR194_RoundTrippingARedactedPayloadDoesNotSetTheSecret`, `TestR194_SecretInDetailsDoesNotSerialize`, `TestR194_UnmarshalAcceptsARealSecret`, `TestR194_ValueNeverReachesALogLine`, `TestR194_ValueNeverRendersThroughAnyFormattingVerb`, `TestR194_ValueNeverRendersWhenNested` |
 | **R-200** | D | Persistence declared in a compose file is imported and honored. | 14. Persistence and Volumes | — | — | — |
 | **R-201** | D | Where no volume is declared, Pando shows a warning at setup rather than inferring one: | 14. Persistence and Volumes | 01, 04, 07, 08 | 02, 06, 08 | — |
 | **R-202** | P | The trial run improves this warning: where Pando observed the app writing to a directory… | 14. Persistence and Volumes | 01, 03, 07 | 06 | — |
 | **R-203** | D | Rationale for treating this specially: an undeclared Postgres fails loudly on first boot. | 14. Persistence and Volumes | 05 | 07 | — |
-| **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 04, 05 | 02, 09 | `TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes` |
+| **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 04, 05 | 02, 09 | `TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes`, `TestR204_DestroyKeepsVolumesByDefault` |
 | **R-205** | D | Non-interactive delete (CLI, API, MCP) backs up by default. | 14. Persistence and Volumes | 04 | 02, 09 | — |
 | **R-206** | D | Restore is in-place only. | 14. Persistence and Volumes | 01 | — | — |
 | **R-210** | D | Per-app rolling backups of app data. | 15. Backup and Disaster Recovery | — | — | — |
@@ -189,14 +189,14 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-232** | D LATER | Built-in adapters for SMTP and SendGrid. | 16.4 Notifications | 03, 08 | 10 | — |
 | **R-240** | D | Default CPU, memory, and disk limits are set at the host. | 17. Resources and Capacity | 01 | — | — |
 | **R-241** | D | Per-app override is available, gated by `app.resources.override`. | 17. Resources and Capacity | 01 | 02 | — |
-| **R-242** | D | Pando tracks total allocation against host capacity and must refuse a deploy that would… | 17. Resources and Capacity | 00, 04, 05, 07 | 03 | — |
-| **R-243** | D | Capacity is adapter-reported, not host-inspected. | 17. Resources and Capacity | 03, 04 | 03, 04 | — |
+| **R-242** | D | Pando tracks total allocation against host capacity and must refuse a deploy that would… | 17. Resources and Capacity | 00, 04, 05, 07 | 03 | `TestR242_CapacityWouldOversubscribeBlocksDeploy` |
+| **R-243** | D | Capacity is adapter-reported, not host-inspected. | 17. Resources and Capacity | 03, 04 | 03, 04 | `TestR243_CapacityIsAdapterReported` |
 | **R-244** | P LATER | Per-user quotas (max apps, max disk) as a policy knob. | 17. Resources and Capacity | — | — | — |
 | **R-250** | D | The app declares requirements; adapters translate. | 18. Adapters | 03 | 03 | — |
 | **R-251** | D | Core never learns a provider's vocabulary. | 18. Adapters | 01, 03 | 02, 03, 10 | — |
 | **R-252** | D | Adapter categories: identity, routing/ingress, builder, runtime, secrets, services,… | 18. Adapters | — | — | — |
 | **R-253** | D | Adapters are compiled in-tree. | 18. Adapters | 00, 03, 08 | 00, 03 | — |
-| **R-254** | D | Every adapter advertises capabilities as data — `isolation_class`,… | 18. Adapters | 00, 03, 04, 05, 07 | 03 | — |
+| **R-254** | D | Every adapter advertises capabilities as data — `isolation_class`,… | 18. Adapters | 00, 03, 04, 05, 07 | 03 | `TestR254_CapabilitiesAreHonest`, `TestR254_CapabilityUnsupportedBlocksDeploy` |
 | **R-255** | D | Runtime adapters declare an isolation class. | 18. Adapters | 03 | 03 | — |
 | **R-256** | P | Multi-machine capability comes entirely from adapters that span machines (e.g. | 18. Adapters | 02 | — | — |
 | **R-257** | D | A runtime adapter may be swapped under an existing app, and it is neither a migration nor a… | 18. Adapters | — | 02 | `TestR257_RuntimeSwapSaysStorageDoesNotMove` |

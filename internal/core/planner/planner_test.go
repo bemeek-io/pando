@@ -1,0 +1,506 @@
+package planner_test
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/planner"
+	"github.com/bemeek-io/pando/internal/core/policy"
+	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/bemeek-io/pando/internal/errs"
+)
+
+// --- adapter doubles -------------------------------------------------------
+
+type fakeRuntime struct {
+	caps      api.RuntimeCapabilities
+	capacity  api.Capacity
+	unhealthy error
+}
+
+func (f *fakeRuntime) Kind() string                                     { return "fake" }
+func (f *fakeRuntime) Category() api.Category                           { return api.CategoryRuntime }
+func (f *fakeRuntime) Configure(context.Context, json.RawMessage) error { return nil }
+func (f *fakeRuntime) HealthCheck(context.Context) error                { return f.unhealthy }
+
+func (f *fakeRuntime) Capabilities(context.Context) (api.RuntimeCapabilities, error) {
+	return f.caps, nil
+}
+func (f *fakeRuntime) Capacity(context.Context) (api.Capacity, error) { return f.capacity, nil }
+
+func (f *fakeRuntime) Apply(context.Context, api.BundlePlan) (api.BundleHandle, error) {
+	return api.BundleHandle{}, nil
+}
+func (f *fakeRuntime) Observe(context.Context, api.BundleRef) (api.ObservedBundle, error) {
+	return api.ObservedBundle{}, nil
+}
+func (f *fakeRuntime) Stop(context.Context, api.BundleRef) error                        { return nil }
+func (f *fakeRuntime) Destroy(context.Context, api.BundleRef, api.DestroyOptions) error { return nil }
+func (f *fakeRuntime) CreateVolume(context.Context, api.VolumeRequest) (api.VolumeHandle, error) {
+	return api.VolumeHandle{}, nil
+}
+func (f *fakeRuntime) DestroyVolume(context.Context, api.VolumeHandle) error { return nil }
+func (f *fakeRuntime) SnapshotVolume(context.Context, api.VolumeHandle, io.Writer) error {
+	return nil
+}
+func (f *fakeRuntime) RestoreVolume(context.Context, api.VolumeHandle, io.Reader) error { return nil }
+func (f *fakeRuntime) Logs(context.Context, api.WorkloadRef, api.LogOptions) (io.ReadCloser, error) {
+	return nil, nil
+}
+func (f *fakeRuntime) Exec(context.Context, api.WorkloadRef, api.ExecRequest) (api.ExecSession, error) {
+	return nil, nil
+}
+
+type fakeRouting struct {
+	caps      api.RoutingCapabilities
+	unhealthy error
+}
+
+func (f *fakeRouting) Kind() string                                     { return "fake" }
+func (f *fakeRouting) Category() api.Category                           { return api.CategoryRouting }
+func (f *fakeRouting) Configure(context.Context, json.RawMessage) error { return nil }
+func (f *fakeRouting) HealthCheck(context.Context) error                { return f.unhealthy }
+func (f *fakeRouting) Capabilities(context.Context) (api.RoutingCapabilities, error) {
+	return f.caps, nil
+}
+func (f *fakeRouting) Ensure(context.Context, api.RouteRequest) (api.RouteHandle, error) {
+	return api.RouteHandle{}, nil
+}
+func (f *fakeRouting) Remove(context.Context, api.RouteHandle) error { return nil }
+func (f *fakeRouting) Observe(context.Context, api.RouteHandle) (api.RouteState, error) {
+	return api.RouteState{}, nil
+}
+
+type fakeBuilder struct{ caps api.BuilderCapabilities }
+
+func (f *fakeBuilder) Kind() string                                     { return "fake" }
+func (f *fakeBuilder) Category() api.Category                           { return api.CategoryBuilder }
+func (f *fakeBuilder) Configure(context.Context, json.RawMessage) error { return nil }
+func (f *fakeBuilder) HealthCheck(context.Context) error                { return nil }
+func (f *fakeBuilder) Capabilities(context.Context) (api.BuilderCapabilities, error) {
+	return f.caps, nil
+}
+func (f *fakeBuilder) Bid(context.Context, api.SourceView) (api.Bid, error) {
+	return api.Bid{}, nil
+}
+func (f *fakeBuilder) Build(context.Context, api.BuildRequest) (api.BuildResult, error) {
+	return api.BuildResult{}, nil
+}
+
+type fixedAllocations struct{ alloc planner.Allocation }
+
+func (f fixedAllocations) AllocatedOn(context.Context, string, string) (planner.Allocation, error) {
+	return f.alloc, nil
+}
+
+// --- fixtures --------------------------------------------------------------
+
+func capableRuntime() *fakeRuntime {
+	return &fakeRuntime{
+		caps: api.RuntimeCapabilities{
+			IsolationClass:            spec.IsolationContainer,
+			SupportsPersistentVolumes: true,
+			SupportsExec:              true,
+			SupportsMultipleWorkloads: true,
+			SupportsPrivateNetwork:    true,
+			SupportsResourceLimits:    true,
+		},
+		capacity: api.Capacity{
+			TotalCPUMillis:   8000,
+			TotalMemoryBytes: 16 << 30,
+			TotalDiskBytes:   500 << 30,
+			Reported:         time.Now(),
+		},
+	}
+}
+
+func capableRouting() *fakeRouting {
+	return &fakeRouting{caps: api.RoutingCapabilities{
+		Modes:       []api.RoutingMode{spec.RoutingPort, spec.RoutingSubdomain},
+		DefaultMode: spec.RoutingPort,
+	}}
+}
+
+func capableBuilder() *fakeBuilder {
+	return &fakeBuilder{caps: api.BuilderCapabilities{
+		IsolationClass: spec.IsolationContainer,
+		Strategies:     []api.BuildStrategy{spec.BuildDockerfile, spec.BuildCompose},
+		SupportsCache:  true,
+	}}
+}
+
+func registry(t *testing.T, runtime api.Adapter, routing api.Adapter, builder api.Adapter) *api.Registry {
+	t.Helper()
+	r := api.NewRegistry()
+	require.NoError(t, r.Register("rt_docker", runtime))
+	require.NoError(t, r.Register("rte_loopback", routing))
+	if builder != nil {
+		require.NoError(t, r.Register("bld_buildkit", builder))
+	}
+	return r
+}
+
+func plannableSpec() *spec.AppSpec {
+	return &spec.AppSpec{
+		SchemaVersion: spec.SchemaVersion,
+		AppID:         "app_01HQ8",
+		Revision:      1,
+		Source:        spec.Source{Type: spec.SourceGit, URL: "https://github.com/acme/notes", Ref: "main"},
+		Build:         spec.Build{Strategy: spec.BuildDockerfile, AdapterRef: "bld_buildkit"},
+		Workloads:     []spec.Workload{{Name: "web", Primary: true, Exposed: true}},
+		Routing:       spec.Routing{AdapterRef: "rte_loopback", Mode: spec.RoutingPort, Port: 8080},
+		Runtime:       spec.RuntimeRef{AdapterRef: "rt_docker", IsolationFloor: spec.IsolationContainer},
+		Deploy:        spec.Deploy{Strategy: spec.DeployRecreate},
+		Resources:     spec.Resources{CPUMillis: 500, MemoryBytes: 512 << 20, DiskBytes: 1 << 30},
+	}
+}
+
+func newPlanner(t *testing.T) *planner.Planner {
+	t.Helper()
+	return planner.New(
+		registry(t, capableRuntime(), capableRouting(), capableBuilder()),
+		policy.Static(policy.Default()),
+		fixedAllocations{},
+	)
+}
+
+// --- the happy path --------------------------------------------------------
+
+func TestPlanSucceedsAndCreatesNothing(t *testing.T) {
+	plan, err := newPlanner(t).Check(context.Background(), plannableSpec())
+	require.NoError(t, err)
+
+	require.Equal(t, "app_01HQ8", plan.AppID)
+	for _, check := range []string{"spec_valid", "policy", "adapters", "capabilities", "isolation", "slots", "capacity"} {
+		require.Equal(t, "ok", plan.Checks[check], "check %s should have run", check)
+	}
+
+	// R-026: every bundle is private, and it is a field rather than an
+	// assumption so an adapter that cannot do it fails loudly.
+	require.True(t, plan.Bundle.Network.Private)
+	require.Len(t, plan.Bundle.Workloads, 1)
+
+	// Env is empty at plan time: resolving it means reading secrets, which is a
+	// side effect and belongs after the plan boundary.
+	require.Empty(t, plan.Bundle.Workloads[0].Env)
+}
+
+// --- the four errors phase 3's Done when names ----------------------------
+
+// TestR132_UnfilledRequiredSlotBlocksDeploy asserts R-132.
+func TestR132_UnfilledRequiredSlotBlocksDeploy(t *testing.T) {
+	s := plannableSpec()
+	s.Slots = []spec.Slot{{Key: "REDIS_URL", Type: spec.SlotRedis, Required: true}}
+
+	_, err := newPlanner(t).Check(context.Background(), s)
+	require.Error(t, err)
+	require.Equal(t, errs.PlanSlotUnfilled, errs.CodeOf(err))
+
+	e := errs.As(err)
+	require.Contains(t, e.Message, "Redis", "the message names what is missing")
+	require.NotEmpty(t, e.Remedy, "R-132 promises a way forward")
+	require.Contains(t, e.Remedy, "REDIS_URL")
+
+	slots, ok := e.Details["slots"].([]map[string]string)
+	require.True(t, ok)
+	require.Len(t, slots, 1)
+	require.Equal(t, "REDIS_URL", slots[0]["key"])
+
+	// Filling it clears the block.
+	s.Slots[0].Resolution = &spec.Resolution{Mode: spec.ResolutionProvisioned}
+	_, err = newPlanner(t).Check(context.Background(), s)
+	require.NoError(t, err)
+}
+
+// Every unfilled slot is named, not just the first: filling slots one deploy
+// attempt at a time is the experience R-132 exists to prevent.
+func TestR132_EveryUnfilledSlotIsNamed(t *testing.T) {
+	s := plannableSpec()
+	s.Slots = []spec.Slot{
+		{Key: "REDIS_URL", Type: spec.SlotRedis, Required: true},
+		{Key: "DATABASE_URL", Type: spec.SlotPostgres, Required: true},
+		{Key: "LOG_LEVEL", Type: spec.SlotUnknown, Required: false},
+	}
+
+	_, err := newPlanner(t).Check(context.Background(), s)
+	require.Error(t, err)
+
+	slots := errs.As(err).Details["slots"].([]map[string]string)
+	require.Len(t, slots, 2, "both required slots, and not the optional one")
+}
+
+// TestR254_CapabilityUnsupportedBlocksDeploy asserts R-254.
+func TestR254_CapabilityUnsupportedBlocksDeploy(t *testing.T) {
+	cases := map[string]struct {
+		mutate  func(*spec.AppSpec)
+		runtime func() *fakeRuntime
+		routing func() *fakeRouting
+		detail  string
+	}{
+		"routing mode not advertised": {
+			mutate:  func(s *spec.AppSpec) { s.Routing.Mode = spec.RoutingPath; s.Routing.PathPrefix = "/notes" },
+			runtime: capableRuntime,
+			routing: capableRouting,
+		},
+		"no private network": {
+			mutate: func(*spec.AppSpec) {},
+			runtime: func() *fakeRuntime {
+				rt := capableRuntime()
+				rt.caps.SupportsPrivateNetwork = false
+				return rt
+			},
+			routing: capableRouting,
+			detail:  "private_network",
+		},
+		"no persistent volumes": {
+			mutate: func(s *spec.AppSpec) {
+				s.Volumes = []spec.Volume{{ID: "vol_1", Name: "data", Declared: spec.VolumeFromUser}}
+			},
+			runtime: func() *fakeRuntime {
+				rt := capableRuntime()
+				rt.caps.SupportsPersistentVolumes = false
+				return rt
+			},
+			routing: capableRouting,
+			detail:  "persistent_volumes",
+		},
+		"start-then-swap unsupported": {
+			mutate: func(s *spec.AppSpec) { s.Deploy.Strategy = spec.DeployStartThenSwap },
+			runtime: func() *fakeRuntime {
+				rt := capableRuntime()
+				rt.caps.SupportsStartThenSwap = false
+				return rt
+			},
+			routing: capableRouting,
+			detail:  "start_then_swap",
+		},
+		"multiple workloads unsupported": {
+			mutate: func(s *spec.AppSpec) {
+				s.Workloads = append(s.Workloads, spec.Workload{Name: "worker"})
+			},
+			runtime: func() *fakeRuntime {
+				rt := capableRuntime()
+				rt.caps.SupportsMultipleWorkloads = false
+				return rt
+			},
+			routing: capableRouting,
+		},
+	}
+
+	for name, tc := range cases {
+		s := plannableSpec()
+		tc.mutate(s)
+
+		p := planner.New(registry(t, tc.runtime(), tc.routing(), capableBuilder()),
+			policy.Static(policy.Default()), fixedAllocations{})
+
+		_, err := p.Check(context.Background(), s)
+		require.Error(t, err, name)
+		require.Equal(t, errs.PlanCapabilityUnsupported, errs.CodeOf(err), name)
+		require.NotEmpty(t, errs.As(err).Remedy, name)
+		if tc.detail != "" {
+			require.Equal(t, tc.detail, errs.As(err).Details["capability"], name)
+		}
+	}
+}
+
+// TestR242_CapacityWouldOversubscribeBlocksDeploy asserts R-242.
+//
+// Details carry requested, allocated, and the adapter's own total: a capacity
+// refusal that does not show its arithmetic is not actionable.
+func TestR242_CapacityWouldOversubscribeBlocksDeploy(t *testing.T) {
+	s := plannableSpec()
+	s.Resources.MemoryBytes = 8 << 30
+
+	p := planner.New(
+		registry(t, capableRuntime(), capableRouting(), capableBuilder()),
+		policy.Static(policy.Default()),
+		fixedAllocations{alloc: planner.Allocation{MemoryBytes: 12 << 30}},
+	)
+
+	_, err := p.Check(context.Background(), s)
+	require.Error(t, err)
+	require.Equal(t, errs.CapacityWouldOversubscribe, errs.CodeOf(err))
+
+	e := errs.As(err)
+	require.Equal(t, "memory", e.Details["resource"])
+	require.NotEmpty(t, e.Details["requested"])
+	require.NotEmpty(t, e.Details["already_allocated"])
+	require.NotEmpty(t, e.Details["total"])
+	require.NotEmpty(t, e.Details["available"])
+	require.Contains(t, e.Remedy, "Lower what it asks for")
+}
+
+// Replanning an app must not count its own current allocation against itself.
+func TestCapacityExcludesTheAppBeingPlanned(t *testing.T) {
+	s := plannableSpec()
+	s.Resources.MemoryBytes = 8 << 30
+
+	// The allocations source is asked to exclude this app, and does.
+	p := planner.New(
+		registry(t, capableRuntime(), capableRouting(), capableBuilder()),
+		policy.Static(policy.Default()),
+		fixedAllocations{alloc: planner.Allocation{MemoryBytes: 4 << 30}},
+	)
+	_, err := p.Check(context.Background(), s)
+	require.NoError(t, err, "8 GiB requested plus 4 GiB elsewhere fits in 16 GiB")
+}
+
+// TestR024_NoAdapterMeetsPolicyBlocksDeploy asserts R-024 and R-114.
+func TestR024_NoAdapterMeetsPolicyBlocksDeploy(t *testing.T) {
+	hardened := policy.Default()
+	hardened.MinRuntimeIsolation = spec.IsolationVM
+
+	p := planner.New(
+		registry(t, capableRuntime(), capableRouting(), capableBuilder()),
+		policy.Static(hardened),
+		fixedAllocations{},
+	)
+
+	_, err := p.Check(context.Background(), plannableSpec())
+	require.Error(t, err)
+	require.Equal(t, errs.PlanNoAdapterMeetsPolicy, errs.CodeOf(err))
+
+	e := errs.As(err)
+	require.Equal(t, int(spec.IsolationVM), e.Details["required_floor"], "details name the required floor")
+	require.Equal(t, int(spec.IsolationContainer), e.Details["adapter_class"])
+	require.NotEmpty(t, e.Details["configured_runtimes"], "and each configured adapter's class")
+}
+
+// R-114: the build floor is independent of the runtime floor, and is reported
+// separately — an operator who set one and not the other deserves to be told
+// which.
+func TestR114_BuildIsolationFloorIsIndependent(t *testing.T) {
+	hardened := policy.Default()
+	hardened.MinBuildIsolation = spec.IsolationVM
+	hardened.MinRuntimeIsolation = spec.IsolationContainer
+
+	p := planner.New(
+		registry(t, capableRuntime(), capableRouting(), capableBuilder()),
+		policy.Static(hardened),
+		fixedAllocations{},
+	)
+
+	_, err := p.Check(context.Background(), plannableSpec())
+	require.Error(t, err)
+	require.Equal(t, errs.PlanNoAdapterMeetsPolicy, errs.CodeOf(err))
+	require.Equal(t, "bld_buildkit", errs.As(err).Details["adapter_ref"],
+		"the builder is named, not the runtime")
+}
+
+// --- the rest of the order -------------------------------------------------
+
+// R-092 is checked before anything would clone, so a blocked source produces
+// zero disk writes.
+func TestR092_BlockedSourceFailsBeforeAnythingElse(t *testing.T) {
+	restricted := policy.Default()
+	restricted.SourceAllowlist = []string{"github.corp.com"}
+
+	p := planner.New(
+		registry(t, capableRuntime(), capableRouting(), capableBuilder()),
+		policy.Static(restricted),
+		fixedAllocations{},
+	)
+
+	// Give the spec other problems too. The source check must still be what
+	// fires, because it is the one that has to happen before a clone.
+	s := plannableSpec()
+	s.Slots = []spec.Slot{{Key: "REDIS_URL", Type: spec.SlotRedis, Required: true}}
+
+	_, err := p.Check(context.Background(), s)
+	require.Error(t, err)
+	require.Equal(t, errs.PolicySourceNotAllowed, errs.CodeOf(err))
+	require.Contains(t, errs.As(err).Message, "github.com")
+
+	// An allowed source proceeds past the check.
+	restricted.SourceAllowlist = []string{"github.com"}
+	p = planner.New(registry(t, capableRuntime(), capableRouting(), capableBuilder()),
+		policy.Static(restricted), fixedAllocations{})
+	_, err = p.Check(context.Background(), plannableSpec())
+	require.NoError(t, err)
+}
+
+func TestUnconfiguredAdapterIsNamed(t *testing.T) {
+	s := plannableSpec()
+	s.Runtime.AdapterRef = "rt_incus"
+
+	_, err := newPlanner(t).Check(context.Background(), s)
+	require.Error(t, err)
+	require.Equal(t, errs.PlanAdapterNotConfigured, errs.CodeOf(err))
+	require.Equal(t, "rt_incus", errs.As(err).Details["adapter_ref"])
+	require.NotEmpty(t, errs.As(err).Details["configured"], "the alternatives are listed")
+}
+
+// R-254: the planner refuses to plan against an unhealthy adapter rather than
+// failing mid-deploy.
+func TestUnhealthyAdapterRefusesToPlan(t *testing.T) {
+	rt := capableRuntime()
+	rt.unhealthy = errors.New("dial unix /var/run/docker.sock: connect: connection refused")
+
+	p := planner.New(registry(t, rt, capableRouting(), capableBuilder()),
+		policy.Static(policy.Default()), fixedAllocations{})
+
+	_, err := p.Check(context.Background(), plannableSpec())
+	require.Error(t, err)
+	require.Equal(t, errs.AdapterUnavailable, errs.CodeOf(err))
+	require.Equal(t, "rt_docker", errs.As(err).Details["adapter_ref"])
+
+	// The driver's own message is logged, not returned.
+	b, marshalErr := json.Marshal(errs.As(err))
+	require.NoError(t, marshalErr)
+	require.NotContains(t, string(b), "docker.sock")
+}
+
+// An invalid spec fails at step 1, before any adapter is consulted.
+func TestInvalidSpecFailsFirst(t *testing.T) {
+	s := plannableSpec()
+	s.Workloads[0].Primary = false
+	s.Runtime.AdapterRef = "rt_nonexistent"
+
+	_, err := newPlanner(t).Check(context.Background(), s)
+	require.Error(t, err)
+	require.Equal(t, errs.ValidPrimaryWorkload, errs.CodeOf(err),
+		"validation runs before adapter resolution")
+}
+
+func TestBuildStrategyUnsupportedByBuilder(t *testing.T) {
+	s := plannableSpec()
+	s.Build.Strategy = spec.BuildBuildpack
+
+	_, err := newPlanner(t).Check(context.Background(), s)
+	require.Error(t, err)
+	require.Equal(t, errs.PlanCapabilityUnsupported, errs.CodeOf(err))
+	require.Equal(t, "bld_buildkit", errs.As(err).Details["adapter_ref"])
+}
+
+// TestR024_SourceThatMustBeBuiltNeedsABuilder asserts R-024: there is no "just
+// build it here" fallback, so an install with no builder configured refuses at
+// plan time rather than at step 9 of a deploy.
+func TestR024_SourceThatMustBeBuiltNeedsABuilder(t *testing.T) {
+	s := plannableSpec()
+	s.Build.AdapterRef = ""
+
+	// A registry with no builder at all.
+	r := api.NewRegistry()
+	require.NoError(t, r.Register("rt_docker", capableRuntime()))
+	require.NoError(t, r.Register("rte_loopback", capableRouting()))
+	p := planner.New(r, policy.Static(policy.Default()), fixedAllocations{})
+
+	_, err := p.Check(context.Background(), s)
+	require.Error(t, err)
+	require.Equal(t, errs.PlanNoAdapterMeetsPolicy, errs.CodeOf(err))
+	require.Contains(t, errs.As(err).Message, "nothing configured to build it")
+
+	// A prebuilt image needs no builder and plans fine.
+	s.Source = spec.Source{Type: spec.SourceImage, Image: "ghcr.io/acme/notes:v1"}
+	s.Build.Strategy = spec.BuildPrebuilt
+	_, err = p.Check(context.Background(), s)
+	require.NoError(t, err)
+}

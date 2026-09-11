@@ -1,0 +1,571 @@
+package api
+
+import (
+	"context"
+	"io"
+	"time"
+
+	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/bemeek-io/pando/internal/secret"
+)
+
+// IsolationClass is ordered, so policy floors can be compared (R-114, R-255).
+//
+// An integer rather than a string enum precisely because R-024 and R-114 need
+// `got >= floor`. Gaps of 10 leave room to insert a class without a migration.
+type IsolationClass = spec.IsolationClass
+
+// RoutingMode and BuildStrategy are the spec's, not the adapter's. An adapter
+// that needed its own vocabulary for these would be translating in the wrong
+// direction (R-251).
+type (
+	RoutingMode   = spec.RoutingMode
+	BuildStrategy = spec.BuildStrategy
+	EgressMode    = spec.EgressMode
+)
+
+// --- capabilities ----------------------------------------------------------
+//
+// Capabilities are returned as data, never discovered by type assertion
+// (R-254). A type assertion is invisible to the planner and cannot produce a
+// readable plan-time error, which is the whole point of asking.
+
+// RuntimeCapabilities describes what a runtime adapter can do.
+type RuntimeCapabilities struct {
+	IsolationClass IsolationClass
+
+	SupportsPersistentVolumes bool
+	SupportsExec              bool
+	SupportsMultipleWorkloads bool
+
+	// SupportsPrivateNetwork is required for R-026. An adapter without it is
+	// unusable — it would place workloads somewhere other apps could reach.
+	SupportsPrivateNetwork bool
+
+	SupportsResourceLimits bool
+	SupportsStartThenSwap  bool // R-145
+
+	// MaxWorkloadsPerBundle is 0 for unlimited.
+	MaxWorkloadsPerBundle int
+}
+
+// RoutingCapabilities describes what a routing adapter can do.
+type RoutingCapabilities struct {
+	Modes []RoutingMode
+
+	// DefaultMode is what an app gets when nobody chooses (R-162). It is what
+	// makes an install feel like proxy mode or per-hostname — neither topology
+	// is a global setting (design 03 §4.1).
+	DefaultMode RoutingMode
+
+	SupportsTLS         bool
+	SupportsWildcardTLS bool
+
+	// RequiresPublicReachability is false for loopback, and also false for an
+	// outbound-tunnel adapter such as Cloudflare, where nothing on the host
+	// needs to be reachable from outside.
+	RequiresPublicReachability bool
+}
+
+// BuilderCapabilities describes what a builder adapter can do.
+type BuilderCapabilities struct {
+	// IsolationClass is independent of the runtime's (R-114): how isolated a
+	// build must be is a different question from how isolated the app must be.
+	IsolationClass IsolationClass
+
+	Strategies                []BuildStrategy
+	SupportsCache             bool
+	SupportsEgressRestriction bool // R-118
+}
+
+// Supports reports whether the routing adapter advertises a mode.
+func (c RoutingCapabilities) Supports(mode RoutingMode) bool {
+	for _, m := range c.Modes {
+		if m == mode {
+			return true
+		}
+	}
+	return false
+}
+
+// Supports reports whether the builder advertises a strategy.
+func (c BuilderCapabilities) Supports(strategy BuildStrategy) bool {
+	for _, s := range c.Strategies {
+		if s == strategy {
+			return true
+		}
+	}
+	return false
+}
+
+// --- runtime ---------------------------------------------------------------
+
+// RuntimeAdapter owns bundles, workloads, volumes, exec, logs, and capacity.
+type RuntimeAdapter interface {
+	Adapter
+	Capabilities(ctx context.Context) (RuntimeCapabilities, error)
+
+	// Capacity is adapter-reported, never host-inspected (R-243). The local
+	// Docker adapter reports its own machine; a clustered adapter reports its
+	// cluster. Core does not read /proc and has no concept of a host.
+	Capacity(ctx context.Context) (Capacity, error)
+
+	// Apply converges the bundle toward the plan. Idempotent: calling it with an
+	// already-satisfied plan is a no-op.
+	Apply(ctx context.Context, p BundlePlan) (BundleHandle, error)
+
+	// Observe reports what exists. It never remediates — the reconciler decides
+	// what to do (design 05). An adapter that silently restarts things makes
+	// drift undetectable and breaks R-148's report path.
+	Observe(ctx context.Context, ref BundleRef) (ObservedBundle, error)
+
+	Stop(ctx context.Context, ref BundleRef) error
+	Destroy(ctx context.Context, ref BundleRef, opts DestroyOptions) error
+
+	CreateVolume(ctx context.Context, req VolumeRequest) (VolumeHandle, error)
+	DestroyVolume(ctx context.Context, h VolumeHandle) error
+	SnapshotVolume(ctx context.Context, h VolumeHandle, dst io.Writer) error
+	RestoreVolume(ctx context.Context, h VolumeHandle, src io.Reader) error
+
+	Logs(ctx context.Context, ref WorkloadRef, opts LogOptions) (io.ReadCloser, error)
+	Exec(ctx context.Context, ref WorkloadRef, req ExecRequest) (ExecSession, error)
+}
+
+// BundleRef identifies an app's bundle to an adapter.
+type BundleRef struct {
+	BundleID string
+}
+
+// WorkloadRef identifies one workload within a bundle.
+type WorkloadRef struct {
+	BundleID string
+	Workload string
+}
+
+// BundleHandle is the adapter's own identifier for a bundle.
+type BundleHandle struct {
+	BundleID string
+	Handle   string
+}
+
+// VolumeHandle is the adapter's own identifier for a volume.
+type VolumeHandle struct {
+	VolumeID string
+	Handle   string
+}
+
+// VolumeRequest asks for storage.
+type VolumeRequest struct {
+	VolumeID  string
+	BundleID  string
+	Name      string
+	SizeBytes int64
+}
+
+// DestroyOptions controls teardown.
+type DestroyOptions struct {
+	// KeepVolumes is the default posture. Volumes outlive the apps that mount
+	// them (R-204), and destroying them is a separate, explicit act.
+	KeepVolumes bool
+}
+
+// LogOptions controls a log stream.
+type LogOptions struct {
+	Follow bool
+	Since  time.Time
+	Tail   int
+}
+
+// BundlePlan is a fully-resolved description of what should exist.
+type BundlePlan struct {
+	// BundleID is stable across deploys of one app.
+	BundleID  string
+	Workloads []WorkloadPlan
+	Volumes   []VolumePlan
+	Network   NetworkPlan
+	Labels    map[string]string
+}
+
+// WorkloadPlan is one workload, fully resolved.
+type WorkloadPlan struct {
+	Name       string
+	Image      string
+	Command    []string
+	Entrypoint []string
+	WorkingDir string
+
+	// Env arrives fully resolved: slots filled, secrets injected. Adapters
+	// never see a slot, never talk to the secrets adapter, and never learn that
+	// a value was sensitive. That keeps R-027's boundary intact and the
+	// interface small.
+	Env map[string]secret.Value
+
+	Mounts    []MountPlan
+	Ports     []PortPlan
+	DependsOn []string
+	Health    *HealthPlan
+	Resources ResourcePlan
+	Exposed   bool
+}
+
+// MountPlan attaches a volume.
+type MountPlan struct {
+	VolumeID string
+	Path     string
+	ReadOnly bool
+}
+
+// PortPlan is a port to expose within the bundle network.
+type PortPlan struct {
+	Number   int
+	Protocol string
+}
+
+// VolumePlan is a volume the bundle needs.
+type VolumePlan struct {
+	VolumeID string
+	Name     string
+}
+
+// HealthPlan is how to check a workload.
+type HealthPlan struct {
+	Command         []string
+	Path            string
+	Port            int
+	IntervalSeconds int
+	TimeoutSeconds  int
+	Retries         int
+}
+
+// ResourcePlan caps a workload.
+type ResourcePlan struct {
+	CPUMillis   int
+	MemoryBytes int64
+}
+
+// NetworkPlan describes the bundle's network.
+type NetworkPlan struct {
+	// Private is always true (R-026). It is a field rather than an assumption
+	// so an adapter that cannot provide a private network fails loudly at the
+	// capability check instead of silently placing workloads on a shared one.
+	Private bool
+
+	EgressMode  EgressMode
+	EgressAllow []string
+}
+
+// ObservedBundle is what actually exists.
+type ObservedBundle struct {
+	Exists    bool
+	Workloads []ObservedWorkload
+	Volumes   []ObservedVolume
+}
+
+// ObservedWorkload is a workload as found.
+//
+// Carries no environment, deliberately. Reading back resolved environment would
+// require every runtime adapter to handle secret-bearing data, which is exactly
+// what WorkloadPlan.Env's one-way flow avoids. Stale-environment drift is
+// detected state-side by fingerprint instead (design 02 §2.4).
+type ObservedWorkload struct {
+	Name         string
+	Present      bool
+	Running      bool
+	ImageDigest  string
+	StartedAt    time.Time
+	ExitCode     *int
+	RestartCount int
+
+	// Healthy is a pointer because "no health signal" and "unhealthy" are
+	// different states and must not collapse (R-221). An app with no health
+	// check is running, not perpetually degraded.
+	Healthy *bool
+}
+
+// ObservedVolume is a volume as found.
+type ObservedVolume struct {
+	VolumeID string
+	Present  bool
+	Handle   string
+}
+
+// Capacity is what the adapter reports about itself (R-243).
+type Capacity struct {
+	TotalCPUMillis   int
+	TotalMemoryBytes int64
+	TotalDiskBytes   int64
+	UsedCPUMillis    int
+	UsedMemoryBytes  int64
+	UsedDiskBytes    int64
+	Reported         time.Time
+}
+
+// ExecRequest opens a session in a workload.
+type ExecRequest struct {
+	Command []string
+	TTY     bool
+	Env     map[string]string
+}
+
+// ExecSession is an open exec session.
+type ExecSession interface {
+	io.ReadWriteCloser
+	Resize(rows, cols uint16) error
+	ExitCode() (int, bool)
+}
+
+// --- routing ---------------------------------------------------------------
+
+// RoutingAdapter makes traffic arrive at Pando's proxy.
+//
+// It never routes to the workload (design 00 §1.3). Every method describes
+// intent rather than mechanism, which is why the interface survived being
+// sketched against an outbound-tunnel provider as well as a local reverse proxy
+// — see notes-cloudflare-routing-sketch.md. Adding a Reload() or a ConfigPath
+// here would undo that.
+type RoutingAdapter interface {
+	Adapter
+	Capabilities(ctx context.Context) (RoutingCapabilities, error)
+
+	Ensure(ctx context.Context, r RouteRequest) (RouteHandle, error)
+	Remove(ctx context.Context, h RouteHandle) error
+	Observe(ctx context.Context, h RouteHandle) (RouteState, error)
+}
+
+// RouteRequest tells an adapter where to send traffic.
+type RouteRequest struct {
+	AppID      string
+	Mode       RoutingMode
+	Hostname   string
+	PathPrefix string
+	Port       int
+
+	// ProxyUpstream is where the adapter must send traffic, and it is always
+	// Pando's proxy (R-023). It is in the request rather than discovered by the
+	// adapter so the contract is explicit: an adapter is told where to point.
+	//
+	// The address must be reachable from wherever the adapter's data plane runs
+	// — which is not necessarily where Pando runs. A tunnel daemon in another
+	// container dials it from there.
+	ProxyUpstream string
+
+	TLS TLSRequest
+}
+
+// TLSRequest is advisory.
+//
+// An adapter may satisfy it however it likes, or ignore it because its edge
+// already terminates TLS. It is an intent, not a set of instructions — issuance
+// is a per-adapter concern (O-5).
+type TLSRequest struct {
+	Enabled  bool
+	Hostname string
+}
+
+// RouteHandle is the adapter's own identifier for a route.
+type RouteHandle struct {
+	AppID  string
+	Handle string
+}
+
+// RouteState is a route as found.
+type RouteState struct {
+	Present bool
+	Address string
+}
+
+// --- builder ---------------------------------------------------------------
+
+// BuilderAdapter turns source into a runnable image.
+type BuilderAdapter interface {
+	Adapter
+	Capabilities(ctx context.Context) (BuilderCapabilities, error)
+
+	// Bid inspects the source and returns a confidence score plus a draft spec
+	// fragment. Part of the detector auction (R-093).
+	Bid(ctx context.Context, src SourceView) (Bid, error)
+
+	Build(ctx context.Context, req BuildRequest) (BuildResult, error)
+}
+
+// SourceView is a read-only view of an app's source (R-020).
+//
+// It has no write methods, structurally. Pando looks at the source and never
+// asks it for permission.
+type SourceView interface {
+	Open(name string) (io.ReadCloser, error)
+	Stat(name string) (FileInfo, error)
+	Glob(pattern string) ([]string, error)
+}
+
+// FileInfo is what SourceView reports about a path.
+type FileInfo struct {
+	Name  string
+	Size  int64
+	IsDir bool
+}
+
+// Bid is a builder's claim on a source tree.
+type Bid struct {
+	Confidence float64
+	Strategy   BuildStrategy
+
+	// Evidence is human-readable and shown in the review UI, so the user can
+	// see the auction rather than being handed a verdict (R-102).
+	Evidence []string
+
+	// Questions are what the bidder could not determine (R-102).
+	Questions []Question
+}
+
+// QuestionKind shapes the answer control in the console.
+type QuestionKind string
+
+const (
+	QuestionChoice QuestionKind = "choice"
+	QuestionText   QuestionKind = "text"
+	QuestionPort   QuestionKind = "port"
+	QuestionPath   QuestionKind = "path"
+)
+
+// Question is something detection could not determine.
+//
+// Prompt carries a hard content requirement from R-105: it must be answerable
+// by a model that cannot see the repo, because the expected workflow is pasting
+// it into the assistant that wrote the app. "Which port?" fails review.
+type Question struct {
+	Key     string
+	Prompt  string
+	Why     string
+	Kind    QuestionKind
+	Options []string
+}
+
+// BuildRequest asks for an image.
+type BuildRequest struct {
+	Source     SourceView
+	Strategy   BuildStrategy
+	Dockerfile string
+	Context    string
+	Args       map[string]string
+
+	IsolationFloor IsolationClass
+	Timeout        time.Duration
+	EgressMode     EgressMode
+	EgressAllow    []string
+
+	// CacheNamespace is per-app (R-117), so one app's build cache cannot be
+	// read by another's build.
+	CacheNamespace string
+
+	// LogSink streams build output to the console live.
+	LogSink io.Writer
+}
+
+// BuildResult is what a build produced.
+type BuildResult struct {
+	ImageRef string
+	Digest   string
+
+	// ObservedPorts and ObservedWrites are the trial run's output — the
+	// mechanism behind R-097's "watch what it binds, don't ask" and R-202's
+	// improved persistence warning.
+	ObservedPorts  []int
+	ObservedWrites []string
+}
+
+// --- secrets ---------------------------------------------------------------
+
+// SecretsAdapter stores secret values.
+type SecretsAdapter interface {
+	Adapter
+	Put(ctx context.Context, ref SecretRef, v secret.Value) (StoredRef, error)
+	Get(ctx context.Context, ref StoredRef) (secret.Value, error)
+	Delete(ctx context.Context, ref StoredRef) error
+}
+
+// SecretRef names a secret within an app.
+type SecretRef struct {
+	AppID string
+	Key   string
+}
+
+// StoredRef is the adapter's own pointer to a stored secret.
+type StoredRef struct {
+	AppID      string
+	Key        string
+	Handle     string
+	Ciphertext []byte
+}
+
+// --- services --------------------------------------------------------------
+
+// ServicesAdapter fills provisioned slots (R-131).
+type ServicesAdapter interface {
+	Adapter
+	Supports() []spec.SlotType
+	Provision(ctx context.Context, req ProvisionRequest) (ProvisionResult, error)
+	Destroy(ctx context.Context, h ServiceHandle) error
+	Snapshot(ctx context.Context, h ServiceHandle, dst io.Writer) error
+	Restore(ctx context.Context, h ServiceHandle, src io.Reader) error
+}
+
+// ProvisionRequest asks for a service instance.
+type ProvisionRequest struct {
+	AppID    string
+	BundleID string
+	SlotKey  string
+	Type     spec.SlotType
+}
+
+// ServiceHandle is the adapter's own identifier for a provisioned service.
+type ServiceHandle struct {
+	ServiceID string
+	Handle    string
+}
+
+// ProvisionResult is a provisioned service.
+type ProvisionResult struct {
+	Handle ServiceHandle
+
+	// ConnectionSecret is the URL or DSN, stored as a secret (R-131).
+	ConnectionSecret secret.Value
+
+	// Workloads join the app's private bundle. A provisioned service is not
+	// exposed, not addressable from outside, and not shareable with another app
+	// (R-134) — sharing is two apps binding to one external target.
+	Workloads []WorkloadPlan
+}
+
+// --- notification ----------------------------------------------------------
+
+// NotificationKind is why a notification fired.
+type NotificationKind string
+
+const (
+	NotifyAppFailed       NotificationKind = "app_failed"
+	NotifyDeployFailed    NotificationKind = "deploy_failed"
+	NotifyPolicyViolation NotificationKind = "policy_violation"
+	NotifyBackupFailed    NotificationKind = "backup_failed"
+)
+
+// NotifyAdapter delivers notifications.
+type NotifyAdapter interface {
+	Adapter
+	Notify(ctx context.Context, n Notification) error
+}
+
+// Recipient is who to tell.
+type Recipient struct {
+	UserID string
+	Email  string
+}
+
+// Notification is one message.
+type Notification struct {
+	Kind       NotificationKind
+	AppID      string
+	Recipients []Recipient
+	Subject    string
+	Body       string
+}

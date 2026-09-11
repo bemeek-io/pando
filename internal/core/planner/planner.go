@@ -1,0 +1,506 @@
+// Package planner turns a spec plus policy plus adapter capabilities into a
+// plan, or into a readable plan-time error.
+//
+// Everything here is side-effect-free. That boundary is what makes a plan-time
+// failure meaningful rather than a label on a mid-deploy crash: steps 1-7 of the
+// deployment pipeline create nothing, clone nothing, and start nothing, so the
+// console can call Plan on every spec edit without consequence.
+//
+// If a check needs a side effect to run, it belongs after the boundary and it is
+// not a plan-time check.
+package planner
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/policy"
+	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/bemeek-io/pando/internal/errs"
+)
+
+// Allocation is what other apps already hold, for the capacity check.
+type Allocation struct {
+	CPUMillis   int
+	MemoryBytes int64
+	DiskBytes   int64
+}
+
+// Allocations reports current commitments per runtime adapter.
+type Allocations interface {
+	// AllocatedOn returns what is already committed on a runtime adapter,
+	// excluding the app being planned — replanning an app must not count its
+	// own current allocation against itself.
+	AllocatedOn(ctx context.Context, adapterRef, excludeAppID string) (Allocation, error)
+}
+
+// Planner produces bundle plans.
+type Planner struct {
+	registry    *api.Registry
+	policy      *policy.Evaluator
+	allocations Allocations
+}
+
+func New(registry *api.Registry, pol *policy.Evaluator, allocations Allocations) *Planner {
+	return &Planner{registry: registry, policy: pol, allocations: allocations}
+}
+
+// Plan is the result of a successful plan.
+type Plan struct {
+	AppID  string            `json:"app_id"`
+	Bundle api.BundlePlan    `json:"-"`
+	Notes  []string          `json:"notes,omitempty"`
+	Checks map[string]string `json:"checks"`
+}
+
+// Check runs steps 1-7 and returns the plan, or the first blocking error.
+//
+// The order matches design 05 §3 exactly, and it matters: the source allowlist
+// is checked before anything would clone, capabilities before capacity, and
+// capacity last because it is the only check whose answer depends on other apps.
+func (p *Planner) Check(ctx context.Context, s *spec.AppSpec) (*Plan, error) {
+	plan := &Plan{AppID: s.AppID, Checks: map[string]string{}}
+
+	// 1. Validate the spec.
+	if err := spec.Validate(s); err != nil {
+		return nil, err
+	}
+	plan.Checks["spec_valid"] = "ok"
+
+	// 2. Host policy, including the source allowlist (R-092) — before clone.
+	if p.policy != nil {
+		if err := p.policy.AllowsSource(ctx, s.Source.URL); err != nil {
+			return nil, err
+		}
+	}
+	plan.Checks["policy"] = "ok"
+
+	// 3. Resolve adapters and health-check them.
+	runtime, routing, err := p.resolveAdapters(ctx, s)
+	if err != nil {
+		return nil, err
+	}
+	plan.Checks["adapters"] = "ok"
+
+	// 4. Capability checks (R-254).
+	runtimeCaps, _, err := p.checkCapabilities(ctx, s, runtime, routing)
+	if err != nil {
+		return nil, err
+	}
+	plan.Checks["capabilities"] = "ok"
+
+	// 5. Isolation floors (R-024, R-114).
+	if err := p.checkIsolation(ctx, s, runtimeCaps); err != nil {
+		return nil, err
+	}
+	plan.Checks["isolation"] = "ok"
+
+	// 6. Every required slot resolved (R-132).
+	if err := checkSlots(s); err != nil {
+		return nil, err
+	}
+	plan.Checks["slots"] = "ok"
+
+	// 7. Capacity (R-242).
+	if err := p.checkCapacity(ctx, s, runtime); err != nil {
+		return nil, err
+	}
+	plan.Checks["capacity"] = "ok"
+
+	plan.Bundle = p.bundlePlan(s)
+	return plan, nil
+}
+
+func (p *Planner) resolveAdapters(ctx context.Context, s *spec.AppSpec) (api.RuntimeAdapter, api.RoutingAdapter, error) {
+	runtime, ok := p.registry.Runtime(s.Runtime.AdapterRef)
+	if !ok {
+		return nil, nil, errs.Newf(errs.PlanAdapterNotConfigured,
+			"This app is set to run on %q, which is not configured on this installation.", s.Runtime.AdapterRef).
+			WithDetail("adapter_ref", s.Runtime.AdapterRef).
+			WithDetail("configured", p.registry.ByCategory(api.CategoryRuntime)).
+			WithRemedy("Choose one of the configured runtimes, or ask an administrator to add this one.")
+	}
+
+	routing, ok := p.registry.Routing(s.Routing.AdapterRef)
+	if !ok {
+		return nil, nil, errs.Newf(errs.PlanAdapterNotConfigured,
+			"This app is set to be reached through %q, which is not configured on this installation.", s.Routing.AdapterRef).
+			WithDetail("adapter_ref", s.Routing.AdapterRef).
+			WithDetail("configured", p.registry.ByCategory(api.CategoryRouting)).
+			WithRemedy("Choose one of the configured routing options, or ask an administrator to add this one.")
+	}
+
+	// Refusing to plan against an unhealthy adapter is what keeps a broken
+	// adapter from becoming a half-finished deploy (R-254).
+	for ref, adapter := range map[string]api.Adapter{
+		s.Runtime.AdapterRef: runtime,
+		s.Routing.AdapterRef: routing,
+	} {
+		if err := adapter.HealthCheck(ctx); err != nil {
+			return nil, nil, errs.Wrap(errs.AdapterUnavailable,
+				fmt.Sprintf("Pando cannot reach %q right now, so it will not start a deploy it could not finish.", ref),
+				err).
+				WithDetail("adapter_ref", ref).
+				WithRemedy("Check that the service is running, then try again.")
+		}
+	}
+	return runtime, routing, nil
+}
+
+func (p *Planner) checkCapabilities(ctx context.Context, s *spec.AppSpec, runtime api.RuntimeAdapter, routing api.RoutingAdapter) (api.RuntimeCapabilities, api.RoutingCapabilities, error) {
+	runtimeCaps, err := runtime.Capabilities(ctx)
+	if err != nil {
+		return api.RuntimeCapabilities{}, api.RoutingCapabilities{}, errs.Wrap(errs.AdapterUnavailable,
+			"Pando could not read what the runtime supports.", err)
+	}
+	routingCaps, err := routing.Capabilities(ctx)
+	if err != nil {
+		return api.RuntimeCapabilities{}, api.RoutingCapabilities{}, errs.Wrap(errs.AdapterUnavailable,
+			"Pando could not read what the routing option supports.", err)
+	}
+
+	unsupported := func(message, remedy string, details map[string]any) error {
+		e := errs.New(errs.PlanCapabilityUnsupported, message).WithRemedy(remedy)
+		for k, v := range details {
+			e = e.WithDetail(k, v)
+		}
+		return e
+	}
+
+	if !routingCaps.Supports(s.Routing.Mode) {
+		supported := make([]string, 0, len(routingCaps.Modes))
+		for _, m := range routingCaps.Modes {
+			supported = append(supported, string(m))
+		}
+		return runtimeCaps, routingCaps, unsupported(
+			fmt.Sprintf("%q cannot serve this app the way it is set up.", s.Routing.AdapterRef),
+			"Choose a different way for people to reach this app, or a different routing option.",
+			map[string]any{
+				"adapter_ref": s.Routing.AdapterRef,
+				"requested":   string(s.Routing.Mode),
+				"supported":   supported,
+			})
+	}
+
+	// R-026: an adapter that cannot provide a private network would place this
+	// app's workloads where other apps could reach them.
+	if !runtimeCaps.SupportsPrivateNetwork {
+		return runtimeCaps, routingCaps, unsupported(
+			fmt.Sprintf("%q cannot keep this app's parts on a private network, which Pando requires.", s.Runtime.AdapterRef),
+			"Use a different runtime.",
+			map[string]any{"adapter_ref": s.Runtime.AdapterRef, "capability": "private_network"})
+	}
+
+	if len(s.Workloads) > 1 && !runtimeCaps.SupportsMultipleWorkloads {
+		return runtimeCaps, routingCaps, unsupported(
+			fmt.Sprintf("This app has %d parts, and %q can only run one.", len(s.Workloads), s.Runtime.AdapterRef),
+			"Use a runtime that can run multiple workloads.",
+			map[string]any{"adapter_ref": s.Runtime.AdapterRef, "workloads": len(s.Workloads)})
+	}
+
+	if runtimeCaps.MaxWorkloadsPerBundle > 0 && len(s.Workloads) > runtimeCaps.MaxWorkloadsPerBundle {
+		return runtimeCaps, routingCaps, unsupported(
+			fmt.Sprintf("This app has %d parts, and %q supports at most %d.",
+				len(s.Workloads), s.Runtime.AdapterRef, runtimeCaps.MaxWorkloadsPerBundle),
+			"Reduce the number of workloads, or use a different runtime.",
+			map[string]any{"adapter_ref": s.Runtime.AdapterRef, "max": runtimeCaps.MaxWorkloadsPerBundle})
+	}
+
+	if len(s.Volumes) > 0 && !runtimeCaps.SupportsPersistentVolumes {
+		return runtimeCaps, routingCaps, unsupported(
+			fmt.Sprintf("This app keeps data in storage, and %q cannot provide any.", s.Runtime.AdapterRef),
+			"Use a runtime that supports persistent storage, or remove the storage from this app.",
+			map[string]any{"adapter_ref": s.Runtime.AdapterRef, "capability": "persistent_volumes"})
+	}
+
+	if s.Deploy.Strategy == spec.DeployStartThenSwap && !runtimeCaps.SupportsStartThenSwap {
+		return runtimeCaps, routingCaps, unsupported(
+			fmt.Sprintf("This app is set to start the new version before stopping the old one, and %q cannot do that.", s.Runtime.AdapterRef),
+			"Switch this app to the standard deploy strategy, or use a different runtime.",
+			map[string]any{"adapter_ref": s.Runtime.AdapterRef, "capability": "start_then_swap"})
+	}
+
+	if s.Resources.Overridden && !runtimeCaps.SupportsResourceLimits {
+		return runtimeCaps, routingCaps, unsupported(
+			fmt.Sprintf("This app sets its own resource limits, and %q cannot enforce them.", s.Runtime.AdapterRef),
+			"Remove the resource limits, or use a runtime that can apply them.",
+			map[string]any{"adapter_ref": s.Runtime.AdapterRef, "capability": "resource_limits"})
+	}
+
+	return runtimeCaps, routingCaps, nil
+}
+
+// checkIsolation enforces the policy floors (R-024, R-114).
+//
+// Build and runtime floors are checked separately and reported separately,
+// because they are different requirements and an operator who set one and not
+// the other deserves to be told which.
+func (p *Planner) checkIsolation(ctx context.Context, s *spec.AppSpec, runtimeCaps api.RuntimeCapabilities) error {
+	if p.policy == nil {
+		return nil
+	}
+	buildFloor, runtimeFloor, err := p.policy.IsolationFloors(ctx)
+	if err != nil {
+		return err
+	}
+
+	// The spec's own floor is a request; policy's is a requirement. The
+	// effective floor is the higher of the two — policy can only tighten.
+	if s.Runtime.IsolationFloor > runtimeFloor {
+		runtimeFloor = s.Runtime.IsolationFloor
+	}
+
+	if runtimeCaps.IsolationClass < runtimeFloor {
+		return errs.Newf(errs.PlanNoAdapterMeetsPolicy,
+			"This installation requires apps to run with stronger separation than %q provides.", s.Runtime.AdapterRef).
+			WithDetail("adapter_ref", s.Runtime.AdapterRef).
+			WithDetail("required_floor", int(runtimeFloor)).
+			WithDetail("adapter_class", int(runtimeCaps.IsolationClass)).
+			WithDetail("configured_runtimes", p.adapterClasses(ctx)).
+			WithRemedy("Use a runtime that provides stronger isolation, or ask an administrator about the installation's requirements.")
+	}
+
+	// R-024: builds never execute on the host, and there is no "just build it
+	// here" fallback. An app whose source must be built therefore needs a
+	// configured builder, and the absence of one is a plan-time failure rather
+	// than something discovered when the deploy reaches step 9.
+	//
+	// A prebuilt image needs no builder, which is why this is keyed on the
+	// source rather than on the field being set.
+	if s.Build.AdapterRef == "" && needsBuild(s) {
+		return errs.New(errs.PlanNoAdapterMeetsPolicy,
+			"This app has to be built from source, and this installation has nothing configured to build it.").
+			WithDetail("source_type", string(s.Source.Type)).
+			WithDetail("configured_builders", p.registry.ByCategory(api.CategoryBuilder)).
+			WithRemedy("Ask an administrator to configure a builder, or point this app at a prebuilt image instead.")
+	}
+
+	if s.Build.AdapterRef != "" {
+		builder, ok := p.registry.Builder(s.Build.AdapterRef)
+		if !ok {
+			return errs.Newf(errs.PlanAdapterNotConfigured,
+				"This app is set to be built by %q, which is not configured on this installation.", s.Build.AdapterRef).
+				WithDetail("adapter_ref", s.Build.AdapterRef).
+				WithRemedy("Choose a configured builder, or ask an administrator to add this one.")
+		}
+		caps, err := builder.Capabilities(ctx)
+		if err != nil {
+			return errs.Wrap(errs.AdapterUnavailable, "Pando could not read what the builder supports.", err)
+		}
+
+		effective := buildFloor
+		if s.Build.IsolationFloor > effective {
+			effective = s.Build.IsolationFloor
+		}
+		if caps.IsolationClass < effective {
+			return errs.Newf(errs.PlanNoAdapterMeetsPolicy,
+				"This installation requires builds to run with stronger separation than %q provides.", s.Build.AdapterRef).
+				WithDetail("adapter_ref", s.Build.AdapterRef).
+				WithDetail("required_floor", int(effective)).
+				WithDetail("adapter_class", int(caps.IsolationClass)).
+				WithRemedy("Use a builder that provides stronger isolation, or ask an administrator about the installation's requirements.")
+		}
+		if !caps.Supports(s.Build.Strategy) {
+			return errs.Newf(errs.PlanCapabilityUnsupported,
+				"%q cannot build this app the way it is set up.", s.Build.AdapterRef).
+				WithDetail("adapter_ref", s.Build.AdapterRef).
+				WithDetail("requested", string(s.Build.Strategy)).
+				WithRemedy("Choose a different build method, or a different builder.")
+		}
+	}
+	return nil
+}
+
+// checkSlots implements R-132.
+//
+// Details name every unfilled slot, not just the first: someone filling slots
+// one deploy attempt at a time is the experience this requirement exists to
+// prevent.
+func checkSlots(s *spec.AppSpec) error {
+	var unfilled []map[string]string
+	var firstDisplay string
+	for _, slot := range s.Slots {
+		if slot.Required && slot.Resolution == nil {
+			if firstDisplay == "" {
+				firstDisplay = slot.Type.DisplayName()
+			}
+			unfilled = append(unfilled, map[string]string{
+				"key":  slot.Key,
+				"type": string(slot.Type),
+			})
+		}
+	}
+	if len(unfilled) == 0 {
+		return nil
+	}
+
+	message := fmt.Sprintf("This app needs a %s, and one hasn't been chosen yet.", firstDisplay)
+	remedy := fmt.Sprintf(
+		"Choose how to fill the %s slot: provision one inside this app, connect to an existing one, or paste a connection string.",
+		unfilled[0]["key"])
+	if len(unfilled) > 1 {
+		message = fmt.Sprintf("This app needs %d things that haven't been chosen yet.", len(unfilled))
+		remedy = "Fill each slot: provision one inside this app, connect to an existing one, or paste a connection string."
+	}
+
+	return errs.New(errs.PlanSlotUnfilled, message).
+		WithRemedy(remedy).
+		WithDetail("slots", unfilled)
+}
+
+// checkCapacity implements R-242.
+//
+// Capacity is adapter-reported (R-243): core does not read /proc and has no
+// concept of a host. Details carry requested, allocated, and the adapter's own
+// total, because a capacity refusal that does not show its arithmetic is not
+// actionable.
+func (p *Planner) checkCapacity(ctx context.Context, s *spec.AppSpec, runtime api.RuntimeAdapter) error {
+	if p.allocations == nil {
+		return nil
+	}
+
+	capacity, err := runtime.Capacity(ctx)
+	if err != nil {
+		return errs.Wrap(errs.AdapterUnavailable, "Pando could not read how much room is left.", err)
+	}
+	allocated, err := p.allocations.AllocatedOn(ctx, s.Runtime.AdapterRef, s.AppID)
+	if err != nil {
+		return err
+	}
+
+	requested := Allocation{
+		CPUMillis:   s.Resources.CPUMillis,
+		MemoryBytes: s.Resources.MemoryBytes,
+		DiskBytes:   s.Resources.DiskBytes,
+	}
+
+	over := func(kind string, req, alloc, total int64, format func(int64) string) error {
+		if total <= 0 || req+alloc <= total {
+			return nil
+		}
+		return errs.Newf(errs.CapacityWouldOversubscribe,
+			"There is not enough %s left on this installation to start this app.", kind).
+			WithDetail("resource", kind).
+			WithDetail("requested", format(req)).
+			WithDetail("already_allocated", format(alloc)).
+			WithDetail("total", format(total)).
+			WithDetail("available", format(total-alloc)).
+			WithRemedy(fmt.Sprintf(
+				"This app asks for %s and only %s is free. Lower what it asks for, or stop another app.",
+				format(req), format(max64(total-alloc, 0))))
+	}
+
+	if err := over("CPU", int64(requested.CPUMillis), int64(allocated.CPUMillis), int64(capacity.TotalCPUMillis), formatMillis); err != nil {
+		return err
+	}
+	if err := over("memory", requested.MemoryBytes, allocated.MemoryBytes, capacity.TotalMemoryBytes, formatBytes); err != nil {
+		return err
+	}
+	if err := over("disk space", requested.DiskBytes, allocated.DiskBytes, capacity.TotalDiskBytes, formatBytes); err != nil {
+		return err
+	}
+	return nil
+}
+
+// bundlePlan builds the shape of what would be applied.
+//
+// Env is deliberately left empty here: resolving it means reading secrets, which
+// is a side effect and belongs after the plan boundary (design 05 §3, step 11).
+// The planner proves a deploy *could* work; it does not assemble the values.
+func (p *Planner) bundlePlan(s *spec.AppSpec) api.BundlePlan {
+	plan := api.BundlePlan{
+		BundleID: s.AppID,
+		Network: api.NetworkPlan{
+			Private:     true, // R-026, always.
+			EgressMode:  s.Egress.Mode,
+			EgressAllow: s.Egress.Allowlist,
+		},
+		Labels: map[string]string{"pando.app": s.AppID},
+	}
+
+	for _, v := range s.Volumes {
+		plan.Volumes = append(plan.Volumes, api.VolumePlan{VolumeID: v.ID, Name: v.Name})
+	}
+
+	for _, w := range s.Workloads {
+		wp := api.WorkloadPlan{
+			Name:       w.Name,
+			Image:      w.Image,
+			Command:    w.Command,
+			Entrypoint: w.Entrypoint,
+			WorkingDir: w.WorkingDir,
+			DependsOn:  w.DependsOn,
+			Exposed:    w.Exposed,
+			Resources: api.ResourcePlan{
+				CPUMillis:   s.Resources.CPUMillis,
+				MemoryBytes: s.Resources.MemoryBytes,
+			},
+		}
+		if w.Resources != nil {
+			wp.Resources = api.ResourcePlan{CPUMillis: w.Resources.CPUMillis, MemoryBytes: w.Resources.MemoryBytes}
+		}
+		for _, m := range w.Mounts {
+			wp.Mounts = append(wp.Mounts, api.MountPlan{VolumeID: m.VolumeID, Path: m.Path, ReadOnly: m.ReadOnly})
+		}
+		for _, port := range w.Ports {
+			wp.Ports = append(wp.Ports, api.PortPlan{Number: port.Number, Protocol: port.Protocol})
+		}
+		plan.Workloads = append(plan.Workloads, wp)
+	}
+	return plan
+}
+
+func (p *Planner) adapterClasses(ctx context.Context) []map[string]any {
+	var out []map[string]any
+	for _, ref := range p.registry.ByCategory(api.CategoryRuntime) {
+		rt, ok := p.registry.Runtime(ref)
+		if !ok {
+			continue
+		}
+		caps, err := rt.Capabilities(ctx)
+		if err != nil {
+			continue
+		}
+		out = append(out, map[string]any{"adapter_ref": ref, "isolation_class": int(caps.IsolationClass)})
+	}
+	return out
+}
+
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+func formatMillis(m int64) string {
+	if m%1000 == 0 {
+		return fmt.Sprintf("%d CPU", m/1000)
+	}
+	return fmt.Sprintf("%.1f CPU", float64(m)/1000)
+}
+
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// needsBuild reports whether this app's source has to be turned into an image.
+//
+// A prebuilt image is run as it is; anything else is built, and R-024 says that
+// build has to happen inside a builder adapter.
+func needsBuild(s *spec.AppSpec) bool {
+	if s.Build.Strategy == spec.BuildPrebuilt {
+		return false
+	}
+	return s.Source.Type != spec.SourceImage
+}

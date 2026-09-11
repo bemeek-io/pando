@@ -245,6 +245,26 @@ const (
 	SlotUnknown  SlotType = "unknown"
 )
 
+// DisplayName is how a slot type reads in a sentence written for someone who
+// may not know what a port is (R-005, R-105). "This app needs a redis" is the
+// kind of phrasing that tells a reader they are not the audience.
+func (t SlotType) DisplayName() string {
+	switch t {
+	case SlotPostgres:
+		return "PostgreSQL database"
+	case SlotMySQL:
+		return "MySQL database"
+	case SlotRedis:
+		return "Redis"
+	case SlotS3:
+		return "file storage"
+	case SlotSMTP:
+		return "mail server"
+	default:
+		return "connection"
+	}
+}
+
 // Slot is a declared, typed dependency awaiting resolution.
 type Slot struct {
 	Key      string   `json:"key"`

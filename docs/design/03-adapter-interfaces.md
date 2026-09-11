@@ -330,6 +330,21 @@ type RouteRequest struct {
 
 **[D]** `ProxyUpstream` is in the request rather than discovered by the adapter, so the contract is explicit: an adapter is told where to point, and that destination is always the proxy. R-023 has no exceptions and this field is where that is made obvious to an adapter author.
 
+**[D]** The address must be reachable **from wherever the adapter's data plane runs**, which is not
+necessarily where Pando runs. With Traefik they are the same host; with an outbound-tunnel adapter the
+tunnel daemon dials it from its own container. Surfaced by the Cloudflare sketch
+(`notes-cloudflare-routing-sketch.md`) — a documentation change, not an interface one.
+
+**[D]** `TLSRequest` is **advisory**. An adapter may satisfy it however it likes, or ignore it because
+its edge already terminates TLS. It is an intent, not a set of instructions. This is O-5 resolving the
+way the design assumed, and the tunnel sketch is the second adapter to want it.
+
+**[D] The interface survived being sketched against a provider that works nothing like Traefik** — no
+local config file, no listening port, no certificate on the host, configuration applied by remote API.
+The reason it survived is that `Ensure`/`Remove`/`Observe` describe *intent* rather than mechanism.
+Remember that when someone proposes adding a `Reload()` or a `ConfigPath` here: the abstraction holds
+because it has neither.
+
 **[D]** Path-mode adapters must strip the prefix and set `X-Forwarded-Prefix` (R-167). They must not rewrite response bodies (R-028).
 
 ### 4.1 Two topologies

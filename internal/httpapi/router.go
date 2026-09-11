@@ -11,6 +11,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/planner"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/log"
 )
@@ -39,6 +40,11 @@ type Server struct {
 	Authz    *authz.Authorizer
 	Auditor  *audit.Writer
 	Authent  *Authenticator
+
+	Registry    *api.Registry
+	Adapters    *state.Adapters
+	Planner     *planner.Planner
+	Allocations *state.Allocations
 
 	// Policy is host policy. Nil until phase 3 configures it, in which case the
 	// source allowlist check (R-092) is skipped rather than assumed to pass —
@@ -107,6 +113,11 @@ func (s *Server) Routes() http.Handler {
 		// list from GET /apps.
 		r.Get("/me/apps", s.handleMyApps)
 
+		// GET /adapters returns live capabilities, not stored config, so the
+		// console can grey out choices that would fail at plan time.
+		r.Get("/adapters", s.handleListAdapters)
+		r.Get("/capacity", s.handleCapacity)
+
 		r.Route("/apps", func(r chi.Router) {
 			r.Get("/", s.handleListApps)
 			r.Post("/", s.handleCreateApp)
@@ -117,6 +128,10 @@ func (s *Server) Routes() http.Handler {
 				r.Delete("/", s.handleDeleteApp)
 
 				r.Get("/export", s.handleExportSpec)
+
+				// The dry run. Side-effect-free, so the console calls it on
+				// every spec edit (design 04 §2.3).
+				r.Post("/plan", s.handlePlan)
 
 				r.Route("/specs", func(r chi.Router) {
 					r.Get("/", s.handleListSpecs)

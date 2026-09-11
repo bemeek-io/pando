@@ -40,13 +40,24 @@ linters:
             - pkg: github.com/bemeek-io/pando/internal/core/policy
               desc: 'R-027: adapters must not evaluate policy. The planner does, before the adapter is called.'
 
-        # The adapter interface package is a contract, not a place for logic (design 03).
+        # The adapter interface package is a contract, not a place for logic
+        # (design 03). It may name the spec's vocabulary — design 03 §3 has Bid
+        # carrying a spec fragment — because the alternative is a second copy of
+        # IsolationClass, RoutingMode and BuildStrategy that must be kept in step
+        # with the first, with a conversion at every boundary. One ordered enum
+        # that can drift out of sync is a worse failure than the coupling.
+        #
+        # The direction is what matters for R-251: the spec's vocabulary is the
+        # shared one, and adapters translate from it. Everything else in core
+        # stays denied by the rule above.
         adapter-api-defines-only:
           list-mode: lax
           files:
             - '**/internal/adapter/api/**'
           deny:
-            - pkg: github.com/bemeek-io/pando/internal/core
+            - pkg: github.com/bemeek-io/pando/internal/core/planner
+              desc: 'internal/adapter/api holds interface definitions only (design 03).'
+            - pkg: github.com/bemeek-io/pando/internal/core/reconciler
               desc: 'internal/adapter/api holds interface definitions only (design 03).'
 
   exclusions:
