@@ -153,6 +153,38 @@ data the adapter interface works to keep out of adapters' hands.
 
 **[D]** The dividing line: **the reconciler may create and start things; it may not destroy anything a human may have wanted.** That is the rule to hold when new cases come up.
 
+### 2.1.1 Pando stopping does not stop apps
+
+**[D]** When the Pando process stops, deployed apps keep running. It does not stop them on the way
+out, and it does not stop them on the way back in.
+
+The objection is reasonable: the proxy is the only route to an app (R-023), so while Pando is down an
+app is unreachable — what is it for? Four answers, the first decisive:
+
+- **Not every workload needs the proxy.** `Exposed` is per-workload (R-026). A queue consumer, a
+  scheduled job or a worker never takes an inbound request, and goes on doing real work while Pando
+  is away. Stopping it would break something that was working.
+- **A restart is not a shutdown.** Upgrading Pando, changing its configuration, recovering from a
+  crash — if apps stopped each time, every Pando upgrade would become a full outage of every app plus
+  a cold start for each.
+- **A crash and a graceful stop would behave differently.** SIGKILL, a host reboot and an OOM leave
+  apps running whatever Pando intends, so stopping-on-shutdown would only happen on the tidy path.
+  One consistent behavior beats a better one that cannot be relied on.
+- **`desired_state` is the human's intent**, and Pando going away does not change what was asked for.
+  Stopping apps would mean overwriting that intent with Pando's own lifecycle.
+
+There is also an availability argument. Pando is a single point of failure for *access*; it should not
+become one for *availability*. Apps keep serving their internal work and are reachable again the
+moment Pando returns.
+
+**[D]** Stopping an app remains an explicit act — `desired_state = stopped`, or deletion. Those are
+things a person decides, not consequences of a process exiting.
+
+**[P]** The cost is that apps survive `docker compose down`, which surprises people, because Pando
+creates them outside the Compose project. `docker ps --filter label=io.pando.managed=true` finds
+them. What Pando owes in exchange is knowing it was away when it comes back and converging quickly —
+that is this loop's job, not a reason to stop anything.
+
 ### 2.2 Backoff
 
 ```go

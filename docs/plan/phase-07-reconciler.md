@@ -37,6 +37,11 @@ Killing a container by hand restores it; **killing it repeatedly reaches `failed
 
 ## Traps
 
+- **Pando stopping does not stop apps** (design 05 §2.1.1). On startup the loop finds apps that kept
+  running while Pando was away and converges to them — it does not restart them for tidiness, and it
+  does not treat "I did not observe this for a while" as drift. An app that was running and is still
+  running needs nothing done to it.
+
 - **`failed` is the only state the reconciler refuses to touch,** and R-151 is true because there is
   *no code path* for it — not because a flag is checked. If you add a "retry failed apps after an
   hour" path, you have broken the requirement.
