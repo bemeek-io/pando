@@ -10,7 +10,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | | Count | Of total |
 |---|---:|---:|
 | Requirements | 207 | — |
-| Specified in a design doc | 142 | 68% |
+| Specified in a design doc | 143 | 69% |
 | Assigned to a phase | 107 | 51% |
 | Covered by a named test | 54 | 26% |
 
@@ -209,7 +209,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-266** | D | Sharing an app sends no message. | 19. Surfaces | — | — | — |
 | **R-270** | D | Pando ships permissive defaults. | 20. Configuration and Policy | — | — | — |
 | **R-271** | D | Configuration may be supplied by: a YAML file loaded at startup, environment variables, the… | 20. Configuration and Policy | 00 | 00 | — |
-| **R-272** | D | The general pattern, applied throughout: a setting has a permissive default; host policy can… | 20. Configuration and Policy | 06 | 01 | `TestR272_PolicyIsAFloorAndDeniesTheOwnerToo` |
+| **R-272** | D | The general pattern, applied throughout: a setting has a permissive default; host policy can… | 20. Configuration and Policy | 06 | 01, 06 | `TestR272_PolicyIsAFloorAndDeniesTheOwnerToo` |
 | **R-273** | D LATER | Premade setting profiles for common postures (hobbyist, hardened, regulated), usable as-is or… | 20. Configuration and Policy | — | — | — |
 | **R-274** | D | Host policy may be applied to an install with running apps. | 20. Configuration and Policy | 01, 02, 03, 04, 05 | 02, 03 | — |
 | **R-280** | D | Losing access to an app destroys that user's per-app data (relevant to per-user instances, §22). | 21. Data Destruction | 02 | — | — |
@@ -253,7 +253,6 @@ Check each against the categories above before treating it as a gap.
 - **R-080** (6.4 Verbs and roles) — Control-plane permissions are individual verbs.
 - **R-090** (7.1 Input) — The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting…
 - **R-095** (7.2 Detection) — For tier 4, wrap an existing buildpack implementation (Paketo, nixpacks) rather than…
-- **R-098** (7.2 Detection) — The user reviews the proposal, then it pins.
 - **R-106** (7.3 When detection cannot decide) — AI assistance is optional supporting functionality, never required.
 - **R-110** (8. Build) — Builds never run on the host (R-024).
 - **R-113** (8. Build) — Build code has no access to Pando's state store, no access to any other app's secrets, and no…

@@ -39,6 +39,10 @@ linters:
               desc: 'R-027: adapters must not import core/state. Adapters receive fully-resolved requests.'
             - pkg: github.com/bemeek-io/pando/internal/core/policy
               desc: 'R-027: adapters must not evaluate policy. The planner does, before the adapter is called.'
+            - pkg: github.com/bemeek-io/pando/internal/core/detection
+              desc: 'R-027: adapters must not import core/detection. It orchestrates them; the dependency runs one way.'
+            - pkg: github.com/bemeek-io/pando/internal/detect
+              desc: 'R-027: adapters must not import internal/detect. A type an adapter and detection both need belongs in internal/adapter/api, which is the only core-adjacent package an adapter may import. The OCI registry probe reached across this before the rule existed.'
 
         # The adapter interface package is a contract, not a place for logic
         # (design 03). It may name the spec's vocabulary — design 03 §3 has Bid

@@ -33,7 +33,7 @@ func TestR073_AppCreationWritesTwoGrants(t *testing.T) {
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
 
-	app, err := state.NewApps(db).Create(ctx, "team notes", "team-notes", alice.ID, alice.ID)
+	app, err := state.NewApps(db).Create(ctx, "team notes", "team-notes", alice.ID, alice.ID, spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
 	require.NoError(t, err)
 	require.Equal(t, state.StateDraft, app.State)
 
@@ -64,7 +64,7 @@ func TestR152_SpecRevisionsCannotBeEdited(t *testing.T) {
 	alice := seedUser(t, db, "alice")
 	apps := state.NewApps(db)
 
-	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID)
+	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID, spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
 	require.NoError(t, err)
 
 	rev, err := apps.CreateRevision(ctx, app.ID, minimalSpec(), spec.OriginManual, alice.ID)
@@ -91,7 +91,7 @@ func TestR152_RevisionsAreNumberedMonotonically(t *testing.T) {
 	alice := seedUser(t, db, "alice")
 	apps := state.NewApps(db)
 
-	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID)
+	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID, spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
 	require.NoError(t, err)
 
 	for want := 1; want <= 3; want++ {
@@ -117,7 +117,7 @@ func TestR152_PinningMarksARevisionEverPinned(t *testing.T) {
 	alice := seedUser(t, db, "alice")
 	apps := state.NewApps(db)
 
-	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID)
+	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID, spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
 	require.NoError(t, err)
 
 	first, err := apps.CreateRevision(ctx, app.ID, minimalSpec(), spec.OriginManual, alice.ID)
@@ -153,7 +153,7 @@ func TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes(t *testing.T) {
 	apps := state.NewApps(db)
 	volumes := state.NewVolumes(db)
 
-	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID)
+	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID, spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
 	require.NoError(t, err)
 
 	_, err = volumes.Create(ctx, app.ID, "data", "rt_docker")
@@ -183,7 +183,7 @@ func TestR264_LauncherListIsDataPlaneScoped(t *testing.T) {
 	bob := seedUser(t, db, "bob")
 	apps := state.NewApps(db)
 
-	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID)
+	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID, spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
 	require.NoError(t, err)
 
 	// Bob is an operator: he can manage the app but was given no data grant.
@@ -219,7 +219,7 @@ func TestSpecRoundTripsThroughJSONB(t *testing.T) {
 	alice := seedUser(t, db, "alice")
 	apps := state.NewApps(db)
 
-	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID)
+	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID, spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
 	require.NoError(t, err)
 
 	original := minimalSpec()
@@ -260,9 +260,9 @@ func TestARevisionIDFromAnotherAppDoesNotResolve(t *testing.T) {
 	alice := seedUser(t, db, "alice")
 	apps := state.NewApps(db)
 
-	one, err := apps.Create(ctx, "one", "one", alice.ID, alice.ID)
+	one, err := apps.Create(ctx, "one", "one", alice.ID, alice.ID, spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
 	require.NoError(t, err)
-	two, err := apps.Create(ctx, "two", "two", alice.ID, alice.ID)
+	two, err := apps.Create(ctx, "two", "two", alice.ID, alice.ID, spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
 	require.NoError(t, err)
 
 	rev, err := apps.CreateRevision(ctx, one.ID, minimalSpec(), spec.OriginManual, alice.ID)

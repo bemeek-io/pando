@@ -1,0 +1,2 @@
+ALTER TABLE apps DROP COLUMN IF EXISTS source;
+DROP TABLE IF EXISTS detections;

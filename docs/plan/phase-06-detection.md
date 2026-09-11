@@ -10,20 +10,20 @@
 
 ## Tasks
 
-- [ ] Read-only `SourceView` — no write methods, structurally (R-020)
-- [ ] Source allowlist check **before clone** (R-092); a blocked source produces zero disk writes
-- [ ] Registry check tier (R-094)
-- [ ] The detector auction: every builder adapter `Bid()`, ranked (R-093)
-- [ ] Confidence ladder; `runners_up` returned so the user can see the auction, not just a verdict
-- [ ] Compose import, with rejected constructs raising `PLAN_COMPOSE_CONSTRUCT_REJECTED` (R-099) and
+- [x] Read-only `SourceView` — no write methods, structurally (R-020)
+- [x] Source allowlist check **before clone** (R-092); a blocked source produces zero disk writes — checked again on re-detection, since the allowlist can change after an app is created
+- [x] Registry check tier (R-094) — ghcr.io only by default; Docker Hub namespaces do not correspond to source owners ([note](../design/notes-registry-tier-namespaces.md))
+- [x] The detector auction: every builder adapter `Bid()`, ranked (R-093)
+- [x] Confidence ladder; `runners_up` returned so the user can see the auction, not just a verdict
+- [x] Compose import, with rejected constructs raising `PLAN_COMPOSE_CONSTRUCT_REJECTED` (R-099) and
       rewritten ones raising `WARN_COMPOSE_CONSTRUCT_REWRITTEN`
-- [ ] Trial run in throwaway isolation (R-097): observe bound ports, observe writes outside declared
-      volumes, capture crash logs
-- [ ] Slot promotion from the trial run — the O-4 fallback (design 01 §2.5)
-- [ ] Question generation held to R-105
-- [ ] Warnings: `WARN_NO_PERSISTENT_VOLUME` with the observed directory (R-201, R-202),
+- [x] Trial run in throwaway isolation (R-097): observe bound ports, observe writes outside declared
+      volumes, capture crash logs — on the runtime, not the builder ([note](../design/notes-trial-run-placement.md))
+- [x] Slot promotion from the trial run — the O-4 fallback (design 01 §2.5), promoting only slots the app itself named
+- [x] Question generation held to R-105, enforced by a validator on every question rather than by review
+- [x] Warnings: `WARN_NO_PERSISTENT_VOLUME` with the observed directory (R-201, R-202),
       `WARN_PATH_ROUTING_INCOMPATIBLE` (R-168)
-- [ ] Detection endpoints: get, rerun, diff, answers, accept
+- [x] Detection endpoints: get, rerun, diff, answers, accept
 
 ## Requirements in scope
 
@@ -33,6 +33,20 @@ R-020, R-021, R-092–R-099, R-101–R-107, R-131, R-132, R-168, R-201, R-202.
 
 **Sequence A passes against a set of real public repos** — a Dockerfile app, a compose stack, a static
 site, a Node app with no deployment artifacts, and a monorepo.
+
+**Done.** `test/acceptance/sequence_a_detection_test.go` drives all five over HTTP against the shipped
+Compose stack, plus the R-092 assertion. The detection corpus (`make detection-corpus`) covers ten
+repositories and reports **0.90 questions per deploy** against a budget of 1.00, worst case 1, with a
+strategy found in 100% of the cases where one existed.
+
+Three detector defects and two corpus defects came out of the corpus's first run against real
+repositories, and three more out of running the trial run against a real daemon. All are written up:
+[detection corpus findings](../design/notes-detection-corpus-findings.md),
+[trial run placement](../design/notes-trial-run-placement.md).
+
+Still open for a decision: [R-099's override clause](../design/notes-compose-override-conflict.md)
+contradicts R-272 and cites the wrong requirement, and [R-094 names two registries](../design/notes-registry-tier-namespaces.md)
+as though they were the same kind of evidence.
 
 ## Traps
 

@@ -1,13 +1,17 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"go.uber.org/zap"
 
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
@@ -103,7 +107,13 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	app, err := s.Apps.Create(r.Context(), req.Name, slugify(req.Name), p.UserID, p.ID)
+	app, err := s.Apps.Create(r.Context(), req.Name, slugify(req.Name), p.UserID, p.ID, spec.Source{
+		Type:   spec.SourceType(req.Source.Type),
+		URL:    req.Source.URL,
+		Ref:    req.Source.Ref,
+		Image:  req.Source.Image,
+		Subdir: req.Source.Subdir,
+	})
 	if err != nil {
 		Error(w, r, err)
 		return
@@ -119,10 +129,48 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		TargetID:      app.ID,
 	})
 
-	// 202, not 201: the app exists but is in draft. Detection has not run and
-	// nothing is deployed.
+	// Sequence A step 5: enqueue detection.
+	//
+	// In the background, and not with the request's context — cloning a
+	// repository and trial-running it takes longer than any reasonable HTTP
+	// timeout, and tying it to the connection would cancel detection the moment
+	// the console navigated away. The result is written to the detections table
+	// either way, which is what GET /detection reads.
+	if s.Detector != nil && app.Source.Type != "" {
+		go s.detectInBackground(context.WithoutCancel(r.Context()), app.ID)
+	}
+
+	// 202, not 201: the app exists but is in draft. Detection has been queued,
+	// and nothing is deployed.
 	JSON(w, http.StatusAccepted, app)
 }
+
+// detectInBackground runs detection for a newly created app.
+//
+// The context is the request's with cancellation removed, not a fresh one.
+// Detaching cancellation is the point — the request returns 202 long before a
+// clone and a trial run finish — but the request's values are worth keeping, so
+// the log lines for this detection still carry the trace that started it.
+func (s *Server) detectInBackground(parent context.Context, appID string) {
+	ctx, cancel := context.WithTimeout(parent, detectionTimeout)
+	defer cancel()
+
+	if _, err := s.Detector.Detect(ctx, appID); err != nil {
+		// Already recorded against the app as a failed detection, which is
+		// where a user will look for it. Logged as well, because a detection
+		// that fails for every app is an install problem rather than an app
+		// problem, and nobody finds that by reading one app's page.
+		s.Logger.Warn("detection failed", zap.String("app_id", appID), zap.Error(err))
+	}
+}
+
+// detectionTimeout bounds a background detection run.
+//
+// Generous: it covers a clone, an auction and a trial run that may pull a base
+// image over a slow connection. The cost of being too short is a detection that
+// fails for a large repository on a home connection, which is exactly the user
+// R-005 describes.
+const detectionTimeout = 10 * time.Minute
 
 func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	apps, err := s.Apps.ListForPrincipal(r.Context(), PrincipalFrom(r.Context()))

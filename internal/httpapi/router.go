@@ -52,6 +52,13 @@ type Server struct {
 	Deployer    *deploy.Runner
 	Logs        *deploy.LogStore
 	Secrets     *state.Secrets
+	Detections  *state.Detections
+
+	// Detector runs detection for an app. Nil on an install with no builder or
+	// runtime configured, in which case the detection endpoints say so rather
+	// than returning an empty proposal — R-106's shape: with nothing
+	// configured, each step degrades to a question, not a dead end.
+	Detector Detector
 
 	// Policy is host policy. Nil until phase 3 configures it, in which case the
 	// source allowlist check (R-092) is skipped rather than assumed to pass —
@@ -168,6 +175,18 @@ func (s *Server) Routes() http.Handler {
 				r.Delete("/", s.handleDeleteApp)
 
 				r.Get("/export", s.handleExportSpec)
+
+				// Detection (design 04 §2.2). Re-detection is explicit
+				// (R-022): nothing here runs on its own, because a spec that
+				// changed under someone because a file moved in their
+				// repository is a spec they did not write.
+				r.Route("/detection", func(r chi.Router) {
+					r.Get("/", s.handleGetDetection)
+					r.Post("/rerun", s.handleRerunDetection)
+					r.Get("/diff", s.handleDetectionDiff)
+					r.Post("/answers", s.handleDetectionAnswers)
+					r.Post("/accept", s.handleAcceptDetection)
+				})
 
 				// The dry run. Side-effect-free, so the console calls it on
 				// every spec edit (design 04 §2.3).

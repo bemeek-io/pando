@@ -28,16 +28,21 @@ const (
 
 // App is a deployable unit.
 type App struct {
-	ID           string     `json:"id"`
-	Name         string     `json:"name"`
-	Slug         string     `json:"slug"`
-	OwnerUserID  string     `json:"owner_user_id"`
-	State        string     `json:"state"`
-	DesiredState string     `json:"desired_state"`
-	PinnedSpecID string     `json:"pinned_spec_id,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	DeletedAt    *time.Time `json:"deleted_at,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Slug         string `json:"slug"`
+	OwnerUserID  string `json:"owner_user_id"`
+	State        string `json:"state"`
+	DesiredState string `json:"desired_state"`
+	PinnedSpecID string `json:"pinned_spec_id,omitempty"`
+
+	// Source is where the app comes from, recorded at creation so detection has
+	// something to clone before any spec exists to carry it.
+	Source spec.Source `json:"source"`
+
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 }
 
 // Apps stores apps and their spec revisions.
@@ -51,7 +56,7 @@ func NewApps(db *DB) *Apps { return &Apps{db: db} }
 // revocable. They are written here rather than by the handler so that an app
 // cannot exist without them — a control grant without a data grant would leave
 // the owner able to manage an app they cannot open.
-func (a *Apps) Create(ctx context.Context, name, slug, ownerUserID, createdBy string) (App, error) {
+func (a *Apps) Create(ctx context.Context, name, slug, ownerUserID, createdBy string, src spec.Source) (App, error) {
 	tx, err := a.db.Begin(ctx)
 	if err != nil {
 		return App{}, errs.Wrap(errs.Internal, "Could not create the app.", err)
@@ -65,13 +70,19 @@ func (a *Apps) Create(ctx context.Context, name, slug, ownerUserID, createdBy st
 		OwnerUserID:  ownerUserID,
 		State:        StateDraft,
 		DesiredState: "stopped",
+		Source:       src,
+	}
+
+	encodedSource, err := json.Marshal(src)
+	if err != nil {
+		return App{}, errs.Wrap(errs.Internal, "Could not record where the app comes from.", err)
 	}
 
 	err = tx.QueryRow(ctx, `
-		INSERT INTO apps (id, name, slug, owner_user_id, state, desired_state)
-		VALUES ($1, $2, $3, $4, 'draft', 'stopped')
+		INSERT INTO apps (id, name, slug, owner_user_id, state, desired_state, source)
+		VALUES ($1, $2, $3, $4, 'draft', 'stopped', $5)
 		RETURNING created_at, updated_at`,
-		app.ID, name, slug, ownerUserID).Scan(&app.CreatedAt, &app.UpdatedAt)
+		app.ID, name, slug, ownerUserID, encodedSource).Scan(&app.CreatedAt, &app.UpdatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return App{}, errs.Newf(errs.ValidInvalid, "An app named %q already exists.", name).
@@ -106,11 +117,13 @@ func (a *Apps) Create(ctx context.Context, name, slug, ownerUserID, createdBy st
 func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 	var app App
 	var owner, pinned *string
+	var source []byte
 	err := a.db.QueryRow(ctx, `
-		SELECT id, name, slug, owner_user_id, state, desired_state, pinned_spec_id, created_at, updated_at, deleted_at
+		SELECT id, name, slug, owner_user_id, state, desired_state, pinned_spec_id,
+		       source, created_at, updated_at, deleted_at
 		FROM apps WHERE id = $1 AND deleted_at IS NULL`, appID).
 		Scan(&app.ID, &app.Name, &app.Slug, &owner, &app.State, &app.DesiredState, &pinned,
-			&app.CreatedAt, &app.UpdatedAt, &app.DeletedAt)
+			&source, &app.CreatedAt, &app.UpdatedAt, &app.DeletedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return App{}, false, nil
 	}
@@ -122,6 +135,9 @@ func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 	}
 	if pinned != nil {
 		app.PinnedSpecID = *pinned
+	}
+	if len(source) > 0 {
+		_ = json.Unmarshal(source, &app.Source)
 	}
 	return app, true, nil
 }
