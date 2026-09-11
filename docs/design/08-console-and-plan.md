@@ -31,12 +31,22 @@ can reach someone who is not already looking at Pando; the interface for it is a
 | Client state | Zustand, sparingly |
 | Forms | React Hook Form + Zod |
 | Styling | Tailwind |
-| Components | Radix primitives, own layer on top |
+| Components | **The `pando-design` system** (`.claude/skills/pando-design/`). Radix only for behaviour it does not implement, styled from its tokens. |
 | API types | Generated from the OpenAPI spec — never hand-written |
 | Streaming | Native `EventSource` for logs, `WebSocket` for exec |
 | Terminal | xterm.js |
 
 **[D]** API types are generated. Hand-written types drift from the server and R-261 depends on the API being authoritative.
+
+**[D] A design system exists and supersedes the original "own layer on top" line above.** It is
+imported into `.claude/skills/pando-design/` from a Claude Design project and carries tokens, 24
+components, brand rules and voice guidance, plus a lint config that catches raw hex values, raw `px`
+values and non-brand fonts. Building a parallel component layer beside it is how an install ends up
+with two design systems and neither maintained.
+
+**[D]** Its voice rules and §00 3.2's error standard are one standard, not two. R-105 asks for an
+error a person can act on or paste into an assistant; the design system asks for no apology, no
+`Error:` prefix and no exclamation mark. An API message and a console message reach the same person.
 
 ### 1.3 Screens that carry requirement weight
 

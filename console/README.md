@@ -18,6 +18,22 @@ the management console, scoped to what they hold.
 routes. This matters: it means a non-technical user's first experience is a page of tiles, not a
 dashboard.
 
+## The design system comes first
+
+`.claude/skills/pando-design/` holds the Pando design system — "Topo map": tokens, 24 React
+components, brand rules, voice guidance, and a lint config that catches raw hex values, raw `px`
+values and non-brand fonts. **Invoke the `pando-design` skill and read its `readme.md` before writing
+a component or a line of CSS.**
+
+Link one file and set one attribute:
+
+```html
+<link rel="stylesheet" href="../.claude/skills/pando-design/styles.css">
+<html data-theme="dark">  <!-- the "night survey" theme -->
+```
+
+Import components from its `index.js`, never from a component's own file.
+
 ## Stack
 
 | Concern | Choice |
@@ -27,7 +43,7 @@ dashboard.
 | Client state | Zustand, sparingly |
 | Forms | React Hook Form + Zod |
 | Styling | Tailwind |
-| Components | Radix primitives, own layer on top |
+| Components | **`pando-design`** — Radix only for behaviour it lacks, styled from its tokens |
 | API types | **Generated from the OpenAPI spec — never hand-written** |
 | Streaming | Native `EventSource` for logs, `WebSocket` for exec |
 | Terminal | xterm.js |

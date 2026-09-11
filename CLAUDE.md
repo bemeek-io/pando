@@ -97,6 +97,7 @@ migrations/             golang-migrate, embedded in the binary.
 console/                React + TypeScript + Vite source. Built into internal/console.
 test/acceptance/        The four end-to-end sequences from design 07.
 docs/                   See §1.
+.claude/skills/pando-design/   The design system. Tokens, 24 components, brand and voice rules.
 ```
 
 `internal/console` (embedded build output) and `console/` (source) are different things. The
@@ -134,6 +135,17 @@ A type assertion is invisible to the planner and cannot produce a readable plan-
 
 **Warnings are never blockers.** Blockers are `PLAN_*` errors. A warning that looks like an error
 teaches people to ignore both.
+
+**There is a design system, and it is not optional.** Any user-facing surface — the console, the
+marketing site, docs, a mockup — is built from `.claude/skills/pando-design/`. Invoke the
+`pando-design` skill before writing UI code or CSS. Colors, type, spacing, radius and motion all come
+from its tokens; a raw hex value, a raw `px` value, or a font that is not Newsreader / Public Sans /
+IBM Plex Mono is a mistake, and `_adherence.oxlintrc.json` there is configured to catch each one.
+
+Its voice rules and this document's error standard are the same standard. R-105 says an error must be
+self-contained and pasteable into an assistant; the design system says *"Pando couldn't find a start
+command. Add one in app settings."* — no apology, no `Error:` prefix, no exclamation mark. An API
+message and a console message should read as one product, because to the user they are.
 
 ---
 

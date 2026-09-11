@@ -1,0 +1,200 @@
+{
+  "plugins": [
+    "react",
+    "import"
+  ],
+  "rules": {
+    "react/forbid-elements": [
+      "warn",
+      {
+        "forbid": []
+      }
+    ],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "patterns": [
+          {
+            "group": [
+              "components/brand/**",
+              "components/code/**",
+              "components/core/**",
+              "components/data/**",
+              "components/feedback/**",
+              "components/forms/**",
+              "components/navigation/**",
+              "ui_kits/console/**",
+              "ui_kits/site/**"
+            ],
+            "message": "Import design-system components from 'index.js', not component internals."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color \u2014 use a design-system color token via var()."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value \u2014 use a design-system spacing token via var()."
+      },
+      {
+        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\\\"]?(?:Newsreader|Public Sans|IBM Plex Mono))/i]",
+        "message": "Font not provided by the design system. Available: Newsreader, Public Sans, IBM Plex Mono."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Badge'] > JSXAttribute > JSXIdentifier[name!=/^(?:count|children|key|ref|className|style)$/]",
+        "message": "<Badge> doesn't accept that prop. Declared props: count, children."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Banner'] > JSXAttribute > JSXIdentifier[name!=/^(?:tone|action|children|key|ref|className|style)$/]",
+        "message": "<Banner> doesn't accept that prop. Declared props: tone, action, children."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Banner'] > JSXAttribute[name.name='tone'] > Literal[value!=/^(?:info|running|building|failed)$/]",
+        "message": "<Banner> tone must be one of 'info' | 'running' | 'building' | 'failed'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Button'] > JSXAttribute > JSXIdentifier[name!=/^(?:variant|size|icon|disabled|fullWidth|children|key|ref|className|style)$/]",
+        "message": "<Button> doesn't accept that prop. Declared props: variant, size, icon, disabled, fullWidth, children."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Button'] > JSXAttribute[name.name='variant'] > Literal[value!=/^(?:primary|secondary|ghost|destructive)$/]",
+        "message": "<Button> variant must be one of 'primary' | 'secondary' | 'ghost' | 'destructive'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Card'] > JSXAttribute > JSXIdentifier[name!=/^(?:tone|padding|interactive|as|children|key|ref|className|style)$/]",
+        "message": "<Card> doesn't accept that prop. Declared props: tone, padding, interactive, as, children."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Card'] > JSXAttribute[name.name='tone'] > Literal[value!=/^(?:paper|sunken|plain)$/]",
+        "message": "<Card> tone must be one of 'paper' | 'sunken' | 'plain'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Checkbox'] > JSXAttribute > JSXIdentifier[name!=/^(?:label|description|checked|indeterminate|key|ref|className|style)$/]",
+        "message": "<Checkbox> doesn't accept that prop. Declared props: label, description, checked, indeterminate."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='CodeLine'] > JSXAttribute > JSXIdentifier[name!=/^(?:text|time|tone|key|ref|className|style)$/]",
+        "message": "<CodeLine> doesn't accept that prop. Declared props: text, time, tone."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='CodeLine'] > JSXAttribute[name.name='tone'] > Literal[value!=/^(?:default|muted|ok|fail)$/]",
+        "message": "<CodeLine> tone must be one of 'default' | 'muted' | 'ok' | 'fail'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='ContourMap'] > JSXAttribute > JSXIdentifier[name!=/^(?:size|rings|collar|summit|animate|coordinates|elevation|scaleLabels|key|ref|className|style)$/]",
+        "message": "<ContourMap> doesn't accept that prop. Declared props: size, rings, collar, summit, animate, coordinates, elevation, scaleLabels."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Dialog'] > JSXAttribute > JSXIdentifier[name!=/^(?:open|title|description|footer|width|onClose|key|ref|className|style)$/]",
+        "message": "<Dialog> doesn't accept that prop. Declared props: open, title, description, footer, width, onClose."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='EmptyState'] > JSXAttribute > JSXIdentifier[name!=/^(?:heading|children|action|size|key|ref|className|style)$/]",
+        "message": "<EmptyState> doesn't accept that prop. Declared props: heading, children, action, size."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Icon'] > JSXAttribute > JSXIdentifier[name!=/^(?:name|size|stroke|color|key|ref|className|style)$/]",
+        "message": "<Icon> doesn't accept that prop. Declared props: name, size, stroke, color."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='IconButton'] > JSXAttribute > JSXIdentifier[name!=/^(?:label|size|variant|onTerminal|disabled|key|ref|className|style)$/]",
+        "message": "<IconButton> doesn't accept that prop. Declared props: label, size, variant, onTerminal, disabled."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='IconButton'] > JSXAttribute[name.name='variant'] > Literal[value!=/^(?:ghost|secondary)$/]",
+        "message": "<IconButton> variant must be one of 'ghost' | 'secondary'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='InlineCode'] > JSXAttribute > JSXIdentifier[name!=/^(?:children|key|ref|className|style)$/]",
+        "message": "<InlineCode> doesn't accept that prop. Declared props: children."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Input'] > JSXAttribute > JSXIdentifier[name!=/^(?:label|helper|error|mono|as|rows|key|ref|className|style)$/]",
+        "message": "<Input> doesn't accept that prop. Declared props: label, helper, error, mono, as, rows."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Input'] > JSXAttribute[name.name='as'] > Literal[value!=/^(?:input|textarea)$/]",
+        "message": "<Input> as must be one of 'input' | 'textarea'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Logo'] > JSXAttribute > JSXIdentifier[name!=/^(?:size|wordmark|key|ref|className|style)$/]",
+        "message": "<Logo> doesn't accept that prop. Declared props: size, wordmark."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Radio'] > JSXAttribute > JSXIdentifier[name!=/^(?:label|description|checked|name|value|key|ref|className|style)$/]",
+        "message": "<Radio> doesn't accept that prop. Declared props: label, description, checked, name, value."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='SelectOption'] > JSXAttribute > JSXIdentifier[name!=/^(?:value|label|key|ref|className|style)$/]",
+        "message": "<SelectOption> doesn't accept that prop. Declared props: value, label."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='SidebarItem'] > JSXAttribute > JSXIdentifier[name!=/^(?:value|label|icon|trailing|key|ref|className|style)$/]",
+        "message": "<SidebarItem> doesn't accept that prop. Declared props: value, label, icon, trailing."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='StatusIndicator'] > JSXAttribute > JSXIdentifier[name!=/^(?:status|label|size|key|ref|className|style)$/]",
+        "message": "<StatusIndicator> doesn't accept that prop. Declared props: status, label, size."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='StatusIndicator'] > JSXAttribute[name.name='status'] > Literal[value!=/^(?:running|building|failed|stopped|info)$/]",
+        "message": "<StatusIndicator> status must be one of 'running' | 'building' | 'failed' | 'stopped' | 'info'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Switch'] > JSXAttribute > JSXIdentifier[name!=/^(?:checked|label|description|key|ref|className|style)$/]",
+        "message": "<Switch> doesn't accept that prop. Declared props: checked, label, description."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='TabItem'] > JSXAttribute > JSXIdentifier[name!=/^(?:value|label|trailing|key|ref|className|style)$/]",
+        "message": "<TabItem> doesn't accept that prop. Declared props: value, label, trailing."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='TableColumn'] > JSXAttribute > JSXIdentifier[name!=/^(?:key|header|width|align|mono|muted|render|key|ref|className|style)$/]",
+        "message": "<TableColumn> doesn't accept that prop. Declared props: key, header, width, align, mono, muted, render."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='TableColumn'] > JSXAttribute[name.name='align'] > Literal[value!=/^(?:left|right)$/]",
+        "message": "<TableColumn> align must be one of 'left' | 'right'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Tag'] > JSXAttribute > JSXIdentifier[name!=/^(?:mono|icon|tone|children|key|ref|className|style)$/]",
+        "message": "<Tag> doesn't accept that prop. Declared props: mono, icon, tone, children."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Tag'] > JSXAttribute[name.name='tone'] > Literal[value!=/^(?:default|contour|vegetation)$/]",
+        "message": "<Tag> tone must be one of 'default' | 'contour' | 'vegetation'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Toast'] > JSXAttribute > JSXIdentifier[name!=/^(?:status|action|onDismiss|children|key|ref|className|style)$/]",
+        "message": "<Toast> doesn't accept that prop. Declared props: status, action, onDismiss, children."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Toast'] > JSXAttribute[name.name='status'] > Literal[value!=/^(?:running|building|failed|info)$/]",
+        "message": "<Toast> status must be one of 'running' | 'building' | 'failed' | 'info'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Tooltip'] > JSXAttribute > JSXIdentifier[name!=/^(?:content|side|children|key|ref|className|style)$/]",
+        "message": "<Tooltip> doesn't accept that prop. Declared props: content, side, children."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Tooltip'] > JSXAttribute[name.name='side'] > Literal[value!=/^(?:top|bottom|left|right)$/]",
+        "message": "<Tooltip> side must be one of 'top' | 'bottom' | 'left' | 'right'."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/index.js"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
+}
