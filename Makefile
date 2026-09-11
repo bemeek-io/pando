@@ -24,7 +24,7 @@ test: ## Run unit tests
 
 .PHONY: test-integration
 test-integration: ## Run integration tests (real Postgres + Docker, via testcontainers)
-	$(GO) test -race -count=1 -tags=integration ./test/...
+	$(GO) test -race -count=1 -timeout=15m -tags=integration ./...
 
 .PHONY: vet
 vet: ## go vet

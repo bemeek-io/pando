@@ -49,10 +49,11 @@ jobs:
     runs-on: ubuntu-latest
     # Real Postgres and real Docker, via testcontainers. The four sequences in
     # docs/design/07-sequences.md are the acceptance criteria for v1.
-    if: false  # enable once phase 4 lands
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
+          cache: true
+      # Runners have Docker, so testcontainers works without extra setup.
       - run: make test-integration
