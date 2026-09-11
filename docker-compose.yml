@@ -19,10 +19,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      buildkit:
+        condition: service_started
     environment:
       # Compose starts both services at once. Pando also retries on its own rather
       # than trusting this healthcheck — see phase 0.
       PANDO_DATABASE_URL: postgres://pando:${POSTGRES_PASSWORD:-pando}@postgres:5432/pando?sslmode=disable
+      PANDO_BUILDKIT_ADDRESS: tcp://buildkit:1234
     command: ["serve"]
     ports:
       - "${PANDO_PORT:-8080}:8080"
@@ -32,6 +35,28 @@ services:
       # integration test in phase 4.
       - /var/run/docker.sock:/var/run/docker.sock
       - pando-data:/var/lib/pando
+    restart: unless-stopped
+
+  # Rootless BuildKit, in its own container (R-111).
+  #
+  # It has NO container runtime socket, and that absence is the whole point:
+  # mounting one into a build is a host compromise and is categorically
+  # forbidden (R-112). An integration test asserts on this container's actual
+  # mount list rather than on intent, because intent is what drifts.
+  #
+  # It reaches nothing else in this file either — builds talk to the network for
+  # dependencies and nothing more.
+  buildkit:
+    image: moby/buildkit:v0.17.2-rootless
+    command:
+      - --addr
+      - tcp://0.0.0.0:1234
+      - --oci-worker-no-process-sandbox
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    volumes:
+      - buildkit-cache:/home/user/.local/share/buildkit
     restart: unless-stopped
 
   postgres:
@@ -52,3 +77,4 @@ services:
 volumes:
   pando-data:
   postgres-data:
+  buildkit-cache:

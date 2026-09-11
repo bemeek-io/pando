@@ -436,3 +436,31 @@ func (v *Volumes) Create(ctx context.Context, appID, name, adapterRef string) (s
 	}
 	return volumeID, nil
 }
+
+// SetDesiredState records what a human asked for.
+//
+// Separate from state, which is what is true. The reconciler reads both: the
+// gap between them is the work it has to do.
+func (a *Apps) SetDesiredState(ctx context.Context, appID, desired string) error {
+	switch desired {
+	case "running", "stopped":
+	default:
+		return errs.New(errs.ValidInvalid, "An app is either running or stopped.")
+	}
+	_, err := a.db.Exec(ctx,
+		`UPDATE apps SET desired_state = $2, updated_at = now() WHERE id = $1`, appID, desired)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not update the app.", err)
+	}
+	return nil
+}
+
+// SetState records what is observed to be true.
+func (a *Apps) SetState(ctx context.Context, appID, appState string) error {
+	_, err := a.db.Exec(ctx,
+		`UPDATE apps SET state = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL`, appID, appState)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not update the app.", err)
+	}
+	return nil
+}

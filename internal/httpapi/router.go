@@ -11,6 +11,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/deploy"
 	"github.com/bemeek-io/pando/internal/core/planner"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/log"
@@ -45,6 +46,10 @@ type Server struct {
 	Adapters    *state.Adapters
 	Planner     *planner.Planner
 	Allocations *state.Allocations
+	Deployments *state.Deployments
+	Deployer    *deploy.Runner
+	Logs        *deploy.LogStore
+	Secrets     *state.Secrets
 
 	// Policy is host policy. Nil until phase 3 configures it, in which case the
 	// source allowlist check (R-092) is skipped rather than assumed to pass —
@@ -132,6 +137,23 @@ func (s *Server) Routes() http.Handler {
 				// The dry run. Side-effect-free, so the console calls it on
 				// every spec edit (design 04 §2.3).
 				r.Post("/plan", s.handlePlan)
+
+				r.Get("/status", s.handleAppStatus)
+				r.Get("/logs", s.handleAppLogs)
+
+				r.Route("/deployments", func(r chi.Router) {
+					r.Get("/", s.handleListDeployments)
+					r.Post("/", s.handleDeploy)
+					r.Post("/rollback", s.handleRollback)
+					r.Get("/{depID}", s.handleGetDeployment)
+					r.Get("/{depID}/logs", s.handleDeploymentLogs)
+				})
+
+				r.Route("/secrets", func(r chi.Router) {
+					r.Get("/", s.handleListSecrets)
+					r.Put("/{key}", s.handlePutSecret)
+					r.Delete("/{key}", s.handleDeleteSecret)
+				})
 
 				r.Route("/specs", func(r chi.Router) {
 					r.Get("/", s.handleListSpecs)

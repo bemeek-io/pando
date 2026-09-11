@@ -51,6 +51,9 @@ func (f *fakeRuntime) SnapshotVolume(context.Context, api.VolumeHandle, io.Write
 	return nil
 }
 func (f *fakeRuntime) RestoreVolume(context.Context, api.VolumeHandle, io.Reader) error { return nil }
+func (f *fakeRuntime) ImportImage(context.Context, io.Reader) (string, error) {
+	return "imported:latest", nil
+}
 func (f *fakeRuntime) Logs(context.Context, api.WorkloadRef, api.LogOptions) (io.ReadCloser, error) {
 	return nil, nil
 }

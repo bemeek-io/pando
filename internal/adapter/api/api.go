@@ -45,6 +45,19 @@ type RuntimeCapabilities struct {
 	SupportsResourceLimits bool
 	SupportsStartThenSwap  bool // R-145
 
+	// SupportsImageImport means the runtime can take an image as bytes.
+	//
+	// R-111 says Pando "hands it source, receives an image", so on a single
+	// host the built image travels back through Pando rather than via a
+	// registry — which would otherwise need daemon-level configuration and
+	// charge the setup cost R-002 says is paid once.
+	//
+	// A clustered runtime reports false: pushing a tarball to every node is the
+	// wrong shape, and such an adapter wants a registry-based builder instead.
+	// The planner turns a false here into a readable plan-time refusal rather
+	// than a failure after the build has already run.
+	SupportsImageImport bool
+
 	// MaxWorkloadsPerBundle is 0 for unlimited.
 	MaxWorkloadsPerBundle int
 }
@@ -126,6 +139,11 @@ type RuntimeAdapter interface {
 	DestroyVolume(ctx context.Context, h VolumeHandle) error
 	SnapshotVolume(ctx context.Context, h VolumeHandle, dst io.Writer) error
 	RestoreVolume(ctx context.Context, h VolumeHandle, src io.Reader) error
+
+	// ImportImage takes an image as a stream and makes it runnable, returning
+	// the reference to use in a WorkloadPlan. Only called when
+	// SupportsImageImport is true.
+	ImportImage(ctx context.Context, r io.Reader) (string, error)
 
 	Logs(ctx context.Context, ref WorkloadRef, opts LogOptions) (io.ReadCloser, error)
 	Exec(ctx context.Context, ref WorkloadRef, req ExecRequest) (ExecSession, error)
@@ -460,6 +478,14 @@ type BuildRequest struct {
 
 	// LogSink streams build output to the console live.
 	LogSink io.Writer
+
+	// ImageSink receives the built image as a stream.
+	//
+	// R-111: Pando hands the builder source and receives an image. Writing it
+	// to a sink rather than returning it means the image never has to be held
+	// in memory or staged on disk — the caller pipes it straight into the
+	// runtime's ImportImage.
+	ImageSink io.Writer
 }
 
 // BuildResult is what a build produced.

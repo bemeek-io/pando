@@ -12,7 +12,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | Requirements | 207 | — |
 | Specified in a design doc | 140 | 67% |
 | Assigned to a phase | 107 | 51% |
-| Covered by a named test | 32 | 15% |
+| Covered by a named test | 36 | 17% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -37,7 +37,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-020** | D | Nothing lives in the repo. | 3. Core Invariants | 01, 02, 03, 07 | 02, 06 | `TestR020_SpecCarriesNoSecretValues` |
 | **R-021** | D | Pando fills declared slots; it never invents topology. | 3. Core Invariants | 01 | 06 | — |
 | **R-022** | D | Detection never re-runs implicitly. | 3. Core Invariants | 01, 04 | — | — |
-| **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 06 | 05 | — |
+| **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 06 | 05 | `TestR023_RoutingPointsAtPandoNotTheWorkload` |
 | **R-024** | D | Builds never execute on the host. | 3. Core Invariants | 00, 04, 05, 07 | 03 | `TestR024_NoAdapterMeetsPolicyBlocksDeploy`, `TestR024_SourceThatMustBeBuiltNeedsABuilder` |
 | **R-025** | D | Apps are isolated from each other. | 3. Core Invariants | — | — | `TestR025_EachBundleGetsItsOwnNetwork` |
 | **R-026** | D | Non-exposed workloads are unreachable from outside their bundle. | 3. Core Invariants | 01, 03 | 02, 05 | `TestR026_NoPortsArePublishedToTheHost` |
@@ -108,7 +108,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-107** | D | The correct failure: a repo needs Postgres and never mentions it anywhere — no compose… | 7.3 When detection cannot decide | 01 | 06 | — |
 | **R-110** | D | Builds never run on the host (R-024). | 8. Build | — | — | — |
 | **R-111** | D V1 | The default local builder is rootless BuildKit in its own container. | 8. Build | 00, 03 | 04 | — |
-| **R-112** | D | The build path never exposes a container runtime socket to build code. | 8. Build | 03, 05, 07 | 04 | — |
+| **R-112** | D | The build path never exposes a container runtime socket to build code. | 8. Build | 03, 05, 07 | 04 | `TestR112_BuildContainerCannotReachDocker`, `TestR112_BuildContainerHasNoRuntimeSocket` |
 | **R-113** | D | Build code has no access to Pando's state store, no access to any other app's secrets, and no… | 8. Build | — | — | — |
 | **R-114** | D | Build isolation class is declared and enforced independently of runtime isolation class. | 8. Build | 00, 01, 03, 05, 07 | 03 | `TestR114_BuildIsolationFloorIsIndependent` |
 | **R-115** | P | Isolation classes, weakest to strongest: `container` (shared kernel), `sandboxed`… | 8. Build | — | — | — |
@@ -116,7 +116,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-117** | P | Build filesystem is discarded after the build. | 8. Build | 03, 07 | 04 | — |
 | **R-118** | P | Build egress defaults to open, on the grounds that build output is reviewed before it runs. | 8. Build | 01, 03, 07 | 04 | — |
 | **R-119** | P | Build timeout: 30 minutes, per-app override. | 8. Build | 01 | 04 | — |
-| **R-120** | P | Deploy pins a commit SHA. | 8. Build | 01, 07 | 02, 04 | — |
+| **R-120** | P | Deploy pins a commit SHA. | 8. Build | 01, 07 | 02, 04 | `TestR120_DeployPinsACommit` |
 | **R-130** | D | An environment variable in `.env.example` is a hole with a type. | 9. Slots and Services | — | — | — |
 | **R-131** | D | A slot is resolved exactly three ways, chosen by the user: | 9. Slots and Services | 03, 04, 07 | 02, 06 | — |
 | **R-132** | D | Resolution is never silent. | 9. Slots and Services | 00, 01, 04, 05, 07 | 02, 03, 06 | `TestR132_EveryUnfilledSlotIsNamed`, `TestR132_SlotUnfilledCarriesRemedyAndDetails`, `TestR132_UnfilledRequiredSlotBlocksDeploy` |
@@ -129,7 +129,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-143** | P LATER | Watch for new tags on an upstream image, for apps deployed from a published image rather than… | 10.2 Deploy triggers | — | — | — |
 | **R-144** | D | Recreate is the default strategy. | 10.3 Deploy strategy | 01, 05, 07 | 04 | — |
 | **R-145** | D | Start-then-swap is available as an explicit opt-in. | 10.3 Deploy strategy | 03, 05, 07, 08 | 04, 08 | — |
-| **R-146** | D | Build failure: nothing is replaced. | 10.4 Failure handling | 05, 07 | 04, 07 | — |
+| **R-146** | D | Build failure: nothing is replaced. | 10.4 Failure handling | 05, 07 | 04, 07 | `TestR146_AFailedBuildLeavesTheRunningAppAlone` |
 | **R-147** | D | Automatic rollback is disabled by default, available as opt-in. | 10.4 Failure handling | 01, 05, 07, 08 | 08 | — |
 | **R-148** | D | Reconcile when possible; report when not. | 10.4 Failure handling | 03, 05 | — | — |
 | **R-149** | P | Restart backoff: immediate, then 5s, 15s, 60s, capped at 5 minutes. | 10.4 Failure handling | 00, 05 | 07 | — |

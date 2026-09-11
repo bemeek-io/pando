@@ -117,6 +117,10 @@ func (a *Adapter) Capabilities(context.Context) (api.RuntimeCapabilities, error)
 		// would turn a plan-time refusal into a mid-deploy failure (R-145).
 		SupportsStartThenSwap: false,
 
+		// A single daemon can load an image from a stream, which is how a build
+		// reaches the runtime without a registry.
+		SupportsImageImport: true,
+
 		MaxWorkloadsPerBundle: 0,
 	}, nil
 }
@@ -424,6 +428,47 @@ func (a *Adapter) SnapshotVolume(context.Context, api.VolumeHandle, io.Writer) e
 
 func (a *Adapter) RestoreVolume(context.Context, api.VolumeHandle, io.Reader) error {
 	return errs.New(errs.AdapterFailed, "Restoring storage is not available yet.")
+}
+
+// ImportImage loads an image tarball into the daemon.
+//
+// The reference is read back from the daemon's own response rather than
+// assumed, because the tag the build asked for and the tag the daemon actually
+// recorded are not guaranteed to match, and running the wrong one would be
+// silent.
+func (a *Adapter) ImportImage(ctx context.Context, r io.Reader) (string, error) {
+	resp, err := a.cli.ImageLoad(ctx, r, client.ImageLoadWithQuiet(true))
+	if err != nil {
+		return "", errs.Wrap(errs.AdapterFailed, "Could not load the built image.", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", errs.Wrap(errs.AdapterFailed, "Could not load the built image.", err)
+	}
+
+	ref := parseLoadedRef(string(body))
+	if ref == "" {
+		return "", errs.New(errs.AdapterFailed, "The built image could not be loaded.").
+			WithRemedy("Check the build logs — the image may not have been produced correctly.")
+	}
+	return ref, nil
+}
+
+// parseLoadedRef pulls the image reference out of Docker's load output, which
+// is a stream of JSON objects whose stream field reads
+// "Loaded image: name:tag".
+func parseLoadedRef(body string) string {
+	const marker = "Loaded image: "
+	for _, line := range strings.Split(body, "\n") {
+		if i := strings.Index(line, marker); i >= 0 {
+			rest := line[i+len(marker):]
+			rest = strings.TrimSuffix(strings.TrimSpace(rest), `\n"}`)
+			return strings.Trim(strings.TrimSpace(rest), `"`)
+		}
+	}
+	return ""
 }
 
 func (a *Adapter) Logs(ctx context.Context, ref api.WorkloadRef, opts api.LogOptions) (io.ReadCloser, error) {

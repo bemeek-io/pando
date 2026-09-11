@@ -38,6 +38,17 @@ func (r *Registry) Register(ref string, a Adapter) error {
 	if _, exists := r.byRef[ref]; exists {
 		return fmt.Errorf("adapter %q is already registered", ref)
 	}
+
+	// An adapter that does not satisfy its category's interface is rejected
+	// here, loudly, rather than at the first lookup.
+	//
+	// Without this the typed accessors below return (nil, false) on a type
+	// mismatch, which is indistinguishable from "not configured" — so adding a
+	// method to an interface would surface, much later, as a planner error
+	// telling an operator their runtime is not configured when in fact it is.
+	if err := satisfiesCategory(a); err != nil {
+		return fmt.Errorf("adapter %q: %w", ref, err)
+	}
 	r.byRef[ref] = a
 	r.byCat[a.Category()] = append(r.byCat[a.Category()], ref)
 	sort.Strings(r.byCat[a.Category()])
@@ -59,6 +70,34 @@ func (r *Registry) SetDefault(c Category, ref string) error {
 		return fmt.Errorf("adapter %q is a %s adapter, not %s", ref, a.Category(), c)
 	}
 	r.defaults[c] = ref
+	return nil
+}
+
+// satisfiesCategory checks an adapter against the interface its category
+// requires.
+func satisfiesCategory(a Adapter) error {
+	var ok bool
+	switch a.Category() {
+	case CategoryRuntime:
+		_, ok = a.(RuntimeAdapter)
+	case CategoryRouting:
+		_, ok = a.(RoutingAdapter)
+	case CategoryBuilder:
+		_, ok = a.(BuilderAdapter)
+	case CategorySecrets:
+		_, ok = a.(SecretsAdapter)
+	case CategoryServices:
+		_, ok = a.(ServicesAdapter)
+	case CategoryIdentity:
+		_, ok = a.(IdentityAdapter)
+	case CategoryNotify:
+		_, ok = a.(NotifyAdapter)
+	default:
+		return fmt.Errorf("unknown category %q", a.Category())
+	}
+	if !ok {
+		return fmt.Errorf("does not implement the %s adapter interface", a.Category())
+	}
 	return nil
 }
 

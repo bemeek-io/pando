@@ -7,7 +7,7 @@ column, the mitigation is not optional.
 | Risk | Phase | Mitigation | Status |
 |---|---|---|---|
 | Detection quality below the R-103 bar | 6 | Build a corpus of **30 real repos early**. Track questions-per-deploy as a metric, not a vibe. | Not started |
-| Docker socket leaks into a build | 4 | Integration test asserting the build container's mount list. **Non-negotiable.** | Not started |
+| Docker socket leaks into a build | 4 | Integration test asserting the build container's mount list. **Non-negotiable.** | **Closed** — `TestR112_BuildContainerHasNoRuntimeSocket` reads the real mount list, plus privileged/host-network/host-PID, plus a behavioural check from inside the container |
 | Header spoofing through the proxy | 5 | Explicit test with forged `X-Pando-*` headers asserting replacement. | Not started |
 | Postgres prerequisite undermines the hobbyist install | 0 | Resolved: Compose supplies Postgres beside Pando, adding no prerequisite a containerized runtime did not already impose. | **Closed** |
 | Routing abstraction is Docker/Traefik-shaped | 10 | Sketch the Cloudflare adapter **on paper during phase 3**, before the interface is fixed. | **Done** — sketched ([notes](../design/notes-cloudflare-routing-sketch.md)); interface unchanged, two documentation clarifications recorded in design 03 §4 |

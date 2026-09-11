@@ -22,6 +22,11 @@ type Config struct {
 type Server struct {
 	Addr            string        `mapstructure:"addr"`
 	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
+
+	// ProxyUpstream is the address routing adapters are told to send traffic
+	// to (R-023). It must be reachable from wherever an adapter's data plane
+	// runs, which is not necessarily where Pando runs.
+	ProxyUpstream string `mapstructure:"proxy_upstream"`
 }
 
 type Database struct {
