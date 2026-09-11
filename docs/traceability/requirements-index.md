@@ -12,7 +12,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | Requirements | 207 | — |
 | Specified in a design doc | 140 | 67% |
 | Assigned to a phase | 107 | 51% |
-| Covered by a named test | 0 | 0% |
+| Covered by a named test | 23 | 11% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -34,28 +34,28 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-014** | D | No multi-AZ or multi-region. | 2. Non-Goals | — | — | — |
 | **R-015** | D | One Pando install serves one organization. | 2. Non-Goals | 02 | — | — |
 | **R-016** | D | Pando is not a source host, not an APM product, and not a database-as-a-service. | 2. Non-Goals | — | — | — |
-| **R-020** | D | Nothing lives in the repo. | 3. Core Invariants | 01, 02, 03, 07 | 02, 06 | — |
+| **R-020** | D | Nothing lives in the repo. | 3. Core Invariants | 01, 02, 03, 07 | 02, 06 | `TestR020_SpecCarriesNoSecretValues` |
 | **R-021** | D | Pando fills declared slots; it never invents topology. | 3. Core Invariants | 01 | 06 | — |
 | **R-022** | D | Detection never re-runs implicitly. | 3. Core Invariants | 01, 04 | — | — |
 | **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 06 | 05 | — |
 | **R-024** | D | Builds never execute on the host. | 3. Core Invariants | 00, 04, 05, 07 | 03 | — |
 | **R-025** | D | Apps are isolated from each other. | 3. Core Invariants | — | — | — |
 | **R-026** | D | Non-exposed workloads are unreachable from outside their bundle. | 3. Core Invariants | 01, 03 | 02, 05 | — |
-| **R-027** | D | Authorization decisions, the audit log, the state store, and the identity assertion path live… | 3. Core Invariants | 00, 02, 03, 06 | 00 | — |
+| **R-027** | D | Authorization decisions, the audit log, the state store, and the identity assertion path live… | 3. Core Invariants | 00, 02, 03, 06 | 00 | `TestR027_AnOwningRoleCanUndoTheRevoke`, `TestR027_ApplicationRoleDoesNotOwnTheSchema`, `TestR027_AuditLogIsNotRewritable`, `TestR027_AuditRemainsImmutableAcrossRestarts` |
 | **R-028** | D | Pando observes and reports; it does not remediate the app. | 3. Core Invariants | 03, 05, 08 | 08 | — |
-| **R-029** | D | Control plane and data plane are separate grants (§6), with one exception: owning an app… | 3. Core Invariants | 06 | — | — |
+| **R-029** | D | Control plane and data plane are separate grants (§6), with one exception: owning an app… | 3. Core Invariants | 06 | — | `TestR029_ControlPlaneRoleDoesNotGrantDataPlaneUse`, `TestR029_OwnerRoleAloneDoesNotGrantUse` |
 | **R-030** | D | The following are first-class objects in Pando's state: | 4. Object Model | — | — | — |
 | **R-031** | P | An app has exactly one owner of record at any time, plus any number of additional grants. | 4. Object Model | 02 | — | — |
 | **R-040** | D | Identity is an adapter category like any other. | 5.1 Adapter model | — | — | — |
 | **R-041** | D V1 | Local users — username and password, stored by Pando. | 5.1 Adapter model | — | — | — |
 | **R-042** | D | Local users must be secure but are not claimed to be the most secure option. | 5.1 Adapter model | — | — | — |
 | **R-043** | D LATER | Additional identity adapters: GitHub OAuth, generic OIDC, SAML. | 5.1 Adapter model | — | — | — |
-| **R-044** | D | Identity adapters perform authentication only. | 5.1 Adapter model | 03 | 01 | — |
+| **R-044** | D | Identity adapters perform authentication only. | 5.1 Adapter model | 03 | 01 | `TestR044_AuthenticateReturnsASubjectWithNoPermissions` |
 | **R-045** | P | Multiple identity adapters may be configured simultaneously. | 5.1 Adapter model | — | — | — |
-| **R-046** | P | First run creates a single administrative local user. | 5.2 Bootstrap | — | — | — |
-| **R-047** | D | Each identity adapter declares its own session policy and revocation mechanism, documented in… | 5.3 Sessions and revocation | 02, 03 | 01 | — |
+| **R-046** | P | First run creates a single administrative local user. | 5.2 Bootstrap | — | — | `TestR046_FirstRunCreatesOneAdminAndIsIdempotent` |
+| **R-047** | D | Each identity adapter declares its own session policy and revocation mechanism, documented in… | 5.3 Sessions and revocation | 02, 03 | 01 | `TestR047_AdapterDeclaresItsOwnSessionPolicy` |
 | **R-048** | D LATER | SCIM support is the enterprise revocation and provisioning path. | 5.3 Sessions and revocation | 02, 03, 06 | 01 | — |
-| **R-049** | D | Suspended is not deleted. | 5.3 Sessions and revocation | 02, 04, 06, 07 | 01 | — |
+| **R-049** | D | Suspended is not deleted. | 5.3 Sessions and revocation | 02, 04, 06, 07 | 01 | `TestR049_SuspendedIsNotDeletedButBothDeny` |
 | **R-050** | P | For adapters that cannot push revocation, Pando falls back to expiry at next token refresh. | 5.3 Sessions and revocation | — | — | — |
 | **R-051** | D | Pando always forwards a signed identity assertion to the upstream app on every proxied request. | 5.4 Identity assertion to apps | 06 | 05 | — |
 | **R-052** | D | The assertion is a JWT in a dedicated header, signed by Pando. | 5.4 Identity assertion to apps | 00 | — | — |
@@ -65,24 +65,24 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-056** | D | Anonymous requests receive an assertion with `sub: anonymous`, a constant, not a per-visitor… | 5.4 Identity assertion to apps | 06, 07 | 05 | — |
 | **R-057** | P | Signing keys are published at a JWKS endpoint. | 5.4 Identity assertion to apps | 00, 04, 06 | 05 | — |
 | **R-058** | D | Delegated tokens. | 5.5 Tokens (non-human principals) | 02, 06 | 01 | — |
-| **R-059** | D | A delegated token's access is continuously derived from its owner's live grants, never frozen… | 5.5 Tokens (non-human principals) | 02, 06 | 01 | — |
-| **R-060** | D | Account-level tokens. | 5.5 Tokens (non-human principals) | 02, 06 | 01 | — |
+| **R-059** | D | A delegated token's access is continuously derived from its owner's live grants, never frozen… | 5.5 Tokens (non-human principals) | 02, 06 | 01 | `TestR059_DelegatedTokenIsOrphanedByItsOwnersDeletion`, `TestR059_OrphanedDelegatedTokenEndToEnd` |
+| **R-060** | D | Account-level tokens. | 5.5 Tokens (non-human principals) | 02, 06 | 01 | `TestR060_AccountTokenIsItsOwnPrincipal` |
 | **R-061** | D | Account-level tokens have an expiry. | 5.5 Tokens (non-human principals) | 02 | — | — |
 | **R-062** | P | Tokens record a last-used timestamp so stale credentials are reviewable. | 5.5 Tokens (non-human principals) | 02 | — | — |
-| **R-063** | P | Token secrets are displayed once at creation and never retrievable afterward. | 5.5 Tokens (non-human principals) | 02, 04 | 01 | — |
+| **R-063** | P | Token secrets are displayed once at creation and never retrievable afterward. | 5.5 Tokens (non-human principals) | 02, 04 | 01 | `TestR063_TokenSecretIsShownOnceAndStoredHashed` |
 | **R-070** | D | Data plane — permission to use an app. | 6.1 Two planes | 02, 04 | 01 | — |
 | **R-071** | D | Control plane — permission to administer an app: deploy, configure, read logs, exec, share,… | 6.1 Two planes | 02, 04 | — | — |
-| **R-072** | D | The planes are separate grants, with one implication only: an app's owner has data-plane… | 6.1 Two planes | 06, 07 | 01, 05 | — |
-| **R-073** | D | At app creation the creator receives both grants, recorded as two separate records. | 6.1 Two planes | 02, 07 | 01, 02 | — |
+| **R-072** | D | The planes are separate grants, with one implication only: an app's owner has data-plane… | 6.1 Two planes | 06, 07 | 01, 05 | `TestR072_OwnershipGrantsUse` |
+| **R-073** | D | At app creation the creator receives both grants, recorded as two separate records. | 6.1 Two planes | 02, 07 | 01, 02 | `TestR073_AppCreationWritesTwoGrants`, `TestR073_TwoPlanesAreTwoIndependentlyRevocableRows` |
 | **R-074** | D | Grants may be issued to: a user, a group, or anonymous. | 6.2 Subjects | 02 | — | — |
-| **R-075** | D | Anonymous is a real ACL subject, not a bypass. | 6.2 Subjects | 02, 04, 06, 07 | 05 | — |
+| **R-075** | D | Anonymous is a real ACL subject, not a bypass. | 6.2 Subjects | 02, 04, 06, 07 | 05 | `TestR075_AnonymousGrantAllowsUnauthenticatedUse`, `TestR075_AnonymousGrantIsARowAndCannotBeDuplicated` |
 | **R-076** | D | Any app owner may grant to anonymous by default. | 6.2 Subjects | 00, 04, 08 | 08 | — |
 | **R-077** | P | The console must never present this as the bare word "public." It states the consequence:… | 6.2 Subjects | 04, 08 | 08 | — |
 | **R-078** | D | Groups may be Pando-native or pushed from an IdP (R-048). | 6.3 Groups | 03 | — | — |
-| **R-079** | D | Group membership is evaluated live at request time, not expanded to a member list at grant time. | 6.3 Groups | 02, 06, 07 | 01, 05 | — |
+| **R-079** | D | Group membership is evaluated live at request time, not expanded to a member list at grant time. | 6.3 Groups | 02, 06, 07 | 01, 05 | `TestR079_GroupMembershipIsResolvedFromThePrincipal`, `TestR079_GroupMembershipIsResolvedLive` |
 | **R-080** | D | Control-plane permissions are individual verbs. | 6.4 Verbs and roles | — | — | — |
-| **R-081** | D | Three immutable built-in roles ship out of the box. | 6.4 Verbs and roles | 02, 06 | 01 | — |
-| **R-082** | D | Custom roles may be composed from the verb list and assigned to users or groups. | 6.4 Verbs and roles | 04, 06 | 01 | — |
+| **R-081** | D | Three immutable built-in roles ship out of the box. | 6.4 Verbs and roles | 02, 06 | 01 | `TestR081_BuiltInRoleVerbSets`, `TestR081_BuiltInRolesAreImmutable`, `TestR081_SeededVerbSetsMatchTheRequirement` |
+| **R-082** | D | Custom roles may be composed from the verb list and assigned to users or groups. | 6.4 Verbs and roles | 04, 06 | 01 | `TestR082_NoVerbImplicationGraph` |
 | **R-083** | D | `app.secrets.write` is deliberately separable from `app.secrets.read` — rotating a credential… | 6.4 Verbs and roles | 04 | — | — |
 | **R-084** | D | `app.exec` is its own verb, not bundled into app-admin. | 6.4 Verbs and roles | 03 | — | — |
 | **R-085** | D | Host policy may disable exec install-wide. | 6.4 Verbs and roles | 00, 03, 04, 06 | — | — |
@@ -119,7 +119,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-120** | P | Deploy pins a commit SHA. | 8. Build | 01, 07 | 02, 04 | — |
 | **R-130** | D | An environment variable in `.env.example` is a hole with a type. | 9. Slots and Services | — | — | — |
 | **R-131** | D | A slot is resolved exactly three ways, chosen by the user: | 9. Slots and Services | 03, 04, 07 | 02, 06 | — |
-| **R-132** | D | Resolution is never silent. | 9. Slots and Services | 00, 01, 04, 05, 07 | 02, 03, 06 | — |
+| **R-132** | D | Resolution is never silent. | 9. Slots and Services | 00, 01, 04, 05, 07 | 02, 03, 06 | `TestR132_SlotUnfilledCarriesRemedyAndDetails` |
 | **R-133** | O-4 | Distinguishing required from optional slots is unresolved. | 9. Slots and Services | — | — | — |
 | **R-134** | P | Provisioned services live inside the bundle and are not addressable from outside it. | 9. Slots and Services | 02, 03, 07 | — | — |
 | **R-135** | P | A provisioned service's data follows the app's volume rules (§12), including the… | 9. Slots and Services | — | — | — |
@@ -135,7 +135,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-149** | P | Restart backoff: immediate, then 5s, 15s, 60s, capped at 5 minutes. | 10.4 Failure handling | 00, 05 | 07 | — |
 | **R-150** | P | Ten failures within 30 minutes marks the app `failed`. | 10.4 Failure handling | 05 | 07 | — |
 | **R-151** | D | A `failed` app stays failed until a human intervenes. | 10.4 Failure handling | 05 | 07 | — |
-| **R-152** | P | Revision history retains the last 10 pinned specs for rollback. | 10.4 Failure handling | 01, 02, 04 | 02, 07 | — |
+| **R-152** | P | Revision history retains the last 10 pinned specs for rollback. | 10.4 Failure handling | 01, 02, 04 | 02, 07 | `TestR152_PinningMarksARevisionEverPinned`, `TestR152_RevisionsAreNumberedMonotonically`, `TestR152_SpecRevisionsCannotBeEdited` |
 | **R-153** | D | One app, one place (R-010). | 10.5 Scale | — | — | — |
 | **R-160** | D | Routing is an adapter category. | 11. Networking and Routing | — | — | — |
 | **R-161** | D | Each routing adapter advertises which addressing modes it supports: subdomain, path prefix,… | 11. Networking and Routing | — | — | — |
@@ -158,12 +158,12 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-191** | D | The threat model must be stated, not implied: this protects a leaked backup file or copied… | 13. Secrets | 02 | — | — |
 | **R-192** | D | Environment variables are the default injection mechanism, since slot detection keys on them… | 13. Secrets | — | — | — |
 | **R-193** | D | On the env path, rotation implies a restart. | 13. Secrets | 02, 05, 08 | 07 | — |
-| **R-194** | P | Secret values are redacted in logs, in spec exports, and in the audit log. | 13. Secrets | 00, 02 | 00, 04 | — |
+| **R-194** | P | Secret values are redacted in logs, in spec exports, and in the audit log. | 13. Secrets | 00, 02 | 00, 04 | `TestR194_CredentialsDoNotAppearInErrors`, `TestR194_ErrorStringsDoNotLeak`, `TestR194_RevealIsTheOnlyWayOut`, `TestR194_RoundTrippingARedactedPayloadDoesNotSetTheSecret`, `TestR194_SecretInDetailsDoesNotSerialize`, `TestR194_UnmarshalAcceptsARealSecret`, `TestR194_ValueNeverReachesALogLine`, `TestR194_ValueNeverRendersThroughAnyFormattingVerb`, `TestR194_ValueNeverRendersWhenNested` |
 | **R-200** | D | Persistence declared in a compose file is imported and honored. | 14. Persistence and Volumes | — | — | — |
 | **R-201** | D | Where no volume is declared, Pando shows a warning at setup rather than inferring one: | 14. Persistence and Volumes | 01, 04, 07, 08 | 02, 06, 08 | — |
 | **R-202** | P | The trial run improves this warning: where Pando observed the app writing to a directory… | 14. Persistence and Volumes | 01, 03, 07 | 06 | — |
 | **R-203** | D | Rationale for treating this specially: an undeclared Postgres fails loudly on first boot. | 14. Persistence and Volumes | 05 | 07 | — |
-| **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 04, 05 | 02, 09 | — |
+| **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 04, 05 | 02, 09 | `TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes` |
 | **R-205** | D | Non-interactive delete (CLI, API, MCP) backs up by default. | 14. Persistence and Volumes | 04 | 02, 09 | — |
 | **R-206** | D | Restore is in-place only. | 14. Persistence and Volumes | 01 | — | — |
 | **R-210** | D | Per-app rolling backups of app data. | 15. Backup and Disaster Recovery | — | — | — |
@@ -199,17 +199,17 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-254** | D | Every adapter advertises capabilities as data — `isolation_class`,… | 18. Adapters | 00, 03, 04, 05, 07 | 03 | — |
 | **R-255** | D | Runtime adapters declare an isolation class. | 18. Adapters | 03 | 03 | — |
 | **R-256** | P | Multi-machine capability comes entirely from adapters that span machines (e.g. | 18. Adapters | 02 | — | — |
-| **R-257** | D | A runtime adapter may be swapped under an existing app, and it is neither a migration nor a… | 18. Adapters | — | 02 | — |
+| **R-257** | D | A runtime adapter may be swapped under an existing app, and it is neither a migration nor a… | 18. Adapters | — | 02 | `TestR257_RuntimeSwapSaysStorageDoesNotMove` |
 | **R-260** | D | Four first-class administrative surfaces, all shipping: API, CLI, MCP, web console. | 19. Surfaces | — | 10 | — |
 | **R-261** | D | The API is the product. | 19. Surfaces | 04, 08 | 02, 08, 10 | — |
 | **R-262** | D | MCP is a real deliverable, so an agent can deploy directly. | 19. Surfaces | 04 | 10 | — |
 | **R-263** | D | End users — people who were granted use of an app and nothing else — do not need the console. | 19. Surfaces | — | — | — |
-| **R-264** | D | The console is an Okta-style launcher. | 19. Surfaces | 04, 08 | 08 | — |
+| **R-264** | D | The console is an Okta-style launcher. | 19. Surfaces | 04, 08 | 08 | `TestR264_LauncherListIsDataPlaneScoped` |
 | **R-265** | D | Users holding any administrative verb see an Admin entry point from the launcher, exposing the… | 19. Surfaces | 08 | 08 | — |
 | **R-266** | D | Sharing an app sends no message. | 19. Surfaces | — | — | — |
 | **R-270** | D | Pando ships permissive defaults. | 20. Configuration and Policy | — | — | — |
 | **R-271** | D | Configuration may be supplied by: a YAML file loaded at startup, environment variables, the… | 20. Configuration and Policy | 00 | 00 | — |
-| **R-272** | D | The general pattern, applied throughout: a setting has a permissive default; host policy can… | 20. Configuration and Policy | 06 | 01 | — |
+| **R-272** | D | The general pattern, applied throughout: a setting has a permissive default; host policy can… | 20. Configuration and Policy | 06 | 01 | `TestR272_PolicyIsAFloorAndDeniesTheOwnerToo` |
 | **R-273** | D LATER | Premade setting profiles for common postures (hobbyist, hardened, regulated), usable as-is or… | 20. Configuration and Policy | — | — | — |
 | **R-274** | D | Host policy may be applied to an install with running apps. | 20. Configuration and Policy | 01, 02, 03, 04, 05 | 02, 03 | — |
 | **R-280** | D | Losing access to an app destroys that user's per-app data (relevant to per-user instances, §22). | 21. Data Destruction | 02 | — | — |

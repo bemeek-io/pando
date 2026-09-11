@@ -34,9 +34,25 @@ type Server struct {
 	Users    *state.Users
 	Sessions *state.Sessions
 	Tokens   *state.Tokens
+	Apps     *state.Apps
+	Volumes  *state.Volumes
 	Authz    *authz.Authorizer
 	Auditor  *audit.Writer
 	Authent  *Authenticator
+
+	// Policy is host policy. Nil until phase 3 configures it, in which case the
+	// source allowlist check (R-092) is skipped rather than assumed to pass —
+	// the call site says so explicitly.
+	Policy SourcePolicy
+}
+
+// SourcePolicy gates where apps may be created from (R-092).
+//
+// Evaluated before anything touches disk. There is nothing to clone yet in this
+// phase, but the check belongs at creation and putting it here now means the
+// ordering is already right when cloning arrives in phase 6.
+type SourcePolicy interface {
+	AllowsSource(ctx context.Context, url string) error
 }
 
 // audit records an event, logging rather than failing the request if the write
@@ -87,7 +103,30 @@ func (s *Server) Routes() http.Handler {
 		r.Delete("/sessions", s.handleLogout)
 		r.Get("/me", s.handleMe)
 
-		// Phases 2 onward mount resources here.
+		// The launcher (R-264). Data-plane scoped, deliberately a different
+		// list from GET /apps.
+		r.Get("/me/apps", s.handleMyApps)
+
+		r.Route("/apps", func(r chi.Router) {
+			r.Get("/", s.handleListApps)
+			r.Post("/", s.handleCreateApp)
+
+			r.Route("/{appID}", func(r chi.Router) {
+				r.Get("/", s.handleGetApp)
+				r.Patch("/", s.handlePatchApp)
+				r.Delete("/", s.handleDeleteApp)
+
+				r.Get("/export", s.handleExportSpec)
+
+				r.Route("/specs", func(r chi.Router) {
+					r.Get("/", s.handleListSpecs)
+					r.Post("/", s.handleCreateSpec)
+					r.Get("/{rev}", s.handleGetSpec)
+					r.Post("/{rev}/pin", s.handlePinSpec)
+					r.Get("/{a}/diff/{b}", s.handleDiffSpecs)
+				})
+			})
+		})
 	})
 
 	return r
