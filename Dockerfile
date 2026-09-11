@@ -1,10 +1,7 @@
 # Pando ships as one binary (R-253). This image is how it reaches a host —
 # the artifact is unchanged, the container is just the delivery.
 #
-# SCAFFOLD: the binary currently exits with "not implemented". Phase 0 makes it
-# a server. See docs/plan/phase-00-skeleton.md.
-
-FROM golang:1.24-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 
 # Dependencies first, so a source change does not re-download the module cache.

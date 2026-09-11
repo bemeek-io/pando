@@ -305,6 +305,22 @@ CREATE INDEX ON audit_events (principal_id, occurred_at DESC);
 
 **[D]** Append-only. `REVOKE UPDATE, DELETE` from the application role at the database level. R-027 says no adapter can rewrite the audit log; the enforcement should be a database grant, not a code review.
 
+**[D] The revoke is only meaningful if the application role owns nothing.** This was established
+empirically in phase 0 and is easy to get backwards. `REVOKE` *does* take effect against a table's
+owner — after revoking, `has_table_privilege` reports false even for the owner. What an owner retains
+is **grant option**, implicitly, so it can restore the privilege to itself in a single statement:
+
+```sql
+GRANT UPDATE ON audit_events TO pando_app;   -- succeeds when run as the owner
+UPDATE audit_events SET action = 'something else';
+```
+
+Against an owning role the revoke is a speed bump, not a boundary, and the statement that undoes it is
+available to exactly the process an attacker would be running inside. **Ownership is the property that
+must be denied, not the privilege.** Pando therefore runs migrations as a schema-owning role and
+serves traffic as a separate `pando_app` that owns nothing, and it verifies both at startup —
+refusing to run if the audit table is owned by the role serving traffic.
+
 **[D]** `detail` never contains a secret value. The `secret.Value` type from §00 3.3 makes this structural.
 
 ### 2.7 Sessions

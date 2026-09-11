@@ -25,11 +25,22 @@ import (
 
 // AppRole is the Postgres role Pando serves traffic as.
 //
-// It is deliberately not the role that owns the schema. A table's owner retains
-// UPDATE and DELETE on it no matter what is revoked, so running migrations and
-// serving traffic as one role would make the audit log's immutability (R-027) a
-// comment rather than a guarantee. The owner creates and migrates; this role
-// reads and writes, and cannot rewrite history.
+// It is deliberately not the role that owns the schema, and the reason is more
+// specific than it first appears. REVOKE does work against a table's owner —
+// after REVOKE UPDATE, has_table_privilege reports false even for the owner. But
+// an owner holds grant option implicitly, so it can hand the privilege straight
+// back to itself:
+//
+//	GRANT UPDATE ON audit_events TO pando_app;   -- succeeds, run as pando_app
+//	UPDATE audit_events SET action = 'something else';
+//
+// Against a role that owns the table, the REVOKE is therefore a speed bump and
+// not a boundary: one statement undoes it, and that statement is available to
+// exactly the process an attacker would be running inside. Ownership is the
+// property that has to be denied, not the privilege.
+//
+// So the owner creates and migrates; this role reads and writes, owns nothing,
+// and cannot grant itself anything (R-027).
 const AppRole = "pando_app"
 
 // DB is a connection to the state store, held as the application role.
@@ -267,13 +278,26 @@ func applyGrants(ctx context.Context, owner *pgxpool.Pool) error {
 // silently does not hold is worse than one that refuses to start and says why.
 func verifyAuditImmutability(ctx context.Context, owner *pgxpool.Pool) error {
 	var canUpdate, canDelete bool
+	var tableOwner string
 	err := owner.QueryRow(ctx, `
 		SELECT
 			has_table_privilege($1, 'audit_events', 'UPDATE'),
-			has_table_privilege($1, 'audit_events', 'DELETE')`,
-		AppRole).Scan(&canUpdate, &canDelete)
+			has_table_privilege($1, 'audit_events', 'DELETE'),
+			(SELECT tableowner FROM pg_tables WHERE tablename = 'audit_events')`,
+		AppRole).Scan(&canUpdate, &canDelete, &tableOwner)
 	if err != nil {
 		return errs.Wrap(errs.Internal, "Pando could not verify that its audit log is tamper-proof.", err)
+	}
+
+	// Ownership is checked separately from privilege, and it is the check that
+	// matters. A revoked privilege reads as absent right up until the owner
+	// grants it back to itself, which takes one statement and no extra access.
+	if tableOwner == AppRole {
+		return errs.New(errs.Internal,
+			"Pando's audit log is not tamper-proof: the account it serves traffic as owns the audit table, and an owner can grant itself permission to rewrite it at any time.").
+			WithDetail("role", AppRole).
+			WithDetail("table_owner", tableOwner).
+			WithRemedy("Pando must connect as an account that does not own its schema. Give it a database it owns, or an account separate from the schema owner. Refer to the external-database setup notes.")
 	}
 
 	if canUpdate || canDelete {
@@ -282,7 +306,7 @@ func verifyAuditImmutability(ctx context.Context, owner *pgxpool.Pool) error {
 			WithDetail("role", AppRole).
 			WithDetail("can_update", canUpdate).
 			WithDetail("can_delete", canDelete).
-			WithRemedy("This usually means the application role owns the audit_events table — a table's owner keeps UPDATE and DELETE regardless of what is revoked. Pando must connect as an account that does not own its schema. Refer to the external-database setup notes.")
+			WithRemedy("This usually means the application role owns the audit_events table. An owner can grant itself UPDATE at any time, so revoking it is not enough — Pando must connect as an account that does not own its schema. Refer to the external-database setup notes.")
 	}
 	return nil
 }

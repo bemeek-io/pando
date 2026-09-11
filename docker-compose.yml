@@ -11,7 +11,7 @@
 # audit log's immutability guarantee (R-027) does not hold. Pando verifies this at
 # startup and refuses to run if it cannot.
 #
-# SCAFFOLD — phase 0 builds the image this references. See docs/plan/phase-00-skeleton.md.
+# Bring the whole thing up with `docker compose up`.
 
 services:
   pando:
@@ -23,6 +23,7 @@ services:
       # Compose starts both services at once. Pando also retries on its own rather
       # than trusting this healthcheck — see phase 0.
       PANDO_DATABASE_URL: postgres://pando:${POSTGRES_PASSWORD:-pando}@postgres:5432/pando?sslmode=disable
+    command: ["serve"]
     ports:
       - "${PANDO_PORT:-8080}:8080"
     volumes:

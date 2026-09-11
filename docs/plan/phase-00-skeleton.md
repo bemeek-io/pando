@@ -56,9 +56,10 @@ fails at startup with a readable error rather than starting.
 ## Traps
 
 - **Two database identities, not one.** The role that owns the schema and runs migrations is not the
-  role the application connects as. The application role holds `INSERT` on `audit_events` and nothing
-  else on it. Conflating them makes the grant meaningless, and it is the easiest thing in this phase
-  to get subtly wrong.
+  role the application connects as. Conflating them makes the grant meaningless — but not for the
+  intuitive reason. `REVOKE` does work against an owner; what an owner keeps is *grant option*, so it
+  can hand the privilege back to itself with one statement. Ownership is what must be denied, and the
+  startup check verifies ownership as well as current privilege.
 - The audit grant is a database-level `REVOKE`, not application-level care. R-027 says no *adapter*
   can rewrite the audit log; doing it at the DB makes it true of core as well, which is stronger and
   costs nothing.

@@ -5,6 +5,7 @@ package state_test
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"testing"
 	"time"
 
@@ -44,8 +45,9 @@ func startPostgres(t *testing.T) string {
 //
 // This is phase 0's acceptance condition: an audit event can be written and
 // provably not modified. The proof has to be attempted-and-refused, not
-// inspected — reading the grant table would only show that the REVOKE ran, and
-// the REVOKE is precisely what a table owner ignores.
+// inspected. Reading the grant table would only show that the REVOKE ran, and a
+// revoke that ran is not the same as a privilege that cannot be regained — see
+// TestR027_AnOwningRoleCanUndoTheRevoke.
 func TestR027_AuditLogIsNotRewritable(t *testing.T) {
 	ctx := context.Background()
 	ownerURL := startPostgres(t)
@@ -87,9 +89,10 @@ func TestR027_AuditLogIsNotRewritable(t *testing.T) {
 // TestR027_ApplicationRoleDoesNotOwnTheSchema asserts the mechanism behind the
 // test above, because it is the part a later refactor would quietly undo.
 //
-// A table's owner keeps UPDATE and DELETE no matter what is revoked. If Pando
-// ever migrated and served traffic as one role, the REVOKE would still run, the
-// grant table would still look right, and the audit log would be rewritable.
+// REVOKE does work against an owner — see TestR027_AnOwningRoleCanUndoTheRevoke
+// for what actually goes wrong. The property that has to hold is that the role
+// serving traffic owns nothing, because an owner can restore its own privileges
+// whenever it likes.
 func TestR027_ApplicationRoleDoesNotOwnTheSchema(t *testing.T) {
 	ctx := context.Background()
 	ownerURL := startPostgres(t)
@@ -105,7 +108,7 @@ func TestR027_ApplicationRoleDoesNotOwnTheSchema(t *testing.T) {
 
 	require.Equal(t, state.AppRole, currentUser, "traffic should be served as the restricted role")
 	require.NotEqual(t, currentUser, tableOwner,
-		"the application role must not own audit_events — an owner ignores REVOKE")
+		"the application role must not own audit_events — an owner can re-grant itself UPDATE")
 }
 
 // TestR027_AuditRemainsImmutableAcrossRestarts asserts that the grant policy is
@@ -141,10 +144,82 @@ func TestR027_AuditRemainsImmutableAcrossRestarts(t *testing.T) {
 	require.Error(t, err, "a drifted grant should have been revoked on restart")
 }
 
+// TestR027_AnOwningRoleCanUndoTheRevoke documents why two roles are required,
+// by demonstrating the attack the design prevents.
+//
+// The intuitive claim — that a table's owner ignores REVOKE — is false: after
+// REVOKE UPDATE, has_table_privilege reports false even for the owner. What is
+// true, and worse, is that an owner holds grant option implicitly and can hand
+// the privilege back to itself in one statement, from exactly the connection an
+// attacker would already be using.
+//
+// This test deliberately builds the broken configuration and proves it is
+// broken. If a future change lets Pando serve traffic as a schema-owning role,
+// the design note this test guards will have been lost.
+func TestR027_AnOwningRoleCanUndoTheRevoke(t *testing.T) {
+	ctx := context.Background()
+	ownerURL := startPostgres(t)
+
+	owner, err := pgxpool.New(ctx, ownerURL)
+	require.NoError(t, err)
+	t.Cleanup(owner.Close)
+
+	const badRole = "owning_role"
+	for _, stmt := range []string{
+		`CREATE TABLE audit_events (id bigserial PRIMARY KEY, action text)`,
+		`CREATE ROLE ` + badRole + ` LOGIN PASSWORD 'probe-password'`,
+		`GRANT USAGE ON SCHEMA public TO ` + badRole,
+		`GRANT SELECT, INSERT, UPDATE, DELETE ON audit_events TO ` + badRole,
+		`ALTER TABLE audit_events OWNER TO ` + badRole,
+		`REVOKE UPDATE, DELETE, TRUNCATE ON audit_events FROM ` + badRole,
+		`INSERT INTO audit_events (action) VALUES ('app.deploy')`,
+	} {
+		_, err := owner.Exec(ctx, stmt)
+		require.NoError(t, err, stmt)
+	}
+
+	// The revoke appears to have worked.
+	var canUpdate bool
+	require.NoError(t, owner.QueryRow(ctx,
+		`SELECT has_table_privilege($1, 'audit_events', 'UPDATE')`, badRole).Scan(&canUpdate))
+	require.False(t, canUpdate, "REVOKE does take effect against an owner")
+
+	// It has not. The owning role restores it and rewrites history.
+	badURL, err := urlAs(ownerURL, badRole, "probe-password")
+	require.NoError(t, err)
+	bad, err := pgxpool.New(ctx, badURL)
+	require.NoError(t, err)
+	t.Cleanup(bad.Close)
+
+	_, err = bad.Exec(ctx, `GRANT UPDATE ON audit_events TO `+badRole)
+	require.NoError(t, err, "an owner can grant itself privileges back")
+
+	_, err = bad.Exec(ctx, `UPDATE audit_events SET action = 'tampered'`)
+	require.NoError(t, err, "and can then rewrite the audit log")
+
+	var action string
+	require.NoError(t, owner.QueryRow(ctx, `SELECT action FROM audit_events`).Scan(&action))
+	require.Equal(t, "tampered", action,
+		"this is the configuration Pando must refuse to run in")
+}
+
+func urlAs(dsn, user, password string) (string, error) {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "", err
+	}
+	u.User = url.UserPassword(user, password)
+	return u.String(), nil
+}
+
 // TestStartupFailsLoudlyWhenAuditCannotBeProtected asserts the external-database
 // preflight: Pando refuses to run rather than serving with a rewritable audit
 // log. A degraded mode is not acceptable — the value of enforcing R-027 at the
 // database is that it holds without anyone checking.
+//
+// The trigger is ownership, not current privilege. Pando's own applyGrants would
+// revoke the privilege on the way past and the check would pass, while the role
+// retained the ability to grant it straight back.
 func TestStartupFailsLoudlyWhenAuditCannotBeProtected(t *testing.T) {
 	ctx := context.Background()
 	ownerURL := startPostgres(t)
@@ -164,6 +239,7 @@ func TestStartupFailsLoudlyWhenAuditCannotBeProtected(t *testing.T) {
 	_, err = state.Connect(ctx, state.ConnectOptions{OwnerURL: ownerURL})
 	require.Error(t, err, "Pando must refuse to start when its audit log is rewritable")
 	require.Contains(t, err.Error(), "tamper-proof")
+	require.Contains(t, err.Error(), "owns the audit table")
 }
 
 // TestConnectRetriesUntilPostgresIsReady asserts the Compose race is handled:
