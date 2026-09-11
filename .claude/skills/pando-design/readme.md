@@ -1,5 +1,11 @@
 # Pando design system — "Topo map"
 
+> **Imported verbatim from the Claude Design project.** The Index and file paths below
+> describe *that project*, not this directory: the guideline cards, UI kits, per-component
+> `.d.ts` and `.prompt.md` sidecars and specimen pages were deliberately not vendored.
+> `PROVENANCE.md` lists what is here, what is not, and how to fetch anything missing.
+> This file is otherwise unedited so it cannot drift from upstream.
+
 Pando turns any repo into a running, shareable app: point it at a repository and it
 builds, runs and hands back a URL, with no pipelines and no per-app setup. The people
 who use it include developers, but also the people who just *made* an app with an AI

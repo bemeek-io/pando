@@ -28,11 +28,37 @@ Import components from `index.js`, not from a component's own file — the same
 adherence config enforces that, so that a later refactor of a component's
 internals cannot break its consumers.
 
-## Before using a component
+## Before using a component: fetch its `.prompt.md`
 
-Each component has a `.prompt.md` beside it stating what it is for, when **not**
-to use it, and the brand rule it enforces. Read that file before reaching for the
-component. The rules are not stylistic preference — several encode product
+Every component has a `.prompt.md` stating what it is for, when **not** to use
+it, and the brand rule it enforces — and a `.d.ts` giving its exact props.
+
+**Those two files are not in this directory.** Only `Button`'s are, kept as a
+worked example of the shape. The rest live in the design project and are fetched
+on demand, so that this skill stays small and cannot drift from upstream.
+
+Fetch one before reaching for a component you have not used before:
+
+```
+DesignSync(method: "get_file",
+           projectId: "27583278-89f3-4207-b9af-3fa14d54764a",
+           path: "components/core/Card.prompt.md")
+```
+
+The path is always `components/<group>/<Name>.prompt.md`, with `<group>` one of
+`brand`, `code`, `core`, `data`, `feedback`, `forms`, `navigation` — the same
+layout as this directory, so a local component file tells you its remote path.
+
+**If `DesignSync` reports it needs authorization, stop and ask the person to run
+`/design-login`.** It is a command they type; you cannot run it, and there is no
+way around it. Say so plainly rather than guessing at the component's props.
+
+Pull the full set — all 24 `.d.ts` and all 24 `.prompt.md` — when starting phase 8
+in earnest. The console is TypeScript, so without the `.d.ts` every component
+types as `any`, which silently removes the prop checking the adherence config
+exists to enforce.
+
+The rules in those files are not stylistic preference — several encode product
 decisions, for example:
 
 - Status is **always a symbol plus a word**, never a colored pill, so it never
@@ -72,7 +98,17 @@ assistant that wrote their app. The two should read as one product.
 | `index.js` | The barrel every consumer imports from. |
 | `readme.md` | The brand spec in full. Read this first. |
 | `_adherence.oxlintrc.json` | Lint rules that catch raw hex, raw px, wrong fonts and wrong props. |
-| `PROVENANCE.md` | Where this came from and how to re-sync it. |
+| `PROVENANCE.md` | Where this came from, what was left behind, and how to fetch it. |
+
+Not here, fetched on demand — see `PROVENANCE.md` for each path:
+
+| What | When you want it |
+| --- | --- |
+| `<Name>.prompt.md` | Before using a component for the first time. |
+| `<Name>.d.ts` | Phase 8, all 24 — the console is TypeScript. |
+| `ui_kits/console/` | Before designing a console screen. It is a working prototype of the apps table, app detail, build log, variables, settings and add-app flow, built from the brand spec's own wireframes. |
+| `ui_kits/site/` | If building the marketing site or docs. |
+| `guidelines/*.html` | Visual reference for color, type, spacing and brand. The prose rules are already in `readme.md`. |
 
 ## Building a Pando interface
 
