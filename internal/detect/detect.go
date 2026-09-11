@@ -48,6 +48,18 @@ type Candidate struct {
 
 	// Draft is what this detector would put in the spec.
 	Draft Draft `json:"-"`
+
+	// Blocked is set when a detector recognizes the repository and cannot
+	// proceed with it — a compose file using a construct that cannot cross the
+	// boundary (R-099) is the case this exists for.
+	//
+	// It is deliberately not an error returned from Bid. The auction drops a
+	// detector that errors, because one broken detector must not fail
+	// detection; a blocked candidate dropped the same way would leave the user
+	// with a buildpack guess and no idea why their compose file was ignored.
+	// The reason is the most useful thing Pando has here, so the candidate
+	// stays in the auction and carries it.
+	Blocked error `json:"-"`
 }
 
 // Draft is the part of a spec a detector can fill in.
@@ -109,6 +121,12 @@ type Result struct {
 	Questions []Question `json:"questions"`
 
 	Status string `json:"status"`
+
+	// Blocked is the winner's reason, when the best reading of this repository
+	// is one that cannot proceed. Surfacing it is the whole point: "your
+	// compose file sets privileged: true, and here is why that cannot run" is
+	// an answer, and silently falling through to a language guess is not.
+	Blocked error `json:"-"`
 }
 
 // StrategyUnknown is what detection reports when it could not arrive at a build
@@ -121,6 +139,11 @@ const (
 	StatusReady        = "ready"
 	StatusNeedsAnswers = "needs_answers"
 	StatusUnknown      = "unknown"
+
+	// StatusBlocked is not "Pando does not know". It is "Pando knows, and the
+	// answer is that this cannot run as written" — which is a different thing
+	// to show a user, and the reason travels with it.
+	StatusBlocked = "blocked"
 )
 
 // Auction runs every detector and ranks the results.
@@ -191,11 +214,19 @@ func (a *Auction) Run(ctx context.Context, src api.SourceView) (Result, error) {
 		status = StatusNeedsAnswers
 	}
 
+	// A blocked winner overrides everything else. There is no point asking
+	// which service is primary in a compose file that cannot be imported.
+	if winner.Blocked != nil {
+		status = StatusBlocked
+		questions = nil
+	}
+
 	return Result{
 		Winner:    winner,
 		RunnersUp: bids[1:],
 		Questions: questions,
 		Status:    status,
+		Blocked:   winner.Blocked,
 	}, nil
 }
 

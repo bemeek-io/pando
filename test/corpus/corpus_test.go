@@ -127,6 +127,12 @@ func runCase(t *testing.T, auction *detect.Auction, c testCase) outcome {
 		return out
 	}
 
+	// A blocked result keeps the winning strategy, so without this check a
+	// compose file Pando refused to import would look like one it imported.
+	if result.Blocked != nil {
+		out.Failures = append(out.Failures, "detection blocked: "+result.Blocked.Error())
+	}
+
 	out.Strategy = string(result.Winner.Strategy)
 	out.Confidence = result.Winner.Confidence
 	out.Questions = len(detect.Asked(result.Questions))

@@ -13,6 +13,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/detect"
+	"github.com/bemeek-io/pando/internal/errs"
 )
 
 // memSource is an in-memory SourceView, so detection can be tested against
@@ -513,4 +514,172 @@ func TestPortQuestionsAreDeferredToTheTrialRun(t *testing.T) {
 	// Deferred is not discarded. The trial run can fail to observe a port, and
 	// then it becomes a real question — so it has to still meet R-105.
 	require.NoError(t, port.Validate())
+}
+
+// --- compose import (R-096, R-099) ------------------------------------------
+
+const composeStack = `
+services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    environment:
+      DATABASE_URL: postgres://db:5432/app
+    restart: unless-stopped
+  db:
+    image: postgres:16
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+volumes:
+  dbdata:
+`
+
+// R-096: a compose file is a complete answer, so it is imported rather than
+// used as evidence for a guess.
+func TestR096_AComposeFileIsImportedNotInterpreted(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{"compose.yaml": composeStack})
+	require.NoError(t, err)
+	require.Equal(t, spec.BuildCompose, result.Winner.Strategy)
+
+	draft := result.Winner.Draft
+	require.Len(t, draft.Workloads, 2)
+
+	web := draft.Workloads[1]
+	require.Equal(t, "web", web.Name)
+	require.Equal(t, "nginx:alpine", web.Image)
+	require.Equal(t, []string{"db"}, web.DependsOn, "depends_on ordering is imported")
+
+	require.NotNil(t, web.Health, "healthchecks are imported")
+	require.Equal(t, []string{"curl", "-f", "http://localhost/health"}, web.Health.Command,
+		"the CMD prefix says how to run the test, not what to run")
+	require.Equal(t, 30, web.Health.IntervalSeconds)
+	require.Equal(t, 5, web.Health.TimeoutSeconds)
+	require.Equal(t, 3, web.Health.Retries)
+
+	require.Len(t, draft.Volumes, 1)
+	require.Equal(t, "dbdata", draft.Volumes[0].Name)
+	require.Equal(t, spec.VolumeFromCompose, draft.Volumes[0].Declared)
+
+	// R-131: a service running postgres is a dependency the app declares.
+	require.True(t, hasSlot(draft.Slots, spec.SlotPostgres))
+}
+
+// The container's port is kept; the host's is replaced by Pando's routing.
+func TestR099_APublishedHostPortIsRewrittenNotHonored(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{"compose.yaml": composeStack})
+	require.NoError(t, err)
+
+	web := result.Winner.Draft.Workloads[1]
+	require.Equal(t, []spec.Port{{Number: 80, Protocol: "http", Source: spec.PortCompose}}, web.Ports,
+		"80 is what the service listens on; 8080 is a host publishing Pando replaces")
+
+	require.True(t, hasWarning(result.Winner.Draft.Warnings, spec.WarnComposeConstructRewritten,
+		"8080:80"), "a rewrite says exactly what changed")
+	require.True(t, hasWarning(result.Winner.Draft.Warnings, spec.WarnComposeConstructRewritten,
+		"restart: unless-stopped"))
+}
+
+// R-099: constructs that cannot cross the boundary are refused, with the reason.
+func TestR099_ConstructsThatBreakTheBoundaryAreRejectedWithReasons(t *testing.T) {
+	for name, service := range map[string]string{
+		"host networking":     "    network_mode: host\n",
+		"privileged":          "    privileged: true\n",
+		"host PID":            "    pid: host\n",
+		"host IPC":            "    ipc: host\n",
+		"device pass-through": "    devices:\n      - /dev/kvm\n",
+		"replicas":            "    deploy:\n      replicas: 3\n",
+		"host bind mount":     "    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := auction().Run(context.Background(), memSource{
+				"compose.yaml": "services:\n  web:\n    image: nginx\n" + service,
+			})
+			require.NoError(t, err, "a rejection is a result, not a failure of detection")
+
+			require.Equal(t, detect.StatusBlocked, result.Status)
+			require.Equal(t, spec.BuildCompose, result.Winner.Strategy,
+				"a compose file at the root is still the right reading of the repository")
+
+			require.Error(t, result.Blocked)
+			e := errs.As(result.Blocked)
+			require.Equal(t, errs.PlanComposeConstructRejected, e.Code)
+			require.NotEmpty(t, e.Remedy, "a rejection a user cannot act on is just a wall")
+			require.Contains(t, e.Details, "rejected")
+		})
+	}
+}
+
+// The reason must reach the user rather than being swallowed into a fallback.
+func TestR099_ARejectedComposeFileDoesNotSilentlyBecomeABuildpackGuess(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yaml": "services:\n  web:\n    image: nginx\n    privileged: true\n",
+		"package.json": `{"name":"app"}`,
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, spec.BuildCompose, result.Winner.Strategy,
+		"falling through to buildpack would hide the one useful thing Pando knows")
+	require.Equal(t, detect.StatusBlocked, result.Status)
+	require.Empty(t, result.Questions,
+		"there is nothing to ask about a compose file that cannot be imported")
+}
+
+// A relative bind mount is data until proven otherwise (R-203).
+func TestARelativeBindMountBecomesAManagedVolume(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yaml": "services:\n  db:\n    image: postgres:16\n" +
+			"    volumes:\n      - ./pgdata:/var/lib/postgresql/data\n",
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, detect.StatusBlocked, result.Status,
+		"refusing this would refuse most real compose stacks")
+
+	draft := result.Winner.Draft
+	require.Len(t, draft.Volumes, 1)
+	require.Len(t, draft.Workloads[0].Mounts, 1)
+	require.Equal(t, "/var/lib/postgresql/data", draft.Workloads[0].Mounts[0].Path)
+	require.True(t, hasWarning(draft.Warnings, spec.WarnComposeConstructRewritten, "./pgdata"),
+		"the rewrite names the path, so the user can see what moved")
+}
+
+// Compose services live in a map, and Go randomizes map iteration.
+func TestComposeImportIsStableAcrossRuns(t *testing.T) {
+	src := memSource{"compose.yaml": composeStack}
+
+	first, err := auction().Run(context.Background(), src)
+	require.NoError(t, err)
+
+	for range 20 {
+		again, err := auction().Run(context.Background(), src)
+		require.NoError(t, err)
+		require.Equal(t, first.Winner.Draft.Workloads, again.Winner.Draft.Workloads)
+		require.Equal(t, first.Questions, again.Questions,
+			"the options in a question must not reshuffle between runs of the same repo")
+	}
+}
+
+func hasSlot(slots []spec.Slot, want spec.SlotType) bool {
+	for _, s := range slots {
+		if s.Type == want {
+			return true
+		}
+	}
+	return false
+}
+
+func hasWarning(warnings []spec.Warning, code, mentions string) bool {
+	for _, w := range warnings {
+		if w.Code == code && strings.Contains(w.Message, mentions) {
+			return true
+		}
+	}
+	return false
 }

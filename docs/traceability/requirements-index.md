@@ -10,9 +10,9 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | | Count | Of total |
 |---|---:|---:|
 | Requirements | 207 | — |
-| Specified in a design doc | 141 | 68% |
+| Specified in a design doc | 142 | 68% |
 | Assigned to a phase | 107 | 51% |
-| Covered by a named test | 47 | 22% |
+| Covered by a named test | 49 | 23% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -94,10 +94,10 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-093** | D | Detection is a detector auction. | 7.2 Detection | 03, 07 | 06 | `TestR093_RunnersUpAreReturned` |
 | **R-094** | D | Confidence ladder, highest first: | 7.2 Detection | 07 | 06 | — |
 | **R-095** | P | For tier 4, wrap an existing buildpack implementation (Paketo, nixpacks) rather than… | 7.2 Detection | — | — | — |
-| **R-096** | D | A compose file is a complete answer, not a hint. | 7.2 Detection | 01 | — | — |
+| **R-096** | D | A compose file is a complete answer, not a hint. | 7.2 Detection | 01 | — | `TestR096_AComposeFileIsImportedNotInterpreted` |
 | **R-097** | D | A trial run in throwaway isolation is part of detection. | 7.2 Detection | 01, 03, 07 | 06 | — |
 | **R-098** | D | The user reviews the proposal, then it pins. | 7.2 Detection | — | — | — |
-| **R-099** | D | Compose constructs incompatible with the boundary are rejected or rewritten, with the reason… | 7.2 Detection | 00, 01 | 06 | — |
+| **R-099** | D | Compose constructs incompatible with the boundary are rejected or rewritten, with the reason… | 7.2 Detection | 00, 01 | 06 | `TestR099_APublishedHostPortIsRewrittenNotHonored`, `TestR099_ARejectedComposeFileDoesNotSilentlyBecomeABuildpackGuess`, `TestR099_ConstructsThatBreakTheBoundaryAreRejectedWithReasons` |
 | **R-100** | D | A user may promote a compose-declared service to a Pando-managed one — e.g. | 7.2 Detection | 01 | 02 | — |
 | **R-101** | D | There is always a bottom escape hatch: supply an image reference and a command, skipping… | 7.2 Detection | 01 | 02, 06 | — |
 | **R-102** | D | Ask, never guess. | 7.3 When detection cannot decide | 03, 04, 08 | 08 | `TestR102_ACloseCallBecomesAQuestion` |
@@ -285,7 +285,6 @@ Check each against the categories above before treating it as a gap.
 - **R-260** (19. Surfaces) — Four first-class administrative surfaces, all shipping: API, CLI, MCP, web console.
 - **R-263** (19. Surfaces) — End users — people who were granted use of an app and nothing else — do not need the console.
 - **R-266** (19. Surfaces) — Sharing an app sends no message.
-- **R-270** (20. Configuration and Policy) — Pando ships permissive defaults.
 - **R-273** (20. Configuration and Policy) — Premade setting profiles for common postures (hobbyist, hardened, regulated), usable as-is or…
 - **R-281** (21. Data Destruction) — Losing access to Pando means losing access to every app the user had.
 - **R-283** (21. Data Destruction) — An option to back up before destroying exists, off by default.

@@ -176,17 +176,40 @@ func (d ComposeDetector) Bid(_ context.Context, src api.SourceView) (Candidate, 
 		return Candidate{Confidence: 0}, nil
 	}
 
-	services, volumes, images := readCompose(src, found)
-
 	c := Candidate{
 		Strategy:   spec.BuildCompose,
 		Confidence: 0.88,
 		Evidence:   []string{found + " at repository root"},
-		Draft:      Draft{Build: spec.Build{Strategy: spec.BuildCompose, ComposeFile: found}},
+	}
+
+	// R-096: a compose file is a complete answer, not a hint. The import is the
+	// bid — there is nothing left to infer once the author has said what runs.
+	draft, err := ImportCompose(src, found)
+	if err != nil {
+		// The bid stands, carrying the reason. A compose file at the root is
+		// still the right reading of this repository even when it cannot be
+		// imported, and "here is the construct that cannot run" is a better
+		// answer than quietly bidding buildpack instead (R-099).
+		c.Blocked = err
+		c.Draft = Draft{Build: spec.Build{Strategy: spec.BuildCompose, ComposeFile: found}}
+		//nolint:nilerr // Returning the error here would make the auction drop
+		// this detector, which is right for a detector that broke and wrong for
+		// one that worked and found a reason. The reason travels on the
+		// candidate instead, and the auction surfaces it as StatusBlocked.
+		return c, nil
+	}
+	c.Draft = draft
+
+	services := make([]string, 0, len(draft.Workloads))
+	for _, w := range draft.Workloads {
+		services = append(services, w.Name)
 	}
 	if len(services) > 0 {
 		c.Evidence = append(c.Evidence,
 			fmt.Sprintf("%d services: %s", len(services), strings.Join(truncate(services, 6), ", ")))
+	}
+	if len(draft.Volumes) > 0 {
+		c.Evidence = append(c.Evidence, fmt.Sprintf("%d declared volume(s)", len(draft.Volumes)))
 	}
 
 	// A compose file describes several services; exactly one is the app's
@@ -206,26 +229,6 @@ func (d ComposeDetector) Bid(_ context.Context, src api.SourceView) (Candidate, 
 		})
 	}
 
-	for i, name := range services {
-		c.Draft.Workloads = append(c.Draft.Workloads, spec.Workload{
-			Name:    name,
-			Image:   images[name],
-			Primary: len(services) == 1 && i == 0,
-			Exposed: len(services) == 1,
-		})
-	}
-
-	// A volume in the compose file is the author saying this data matters
-	// (R-021: fill declared slots, do not invent topology).
-	for _, v := range volumes {
-		c.Draft.Volumes = append(c.Draft.Volumes, spec.Volume{
-			Name: v, Declared: spec.VolumeFromCompose,
-		})
-	}
-
-	// Services that are recognizably a database or a cache become slots rather
-	// than workloads Pando runs blindly — that is what makes them fillable.
-	c.Draft.Slots = slotsFromComposeServices(services, images)
 	return c, nil
 }
 
@@ -442,58 +445,6 @@ func readDockerfile(src api.SourceView, name string) ([]int, string) {
 		}
 	}
 	return ports, command
-}
-
-// readCompose reads service names, volumes and images.
-//
-// A deliberately minimal YAML read rather than a full parse: detection needs the
-// shape of the file, and a full compose parse belongs in the compose importer
-// where rejected constructs are handled (R-099).
-func readCompose(src api.SourceView, name string) (services, volumes []string, images map[string]string) {
-	images = map[string]string{}
-
-	f, err := src.Open(name)
-	if err != nil {
-		return nil, nil, images
-	}
-	defer func() { _ = f.Close() }()
-
-	var section string
-	var current string
-
-	scanner := bufio.NewScanner(io.LimitReader(f, 512<<10))
-	for scanner.Scan() {
-		raw := scanner.Text()
-		if strings.TrimSpace(raw) == "" || strings.HasPrefix(strings.TrimSpace(raw), "#") {
-			continue
-		}
-
-		indent := len(raw) - len(strings.TrimLeft(raw, " "))
-		line := strings.TrimSpace(raw)
-
-		if indent == 0 {
-			section = strings.TrimSuffix(line, ":")
-			current = ""
-			continue
-		}
-		if indent <= 2 && strings.HasSuffix(line, ":") {
-			name := strings.TrimSuffix(line, ":")
-			switch section {
-			case "services":
-				services = append(services, name)
-				current = name
-			case "volumes":
-				volumes = append(volumes, name)
-			}
-			continue
-		}
-		if section == "services" && current != "" {
-			if after, ok := strings.CutPrefix(line, "image:"); ok {
-				images[current] = strings.Trim(strings.TrimSpace(after), `"'`)
-			}
-		}
-	}
-	return services, volumes, images
 }
 
 // slotsFromComposeServices turns recognizable backing services into slots.
