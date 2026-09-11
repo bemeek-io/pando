@@ -7,6 +7,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
+
+	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/audit"
+	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/state"
+	"github.com/bemeek-io/pando/internal/log"
 )
 
 // Health reports whether a dependency is reachable.
@@ -23,6 +29,27 @@ type Health interface {
 type Server struct {
 	Logger *zap.Logger
 	DB     Health
+
+	Identity api.IdentityAdapter
+	Users    *state.Users
+	Sessions *state.Sessions
+	Tokens   *state.Tokens
+	Authz    *authz.Authorizer
+	Auditor  *audit.Writer
+	Authent  *Authenticator
+}
+
+// audit records an event, logging rather than failing the request if the write
+// does not land. An audit failure must not become a denial of service on the
+// action being audited — but it must never pass silently either.
+func (s *Server) audit(r *http.Request, e audit.Event) {
+	if s.Auditor == nil {
+		return
+	}
+	e.RequestID = RequestIDFrom(r.Context())
+	if err := s.Auditor.Write(r.Context(), e); err != nil {
+		log.From(r.Context()).Error("audit write failed", zap.String("action", e.Action), zap.Error(err))
+	}
 }
 
 // Routes builds the router.
@@ -54,6 +81,12 @@ func (s *Server) Routes() http.Handler {
 	})
 
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(Authenticate(s.Authent))
+
+		r.Post("/sessions", s.handleLogin)
+		r.Delete("/sessions", s.handleLogout)
+		r.Get("/me", s.handleMe)
+
 		// Phases 2 onward mount resources here.
 	})
 

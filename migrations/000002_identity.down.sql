@@ -1,0 +1,6 @@
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS tokens;
+DROP TABLE IF EXISTS group_members;
+DROP TABLE IF EXISTS groups;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS identity_adapters;

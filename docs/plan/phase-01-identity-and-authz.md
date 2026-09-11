@@ -34,6 +34,13 @@ phase where the two-plane distinction is either established correctly or quietly
 
 R-044, R-047, R-048, R-049, R-058–R-063, R-070–R-082, R-087, R-229, R-272.
 
+## Scope note taken during implementation
+
+`grants` references `apps`, which properly belongs to phase 2. Migration 000003 creates only the
+columns `grants` needs — id, name, slug, owner, state, plus the two fields phase 0 added for the
+reconciler. Phase 2 adds `spec_revisions` and the `pinned_spec_id` FK, which is circular and can only
+be added once both tables exist.
+
 ## Done when
 
 The evaluation order in design 06 §2 is **fully covered by unit tests**, including a delegated token
