@@ -65,10 +65,14 @@ new, publish both, sign with the new one after a propagation window, retire the 
 R-170. Websockets, SSE, and large uploads must work. Concretely: no response buffering, `Flush()` on
 every write for SSE, hijack for the websocket upgrade, and **no default body size limit**.
 
-**[O-13] unresolved:** what happens when a session is revoked mid-websocket. A long-lived connection
-authorized once currently stays open indefinitely. Either re-authorize on a timer and close on
-failure, or accept it and document the window. Do not silently pick one — see
-`docs/plan/open-decisions.md`.
+**[O-13] resolved.** A long-lived connection is re-authorized on a timer and closed when
+authorization fails. The interval is `assertion.Lifetime` — the *same constant*, not a copy of its
+value, because two clocks measuring the same thing drift apart the first time someone tunes one.
+
+Leaving them open would have made a websocket the one way to hold access indefinitely after
+revocation, which is precisely the property an attacker looks for. On failure the connection closes
+with a policy-violation close frame rather than an abrupt reset, so a client can tell revocation from
+a network fault.
 
 ## Tests this package owes
 
@@ -78,4 +82,5 @@ failure, or accept it and document the window. Do not silently pick one — see
 - An assertion minted for app A fails verification at app B (`aud` mismatch).
 - Removing a user from a group revokes access within the documented cache TTL, without a redeploy.
 - A websocket upgrade streams bidirectionally.
+- A websocket is closed when the session behind it is revoked, within one assertion lifetime.
 - SSE responses are not buffered.

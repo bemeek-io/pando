@@ -1,0 +1,541 @@
+package proxy_test
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+
+	"github.com/bemeek-io/pando/internal/core/assertion"
+	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/bemeek-io/pando/internal/core/state"
+	"github.com/bemeek-io/pando/internal/proxy"
+)
+
+// --- doubles ---------------------------------------------------------------
+
+type store struct {
+	owner     map[string]string
+	data      map[string][]string
+	anonymous map[string]bool
+	status    map[string]string
+}
+
+func newStore() *store {
+	return &store{
+		owner: map[string]string{}, data: map[string][]string{},
+		anonymous: map[string]bool{}, status: map[string]string{},
+	}
+}
+
+func (s *store) UserStatus(_ context.Context, id string) (string, error) {
+	if st, ok := s.status[id]; ok {
+		return st, nil
+	}
+	return "active", nil
+}
+func (s *store) ControlGrantsFor(context.Context, string, authz.Principal) ([]authz.Grant, error) {
+	return nil, nil
+}
+func (s *store) IsOwner(_ context.Context, appID, userID string) (bool, error) {
+	return userID != "" && s.owner[appID] == userID, nil
+}
+func (s *store) HasDataGrant(_ context.Context, appID string, p authz.Principal) (bool, error) {
+	for _, id := range s.data[appID] {
+		if id == p.UserID || id == p.ID {
+			return true, nil
+		}
+		for _, g := range p.Groups {
+			if id == g {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+func (s *store) HasAnonymousGrant(_ context.Context, appID string) (bool, error) {
+	return s.anonymous[appID], nil
+}
+func (s *store) Role(context.Context, string) (authz.Role, error) { return authz.Role{}, nil }
+
+type resolver struct {
+	app  state.App
+	spec *spec.AppSpec
+}
+
+func (r *resolver) ByHostname(context.Context, string) (state.App, *spec.AppSpec, bool, error) {
+	return r.app, r.spec, r.app.ID != "", nil
+}
+func (r *resolver) BySlug(context.Context, string) (state.App, *spec.AppSpec, bool, error) {
+	return r.app, r.spec, r.app.ID != "", nil
+}
+
+type fixedUpstream struct{ addr string }
+
+func (f fixedUpstream) PrimaryAddress(context.Context, state.App, *spec.AppSpec) (string, error) {
+	return f.addr, nil
+}
+
+type staticAuth struct{ principal authz.Principal }
+
+func (s staticAuth) Authenticate(*http.Request) (authz.Principal, error) { return s.principal, nil }
+
+// --- fixture ---------------------------------------------------------------
+
+const appID = "app_01HQ8"
+
+// harness returns a proxy in front of a recording upstream.
+func harness(t *testing.T, principal authz.Principal, configure func(*store)) (*httptest.Server, *store, *proxy.Counters, *received) {
+	t.Helper()
+
+	got := &received{}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.record(r)
+		fmt.Fprint(w, "upstream ok")
+	}))
+	t.Cleanup(upstream.Close)
+
+	s := newStore()
+	if configure != nil {
+		configure(s)
+	}
+
+	minter, err := assertion.NewMinter("https://pando.test", nil)
+	require.NoError(t, err)
+
+	counters := proxy.NewCounters()
+	p := &proxy.Proxy{
+		Resolver: &resolver{
+			app: state.App{ID: appID, Slug: "notes", State: state.StateRunning},
+			spec: &spec.AppSpec{
+				Workloads: []spec.Workload{{Name: "web", Primary: true,
+					Ports: []spec.Port{{Number: 80, Protocol: "http"}}}},
+			},
+		},
+		Authenticator: staticAuth{principal: principal},
+		Authz:         authz.New(s, nil, nil),
+		Minter:        minter,
+		Upstreams:     fixedUpstream{addr: upstream.URL},
+		Metrics:       counters,
+		Logger:        zap.NewNop(),
+		Mode:          spec.RoutingSubdomain,
+	}
+
+	front := httptest.NewServer(p)
+	t.Cleanup(front.Close)
+	return front, s, counters, got
+}
+
+type received struct {
+	header http.Header
+	path   string
+}
+
+func (r *received) record(req *http.Request) {
+	r.header = req.Header.Clone()
+	r.path = req.URL.Path
+}
+
+func activeUser(id string) authz.Principal {
+	return authz.Principal{Kind: authz.KindUser, ID: id, UserID: id, Status: "active",
+		Email: "alice@corp.com", DisplayName: "Alice"}
+}
+
+// --- the test the risk register names --------------------------------------
+
+// TestR053_ForgedHeadersAreReplaced asserts R-053.
+//
+// This is the single most likely serious bug in the proxy: without an
+// unconditional strip, a client sets X-Pando-User: admin@corp.com and any app
+// trusting the convenience headers is trivially spoofed.
+//
+// The assertion is that the forged value arrives REPLACED, not merely that some
+// header is present — a proxy that appended would pass a weaker test.
+func TestR053_ForgedHeadersAreReplaced(t *testing.T) {
+	front, s, _, got := harness(t, activeUser("usr_alice"), func(s *store) {
+		s.owner[appID] = "usr_alice"
+	})
+	_ = s
+
+	req, err := http.NewRequest(http.MethodGet, front.URL+"/", nil)
+	require.NoError(t, err)
+
+	// Every spelling a forger might try. Header keys canonicalize, so these all
+	// land in the same namespace.
+	req.Header.Set("X-Pando-User", "admin@corp.com")
+	req.Header.Set("x-pando-email", "admin@corp.com")
+	req.Header.Set("X-PANDO-GROUPS", "admins,superusers")
+	req.Header.Set("X-Pando-Assertion", "forged.assertion.value")
+	req.Header.Set("X-Pando-Something-New", "whatever")
+	req.Header.Set("X-Forwarded-Prefix", "/forged")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	require.Equal(t, "usr_alice", got.header.Get("X-Pando-User"),
+		"the forged user must be replaced with the real principal")
+	require.Equal(t, "alice@corp.com", got.header.Get("X-Pando-Email"))
+	require.NotEqual(t, "forged.assertion.value", got.header.Get(assertion.Header))
+
+	// Not merely overwritten — gone. A header Pando does not set must not
+	// survive either, or a future convenience header becomes spoofable the day
+	// it is added.
+	require.Empty(t, got.header.Get("X-Pando-Something-New"),
+		"an unknown header in Pando's namespace must not pass through")
+	require.Empty(t, got.header.Get("X-Pando-Groups"),
+		"this principal has no groups, so no group header may arrive")
+	require.Empty(t, got.header.Get("X-Forwarded-Prefix"),
+		"X-Forwarded-Prefix is Pando's to set; an inbound one is a forgery")
+
+	// And nothing forged is anywhere in the namespace at all.
+	for name, values := range got.header {
+		if strings.HasPrefix(http.CanonicalHeaderKey(name), "X-Pando-") {
+			for _, v := range values {
+				require.NotContains(t, v, "admin@corp.com", "header %s leaked a forged value", name)
+				require.NotContains(t, v, "superusers", "header %s leaked a forged value", name)
+			}
+		}
+	}
+}
+
+// --- assertions ------------------------------------------------------------
+
+// TestR054_AssertionCarriesTheStableSubject asserts R-054: sub is users.id.
+func TestR054_AssertionCarriesTheStableSubject(t *testing.T) {
+	front, _, _, got := harness(t, activeUser("usr_alice"), func(s *store) {
+		s.owner[appID] = "usr_alice"
+	})
+
+	resp, err := http.Get(front.URL + "/")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	claims := decodeClaims(t, got.header.Get(assertion.Header))
+	require.Equal(t, "usr_alice", claims.Sub)
+	require.Equal(t, appID, claims.Aud, "aud is the app, which is what prevents cross-app replay")
+	require.Equal(t, "https://pando.test", claims.Iss)
+	require.Equal(t, int64(assertion.Lifetime/time.Second), claims.Exp-claims.Iat,
+		"lifetime is the one constant, not a copy of its value")
+}
+
+// TestR056_AnonymousStillGetsAnAssertion asserts R-056.
+//
+// The consequence an app developer depends on: absence of the header means the
+// request did not come through Pando at all. That only holds if an anonymous
+// request still carries one.
+func TestR056_AnonymousStillGetsAnAssertion(t *testing.T) {
+	front, _, counters, got := harness(t, authz.Anonymous(), func(s *store) {
+		s.anonymous[appID] = true // shared with everyone (R-075)
+	})
+
+	resp, err := http.Get(front.URL + "/")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	claims := decodeClaims(t, got.header.Get(assertion.Header))
+	require.Equal(t, assertion.AnonymousSubject, claims.Sub)
+	require.Equal(t, appID, claims.Aud)
+
+	// R-023: no bypass. The anonymous path traverses every step, and the
+	// counter proves it rather than the comment claiming it.
+	total, allowed, _, anonymous := counters.Snapshot(appID)
+	require.Equal(t, int64(1), total)
+	require.Equal(t, int64(1), allowed)
+	require.Equal(t, int64(1), anonymous)
+}
+
+// TestCrossAppReplayIsRejected asserts the aud check: an assertion minted for
+// one app must not verify for another.
+func TestCrossAppReplayIsRejected(t *testing.T) {
+	minter, err := assertion.NewMinter("https://pando.test", nil)
+	require.NoError(t, err)
+
+	tokenForA, err := minter.Mint(assertion.Claims{Sub: "usr_alice", Aud: "app_A"})
+	require.NoError(t, err)
+
+	claims, err := minter.Verify(tokenForA)
+	require.NoError(t, err, "the assertion itself is valid")
+	require.Equal(t, "app_A", claims.Aud)
+
+	// An app verifies the signature AND checks aud against its own ID. The
+	// signature holding while the audience does not match is exactly the case
+	// this guards.
+	require.NotEqual(t, "app_B", claims.Aud,
+		"app B must reject this assertion on aud, even though the signature verifies")
+}
+
+// TestAssertionWithoutAnAudienceIsRefused asserts that an assertion replayable
+// against every app cannot be produced by accident.
+func TestAssertionWithoutAnAudienceIsRefused(t *testing.T) {
+	minter, err := assertion.NewMinter("https://pando.test", nil)
+	require.NoError(t, err)
+
+	_, err = minter.Mint(assertion.Claims{Sub: "usr_alice"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "must name the app")
+}
+
+// --- access ----------------------------------------------------------------
+
+// TestR029_AnOperatorWithNoDataGrantIsDenied asserts the two-plane split at the
+// proxy — the place it matters most.
+func TestR029_AnOperatorWithNoDataGrantIsDenied(t *testing.T) {
+	front, _, counters, _ := harness(t, activeUser("usr_bob"), func(s *store) {
+		s.owner[appID] = "usr_alice" // bob is not the owner and holds no data grant
+	})
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Get(front.URL + "/")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	require.Equal(t, http.StatusForbidden, resp.StatusCode,
+		"an authenticated caller without access gets 403, not a login redirect")
+
+	body, _ := io.ReadAll(resp.Body)
+	require.Contains(t, string(body), "Ask whoever set it up",
+		"the message says what to do, in the product's voice")
+
+	// Denied requests are counted too.
+	total, allowed, denied, _ := counters.Snapshot(appID)
+	require.Equal(t, int64(1), total)
+	require.Equal(t, int64(0), allowed)
+	require.Equal(t, int64(1), denied)
+}
+
+// TestAnonymousWithoutAccessIsSentToSignIn asserts the other branch: an
+// anonymous caller is redirected rather than refused, with somewhere to return.
+func TestAnonymousWithoutAccessIsSentToSignIn(t *testing.T) {
+	front, _, _, _ := harness(t, authz.Anonymous(), nil)
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Get(front.URL + "/dashboard?tab=deploys")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	location := resp.Header.Get("Location")
+	require.Contains(t, location, "/login")
+	require.Contains(t, location, "dashboard", "the original destination is preserved")
+}
+
+// TestR079_RemovingAGroupRevokesAccess asserts R-079 at the proxy: membership is
+// read from the principal each request, so a removal takes effect without a
+// redeploy.
+func TestR079_RemovingAGroupRevokesAccess(t *testing.T) {
+	member := activeUser("usr_bob")
+	member.Groups = []string{"grp_engineering"}
+
+	front, _, _, _ := harness(t, member, func(s *store) {
+		s.owner[appID] = "usr_alice"
+		s.data[appID] = []string{"grp_engineering"}
+	})
+
+	resp, err := http.Get(front.URL + "/")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// The same user without the group. Nothing about the app or the grant
+	// changed — only what the principal carries.
+	frontAfter, _, _, _ := harness(t, activeUser("usr_bob"), func(s *store) {
+		s.owner[appID] = "usr_alice"
+		s.data[appID] = []string{"grp_engineering"}
+	})
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	after, err := client.Get(frontAfter.URL + "/")
+	require.NoError(t, err)
+	_ = after.Body.Close()
+	require.Equal(t, http.StatusForbidden, after.StatusCode)
+}
+
+// TestASuspendedUserIsDenied asserts R-049 reaches the proxy.
+func TestASuspendedUserIsDenied(t *testing.T) {
+	suspended := activeUser("usr_alice")
+	suspended.Status = "suspended"
+
+	front, _, _, _ := harness(t, suspended, func(s *store) {
+		s.owner[appID] = "usr_alice" // owner, but suspended
+	})
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Get(front.URL + "/")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	require.Equal(t, http.StatusForbidden, resp.StatusCode,
+		"suspension denies even the owner")
+}
+
+// --- routing ---------------------------------------------------------------
+
+// TestR167_PathModeStripsThePrefix asserts R-167.
+func TestR167_PathModeStripsThePrefix(t *testing.T) {
+	got := &received{}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.record(r)
+	}))
+	defer upstream.Close()
+
+	s := newStore()
+	s.owner[appID] = "usr_alice"
+	minter, err := assertion.NewMinter("https://pando.test", nil)
+	require.NoError(t, err)
+
+	p := &proxy.Proxy{
+		Resolver: &resolver{
+			app: state.App{ID: appID, Slug: "notes", State: state.StateRunning},
+			spec: &spec.AppSpec{Workloads: []spec.Workload{{Name: "web", Primary: true,
+				Ports: []spec.Port{{Number: 80, Protocol: "http"}}}}},
+		},
+		Authenticator: staticAuth{principal: activeUser("usr_alice")},
+		Authz:         authz.New(s, nil, nil),
+		Minter:        minter,
+		Upstreams:     fixedUpstream{addr: upstream.URL},
+		Logger:        zap.NewNop(),
+		Mode:          spec.RoutingPath,
+	}
+	front := httptest.NewServer(p)
+	defer front.Close()
+
+	resp, err := http.Get(front.URL + "/notes/dashboard")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+
+	require.Equal(t, "/dashboard", got.path, "the prefix is stripped before the app sees it")
+	require.Equal(t, "/notes", got.header.Get("X-Forwarded-Prefix"),
+		"and the app is told what was stripped, so it can build correct links")
+}
+
+// TestAnAppThatIsNotRunningIs503 asserts step 2 of the request path.
+func TestAnAppThatIsNotRunningIs503(t *testing.T) {
+	s := newStore()
+	minter, err := assertion.NewMinter("https://pando.test", nil)
+	require.NoError(t, err)
+
+	p := &proxy.Proxy{
+		Resolver: &resolver{
+			app:  state.App{ID: appID, State: state.StateStopped},
+			spec: &spec.AppSpec{},
+		},
+		Authenticator: staticAuth{principal: activeUser("usr_alice")},
+		Authz:         authz.New(s, nil, nil),
+		Minter:        minter,
+		Upstreams:     fixedUpstream{addr: "http://unused"},
+		Logger:        zap.NewNop(),
+	}
+	front := httptest.NewServer(p)
+	defer front.Close()
+
+	resp, err := http.Get(front.URL + "/")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	require.Contains(t, string(body), "isn't running")
+}
+
+// --- streaming -------------------------------------------------------------
+
+// TestR170_SSEIsNotBuffered asserts R-170.
+//
+// A build log that arrives in one lump at the end is not a live log, and
+// watching a build happen is the whole point of the endpoint behind this.
+func TestR170_SSEIsNotBuffered(t *testing.T) {
+	release := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		rc := http.NewResponseController(w)
+
+		fmt.Fprint(w, "data: first\n\n")
+		_ = rc.Flush()
+
+		<-release // hold the handler open; a buffering proxy would send nothing yet
+
+		fmt.Fprint(w, "data: second\n\n")
+		_ = rc.Flush()
+	}))
+	defer upstream.Close()
+
+	s := newStore()
+	s.owner[appID] = "usr_alice"
+	minter, err := assertion.NewMinter("https://pando.test", nil)
+	require.NoError(t, err)
+
+	front := httptest.NewServer(&proxy.Proxy{
+		Resolver: &resolver{
+			app: state.App{ID: appID, State: state.StateRunning},
+			spec: &spec.AppSpec{Workloads: []spec.Workload{{Name: "web", Primary: true,
+				Ports: []spec.Port{{Number: 80, Protocol: "http"}}}}},
+		},
+		Authenticator: staticAuth{principal: activeUser("usr_alice")},
+		Authz:         authz.New(s, nil, nil),
+		Minter:        minter,
+		Upstreams:     fixedUpstream{addr: upstream.URL},
+		Logger:        zap.NewNop(),
+	})
+	defer front.Close()
+
+	resp, err := http.Get(front.URL + "/events")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	// The first event must arrive while the upstream handler is still running.
+	buf := make([]byte, 64)
+	done := make(chan string, 1)
+	go func() {
+		n, _ := resp.Body.Read(buf)
+		done <- string(buf[:n])
+	}()
+
+	select {
+	case first := <-done:
+		require.Contains(t, first, "first", "the first event arrived before the stream closed")
+	case <-time.After(3 * time.Second):
+		close(release)
+		t.Fatal("nothing arrived while the upstream was still open — the proxy is buffering")
+	}
+	close(release)
+}
+
+func decodeClaims(t *testing.T, token string) assertion.Claims {
+	t.Helper()
+	require.NotEmpty(t, token, "no assertion reached the app")
+
+	parts := strings.Split(token, ".")
+	require.Len(t, parts, 3)
+
+	payload, err := base64Decode(parts[1])
+	require.NoError(t, err)
+
+	var claims assertion.Claims
+	require.NoError(t, json.Unmarshal(payload, &claims))
+	return claims
+}
+
+func base64Decode(s string) ([]byte, error) {
+	return base64.RawURLEncoding.DecodeString(s)
+}

@@ -29,20 +29,25 @@ func NewTokens(db *DB) *Tokens { return &Tokens{db: db} }
 
 // Token is a stored token, without its secret.
 type Token struct {
-	ID          string
-	Kind        string
-	Name        string
-	OwnerUserID string
-	ExpiresAt   *time.Time
-	LastUsedAt  *time.Time
-	RevokedAt   *time.Time
+	ID          string     `json:"id"`
+	Kind        string     `json:"kind"`
+	Name        string     `json:"name"`
+	OwnerUserID string     `json:"owner_user_id,omitempty"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
+	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
 }
 
 // Issued is a freshly minted token. Secret is present exactly once, here
 // (R-063) — it is hashed on the way into the database and cannot be recovered.
+//
+// Secret is a secret.Value, so serializing this struct redacts it. A handler
+// returning the plaintext to its one legitimate caller must reveal it
+// deliberately, which is the point: there is no path where it leaks by
+// forgetting.
 type Issued struct {
-	Token  Token
-	Secret secret.Value
+	Token  Token        `json:"token"`
+	Secret secret.Value `json:"secret"`
 }
 
 // Create mints a token.

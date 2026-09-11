@@ -1,0 +1,137 @@
+package proxy
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"sync/atomic"
+
+	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/bemeek-io/pando/internal/core/state"
+	"github.com/bemeek-io/pando/internal/errs"
+)
+
+// StateResolver resolves apps from the state store.
+type StateResolver struct {
+	apps *state.Apps
+}
+
+func NewStateResolver(apps *state.Apps) *StateResolver { return &StateResolver{apps: apps} }
+
+// ByHostname resolves an app by the hostname in its pinned spec.
+func (r *StateResolver) ByHostname(ctx context.Context, hostname string) (state.App, *spec.AppSpec, bool, error) {
+	return r.apps.ByRouting(ctx, "hostname", hostname)
+}
+
+// BySlug resolves an app by its slug, for path mode.
+func (r *StateResolver) BySlug(ctx context.Context, slug string) (state.App, *spec.AppSpec, bool, error) {
+	return r.apps.ByRouting(ctx, "slug", slug)
+}
+
+// RuntimeUpstreams asks the runtime adapter where an app's primary workload is.
+//
+// The address comes from the adapter rather than being assembled here, because
+// how a workload is addressed is exactly the provider vocabulary core must not
+// learn (R-251).
+type RuntimeUpstreams struct {
+	registry *api.Registry
+}
+
+func NewRuntimeUpstreams(registry *api.Registry) *RuntimeUpstreams {
+	return &RuntimeUpstreams{registry: registry}
+}
+
+// PrimaryAddress returns the URL of the app's primary workload.
+func (u *RuntimeUpstreams) PrimaryAddress(ctx context.Context, app state.App, s *spec.AppSpec) (string, error) {
+	if s == nil {
+		return "", errs.New(errs.StateInvalid, "This app has no pinned spec.")
+	}
+	primary, ok := s.PrimaryWorkload()
+	if !ok {
+		return "", errs.New(errs.ValidPrimaryWorkload, "This app has no primary workload.")
+	}
+
+	port := 0
+	for _, p := range primary.Ports {
+		if p.Protocol == "http" || p.Protocol == "" {
+			port = p.Number
+			break
+		}
+	}
+	if port == 0 && len(primary.Ports) > 0 {
+		port = primary.Ports[0].Number
+	}
+	if port == 0 {
+		return "", errs.New(errs.StateInvalid,
+			"Pando doesn't know which port this app serves on.").
+			WithRemedy("Add the port to the app's spec.")
+	}
+
+	// The bundle network gives each workload a DNS alias under its own name, so
+	// the address is the workload name and its port — no container ID, no IP,
+	// nothing that changes when the app is recreated.
+	return fmt.Sprintf("http://%s:%d", workloadHost(app.ID, primary.Name), port), nil
+}
+
+// workloadHost is the name a workload answers to inside its bundle network.
+func workloadHost(appID, workload string) string {
+	return "pando-" + appID + "-" + workload
+}
+
+// Counters is an in-memory request count, per app.
+//
+// Its purpose is evidential: R-023 says there is no bypass, and a counter that
+// every request increments — allowed or denied, authenticated or anonymous — is
+// how that claim is checked rather than asserted.
+type Counters struct {
+	mu     sync.RWMutex
+	counts map[string]*appCounter
+}
+
+type appCounter struct {
+	total     atomic.Int64
+	allowed   atomic.Int64
+	denied    atomic.Int64
+	anonymous atomic.Int64
+}
+
+func NewCounters() *Counters { return &Counters{counts: map[string]*appCounter{}} }
+
+func (c *Counters) Request(appID string, kind authz.PrincipalKind, allowed bool) {
+	c.mu.Lock()
+	counter, ok := c.counts[appID]
+	if !ok {
+		counter = &appCounter{}
+		c.counts[appID] = counter
+	}
+	c.mu.Unlock()
+
+	counter.total.Add(1)
+	if allowed {
+		counter.allowed.Add(1)
+	} else {
+		counter.denied.Add(1)
+	}
+	if kind == authz.KindAnonymous {
+		counter.anonymous.Add(1)
+	}
+}
+
+// Snapshot returns the counts for one app.
+func (c *Counters) Snapshot(appID string) (total, allowed, denied, anonymous int64) {
+	c.mu.RLock()
+	counter, ok := c.counts[appID]
+	c.mu.RUnlock()
+	if !ok {
+		return 0, 0, 0, 0
+	}
+	return counter.total.Load(), counter.allowed.Load(), counter.denied.Load(), counter.anonymous.Load()
+}
+
+var (
+	_ Resolver  = (*StateResolver)(nil)
+	_ Upstreams = (*RuntimeUpstreams)(nil)
+	_ Metrics   = (*Counters)(nil)
+)

@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+
+	"github.com/bemeek-io/pando/internal/core/spec"
 )
 
 // Config is Pando's configuration, from YAML, environment, and flags (R-271).
@@ -27,6 +29,15 @@ type Server struct {
 	// to (R-023). It must be reachable from wherever an adapter's data plane
 	// runs, which is not necessarily where Pando runs.
 	ProxyUpstream string `mapstructure:"proxy_upstream"`
+
+	// Issuer is the `iss` claim in every assertion, and identifies this
+	// install to the apps it fronts.
+	Issuer string `mapstructure:"issuer"`
+
+	// RoutingMode is how apps are addressed — "subdomain" or "path" (design 03
+	// §4.1). Neither is a global setting in the spec sense; this is the
+	// install's default shape, and each app's spec still names its own mode.
+	RoutingMode spec.RoutingMode `mapstructure:"routing_mode"`
 }
 
 type Database struct {
@@ -53,6 +64,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.addr", ":8080")
 	v.SetDefault("server.shutdown_timeout", 15*time.Second)
 	v.SetDefault("database.connect_timeout", 60*time.Second)
+	v.SetDefault("server.issuer", "https://pando.local")
+	v.SetDefault("server.routing_mode", string(spec.RoutingPath))
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.development", false)
 

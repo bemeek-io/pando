@@ -35,6 +35,12 @@ type Principal struct {
 	// Groups are resolved live per request (R-079), never denormalized.
 	Groups []string
 
+	// Email and DisplayName travel into the assertion's claims. They are
+	// display detail, never used for authorization — an email is not an
+	// identity here, users.id is (R-054).
+	Email       string
+	DisplayName string
+
 	AdapterID string
 
 	// Status of the underlying user, checked at step 2 of the evaluation order.

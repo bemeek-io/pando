@@ -47,14 +47,19 @@ func (u *Users) ByUsername(ctx context.Context, username string) (local.Record, 
 }
 
 // User is a stored principal.
+//
+// Tagged because this type is serialized directly by the API, and every other
+// type on the wire is lower_snake_case. An untagged struct would put Go field
+// names in the API surface — where they would then be a compatibility promise.
 type User struct {
-	ID                 string
-	AdapterID          string
-	ExternalID         string
-	Email              string
-	DisplayName        string
-	Status             string
-	MustChangePassword bool
+	ID          string `json:"id"`
+	AdapterID   string `json:"adapter_id"`
+	ExternalID  string `json:"external_id"`
+	Email       string `json:"email,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+	Status      string `json:"status"`
+
+	MustChangePassword bool `json:"must_change_password"`
 }
 
 // Create inserts a user and returns it.
@@ -163,10 +168,10 @@ func NewSessions(db *DB) *Sessions { return &Sessions{db: db} }
 
 // Session is an active login.
 type Session struct {
-	ID        string
-	UserID    string
-	AdapterID string
-	ExpiresAt time.Time
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	AdapterID string    `json:"adapter_id"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 // Create issues a session.

@@ -464,3 +464,49 @@ func (a *Apps) SetState(ctx context.Context, appID, appState string) error {
 	}
 	return nil
 }
+
+// ByRouting resolves a running app from how it is addressed.
+//
+// Used by the proxy on every request, so it reads the pinned spec in the same
+// query rather than making a second round trip per request.
+//
+// `by` is "hostname" or "slug". A hostname lookup reads the pinned spec's
+// routing block; a slug lookup reads the app's own column.
+func (a *Apps) ByRouting(ctx context.Context, by, value string) (App, *spec.AppSpec, bool, error) {
+	var where string
+	switch by {
+	case "hostname":
+		where = `r.body->'routing'->>'hostname' = $1`
+	case "slug":
+		where = `a.slug = $1`
+	default:
+		return App{}, nil, false, errs.Newf(errs.Internal, "Unknown routing lookup %q.", by)
+	}
+
+	var app App
+	var owner *string
+	var body []byte
+	err := a.db.QueryRow(ctx, `
+		SELECT a.id, a.name, a.slug, a.owner_user_id, a.state, a.desired_state, a.pinned_spec_id,
+		       a.created_at, a.updated_at, r.body
+		FROM apps a
+		JOIN spec_revisions r ON r.id = a.pinned_spec_id
+		WHERE a.deleted_at IS NULL AND `+where, value).
+		Scan(&app.ID, &app.Name, &app.Slug, &owner, &app.State, &app.DesiredState, &app.PinnedSpecID,
+			&app.CreatedAt, &app.UpdatedAt, &body)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return App{}, nil, false, nil
+	}
+	if err != nil {
+		return App{}, nil, false, errs.Wrap(errs.Internal, "Could not look up the app.", err)
+	}
+	if owner != nil {
+		app.OwnerUserID = *owner
+	}
+
+	var s spec.AppSpec
+	if err := json.Unmarshal(body, &s); err != nil {
+		return App{}, nil, false, errs.Wrap(errs.Internal, "Could not read the app's spec.", err)
+	}
+	return app, &s, true, nil
+}

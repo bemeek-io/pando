@@ -146,6 +146,24 @@ The single enforcement point (R-023). One path for every request to every app �
 
 **[D]** The proxy never routes around itself. Routing adapters place traffic in front of it (§00 1.3, §03 4). There is no bypass for public apps (R-075), no bypass for performance, no bypass for websockets.
 
+**[D] How that is made structural, discovered while building it.** Every app sits on its own private
+network so no app can reach another (R-025), and no workload publishes a host port (R-026). That
+leaves no address at which an app can be reached — except from inside its own network. The runtime
+adapter therefore attaches *Pando's own container* to each bundle network as it creates it.
+
+So the set of networks Pando belongs to **is** the set of apps it can reach, and nothing else is
+joined to any of them. R-023 stops being a promise the proxy keeps and becomes a property of the
+topology: there is no route to an app that does not pass through enforcement, because there is no
+route to an app at all.
+
+Attaching is the adapter's job rather than core's — how a workload becomes reachable is exactly the
+provider vocabulary core must never learn (R-251).
+
+**[P]** The cost is a private network per app, and a container runtime has a finite supply. Docker's
+default pool holds about thirty, so an install past that size needs `default-address-pools` widened
+before it can start another app. The adapter turns that refusal into a `CAPACITY_*` error naming the
+setting, because the daemon's own message talks about subnets and tells an operator nothing.
+
 ### 4.1 Assertion minting
 
 ```go

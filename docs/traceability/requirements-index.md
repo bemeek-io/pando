@@ -12,7 +12,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | Requirements | 207 | — |
 | Specified in a design doc | 140 | 67% |
 | Assigned to a phase | 107 | 51% |
-| Covered by a named test | 36 | 17% |
+| Covered by a named test | 43 | 20% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -41,9 +41,9 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-024** | D | Builds never execute on the host. | 3. Core Invariants | 00, 04, 05, 07 | 03 | `TestR024_NoAdapterMeetsPolicyBlocksDeploy`, `TestR024_SourceThatMustBeBuiltNeedsABuilder` |
 | **R-025** | D | Apps are isolated from each other. | 3. Core Invariants | — | — | `TestR025_EachBundleGetsItsOwnNetwork` |
 | **R-026** | D | Non-exposed workloads are unreachable from outside their bundle. | 3. Core Invariants | 01, 03 | 02, 05 | `TestR026_NoPortsArePublishedToTheHost` |
-| **R-027** | D | Authorization decisions, the audit log, the state store, and the identity assertion path live… | 3. Core Invariants | 00, 02, 03, 06 | 00 | `TestR027_AnOwningRoleCanUndoTheRevoke`, `TestR027_ApplicationRoleDoesNotOwnTheSchema`, `TestR027_AuditLogIsNotRewritable`, `TestR027_AuditRemainsImmutableAcrossRestarts` |
+| **R-027** | D | Authorization decisions, the audit log, the state store, and the identity assertion path live… | 3. Core Invariants | 00, 02, 03, 06 | 00, 08 | `TestR027_AnOwningRoleCanUndoTheRevoke`, `TestR027_ApplicationRoleDoesNotOwnTheSchema`, `TestR027_AuditLogIsNotRewritable`, `TestR027_AuditRemainsImmutableAcrossRestarts` |
 | **R-028** | D | Pando observes and reports; it does not remediate the app. | 3. Core Invariants | 03, 05, 08 | 08 | — |
-| **R-029** | D | Control plane and data plane are separate grants (§6), with one exception: owning an app… | 3. Core Invariants | 06 | — | `TestR029_ControlPlaneRoleDoesNotGrantDataPlaneUse`, `TestR029_OwnerRoleAloneDoesNotGrantUse` |
+| **R-029** | D | Control plane and data plane are separate grants (§6), with one exception: owning an app… | 3. Core Invariants | 06 | — | `TestR029_AnOperatorIsDeniedUseThroughTheProxy`, `TestR029_AnOperatorWithNoDataGrantIsDenied`, `TestR029_ControlPlaneRoleDoesNotGrantDataPlaneUse`, `TestR029_OwnerRoleAloneDoesNotGrantUse` |
 | **R-030** | D | The following are first-class objects in Pando's state: | 4. Object Model | — | — | — |
 | **R-031** | P | An app has exactly one owner of record at any time, plus any number of additional grants. | 4. Object Model | 02 | — | — |
 | **R-040** | D | Identity is an adapter category like any other. | 5.1 Adapter model | — | — | — |
@@ -59,11 +59,11 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-050** | P | For adapters that cannot push revocation, Pando falls back to expiry at next token refresh. | 5.3 Sessions and revocation | — | — | — |
 | **R-051** | D | Pando always forwards a signed identity assertion to the upstream app on every proxied request. | 5.4 Identity assertion to apps | 06 | 05 | — |
 | **R-052** | D | The assertion is a JWT in a dedicated header, signed by Pando. | 5.4 Identity assertion to apps | 00 | — | — |
-| **R-053** | D | Plain convenience headers (user, email, groups) are sent alongside the JWT. | 5.4 Identity assertion to apps | 06, 07 | 05 | — |
-| **R-054** | D | Claims: | 5.4 Identity assertion to apps | 02, 06, 07 | 05 | — |
-| **R-055** | P | Assertion lifetime is short — on the order of 1–2 minutes. | 5.4 Identity assertion to apps | 06 | 05 | — |
-| **R-056** | D | Anonymous requests receive an assertion with `sub: anonymous`, a constant, not a per-visitor… | 5.4 Identity assertion to apps | 06, 07 | 05 | — |
-| **R-057** | P | Signing keys are published at a JWKS endpoint. | 5.4 Identity assertion to apps | 00, 04, 06 | 05 | — |
+| **R-053** | D | Plain convenience headers (user, email, groups) are sent alongside the JWT. | 5.4 Identity assertion to apps | 06, 07 | 05 | `TestR053_ForgedHeadersAreReplaced`, `TestR053_ForgedHeadersReachTheAppReplaced` |
+| **R-054** | D | Claims: | 5.4 Identity assertion to apps | 02, 06, 07 | 05 | `TestR054_AssertionCarriesTheStableSubject`, `TestR054_TheAppReceivesAVerifiableAssertion` |
+| **R-055** | P | Assertion lifetime is short — on the order of 1–2 minutes. | 5.4 Identity assertion to apps | 06 | 05 | `TestR055_LifetimeComesFromTheConstant` |
+| **R-056** | D | Anonymous requests receive an assertion with `sub: anonymous`, a constant, not a per-visitor… | 5.4 Identity assertion to apps | 06, 07 | 05 | `TestR056_AnonymousReachesAPublicAppWithTheConstantSubject`, `TestR056_AnonymousStillGetsAnAssertion` |
+| **R-057** | P | Signing keys are published at a JWKS endpoint. | 5.4 Identity assertion to apps | 00, 04, 06 | 05 | `TestR057_RotationOverlapsRatherThanCutsOver` |
 | **R-058** | D | Delegated tokens. | 5.5 Tokens (non-human principals) | 02, 06 | 01 | — |
 | **R-059** | D | A delegated token's access is continuously derived from its owner's live grants, never frozen… | 5.5 Tokens (non-human principals) | 02, 06 | 01 | `TestR059_DelegatedTokenIsOrphanedByItsOwnersDeletion`, `TestR059_OrphanedDelegatedTokenEndToEnd` |
 | **R-060** | D | Account-level tokens. | 5.5 Tokens (non-human principals) | 02, 06 | 01 | `TestR060_AccountTokenIsItsOwnPrincipal` |
@@ -79,7 +79,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-076** | D | Any app owner may grant to anonymous by default. | 6.2 Subjects | 00, 04, 08 | 08 | — |
 | **R-077** | P | The console must never present this as the bare word "public." It states the consequence:… | 6.2 Subjects | 04, 08 | 08 | — |
 | **R-078** | D | Groups may be Pando-native or pushed from an IdP (R-048). | 6.3 Groups | 03 | — | — |
-| **R-079** | D | Group membership is evaluated live at request time, not expanded to a member list at grant time. | 6.3 Groups | 02, 06, 07 | 01, 05 | `TestR079_GroupMembershipIsResolvedFromThePrincipal`, `TestR079_GroupMembershipIsResolvedLive` |
+| **R-079** | D | Group membership is evaluated live at request time, not expanded to a member list at grant time. | 6.3 Groups | 02, 06, 07 | 01, 05 | `TestR079_GroupMembershipIsResolvedFromThePrincipal`, `TestR079_GroupMembershipIsResolvedLive`, `TestR079_RemovingAGroupRevokesAccess` |
 | **R-080** | D | Control-plane permissions are individual verbs. | 6.4 Verbs and roles | — | — | — |
 | **R-081** | D | Three immutable built-in roles ship out of the box. | 6.4 Verbs and roles | 02, 06 | 01 | `TestR081_BuiltInRoleVerbSets`, `TestR081_BuiltInRolesAreImmutable`, `TestR081_SeededVerbSetsMatchTheRequirement` |
 | **R-082** | D | Custom roles may be composed from the verb list and assigned to users or groups. | 6.4 Verbs and roles | 04, 06 | 01 | `TestR082_NoVerbImplicationGraph` |
@@ -144,10 +144,10 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-164** | D | Proxy mode is a supported topology: one hostname, one certificate, one thing to open on the… | 11. Networking and Routing | 03 | — | — |
 | **R-165** | D | In the non-proxy topology, apps have their own hostnames; users bookmark URLs and carry a… | 11. Networking and Routing | 03 | — | — |
 | **R-166** | D | Subdomain is preferred where a wildcard is available. | 11. Networking and Routing | — | — | — |
-| **R-167** | D | Under path routing, Pando strips the prefix before forwarding and sends `X-Forwarded-Prefix`. | 11. Networking and Routing | 03, 06, 07 | 05 | — |
+| **R-167** | D | Under path routing, Pando strips the prefix before forwarding and sends `X-Forwarded-Prefix`. | 11. Networking and Routing | 03, 06, 07 | 05 | `TestR167_PathModeStripsThePrefix`, `TestR167_PathPrefixIsStrippedAndDeclared` |
 | **R-168** | D | Where Pando can detect a likely path-routing incompatibility, it shows a dismissible warning,… | 11. Networking and Routing | 01, 07, 08 | 06, 08 | — |
 | **R-169** | O-5 | TLS issuance (built-in ACME, wildcard requirement, self-signed local) is a per-adapter concern… | 11. Networking and Routing | — | — | — |
-| **R-170** | P | The proxy must support websockets, server-sent events, streaming responses, and large uploads. | 11. Networking and Routing | 06, 07 | 05 | — |
+| **R-170** | P | The proxy must support websockets, server-sent events, streaming responses, and large uploads. | 11. Networking and Routing | 06, 07 | 05 | `TestR170_SSEIsNotBuffered` |
 | **R-171** | D | An app with its own login page is stacked behind Pando's auth by default; the user sees two… | 11. Networking and Routing | 08 | — | — |
 | **R-180** | D | Apps are isolated from each other (R-025). | 12. Egress and Isolation | — | — | — |
 | **R-181** | D | Egress defaults to allow-all. | 12. Egress and Isolation | — | — | — |

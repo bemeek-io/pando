@@ -215,3 +215,37 @@ func prebuiltSpec(port int) string {
 		"deploy": {"strategy": "recreate"}
 	}`, port)
 }
+
+// createUser adds a local user and returns its ID.
+func (c *client) createUser(t *testing.T, username string) string {
+	t.Helper()
+	body, status := c.do(t, http.MethodPost, "/users",
+		fmt.Sprintf(`{"username":%q,"password":"correct-horse-battery"}`, username))
+	require.Equal(t, http.StatusCreated, status, body)
+
+	var user map[string]any
+	require.NoError(t, json.Unmarshal([]byte(body), &user))
+	return user["id"].(string)
+}
+
+// asUser signs in as another account and returns a client for it.
+func (c *client) asUser(t *testing.T, userID string) *client {
+	t.Helper()
+
+	username := c.get(t, "/users/"+userID)["external_id"].(string)
+	other := &client{http: &http.Client{Timeout: 30 * time.Second}}
+
+	resp, err := other.http.Post(baseURL()+"/sessions", "application/json",
+		strings.NewReader(fmt.Sprintf(`{"username":%q,"password":"correct-horse-battery"}`, username)))
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	for _, ck := range resp.Cookies() {
+		if ck.Name == "pando_session" {
+			other.cookie = ck.Value
+		}
+	}
+	require.NotEmpty(t, other.cookie)
+	return other
+}

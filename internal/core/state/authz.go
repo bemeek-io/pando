@@ -8,6 +8,7 @@ import (
 
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/bemeek-io/pando/internal/id"
 )
 
 // AuthzStore implements authz.Store against Postgres.
@@ -183,3 +184,91 @@ func nullable(s string) any {
 }
 
 var _ authz.Store = (*AuthzStore)(nil)
+
+// Grants records who may do what with an app.
+type Grants struct{ db *DB }
+
+func NewGrants(db *DB) *Grants { return &Grants{db: db} }
+
+// Grant is a stored grant.
+type GrantRow struct {
+	ID            string `json:"id"`
+	AppID         string `json:"app_id"`
+	Plane         string `json:"plane"`
+	PrincipalKind string `json:"principal_kind"`
+	PrincipalID   string `json:"principal_id,omitempty"`
+	RoleID        string `json:"role_id,omitempty"`
+}
+
+// Create adds a grant.
+//
+// The shapes are enforced by the database — a data-plane grant carries no role
+// (R-070), only an anonymous grant has a null principal (R-074), and the
+// anonymous grant cannot be inserted twice. This method translates those
+// refusals into something a person can act on rather than surfacing a
+// constraint name.
+func (g *Grants) Create(ctx context.Context, appID, plane, kind, principalID, roleID, createdBy string) (GrantRow, error) {
+	switch plane {
+	case "control", "data":
+	default:
+		return GrantRow{}, errs.New(errs.ValidInvalid, "A grant is either for managing an app or for using it.")
+	}
+
+	if plane == "control" && roleID == "" {
+		roleID = authz.RoleViewer
+	}
+	if plane == "data" {
+		roleID = ""
+	}
+	if kind == "anonymous" {
+		principalID = ""
+	} else if principalID == "" {
+		return GrantRow{}, errs.New(errs.ValidInvalid, "This grant needs someone to grant it to.")
+	}
+
+	row := GrantRow{
+		ID: id.New(id.Grant), AppID: appID, Plane: plane,
+		PrincipalKind: kind, PrincipalID: principalID, RoleID: roleID,
+	}
+	_, err := g.db.Exec(ctx, `
+		INSERT INTO grants (id, app_id, plane, principal_kind, principal_id, role_id, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		row.ID, appID, plane, kind, nullable(principalID), nullable(roleID), createdBy)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return GrantRow{}, errs.New(errs.ValidInvalid, "This app is already shared that way.")
+		}
+		return GrantRow{}, errs.Wrap(errs.Internal, "Could not share the app.", err)
+	}
+	return row, nil
+}
+
+// ListForApp returns an app's grants.
+func (g *Grants) ListForApp(ctx context.Context, appID string) ([]GrantRow, error) {
+	rows, err := g.db.Query(ctx, `
+		SELECT id, app_id, plane, principal_kind, coalesce(principal_id, ''), coalesce(role_id, '')
+		FROM grants WHERE app_id = $1 ORDER BY plane, principal_kind`, appID)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read who this app is shared with.", err)
+	}
+	defer rows.Close()
+
+	out := make([]GrantRow, 0)
+	for rows.Next() {
+		var row GrantRow
+		if err := rows.Scan(&row.ID, &row.AppID, &row.Plane, &row.PrincipalKind, &row.PrincipalID, &row.RoleID); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read who this app is shared with.", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// Delete revokes a grant.
+func (g *Grants) Delete(ctx context.Context, appID, grantID string) error {
+	_, err := g.db.Exec(ctx, `DELETE FROM grants WHERE id = $1 AND app_id = $2`, grantID, appID)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not stop sharing the app.", err)
+	}
+	return nil
+}

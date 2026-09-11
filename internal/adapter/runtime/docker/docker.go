@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -61,6 +62,14 @@ type Config struct {
 	TotalCPUMillis   int   `json:"total_cpu_millis,omitempty"`
 	TotalMemoryBytes int64 `json:"total_memory_bytes,omitempty"`
 	TotalDiskBytes   int64 `json:"total_disk_bytes,omitempty"`
+
+	// ProxyContainer is the container Pando's proxy runs in, which this adapter
+	// attaches to every bundle network it creates.
+	//
+	// Empty means "this process's own container", detected from the hostname —
+	// which is what Docker sets to the container ID, and what the bundled
+	// Compose topology relies on.
+	ProxyContainer string `json:"proxy_container,omitempty"`
 }
 
 // New builds an unconfigured adapter.
@@ -558,9 +567,68 @@ func (a *Adapter) ensureNetwork(ctx context.Context, bundleID string) (string, e
 		Labels: map[string]string{labelBundle: bundleID, labelManaged: "true"},
 	})
 	if err != nil {
+		// Docker's default address pool holds about thirty /16 networks, and
+		// Pando takes one per app (R-025). An install that grows past that
+		// fails here with a message naming subnets, which tells an operator
+		// nothing about what to do.
+		if strings.Contains(err.Error(), "address pools") {
+			return "", errs.Wrap(errs.CapacityWouldOversubscribe,
+				"This machine has run out of private networks, so no more apps can start on it.", err).
+				WithRemedy("Docker reserves a fixed pool of network addresses, and Pando uses one per app. Raise it by setting default-address-pools in /etc/docker/daemon.json — for example a /16 base with /24 subnets gives 256 apps instead of about 30 — then restart Docker. Deleting apps you no longer need also frees them.")
+		}
 		return "", errs.Wrap(errs.AdapterFailed, "Could not set up the app's private network.", err)
 	}
+
+	if err := a.attachProxy(ctx, created.ID); err != nil {
+		return "", err
+	}
 	return created.ID, nil
+}
+
+// attachProxy joins Pando's own container to a bundle network.
+//
+// Every app sits on its own private network so no app can reach another
+// (R-025), and nothing publishes a host port (R-026). That leaves exactly one
+// way in — through Pando's proxy — which is R-023 made structural rather than
+// promised. But it only works if the proxy can actually reach the bundle, and
+// it cannot unless it is on that network too.
+//
+// So the set of networks Pando's container belongs to *is* the set of apps it
+// can reach. Nothing else is joined to them.
+//
+// Attaching is the adapter's job rather than core's: how a workload becomes
+// reachable is exactly the provider vocabulary core must never learn (R-251).
+func (a *Adapter) attachProxy(ctx context.Context, networkID string) error {
+	container := a.config.ProxyContainer
+	if container == "" {
+		// Docker sets a container's hostname to its own short ID.
+		host, err := os.Hostname()
+		if err != nil {
+			//nolint:nilerr // Not knowing our own hostname means we are not in a
+			// container, which is the same case as IsNotFound below: the app
+			// deploys, the proxy cannot reach it from here, and that is a
+			// local-development limitation rather than a deployment failure.
+			return nil
+		}
+		container = host
+	}
+
+	err := a.cli.NetworkConnect(ctx, networkID, container, nil)
+	switch {
+	case err == nil:
+		return nil
+	case strings.Contains(err.Error(), "already exists"):
+		return nil
+	case cerrdefs.IsNotFound(err):
+		// Pando is not running as a container — a developer running the binary
+		// on the host. The app still deploys; the proxy simply cannot reach it
+		// from here, which is a local-development limitation rather than a
+		// deployment failure.
+		return nil
+	default:
+		return errs.Wrap(errs.AdapterFailed,
+			"Could not connect Pando to the app's network, so traffic could not reach it.", err)
+	}
 }
 
 func (a *Adapter) ensureImage(ctx context.Context, ref string) error {

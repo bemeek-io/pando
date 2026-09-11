@@ -82,6 +82,30 @@ not having the feature. Adding environment to `ObservedWorkload` was the alterna
 required every runtime adapter to read back resolved environment, which is exactly the secret-bearing
 data the adapter interface works to keep out of adapters' hands.
 
+## Third pass — found while building the proxy
+
+**The proxy had no way to reach any app.** Every app is on its own private network (R-025) and
+publishes no host port (R-026), and the design said traffic reaches the app through the proxy without
+saying how the proxy reaches the app. Nothing in the written design closed that loop.
+
+*Resolved:* the runtime adapter attaches Pando's own container to each bundle network as it creates
+it, recorded in design 06 §4. This turned out to be a better answer than a written one would have
+been: the set of networks Pando belongs to *is* the set of apps it can reach, so R-023 becomes a
+property of the topology rather than a rule the proxy follows.
+
+**A container runtime has a finite supply of private networks.** Docker's default pool holds about
+thirty, and Pando takes one per app — so an install hits a wall at around thirty apps, with a daemon
+message about subnets that tells an operator nothing. Found by exhausting the pool during testing.
+
+*Resolved:* the adapter translates it into a `CAPACITY_*` error naming `default-address-pools` and
+what to set it to. The underlying limit is real and now documented as a `[P]` in design 06 §4 rather
+than discovered by whoever deploys the thirty-first app.
+
+**`docker compose down` does not stop deployed apps.** They are created by Pando, not Compose, so
+tearing down the stack leaves every app running and every network allocated. Not a defect — an app
+outliving a Pando restart is correct — but it is surprising, and worth knowing when cleaning up:
+`docker ps -aq --filter label=io.pando.managed=true` finds them.
+
 ## Still open, tracked elsewhere
 
 Three questions remain, none blocking: **O-4** (slot detection — has a `[P]` answer awaiting

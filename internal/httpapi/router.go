@@ -9,11 +9,13 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/assertion"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/deploy"
 	"github.com/bemeek-io/pando/internal/core/planner"
 	"github.com/bemeek-io/pando/internal/core/state"
+	"github.com/bemeek-io/pando/internal/errs"
 	"github.com/bemeek-io/pando/internal/log"
 )
 
@@ -55,6 +57,21 @@ type Server struct {
 	// source allowlist check (R-092) is skipped rather than assumed to pass —
 	// the call site says so explicitly.
 	Policy SourcePolicy
+
+	// Minter publishes the assertion signing keys at /.well-known/jwks.json.
+	Minter     *assertion.Minter
+	Grants     *state.Grants
+	HostPolicy AnonymousPolicy
+
+	// AppProxy serves every request to every app (R-023). Mounted last, as the
+	// catch-all, so Pando's own routes are reachable and everything else goes
+	// through enforcement. There is no path that reaches an app without it.
+	AppProxy http.Handler
+}
+
+// AnonymousPolicy gates sharing an app with everyone (R-076).
+type AnonymousPolicy interface {
+	AllowsAnonymousGrant(ctx context.Context) error
 }
 
 // SourcePolicy gates where apps may be created from (R-092).
@@ -86,6 +103,18 @@ func (s *Server) Routes() http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(RequestID)
 	r.Use(Logger(s.Logger))
+
+	// The assertion verification keys (R-057). Unauthenticated by design: they
+	// are public keys, and an app must be able to fetch them before it has any
+	// credential of its own.
+	r.Get("/.well-known/jwks.json", func(w http.ResponseWriter, r *http.Request) {
+		if s.Minter == nil {
+			Error(w, r, errs.New(errs.Internal, "Assertion signing is not set up."))
+			return
+		}
+		w.Header().Set("Cache-Control", "public, max-age=300")
+		JSON(w, http.StatusOK, s.Minter.JWKS())
+	})
 
 	// Liveness. Deliberately does not touch the database: a health check that
 	// fails when Postgres blips causes an orchestrator to kill a process that
@@ -120,6 +149,12 @@ func (s *Server) Routes() http.Handler {
 
 		// GET /adapters returns live capabilities, not stored config, so the
 		// console can grey out choices that would fail at plan time.
+		r.Route("/users", func(r chi.Router) {
+			r.Post("/", s.handleCreateUser)
+			r.Get("/{userID}", s.handleGetUser)
+			r.Patch("/{userID}", s.handlePatchUser)
+		})
+
 		r.Get("/adapters", s.handleListAdapters)
 		r.Get("/capacity", s.handleCapacity)
 
@@ -149,6 +184,12 @@ func (s *Server) Routes() http.Handler {
 					r.Get("/{depID}/logs", s.handleDeploymentLogs)
 				})
 
+				r.Route("/grants", func(r chi.Router) {
+					r.Get("/", s.handleListGrants)
+					r.Post("/", s.handleCreateGrant)
+					r.Delete("/{grantID}", s.handleDeleteGrant)
+				})
+
 				r.Route("/secrets", func(r chi.Router) {
 					r.Get("/", s.handleListSecrets)
 					r.Put("/{key}", s.handlePutSecret)
@@ -165,6 +206,14 @@ func (s *Server) Routes() http.Handler {
 			})
 		})
 	})
+
+	// Everything that is not one of Pando's own routes is a request to an app,
+	// and goes through the proxy (R-023). Mounting it as the fallback rather
+	// than on a prefix is what makes "there is no bypass" structural: a route
+	// that does not exist above cannot reach an app any other way.
+	if s.AppProxy != nil {
+		r.NotFound(s.AppProxy.ServeHTTP)
+	}
 
 	return r
 }
