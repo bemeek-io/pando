@@ -10,9 +10,9 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | | Count | Of total |
 |---|---:|---:|
 | Requirements | 207 | — |
-| Specified in a design doc | 140 | 67% |
+| Specified in a design doc | 141 | 68% |
 | Assigned to a phase | 107 | 51% |
-| Covered by a named test | 43 | 20% |
+| Covered by a named test | 47 | 22% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -35,12 +35,12 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-015** | D | One Pando install serves one organization. | 2. Non-Goals | 02 | — | — |
 | **R-016** | D | Pando is not a source host, not an APM product, and not a database-as-a-service. | 2. Non-Goals | — | — | — |
 | **R-020** | D | Nothing lives in the repo. | 3. Core Invariants | 01, 02, 03, 07 | 02, 06 | `TestR020_SpecCarriesNoSecretValues` |
-| **R-021** | D | Pando fills declared slots; it never invents topology. | 3. Core Invariants | 01 | 06 | — |
+| **R-021** | D | Pando fills declared slots; it never invents topology. | 3. Core Invariants | 01 | 06 | `TestR021_SlotsComeFromWhatTheRepoDeclares` |
 | **R-022** | D | Detection never re-runs implicitly. | 3. Core Invariants | 01, 04 | — | — |
-| **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 06 | 05 | `TestR023_RoutingPointsAtPandoNotTheWorkload` |
+| **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 05, 06 | 05 | `TestR023_RoutingPointsAtPandoNotTheWorkload` |
 | **R-024** | D | Builds never execute on the host. | 3. Core Invariants | 00, 04, 05, 07 | 03 | `TestR024_NoAdapterMeetsPolicyBlocksDeploy`, `TestR024_SourceThatMustBeBuiltNeedsABuilder` |
-| **R-025** | D | Apps are isolated from each other. | 3. Core Invariants | — | — | `TestR025_EachBundleGetsItsOwnNetwork` |
-| **R-026** | D | Non-exposed workloads are unreachable from outside their bundle. | 3. Core Invariants | 01, 03 | 02, 05 | `TestR026_NoPortsArePublishedToTheHost` |
+| **R-025** | D | Apps are isolated from each other. | 3. Core Invariants | 06 | — | `TestR025_EachBundleGetsItsOwnNetwork` |
+| **R-026** | D | Non-exposed workloads are unreachable from outside their bundle. | 3. Core Invariants | 01, 03, 05, 06 | 02, 05 | `TestR026_NoPortsArePublishedToTheHost` |
 | **R-027** | D | Authorization decisions, the audit log, the state store, and the identity assertion path live… | 3. Core Invariants | 00, 02, 03, 06 | 00, 08 | `TestR027_AnOwningRoleCanUndoTheRevoke`, `TestR027_ApplicationRoleDoesNotOwnTheSchema`, `TestR027_AuditLogIsNotRewritable`, `TestR027_AuditRemainsImmutableAcrossRestarts` |
 | **R-028** | D | Pando observes and reports; it does not remediate the app. | 3. Core Invariants | 03, 05, 08 | 08 | — |
 | **R-029** | D | Control plane and data plane are separate grants (§6), with one exception: owning an app… | 3. Core Invariants | 06 | — | `TestR029_AnOperatorIsDeniedUseThroughTheProxy`, `TestR029_AnOperatorWithNoDataGrantIsDenied`, `TestR029_ControlPlaneRoleDoesNotGrantDataPlaneUse`, `TestR029_OwnerRoleAloneDoesNotGrantUse` |
@@ -91,7 +91,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-090** | D | The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting… | 7.1 Input | — | — | — |
 | **R-091** | D LATER | Private repos are in scope, supporting the credential mechanisms GitHub offers (PAT, GitHub… | 7.1 Input | 01 | — | — |
 | **R-092** | D | Source allowlist. | 7.1 Input | 00, 04, 05, 07 | 06 | `TestR092_BlockedSourceFailsBeforeAnythingElse` |
-| **R-093** | D | Detection is a detector auction. | 7.2 Detection | 03, 07 | 06 | — |
+| **R-093** | D | Detection is a detector auction. | 7.2 Detection | 03, 07 | 06 | `TestR093_RunnersUpAreReturned` |
 | **R-094** | D | Confidence ladder, highest first: | 7.2 Detection | 07 | 06 | — |
 | **R-095** | P | For tier 4, wrap an existing buildpack implementation (Paketo, nixpacks) rather than… | 7.2 Detection | — | — | — |
 | **R-096** | D | A compose file is a complete answer, not a hint. | 7.2 Detection | 01 | — | — |
@@ -100,10 +100,10 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-099** | D | Compose constructs incompatible with the boundary are rejected or rewritten, with the reason… | 7.2 Detection | 00, 01 | 06 | — |
 | **R-100** | D | A user may promote a compose-declared service to a Pando-managed one — e.g. | 7.2 Detection | 01 | 02 | — |
 | **R-101** | D | There is always a bottom escape hatch: supply an image reference and a command, skipping… | 7.2 Detection | 01 | 02, 06 | — |
-| **R-102** | D | Ask, never guess. | 7.3 When detection cannot decide | 03, 04, 08 | 08 | — |
+| **R-102** | D | Ask, never guess. | 7.3 When detection cannot decide | 03, 04, 08 | 08 | `TestR102_ACloseCallBecomesAQuestion` |
 | **R-103** | D | The number of questions is the product metric. | 7.3 When detection cannot decide | 01, 08 | 06, 08 | — |
 | **R-104** | D | Questions are blockers; everything else is configuration. | 7.3 When detection cannot decide | 03, 08 | 08 | — |
-| **R-105** | D | Every question must be self-contained and pasteable. | 7.3 When detection cannot decide | 00, 03, 04, 07, 08 | 00, 03, 06, 08 | — |
+| **R-105** | D | Every question must be self-contained and pasteable. | 7.3 When detection cannot decide | 00, 03, 04, 07, 08 | 00, 03, 06, 08 | `TestR105_EveryQuestionAnyDetectorProducesIsSelfContained`, `TestR105_ValidatorCatchesTheRealFailureModes`, `TestR105_ValidatorRejectsTheDesignsCounterExample` |
 | **R-106** | D | AI assistance is optional supporting functionality, never required. | 7.3 When detection cannot decide | — | — | — |
 | **R-107** | D | The correct failure: a repo needs Postgres and never mentions it anywhere — no compose… | 7.3 When detection cannot decide | 01 | 06 | — |
 | **R-110** | D | Builds never run on the host (R-024). | 8. Build | — | — | — |
@@ -193,7 +193,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-243** | D | Capacity is adapter-reported, not host-inspected. | 17. Resources and Capacity | 03, 04 | 03, 04 | `TestR243_CapacityIsAdapterReported` |
 | **R-244** | P LATER | Per-user quotas (max apps, max disk) as a policy knob. | 17. Resources and Capacity | — | — | — |
 | **R-250** | D | The app declares requirements; adapters translate. | 18. Adapters | 03 | 03 | — |
-| **R-251** | D | Core never learns a provider's vocabulary. | 18. Adapters | 01, 03 | 02, 03, 10 | — |
+| **R-251** | D | Core never learns a provider's vocabulary. | 18. Adapters | 01, 03, 06 | 02, 03, 10 | — |
 | **R-252** | D | Adapter categories: identity, routing/ingress, builder, runtime, secrets, services,… | 18. Adapters | — | — | — |
 | **R-253** | D | Adapters are compiled in-tree. | 18. Adapters | 00, 03, 08 | 00, 03 | — |
 | **R-254** | D | Every adapter advertises capabilities as data — `isolation_class`,… | 18. Adapters | 00, 03, 04, 05, 07 | 03 | `TestR254_CapabilitiesAreHonest`, `TestR254_CapabilityUnsupportedBlocksDeploy` |
@@ -242,7 +242,6 @@ Check each against the categories above before treating it as a gap.
 - **R-013** (2. Non-Goals) — Pando is not a disaster-recovery product.
 - **R-014** (2. Non-Goals) — No multi-AZ or multi-region.
 - **R-016** (2. Non-Goals) — Pando is not a source host, not an APM product, and not a database-as-a-service.
-- **R-025** (3. Core Invariants) — Apps are isolated from each other.
 - **R-030** (4. Object Model) — The following are first-class objects in Pando's state:
 - **R-040** (5.1 Adapter model) — Identity is an adapter category like any other.
 - **R-041** (5.1 Adapter model) — Local users — username and password, stored by Pando.

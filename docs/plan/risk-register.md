@@ -6,7 +6,7 @@ column, the mitigation is not optional.
 
 | Risk | Phase | Mitigation | Status |
 |---|---|---|---|
-| Detection quality below the R-103 bar | 6 | Build a corpus of **30 real repos early**. Track questions-per-deploy as a metric, not a vibe. | Not started |
+| Detection quality below the R-103 bar | 6 | Build a corpus of **30 real repos early**. Track questions-per-deploy as a metric, not a vibe. | **In progress** — 10 repos in `test/corpus`, `make detection-corpus`. Its first run against real repositories found three detector defects that unit tests had not (see [detection notes](../design/notes-detection-corpus-findings.md)). Currently 0.90 questions per deploy, worst 1, strategy found in 100% of the cases where one existed. Corpus needs growing to 30 |
 | Docker socket leaks into a build | 4 | Integration test asserting the build container's mount list. **Non-negotiable.** | **Closed** — `TestR112_BuildContainerHasNoRuntimeSocket` reads the real mount list, plus privileged/host-network/host-PID, plus a behavioural check from inside the container |
 | Header spoofing through the proxy | 5 | Explicit test with forged `X-Pando-*` headers asserting replacement. | **Closed** — `TestR053_ForgedHeadersReachTheAppReplaced` runs against a real deployed app that echoes what it received, covering four spellings, an unknown header in the namespace, and an inbound `X-Forwarded-Prefix` |
 | Postgres prerequisite undermines the hobbyist install | 0 | Resolved: Compose supplies Postgres beside Pando, adding no prerequisite a containerized runtime did not already impose. | **Closed** |

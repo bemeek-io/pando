@@ -30,12 +30,18 @@ test-integration: ## Run integration tests (real Postgres + Docker, via testcont
 vet: ## go vet
 	$(GO) vet $(PKG)
 
+# `go install` puts binaries in GOPATH/bin, which is not on PATH by default — so
+# following the install line printed below leaves the next `make lint` still
+# reporting the tool as missing. Look there as well as on PATH.
+GOBIN := $(shell go env GOPATH)/bin
+LINT := $(shell command -v golangci-lint 2>/dev/null || echo $(GOBIN)/golangci-lint)
+
 .PHONY: lint
 lint: ## golangci-lint, including the R-027 adapter import rule
-	@command -v golangci-lint >/dev/null 2>&1 \
+	@test -x "$(LINT)" \
 		|| { echo "golangci-lint v2 not installed:"; \
 		     echo "  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; exit 1; }
-	golangci-lint run
+	$(LINT) run
 
 .PHONY: check
 check: vet lint test ## Everything CI runs on a pull request
@@ -51,6 +57,13 @@ sqlc: ## Regenerate typed queries from SQL
 .PHONY: console
 console: ## Build the console into assets embedded by internal/console
 	cd console && npm ci && npm run build
+
+# ---------------------------------------------------------------------------
+# Detection
+
+.PHONY: detection-corpus
+detection-corpus: ## Run detection against the corpus of real repositories
+	$(GO) test -tags=integration -count=1 -timeout=20m -v ./test/corpus/
 
 # ---------------------------------------------------------------------------
 # Requirement traceability (design 00 §4)

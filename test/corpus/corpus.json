@@ -1,0 +1,150 @@
+{
+  "note": [
+    "The detection corpus. Real public repositories, with what Pando should work out",
+    "about each one.",
+    "",
+    "This exists because 'detection quality below the R-103 bar' is the top risk in",
+    "docs/plan/risk-register.md, and the mitigation is a corpus built early plus",
+    "questions-per-deploy tracked as a metric rather than a vibe. A detector that",
+    "gets better on the repo in front of you and worse everywhere else is the",
+    "failure this catches.",
+    "",
+    "`questions` is a BUDGET, not an expectation: detection may ask fewer. Asking",
+    "more fails the case, because every question is something a person has to",
+    "answer before their app runs, and R-005 says they may not know what a port is.",
+    "",
+    "It counts only questions put to a PERSON. A question marked deferred is one",
+    "the trial run is expected to answer by watching the app start (R-097) — the",
+    "port questions are all of this kind. Deferred questions are printed beside",
+    "each case so that moving a question out of the budget stays visible, but they",
+    "are not charged to it: the whole point of R-097 is that nobody is asked.",
+    "",
+    "Budgets are ratchets. Each one sits at what detection currently asks, so any",
+    "new question is a deliberate decision someone has to make rather than slack",
+    "quietly absorbed by a loose ceiling.",
+    "",
+    "Run: make detection-corpus"
+  ],
+
+  "budgets": {
+    "questions_per_deploy_mean": 1.0,
+    "questions_per_deploy_max": 3,
+    "must_detect_strategy": 0.9
+  },
+
+  "cases": [
+    {
+      "name": "dockerfile-at-root",
+      "url": "https://github.com/docker/welcome-to-docker",
+      "ref": "main",
+      "expect": {
+        "strategy": "dockerfile",
+        "min_confidence": 0.8,
+        "questions": 0,
+        "evidence_contains": "Dockerfile"
+      },
+      "why": "The easy case. A Dockerfile at the root leaves nothing to ask."
+    },
+    {
+      "name": "node-no-deployment-artifacts",
+      "url": "https://github.com/expressjs/express",
+      "ref": "master",
+      "expect": {
+        "strategy": "buildpack",
+        "min_confidence": 0.4,
+        "questions": 1
+      },
+      "why": "A Node package with no Dockerfile and no compose file. This is the case R-103 is really about: the app was written by someone who never thought about deployment."
+    },
+    {
+      "name": "static-site",
+      "url": "https://github.com/h5bp/html5-boilerplate",
+      "ref": "main",
+      "expect": {
+        "strategy": "static",
+        "min_confidence": 0.5,
+        "questions": 1
+      },
+      "why": "No server at all. Getting this wrong means building a container for a folder of HTML."
+    },
+    {
+      "name": "compose-stack",
+      "url": "https://github.com/docker/awesome-compose",
+      "ref": "master",
+      "subdir": "react-express-mysql",
+      "expect": {
+        "strategy": "compose",
+        "min_confidence": 0.8,
+        "questions": 1,
+        "expect_slots": ["mysql"],
+        "expect_volumes": true
+      },
+      "why": "Multi-service, with a declared database and a volume. Exercises slot extraction and the one-primary-workload rule."
+    },
+    {
+      "name": "monorepo",
+      "url": "https://github.com/vercel/turbo",
+      "ref": "main",
+      "expect": {
+        "strategy": "unknown",
+        "questions": 1
+      },
+      "why": "Several deployable things in one repository. Pando must ask which one rather than picking, and the question has to name the candidates it found (R-105)."
+    },
+    {
+      "name": "dockerfile-in-subdirectory",
+      "url": "https://github.com/dockersamples/example-voting-app",
+      "ref": "main",
+      "expect": {
+        "strategy": "compose",
+        "min_confidence": 0.7,
+        "questions": 1
+      },
+      "why": "Compose at the root, Dockerfiles beneath it. The compose file should win — it says how the parts fit together, which the Dockerfiles do not."
+    },
+    {
+      "name": "python-with-requirements",
+      "url": "https://github.com/pallets/flask",
+      "ref": "main",
+      "expect": {
+        "strategy": "buildpack",
+        "min_confidence": 0.4,
+        "questions": 1
+      },
+      "why": "The Python equivalent of the Node case."
+    },
+    {
+      "name": "go-module",
+      "url": "https://github.com/go-chi/chi",
+      "ref": "master",
+      "expect": {
+        "strategy": "buildpack",
+        "min_confidence": 0.4,
+        "questions": 1
+      },
+      "why": "A library rather than an app — detection should be uncertain and say so, not invent an entrypoint."
+    },
+    {
+      "name": "static-with-build-step",
+      "url": "https://github.com/vitejs/vite",
+      "ref": "main",
+      "subdir": "packages/create-vite/template-react",
+      "expect": {
+        "strategy": "buildpack",
+        "questions": 1
+      },
+      "why": "A build step whose output is static: index.html at the root beside a package.json that declares `vite build`. The interesting failure is detecting `static` and serving the root unbuilt, which produces a blank page rather than an error. Previously this case pointed at the whole vite repository, which is a monorepo and not this shape at all — it passed for the wrong reason."
+    },
+    {
+      "name": "empty-repository",
+      "url": "https://github.com/octocat/Hello-World",
+      "ref": "master",
+      "expect": {
+        "strategy": "unknown",
+        "max_confidence": 0.3,
+        "questions": 1
+      },
+      "why": "Almost nothing to go on. Detection must return low confidence and questions rather than a confident wrong answer — R-102 is 'ask, never guess', and this is where guessing is most tempting."
+    }
+  ]
+}
