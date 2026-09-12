@@ -9,23 +9,23 @@ stays failed.
 
 ## Tasks
 
-- [ ] The state machine: `draft` → `proposed` → `deploying` → `running` / `degraded` / `stopped` /
+- [x] The state machine: `draft` → `proposed` → `deploying` → `running` / `degraded` / `stopped` /
       `failed` / `archived`, with `desired_state` kept separate from observed `state`
-- [ ] The loop: 15s interval [P], 8 concurrent [P], per-app advisory lock so two ticks cannot overlap
-- [ ] Drift classification — reconcilable vs report-only (design 05 §2.1)
-- [ ] Stale-environment drift via `apps.applied_env_fingerprint` — this is the only mechanism R-193
+- [x] The loop: 15s interval [P], 8 concurrent [P], per-app advisory lock so two ticks cannot overlap, plus a panic guard — a panic in one app's reconciliation used to take the process down
+- [x] Drift classification — reconcilable vs report-only (design 05 §2.1)
+- [x] Stale-environment drift via `apps.applied_env_fingerprint` — this is the only mechanism R-193
       has, because `Observe` returns no environment and deliberately should not. Hash `(key, version)`
       pairs and literal values, **never secret values**
-- [ ] `markUnobservable`: an adapter being down is a **platform** problem, not app failure. It stamps
+- [x] `markUnobservable`: an adapter being down is a **platform** problem, not app failure. It stamps
       `apps.unobservable_since`, a third field beside `state` and `desired_state` — not a state value,
       and not an `unknown` state; clears on the first successful `Observe`
-- [ ] Backoff (R-149), capped at 5 minutes
-- [ ] Give-up threshold: 10 failures in 30 minutes [P] → `failed`, notify, audit, **stop** (R-150)
-- [ ] Auto-deploy as a **separate scheduled job** (R-141): creates a spec revision and enqueues a
+- [x] Backoff (R-149), capped at 5 minutes
+- [x] Give-up threshold: 10 failures in 30 minutes [P] → `failed`, notify, audit, **stop** (R-150) — the window had to become an idle timeout or the threshold was arithmetically unreachable ([note](../design/notes-give-up-threshold-was-unreachable.md))
+- [x] Auto-deploy as a **separate scheduled job** (R-141): creates a spec revision and enqueues a
       deployment; skipped, not queued, if a deployment is in flight
-- [ ] Hourly GC: log trimming with the aggregate disk budget winning (R-223, R-224), rolling backup
-      expiry that never touches `on_delete` rows, spec revision pruning that skips ever-pinned
-      revisions
+- [~] Hourly GC: spec revision pruning that skips ever-pinned revisions — **done**. Log trimming
+      (R-223, R-224) is **not**: Pando does not hold app logs and no mechanism exists to trim them,
+      recorded as O-16 rather than guessed at. Backup expiry arrives with backups in phase 9
 
 ## Requirements in scope
 
@@ -34,6 +34,18 @@ R-140, R-141, R-146–R-152, R-203, R-211, R-221–R-224.
 ## Done when
 
 Killing a container by hand restores it; **killing it repeatedly reaches `failed` and stays there.**
+
+`test/acceptance/reconciler_test.go` does both against the shipped stack with the real loop running:
+`docker rm -f` on a live container and the reconciler brings back a *new* one; a crash-looping app
+walks the backoff to the threshold, reaches `failed`, and is still there six minutes later — past
+every retry interval the loop has.
+
+Getting there took three bugs that only running it could find: a give-up threshold that was
+arithmetically unreachable, a failure counter that measured the wrong thing, and a crash-looping app
+being read as recovered in the moment between crashes. All three are written up in
+[notes](../design/notes-give-up-threshold-was-unreachable.md).
+
+**Not done:** log retention (O-16), and the aggregate disk budget it implies.
 
 ## Traps
 

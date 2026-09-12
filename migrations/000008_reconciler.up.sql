@@ -40,3 +40,12 @@ ALTER TABLE apps ADD COLUMN last_reconcile_error text;
 
 CREATE INDEX apps_reconcile_idx ON apps (state)
     WHERE deleted_at IS NULL;
+
+-- The image digest the deployment's primary workload actually ran with.
+--
+-- image_ref is what Pando asked for; this is what the runtime resolved it to.
+-- They are different things and only the second can be compared against what is
+-- running later, which is what makes "a workload exists with the wrong image
+-- digest" (design 05 §2.1) detectable at all. Recorded from the runtime's own
+-- observation after the apply, so it is the truth rather than an expectation.
+ALTER TABLE deployments ADD COLUMN image_digest text;

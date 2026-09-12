@@ -141,3 +141,35 @@ func TestAMissingRouteIsReconcilable(t *testing.T) {
 	require.Len(t, drift.Reconcilable, 1)
 	require.Equal(t, reconciler.DriftRouteMissing, drift.Reconcilable[0].Kind)
 }
+
+// A workload running an image nobody deployed is drift the reconciler corrects.
+//
+// Recreating it is a creation, not a destruction: the container that is there
+// is replaced by the one the spec asks for, which is the same operation as
+// restoring a missing one.
+func TestAWorkloadRunningTheWrongImageIsReconcilable(t *testing.T) {
+	drift := reconciler.Classify(
+		want(api.WorkloadPlan{Name: "web", Image: "example/app:1"}),
+		api.ObservedBundle{Exists: true, Workloads: []api.ObservedWorkload{
+			{Name: "web", Present: true, Running: true, ImageDigest: "sha256:beef"},
+		}},
+		reconciler.Inputs{ExpectedDigest: "sha256:cafe"})
+
+	require.Len(t, drift.Reconcilable, 1)
+	require.Equal(t, reconciler.DriftWrongImage, drift.Reconcilable[0].Kind)
+	require.Contains(t, drift.Reconcilable[0].Detail, "beef")
+	require.Contains(t, drift.Reconcilable[0].Detail, "cafe")
+}
+
+// An unknown expected digest makes image drift undetectable, rather than making
+// every workload look wrong.
+func TestAnUnknownExpectedDigestIsNotDrift(t *testing.T) {
+	drift := reconciler.Classify(
+		want(api.WorkloadPlan{Name: "web"}),
+		api.ObservedBundle{Exists: true, Workloads: []api.ObservedWorkload{
+			{Name: "web", Present: true, Running: true, ImageDigest: "sha256:beef"},
+		}},
+		reconciler.Inputs{ExpectedDigest: ""})
+
+	require.True(t, drift.None())
+}

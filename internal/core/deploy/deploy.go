@@ -246,7 +246,7 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 	// restores a missing workload from the recorded image rather than
 	// rebuilding, and it detects a rotated secret (R-193) by comparing this
 	// fingerprint, because Observe returns no environment and never will.
-	if err := r.deploys.SetImageRef(ctx, dep.ID, image); err != nil {
+	if err := r.deploys.SetImageRef(ctx, dep.ID, image, primaryDigest(ctx, runtime, dep.AppID)); err != nil {
 		return fail("commit", err)
 	}
 	if r.reconciles != nil {
@@ -591,4 +591,24 @@ func short(commit string) string {
 		return commit[:8]
 	}
 	return commit
+}
+
+// primaryDigest asks the runtime what the primary workload actually resolved to.
+//
+// The runtime's own observation rather than anything Pando computed: a tag can
+// move, a build can produce a digest nobody predicted, and the only thing worth
+// comparing against a running container later is what was running now. Empty on
+// any failure, which makes image drift undetectable rather than making every
+// workload look wrong.
+func primaryDigest(ctx context.Context, runtime api.RuntimeAdapter, appID string) string {
+	observed, err := runtime.Observe(ctx, api.BundleRef{BundleID: appID})
+	if err != nil {
+		return ""
+	}
+	for _, w := range observed.Workloads {
+		if w.Running && w.ImageDigest != "" {
+			return w.ImageDigest
+		}
+	}
+	return ""
 }

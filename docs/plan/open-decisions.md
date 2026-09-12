@@ -1,8 +1,8 @@
 # Open decisions
 
-Fifteen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
-design; O-15 was found while implementing phase 6. **Eleven are resolved. Four remain, none
-blocking.**
+Sixteen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
+design; O-15 and O-16 were found while implementing phases 6 and 7. **Eleven are resolved. Five
+remain, none blocking.**
 
 **These are not TODOs to resolve at your discretion.** An agent hitting an open one should raise it,
 state which options the docs already identify, and stop — not pick quietly and move on. Record any
@@ -16,6 +16,7 @@ resolution both here and in the requirements or design doc that owns it.
 | **O-5** | TLS issuance — ACME, wildcards, self-signed local | Genuinely per-adapter; each routing adapter answers it for itself | Per adapter |
 | **O-6** | Which backup destinations ship — local, S3, mounted share | Provider-shaped. The *design* half is settled: a destination is not an adapter category (design 03 §8.1) | Phase 9 |
 | **O-15** | How a host port is chosen in port-mode routing | Nothing in the requirements says. Has a `[P]` answer in code | Phase 6 (shipped), revisit at phase 10 |
+| **O-16** | How log retention is actually enforced (R-222–R-224) | The requirement is clear; no mechanism exists to carry it out | Phase 7 (deferred), needed before an install runs many apps |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything not typed to
 a known service, and let the trial run settle it — a slot whose absence crashes the trial run is
@@ -47,6 +48,30 @@ Lowest-free rather than random so an app tends to keep its port across a rebuild
 working; reused rather than ever-increasing so a deleted app's port comes back. What needs deciding is
 whether lowest-free is the rule and whether `9000-9999` is the right range. Traefik (phase 10) does subdomain and path, so an install
 using it never reaches this path at all; that is the reason it is not blocking.
+
+**O-16** was found implementing phase 7's garbage collection. R-222 bounds log retention by size,
+R-223 sets 100 MB per app, and R-224 says the aggregate must respect total host disk. The GC job was
+meant to enforce all three. It cannot, because **Pando does not hold app logs** — it streams them from
+the runtime through `RuntimeAdapter.Logs`, and the bytes live wherever that runtime put them.
+
+There is no `TrimLogs` on the adapter interface, and adding one is not obviously right either. On
+Docker the honest mechanism is the log driver's own `max-size` / `max-file`, set when the container is
+created — which makes the per-app cap (R-223) easy and the aggregate (R-224) hard, because scaling
+every app's cap down proportionally when the total exceeds the disk budget would mean **recreating
+every container**. The reconciler may not do that: it is destruction of something a person may have
+wanted, on a schedule, triggered by an unrelated app being chatty.
+
+Options, none free:
+
+1. **Per-app cap at creation, aggregate as a warning only.** Honest and cheap; R-224 becomes a
+   notification rather than a guarantee, which is a real weakening of a `[D]` requirement.
+2. **A `LogRetention` capability on the runtime adapter**, applied without recreating where the
+   runtime allows it. Docker does not allow it for an existing container; another runtime might.
+3. **Pando collects logs itself** into storage it controls, which makes both requirements trivially
+   enforceable and adds a durable, secret-bearing store R-225 currently reasons about not needing.
+
+Recorded rather than decided. Spec revision pruning (R-152) is implemented — it is the part of GC
+that operates on data Pando actually owns.
 
 **O-5** is open the way `SessionPolicy` is open: deferring it to each adapter *is* the answer (R-047's
 shape). A routing adapter that issues certificates declares how; one that cannot says so through

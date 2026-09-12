@@ -167,18 +167,24 @@ func (d *Deployments) InFlight(ctx context.Context, appID string) (bool, error) 
 	return exists, nil
 }
 
-// SetImageRef records the image a deployment actually ran.
+// SetImageRef records the image a deployment ran, and what the runtime
+// resolved it to.
 //
-// The reconciler restores a missing workload with this rather than rebuilding.
-// Rebuilding to correct drift would turn "someone killed a container" into
-// "ship whatever is on the branch now" — a far larger action than the one being
-// corrected, and one nobody asked for (R-120).
-func (d *Deployments) SetImageRef(ctx context.Context, deploymentID, imageRef string) error {
-	if imageRef == "" {
+// The reference is what the reconciler restores a missing workload with, rather
+// than rebuilding: rebuilding to correct drift would turn "someone killed a
+// container" into "ship whatever is on the branch now", a far larger action
+// than the one being corrected (R-120).
+//
+// The digest is what makes "a workload exists with the wrong image" detectable.
+// A reference cannot be compared against a running container — the container
+// reports a digest — and a tag can point somewhere new without changing.
+func (d *Deployments) SetImageRef(ctx context.Context, deploymentID, imageRef, digest string) error {
+	if imageRef == "" && digest == "" {
 		return nil
 	}
 	_, err := d.db.Exec(ctx,
-		`UPDATE deployments SET image_ref = $2 WHERE id = $1`, deploymentID, imageRef)
+		`UPDATE deployments SET image_ref = NULLIF($2, ''), image_digest = NULLIF($3, '')
+		 WHERE id = $1`, deploymentID, imageRef, digest)
 	if err != nil {
 		return errs.Wrap(errs.Internal, "Could not record the deployed image.", err)
 	}

@@ -39,6 +39,16 @@ func (g *GC) Run(ctx context.Context) {
 }
 
 // Collect runs one pass.
+//
+// Spec revision pruning only, for now. Log retention (R-222–R-224) is not here
+// because there is nothing for it to act on: Pando does not hold app logs, it
+// streams them from the runtime, and the bytes live wherever that runtime put
+// them. Enforcing a per-app cap means the log driver's own options at container
+// creation; enforcing the aggregate would mean recreating every container when
+// one app turns chatty, which is destruction on a schedule and not something
+// the reconciler may do. Recorded as O-16 rather than guessed at.
+//
+// Backup expiry (R-211) arrives with backups, in phase 9.
 func (g *GC) Collect(ctx context.Context) {
 	pruned, err := g.Apps.PruneSpecRevisions(ctx)
 	if err != nil {

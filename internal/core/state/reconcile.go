@@ -21,6 +21,12 @@ type Reconcilable struct {
 	// restores a missing workload with this rather than rebuilding: correcting
 	// drift must not become "ship whatever is on the branch now".
 	ImageRef string
+
+	// ImageDigest is what the runtime resolved that reference to. A running
+	// container reports a digest, not a reference, so this is the only thing
+	// that can be compared against one — and a tag can point somewhere new
+	// without the reference changing at all.
+	ImageDigest string
 }
 
 // Reconciles reads and writes the reconciler's view of an app.
@@ -53,6 +59,11 @@ func (r *Reconciles) Due(ctx context.Context, now time.Time, limit int) ([]Recon
 		           SELECT d.image_ref FROM deployments d
 		           WHERE d.app_id = a.id AND d.status = 'succeeded' AND d.image_ref IS NOT NULL
 		           ORDER BY d.started_at DESC LIMIT 1
+		       ), ''),
+		       coalesce((
+		           SELECT d.image_digest FROM deployments d
+		           WHERE d.app_id = a.id AND d.status = 'succeeded' AND d.image_digest IS NOT NULL
+		           ORDER BY d.started_at DESC LIMIT 1
 		       ), '')
 		FROM apps a
 		WHERE a.deleted_at IS NULL
@@ -77,7 +88,7 @@ func (r *Reconciles) Due(ctx context.Context, now time.Time, limit int) ([]Recon
 			&pinned, &source, &a.CreatedAt, &a.UpdatedAt,
 			&a.ConsecutiveFailures, &a.LastFailureAt,
 			&a.NextAttemptAt, &a.UnobservableSince,
-			&a.AppliedEnvHash, &a.ImageRef); err != nil {
+			&a.AppliedEnvHash, &a.ImageRef, &a.ImageDigest); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read which apps need attention.", err)
 		}
 		if owner != nil {

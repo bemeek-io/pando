@@ -254,7 +254,7 @@ func (r *Reconciler) desired(ctx context.Context, app state.Reconcilable, s *spe
 	}
 
 	return want, Inputs{
-		ExpectedDigest:      "", // set once deployments record a digest
+		ExpectedDigest:      app.ImageDigest,
 		AppliedEnvHash:      app.AppliedEnvHash,
 		CurrentEnvHash:      EnvHash(s, versions),
 		VolumesThatHeldData: held,
