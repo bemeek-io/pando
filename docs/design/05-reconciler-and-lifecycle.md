@@ -196,11 +196,34 @@ var backoff = []time.Duration{0, 5*time.Second, 15*time.Second, 60*time.Second, 
 ```go
 const (
     failureThreshold = 10               // R-150
-    failureWindow    = 30 * time.Minute
+    failureWindow    = 30 * time.Minute // measured from the LAST failure
 )
 ```
 
 **[D]** Counter resets when the app reaches `running` with health passing. A flapping app that recovers between failures still accumulates toward the threshold, which is correct — flapping is a failure mode.
+
+**[D] The window is measured from the last failure, not the first.** Measured from the first, the
+threshold is arithmetically unreachable and R-150 never fires: backoff caps at five minutes, so ten
+attempts span `5+15+60+300×6` seconds — **31.3 minutes** — against a window that resets at 30. The
+app is retried forever, which is the outcome R-150 exists to prevent. As an idle timeout it means what
+the requirement means: consecutive failures always reach the threshold however long backoff stretches
+them out, and unrelated failures a day apart never accumulate. Both published numbers are unchanged,
+and backoff can be retuned without the coupling returning. See
+[notes](notes-give-up-threshold-was-unreachable.md).
+
+**[D] The counter counts attempts, not `Apply` errors.** A crash-looping app — the ordinary failure
+mode — has a workload that exists, has exited, is recreated, and exits again. `Apply` *succeeds* every
+time, because the container really is created. Counting only errors means nothing is ever counted and
+the threshold is unreachable for a second, independent reason. An app that needed correcting was not
+working; whether the correction returned an error is a detail of how it was not working.
+
+**[P]** `RestartSettleWindow = 30s`. A workload that has restarted before and started again moments
+ago is looping, not recovered. Pando sets a restart policy on its containers — wanted, because the
+runtime recovers faster than a 15s tick and keeps doing it while Pando is away (§2.1.1) — so a
+crash-looping app is briefly `Running` between crashes. A tick landing in that window would read it as
+recovered and clear the count, and the app would never reach `failed`: every glimpse of it up undoes
+the progress toward giving up on it. `ObservedWorkload.RestartCount` and `StartedAt` are what make the
+distinction, and both were already observed.
 
 **[D]** On reaching the threshold: transition to `failed`, fire a notification, write an audit event, **and stop**. No long-interval retry (R-151).
 
@@ -280,6 +303,11 @@ apply new alongside old → wait for health → repoint proxy → stop old
 
 **[D]** Health is observed by the runtime adapter and reported through `ObservedWorkload.Healthy`, a nullable bool. `nil` means no signal available, which is **not** unhealthy — an app with no health check is `running`, not perpetually `degraded`. This is also why auto-rollback defaults off (R-147).
 
+**[D]** Restarting is not healthy, per §1.1's "health failing **or** restarting". A nil `Healthy` on a
+workload that is in a restart loop must not read as "no signal, therefore fine" — see the
+`RestartSettleWindow` note in §2.2 for why this is the difference between an app reaching `failed` and
+being retried forever.
+
 ---
 
 ## 5. Triggers
@@ -296,7 +324,7 @@ apply new alongside old → wait for health → repoint proxy → stop old
 
 **[P]** A separate periodic job, hourly:
 
-- Trim logs to `Retention.LogBytes` per app (R-223), and to the aggregate host disk budget (R-224). **Aggregate wins.** If total retention exceeds the disk budget, every app's cap is scaled down proportionally rather than letting one app's allowance brick the host.
+- Trim logs to `Retention.LogBytes` per app (R-223), and to the aggregate host disk budget (R-224). **Aggregate wins.** If total retention exceeds the disk budget, every app's cap is scaled down proportionally rather than letting one app's allowance brick the host. **Not implemented — see O-16.** Pando does not hold app logs; it streams them from the runtime, and there is no mechanism on the adapter interface to trim them. Scaling caps down proportionally would mean recreating every container, which is destruction on a schedule triggered by an unrelated app being chatty.
 - Expire rolling backups past `BackupDaily` (R-211). Never touches `kind = 'on_delete'` (R-204).
 - Prune spec revisions past `SpecRevisions`, skipping any revision that was ever pinned.
 - Reap idle per-user instances **[LATER]** (R-293).

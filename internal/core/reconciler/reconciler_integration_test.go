@@ -603,3 +603,33 @@ func TestAnAppThatStaysUpAfterRestartingIsRecovered(t *testing.T) {
 	require.Equal(t, state.StateRunning, h.state(t),
 		"a history of restarts is not the same as restarting now")
 }
+
+// The runtime saying "restarting" outranks every heuristic.
+//
+// Docker reports Running=true and Restarting=true together, and once the
+// restart backoff stretches past the settle window the heuristic alone reads a
+// looping container as settled. That happened on a real crash-looping app at
+// twenty restarts: Running=true, Restarting=true, StartedAt 40 seconds ago, and
+// the failure count reset instead of climbing.
+func TestARuntimeReportingRestartingOutranksTheSettleWindow(t *testing.T) {
+	now := time.Now().UTC()
+	h := newHarness(t, state.StateRunning)
+	h.rec.Clock = &steppingClock{now: now}
+
+	h.runtime.setObserved(api.ObservedBundle{Exists: true, Workloads: []api.ObservedWorkload{
+		{
+			Name: "web", Present: true,
+			Running: true, Restarting: true, RestartCount: 20,
+			// Past the settle window, which is how this got through before.
+			StartedAt: now.Add(-40 * time.Second),
+		},
+	}})
+
+	h.rec.Tick(context.Background())
+
+	var failures int
+	require.NoError(t, h.db.QueryRow(context.Background(),
+		`SELECT consecutive_failures FROM apps WHERE id = $1`, h.appID).Scan(&failures))
+	require.Equal(t, 1, failures)
+	require.Equal(t, state.StateDegraded, h.state(t))
+}

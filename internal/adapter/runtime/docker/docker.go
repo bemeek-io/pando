@@ -327,9 +327,15 @@ func (a *Adapter) Observe(ctx context.Context, ref api.BundleRef) (api.ObservedB
 		}
 
 		w := api.ObservedWorkload{
-			Name:         c.Labels[labelWorkload],
-			Present:      true,
-			Running:      inspect.State.Running,
+			Name:    c.Labels[labelWorkload],
+			Present: true,
+			Running: inspect.State.Running,
+
+			// Docker reports both at once: a crash-looping container inspects
+			// as Running=true, Restarting=true. Reporting only Running would
+			// tell the reconciler a looping app is fine.
+			Restarting: inspect.State.Restarting,
+
 			ImageDigest:  inspect.Image,
 			RestartCount: inspect.RestartCount,
 		}

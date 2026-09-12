@@ -394,6 +394,21 @@ type ObservedWorkload struct {
 	// different states and must not collapse (R-221). An app with no health
 	// check is running, not perpetually degraded.
 	Healthy *bool
+
+	// Restarting means the workload is in a restart loop right now.
+	//
+	// Separate from Running because a runtime can report both at once — Docker
+	// does, and a crash-looping container inspects as Running=true,
+	// Restarting=true. Without this the reconciler reads a looping app as
+	// running and healthy, clears its failure count, and the app never reaches
+	// `failed`: every glimpse of it up undoes the progress toward giving up on
+	// it. Design 05 §1.1 has always said degraded means "health failing **or**
+	// restarting"; this is the signal that carries the second half.
+	//
+	// A runtime that cannot tell reports false, and the reconciler falls back
+	// to noticing that a workload which has restarted before started again
+	// moments ago.
+	Restarting bool
 }
 
 // ObservedVolume is a volume as found.

@@ -495,6 +495,18 @@ func observedHealthy(observed api.ObservedBundle, now time.Time) bool {
 		if w.Healthy != nil && !*w.Healthy {
 			return false
 		}
+
+		// The runtime saying so, first. Docker reports Running and Restarting
+		// together, and a crash-looping container is both.
+		if w.Restarting {
+			return false
+		}
+
+		// For a runtime that cannot tell: a workload which has restarted before
+		// and started again moments ago is looping, not recovered. Weaker than
+		// the explicit signal — a restart loop whose backoff has stretched past
+		// this window looks settled — which is exactly why the explicit signal
+		// is checked first.
 		if w.RestartCount > 0 && !w.StartedAt.IsZero() && now.Sub(w.StartedAt) < RestartSettleWindow {
 			return false
 		}

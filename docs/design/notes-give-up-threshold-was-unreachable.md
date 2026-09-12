@@ -79,10 +79,31 @@ so the app never reaches `failed`: every glimpse of it up undoes the progress
 toward giving up on it. Design 05 §1.1 already says degraded means "health
 failing **or restarting**"; nothing was reading the restart signal.
 
-`ObservedWorkload` carries `RestartCount` and `StartedAt` and both were unused.
-A workload that has restarted before and started again moments ago is looping,
-not recovered; one that stays up past a settle window is recovered. No new state
-is needed, and the distinction self-clears.
+The first fix was a heuristic: a workload that has restarted before and started
+again moments ago is looping, not recovered. `ObservedWorkload` already carried
+`RestartCount` and `StartedAt`, and both were unused.
+
+It was not enough, and watching a real crash-looping app showed why. Docker
+backs off between restarts, so at twenty restarts the container had last started
+**forty seconds** ago — past the thirty-second settle window — and the heuristic
+declared it settled. The failure count reset instead of climbing, again.
+
+The container inspects as:
+
+```
+Running=true  Restarting=true  RestartCount=20  StartedAt=40s ago
+```
+
+`Running` and `Restarting` are **both true at once**, and the runtime was saying
+so the whole time. `ObservedWorkload` had no field for it. It does now, the
+Docker adapter fills it from `State.Restarting`, and the heuristic stays behind
+it as the fallback for a runtime that cannot tell — which is exactly the
+position a heuristic should occupy.
+
+The lesson is narrower than "use the real signal". It is that a heuristic
+written to stand in for information you assume you lack should be checked
+against what the adapter actually reports, because the assumption is the part
+most likely to be wrong.
 
 ## What to take from it
 
