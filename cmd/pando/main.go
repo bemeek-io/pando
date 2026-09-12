@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
+	backuplocal "github.com/bemeek-io/pando/internal/adapter/backup/local"
 	buildkitadapter "github.com/bemeek-io/pando/internal/adapter/builder/buildkit"
 	"github.com/bemeek-io/pando/internal/adapter/identity/local"
 	"github.com/bemeek-io/pando/internal/adapter/registry/ociprobe"
@@ -28,6 +30,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/assertion"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/backup"
 	"github.com/bemeek-io/pando/internal/core/bootstrap"
 	"github.com/bemeek-io/pando/internal/core/clock"
 	"github.com/bemeek-io/pando/internal/core/deploy"
@@ -43,6 +46,7 @@ import (
 	"github.com/bemeek-io/pando/internal/httpapi"
 	"github.com/bemeek-io/pando/internal/log"
 	"github.com/bemeek-io/pando/internal/proxy"
+	"github.com/bemeek-io/pando/internal/secret"
 )
 
 func main() {
@@ -200,6 +204,27 @@ func serve(ctx context.Context, configPath string) error {
 	secretsAdapter, _ := registry.Secrets(secretsRef)
 	secrets := state.NewSecrets(db, secretsAdapter, secretsRef)
 
+	// Backup and disaster recovery (Sequence D). The service does the work; the
+	// store records what it produced, and the record outlives the thing it
+	// records (R-204).
+	backups := state.NewBackups(db)
+	backupService := &backup.Service{
+		Registry:    registry,
+		DatabaseURL: secret.New(cfg.Database.URL),
+
+		// The local secrets adapter's key. Without it in the bundle a restored
+		// install holds every app's ciphertext and nothing that opens it
+		// (R-212) — which looks like a successful restore until an app starts.
+		// Read from the adapter's own configuration rather than duplicated into
+		// server config, so there is one place that decides where the key lives.
+		SecretsKeyPath: secretsKeyPath(ctx, adapters, logger),
+
+		State:         state.NewBundleSource(db),
+		Version:       buildVersion,
+		SchemaVersion: db.SchemaVersion(),
+		WorkDir:       cfg.Server.WorkDir,
+	}
+
 	deployments := state.NewDeployments(db)
 	logStore := deploy.NewLogStore()
 	appPlanner := planner.New(registry, hostPolicy, allocations)
@@ -323,6 +348,9 @@ func serve(ctx context.Context, configPath string) error {
 			// reads the document per evaluation rather than caching it (R-274).
 			PolicyStore: policyStore,
 			AuditLog:    audit.NewReader(db.Pool),
+
+			Backups: backups,
+			Backup:  backupService,
 		}).Routes(),
 	}
 
@@ -415,6 +443,8 @@ func registerAdapters(ctx context.Context, store *state.Adapters, logger *zap.Lo
 			adapter = secretslocal.New()
 		case c.Category == string(adapterapi.CategoryBuilder) && c.Kind == buildkitadapter.Kind:
 			adapter = buildkitadapter.New()
+		case c.Category == string(adapterapi.CategoryBackup) && c.Kind == backuplocal.Kind:
+			adapter = backuplocal.New()
 		default:
 			logger.Warn("skipping adapter of unknown kind",
 				zap.String("id", c.ID), zap.String("category", c.Category), zap.String("kind", c.Kind))
@@ -460,6 +490,13 @@ func seedDefaultAdapters(ctx context.Context, store *state.Adapters) error {
 			Name: "Local storage", IsDefault: true, Enabled: true},
 		{ID: "bld_buildkit", Category: string(adapterapi.CategoryBuilder), Kind: buildkitadapter.Kind,
 			Name: "BuildKit", IsDefault: true, Enabled: true},
+
+		// A local destination on a fresh install, so the DR path works out of
+		// the box. R-217 is explicit that a bundle beside the install it backs
+		// up does not survive the disk failing — this is the default that makes
+		// backups testable, not the one an operator should keep.
+		{ID: "bkp_local", Category: string(adapterapi.CategoryBackup), Kind: backuplocal.Kind,
+			Name: "Local disk", IsDefault: true, Enabled: true},
 	} {
 		if err := store.Upsert(ctx, c); err != nil {
 			return err
@@ -467,6 +504,42 @@ func seedDefaultAdapters(ctx context.Context, store *state.Adapters) error {
 	}
 	return nil
 }
+
+// secretsKeyPath reads where the local secrets adapter keeps its key.
+//
+// From adapter_configs rather than server config: the adapter owns that choice,
+// and a second copy in another file is a second copy to get wrong. An install
+// using an external secrets adapter has no local key, and the empty string is
+// the correct answer there — the bundle then carries no key because there is
+// none to carry.
+func secretsKeyPath(ctx context.Context, store *state.Adapters, logger *zap.Logger) string {
+	configured, err := store.List(ctx)
+	if err != nil {
+		logger.Warn("could not read adapter configuration for backups", zap.Error(err))
+		return ""
+	}
+	for _, c := range configured {
+		if c.Category != string(adapterapi.CategorySecrets) || c.Kind != secretslocal.Kind {
+			continue
+		}
+		var cfg struct {
+			KeyPath string `json:"key_path"`
+		}
+		if len(c.Config) > 0 {
+			_ = json.Unmarshal(c.Config, &cfg)
+		}
+		if cfg.KeyPath != "" {
+			return cfg.KeyPath
+		}
+		return secretslocal.DefaultKeyPath
+	}
+	return ""
+}
+
+// buildVersion is what the manifest records. Stamped at build time once there
+// is a release process; "dev" until then, which is honest rather than a version
+// number nobody set.
+const buildVersion = "dev"
 
 // auditDenials writes an audit event for every authorization denial.
 //

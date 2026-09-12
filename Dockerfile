@@ -11,8 +11,13 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pando ./cmd/pando
 
-FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata su-exec \
+# 3.21 rather than 3.20 because that is where postgresql17-client appears, and
+# the client major version has to match the server: pg_dump refuses a server
+# newer than itself, and discovering that during a restore is discovering it at
+# the worst possible moment. Bump this with the postgres service in
+# docker-compose.yml, never separately.
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata su-exec postgresql17-client \
     && adduser -D -u 10001 pando \
     && mkdir -p /var/lib/pando \
     && chown pando:pando /var/lib/pando

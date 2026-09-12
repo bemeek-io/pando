@@ -12,6 +12,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/assertion"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/backup"
 	"github.com/bemeek-io/pando/internal/core/deploy"
 	"github.com/bemeek-io/pando/internal/core/planner"
 	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
@@ -86,6 +87,12 @@ type Server struct {
 	// endpoint should 500 rather than quietly return nothing — an empty audit
 	// log and an unreadable one are very different answers.
 	AuditLog AuditReader
+
+	// Backups records what has been backed up; Backup does the backing up
+	// (R-212). Two fields because they are two concerns: the record has to
+	// survive the thing it records, which is R-204's whole point.
+	Backups *state.Backups
+	Backup  *backup.Service
 
 	// Console serves the embedded UI on Pando's own paths. Nil when the binary
 	// was built without it, in which case those paths 404 like any other and
@@ -228,6 +235,16 @@ func (s *Server) Routes() http.Handler {
 		// The audit log (R-227). Its own verb: it records what everyone did,
 		// including inside apps they own.
 		r.Get("/audit", s.handleListAudit)
+
+		// Backup and disaster recovery (Sequence D). Verify is its own route
+		// rather than a flag on restore, because a flag is a thing somebody
+		// passes wrongly and the wrong value here replaces an installation.
+		r.Route("/backups", func(r chi.Router) {
+			r.Get("/", s.handleListBackups)
+			r.Post("/", s.handleCreateBackup)
+			r.Post("/{backupID}/verify", s.handleVerifyBackup)
+			r.Post("/{backupID}/restore", s.handleRestoreBackup)
+		})
 
 		r.Route("/apps", func(r chi.Router) {
 			r.Get("/", s.handleListApps)

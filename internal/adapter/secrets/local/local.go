@@ -23,6 +23,10 @@ const Kind = "local"
 // KeySize is the AES-256 key length.
 const KeySize = 32
 
+// DefaultKeyPath is where the encryption key lives unless configured
+// otherwise. Exported because the DR bundle has to find it (R-212).
+const DefaultKeyPath = "/var/lib/pando/secrets.key"
+
 // Adapter encrypts secrets at rest with a key on disk (R-190).
 //
 // The threat this defends against is a leaked database dump or backup, not a
@@ -49,7 +53,7 @@ func (a *Adapter) Kind() string           { return Kind }
 func (a *Adapter) Category() api.Category { return api.CategorySecrets }
 
 func (a *Adapter) Configure(_ context.Context, raw json.RawMessage) error {
-	cfg := Config{KeyPath: "/var/lib/pando/secrets.key"}
+	cfg := Config{KeyPath: DefaultKeyPath}
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &cfg); err != nil {
 			return errs.Wrap(errs.ValidInvalid, "The local secrets configuration could not be read.", err)

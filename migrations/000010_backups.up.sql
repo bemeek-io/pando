@@ -18,6 +18,16 @@ WHERE id = 'role_administrator';
 
 ALTER TABLE roles ENABLE TRIGGER roles_builtin_immutable;
 
+-- R-252 gained an eighth category, so the column that enumerates them has to
+-- agree. The CHECK is the reason this is a migration rather than a Go constant:
+-- the database is where "these are the categories" is actually enforced, and a
+-- new category that only exists in Go is a category no adapter can be
+-- configured in.
+ALTER TABLE adapter_configs DROP CONSTRAINT adapter_configs_category_check;
+ALTER TABLE adapter_configs ADD CONSTRAINT adapter_configs_category_check
+    CHECK (category IN ('runtime', 'routing', 'builder', 'secrets',
+                        'services', 'identity', 'notify', 'backup'));
+
 CREATE TABLE backups (
     id           text PRIMARY KEY,            -- bkp_...
 

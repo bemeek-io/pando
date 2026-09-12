@@ -50,6 +50,14 @@ type Server struct {
 	// default. [P]: the requirements do not specify a range (O-15).
 	PortRangeStart int `mapstructure:"port_range_start"`
 	PortRangeEnd   int `mapstructure:"port_range_end"`
+
+	// WorkDir is where a DR bundle is assembled before it is encrypted and
+	// streamed out (R-212). It needs room for a database dump plus every app
+	// volume, which is why it is configurable and does not default to the
+	// system temporary directory — that is often a small tmpfs, and running out
+	// of space partway through a backup is how an install discovers it has no
+	// backups.
+	WorkDir string `mapstructure:"work_dir"`
 }
 
 type Database struct {
@@ -80,6 +88,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.routing_mode", string(spec.RoutingPath))
 	v.SetDefault("server.port_range_start", 9000)
 	v.SetDefault("server.port_range_end", 9999)
+	v.SetDefault("server.work_dir", "/var/lib/pando/work")
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.development", false)
 

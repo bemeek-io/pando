@@ -46,7 +46,15 @@ const AppRole = "pando_app"
 // DB is a connection to the state store, held as the application role.
 type DB struct {
 	*pgxpool.Pool
+
+	// schemaVersion is the migration the database is at, recorded when
+	// migrations run. A DR bundle carries it so a restore can refuse a bundle
+	// from a newer schema rather than half-applying it (R-215).
+	schemaVersion uint
 }
+
+// SchemaVersion is the migration version this database is at.
+func (db *DB) SchemaVersion() uint { return db.schemaVersion }
 
 // ConnectOptions configures the bootstrap sequence.
 type ConnectOptions struct {
@@ -117,7 +125,7 @@ func Connect(ctx context.Context, opts ConnectOptions) (*DB, error) {
 	}
 
 	l.Info("state store ready", zap.String("role", AppRole))
-	return &DB{Pool: pool}, nil
+	return &DB{Pool: pool, schemaVersion: appliedSchemaVersion}, nil
 }
 
 // waitForPostgres dials until Postgres answers or the timeout expires.
@@ -196,8 +204,14 @@ func Migrate(ctx context.Context, ownerURL string) error {
 	}
 
 	log.From(ctx).Info("migrations applied", zap.Uint("version", version))
+	appliedSchemaVersion = version
 	return nil
 }
+
+// appliedSchemaVersion is set by migrate and read when the DB is built. A
+// package variable rather than a return value because migrate runs on the owner
+// pool, before the DB the rest of the process uses exists.
+var appliedSchemaVersion uint
 
 // provisionAppRole creates or updates AppRole and returns its password.
 //

@@ -1,0 +1,484 @@
+package backup
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/bemeek-io/pando/internal/secret"
+)
+
+// Service builds, verifies and restores DR bundles (Sequence D, R-212–R-216).
+type Service struct {
+	Registry *api.Registry
+
+	// DatabaseURL is dumped and restored. Held as a secret.Value because it
+	// carries the password and would otherwise reach a log line the first time
+	// someone logged the config (R-194).
+	DatabaseURL secret.Value
+
+	// SecretsKeyPath is the local secrets adapter's key file. Without it in the
+	// bundle, a restored install has every app's ciphertext and nothing to
+	// decrypt it with — which looks like a successful restore until an app
+	// starts (R-212).
+	SecretsKeyPath string
+
+	// State supplies everything the bundle records about the install.
+	State StateSource
+
+	// Version and SchemaVersion go into the manifest so a restore can refuse a
+	// bundle it cannot make sense of, rather than half-applying it.
+	Version       string
+	SchemaVersion uint
+
+	// WorkDir is where the bundle is assembled before being encrypted and
+	// streamed out. A DR bundle does not fit in memory.
+	WorkDir string
+}
+
+// StateSource is what the service needs from the state store.
+//
+// An interface rather than the concrete store so the service can be tested
+// without Postgres, and so this package does not import state — which would
+// make the dependency run both ways once state records the backup.
+type StateSource interface {
+	// Counts are object counts for the manifest: apps, users, grants, specs,
+	// volumes. Checksums prove the bytes arrived; counts prove the bytes
+	// describe the install the operator thinks they are restoring.
+	Counts(ctx context.Context) (map[string]int, error)
+
+	// AdapterConfigs and HostPolicy are exported verbatim.
+	AdapterConfigs(ctx context.Context) ([]byte, error)
+	HostPolicy(ctx context.Context) ([]byte, error)
+
+	// VolumesToSnapshot lists every live volume with the runtime that holds it.
+	VolumesToSnapshot(ctx context.Context) ([]VolumeRef, error)
+}
+
+// VolumeRef names one volume and the adapter that can snapshot it.
+type VolumeRef struct {
+	VolumeID   string
+	AdapterRef string
+	Handle     string
+}
+
+// CreateRequest asks for a bundle.
+type CreateRequest struct {
+	// Passphrase is supplied at backup time and never stored (R-213). Losing it
+	// makes the bundle unusable (R-214), which is an accepted cost and one the
+	// console states at creation rather than in documentation.
+	Passphrase secret.Value
+
+	// DestinationRef names the backup adapter to write to. Empty uses the
+	// configured default.
+	DestinationRef string
+
+	// RetainFor is how long to keep it. Zero means keep until discarded.
+	RetainFor time.Duration
+}
+
+// Created reports what a backup produced.
+type Created struct {
+	ObjectName  string
+	AdapterRef  string
+	SizeBytes   int64
+	Manifest    Manifest
+	RetainUntil *time.Time
+}
+
+// Create assembles, encrypts and stores a DR bundle.
+//
+// Order matters and is Sequence D's: everything is gathered and written to the
+// destination first, and only then does the caller record the row. A row
+// written before the object exists claims a bundle during exactly the window
+// when a disaster is most likely to interrupt.
+func (s *Service) Create(ctx context.Context, id string, req CreateRequest) (Created, error) {
+	if req.Passphrase.Reveal() == "" {
+		return Created{}, errs.New(errs.ValidInvalid,
+			"A backup needs a passphrase, and Pando does not keep it.").
+			WithRemedy("Choose a passphrase and store it somewhere you will still have it after the machine is gone.")
+	}
+
+	dest, ref, err := s.destination(req.DestinationRef)
+	if err != nil {
+		return Created{}, err
+	}
+
+	if err := s.ensureWorkDir(); err != nil {
+		return Created{}, err
+	}
+
+	// Assembled on disk, not in memory: a bundle is a database dump plus every
+	// app volume.
+	staging, err := os.CreateTemp(s.WorkDir, "pando-bundle-*.tar")
+	if err != nil {
+		return Created{}, errs.Wrap(errs.Internal, "Pando could not start the backup.", err)
+	}
+	defer func() {
+		_ = staging.Close()
+		_ = os.Remove(staging.Name())
+	}()
+
+	manifest, err := s.assemble(ctx, staging)
+	if err != nil {
+		return Created{}, err
+	}
+	if _, err := staging.Seek(0, io.SeekStart); err != nil {
+		return Created{}, errs.Wrap(errs.Internal, "Pando could not read back the backup.", err)
+	}
+
+	// Encrypt on the way out. The destination never sees plaintext, so a
+	// compromised destination yields ciphertext (R-213).
+	w, err := dest.Writer(ctx, id)
+	if err != nil {
+		return Created{}, err
+	}
+	counter := &countingWriter{w: w}
+	if err := Encrypt(counter, staging, req.Passphrase); err != nil {
+		_ = w.Close()
+		return Created{}, err
+	}
+	if err := w.Close(); err != nil {
+		return Created{}, err
+	}
+
+	out := Created{
+		ObjectName: id, AdapterRef: ref, SizeBytes: counter.n, Manifest: manifest,
+	}
+
+	// Retention belongs to whoever can enforce it. If the destination expires
+	// objects itself, Pando records no expiry and never prunes: pruning what
+	// the store has already locked fails every time, and the failure looks like
+	// a Pando bug (R-217).
+	if req.RetainFor > 0 && !dest.Capabilities().OwnsRetention {
+		until := time.Now().UTC().Add(req.RetainFor)
+		out.RetainUntil = &until
+	}
+	return out, nil
+}
+
+// assemble writes the tar into w and returns the manifest.
+func (s *Service) assemble(ctx context.Context, w io.Writer) (Manifest, error) {
+	b := NewWriter(w, "dr_bundle", s.Version, s.SchemaVersion)
+
+	dump, err := s.dumpDatabase(ctx)
+	if err != nil {
+		return Manifest{}, err
+	}
+	defer func() { _ = os.Remove(dump) }()
+
+	if err := addFile(b, PostgresName, dump); err != nil {
+		return Manifest{}, err
+	}
+
+	// The secrets key. A missing file is normal — an install using an external
+	// secrets adapter has no local key to export — but it is checked
+	// explicitly rather than by swallowing every error from addFile, because
+	// an unreadable key and an absent one are very different and only one of
+	// them should produce a bundle.
+	if s.SecretsKeyPath != "" {
+		switch _, statErr := os.Stat(s.SecretsKeyPath); {
+		case statErr == nil:
+			if err := addFile(b, SecretsKey, s.SecretsKeyPath); err != nil {
+				return Manifest{}, err
+			}
+		case !os.IsNotExist(statErr):
+			return Manifest{}, errs.Wrap(errs.Internal,
+				"Pando could not read the secrets key for the backup.", statErr)
+		}
+	}
+
+	adapters, err := s.State.AdapterConfigs(ctx)
+	if err != nil {
+		return Manifest{}, err
+	}
+	if err := b.Add(AdaptersName, int64(len(adapters)), bytesReader(adapters)); err != nil {
+		return Manifest{}, err
+	}
+
+	policy, err := s.State.HostPolicy(ctx)
+	if err != nil {
+		return Manifest{}, err
+	}
+	if err := b.Add(PolicyName, int64(len(policy)), bytesReader(policy)); err != nil {
+		return Manifest{}, err
+	}
+
+	volumes, err := s.State.VolumesToSnapshot(ctx)
+	if err != nil {
+		return Manifest{}, err
+	}
+	for _, v := range volumes {
+		if err := s.addVolume(ctx, b, v); err != nil {
+			return Manifest{}, err
+		}
+	}
+
+	counts, err := s.State.Counts(ctx)
+	if err != nil {
+		return Manifest{}, err
+	}
+	for object, n := range counts {
+		b.Count(object, n)
+	}
+	b.Count("volumes", len(volumes))
+
+	return b.Finish()
+}
+
+// addVolume snapshots one volume through its runtime adapter.
+//
+// Staged to a file first because tar needs the size in the header and a volume
+// snapshot streams. The alternative is buffering a volume in memory, which for
+// the volumes this exists to protect is not an alternative.
+func (s *Service) addVolume(ctx context.Context, b *Writer, v VolumeRef) error {
+	rt, ok := s.Registry.Runtime(v.AdapterRef)
+	if !ok {
+		return errs.Newf(errs.AdapterFailed,
+			"The runtime holding %s is not configured, so its data cannot be backed up.", v.VolumeID)
+	}
+
+	staged, err := os.CreateTemp(s.WorkDir, "pando-vol-*.tar")
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Pando could not stage the app's data.", err)
+	}
+	defer func() {
+		_ = staged.Close()
+		_ = os.Remove(staged.Name())
+	}()
+
+	if err := rt.SnapshotVolume(ctx, api.VolumeHandle{VolumeID: v.VolumeID, Handle: v.Handle}, staged); err != nil {
+		return err
+	}
+	info, err := staged.Stat()
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Pando could not stage the app's data.", err)
+	}
+	if _, err := staged.Seek(0, io.SeekStart); err != nil {
+		return errs.Wrap(errs.Internal, "Pando could not stage the app's data.", err)
+	}
+	return b.Add(VolumesPrefix+v.VolumeID+".tar", info.Size(), staged)
+}
+
+// dumpDatabase runs pg_dump into a temporary file and returns its path.
+//
+// The custom format, because it restores with pg_restore --clean and does not
+// depend on psql parsing whatever the dump contains. The password reaches the
+// child through the environment and never through argv, which is world-readable
+// in /proc — the database name is the only part of the URL on the command line,
+// and it is not a secret (R-194).
+func (s *Service) dumpDatabase(ctx context.Context) (string, error) {
+	f, err := os.CreateTemp(s.WorkDir, "pando-pg-*.dump")
+	if err != nil {
+		return "", errs.Wrap(errs.Internal, "Pando could not start the database backup.", err)
+	}
+	path := f.Name()
+	_ = f.Close()
+
+	env, dbname, err := pgEnv(s.DatabaseURL)
+	if err != nil {
+		_ = os.Remove(path)
+		return "", err
+	}
+
+	cmd := exec.CommandContext(ctx, "pg_dump", "--format=custom", "--no-owner", "--no-privileges",
+		"--dbname", dbname, "--file", path)
+	cmd.Env = env
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		_ = os.Remove(path)
+		// pg_dump's own message, which names the table or permission at fault.
+		// Replacing it with something generic would delete the only useful
+		// detail an operator has.
+		return "", errs.Newf(errs.Internal,
+			"Pando could not back up the database: %s", trimForMessage(out)).
+			WithRemedy("Check that the database is reachable and that pg_dump is installed alongside Pando.")
+	}
+	return path, nil
+}
+
+// Verify decrypts and checks a stored bundle without applying it (R-216).
+//
+// Touches nothing. That is the property Sequence D asserts and the reason this
+// is a separate call from Restore rather than a flag on it: a flag is a thing
+// someone passes wrongly, and the wrong value here overwrites an install.
+func (s *Service) Verify(ctx context.Context, adapterRef, objectName string, passphrase secret.Value) (Verified, error) {
+	dest, _, err := s.destination(adapterRef)
+	if err != nil {
+		return Verified{}, err
+	}
+
+	rc, err := dest.Reader(ctx, objectName)
+	if err != nil {
+		return Verified{}, err
+	}
+	defer func() { _ = rc.Close() }()
+
+	// Decrypt through a pipe rather than to a file: verification reads the
+	// whole stream once and keeps nothing, so there is no reason for a
+	// plaintext copy of every secret in the install to touch the disk.
+	pr, pw := io.Pipe()
+	decrypted := make(chan error, 1)
+	go func() {
+		err := Decrypt(pw, rc, passphrase)
+		_ = pw.CloseWithError(err)
+		decrypted <- err
+	}()
+
+	v, verifyErr := Verify(pr)
+	_ = pr.Close()
+	decryptErr := <-decrypted
+
+	// Decrypt is step 1 and verify is step 2, so a decrypt failure is reported
+	// as one even though the verify is what noticed. Without this ordering a
+	// mistyped passphrase reads as "this backup is damaged" — which sends an
+	// operator to restore an older bundle when the one in front of them is
+	// perfectly good.
+	if decryptErr != nil {
+		if errors.Is(decryptErr, ErrPassphrase) {
+			return Verified{}, errs.New(errs.BackupDecryptFailed,
+				"That passphrase does not open this backup.").
+				WithRemedy("Pando never stores backup passphrases, so there is no way to recover one.")
+		}
+		return Verified{}, decryptErr
+	}
+	if verifyErr != nil {
+		return Verified{}, verifyErr
+	}
+	return v, nil
+}
+
+// ensureWorkDir creates the staging directory.
+//
+// Created on demand rather than at install time: a directory that has to exist
+// before the first backup is a step somebody skips, and they find out during
+// the backup they are taking because something has already gone wrong. 0700
+// because what passes through here is every secret in the install in the clear.
+func (s *Service) ensureWorkDir() error {
+	if s.WorkDir == "" {
+		return nil // os.CreateTemp falls back to the system temporary directory.
+	}
+	if err := os.MkdirAll(s.WorkDir, 0o700); err != nil {
+		return errs.Wrap(errs.Internal,
+			fmt.Sprintf("Pando could not create its working directory at %s.", s.WorkDir), err)
+	}
+	return nil
+}
+
+func (s *Service) destination(ref string) (api.BackupAdapter, string, error) {
+	if ref == "" {
+		var ok bool
+		ref, ok = s.Registry.Default(api.CategoryBackup)
+		if !ok {
+			return nil, "", errs.New(errs.Internal,
+				"This installation has nowhere to put a backup.").
+				WithRemedy("Configure a backup destination before taking a backup.")
+		}
+	}
+	dest, ok := s.Registry.Backup(ref)
+	if !ok {
+		return nil, "", errs.Newf(errs.ValidInvalid, "There is no backup destination called %q.", ref)
+	}
+	return dest, ref, nil
+}
+
+// pgEnv splits the database URL into libpq environment variables.
+//
+// The password must not appear in argv. Splitting here rather than passing the
+// whole URL as PGDATABASE also means a malformed URL is reported as a
+// configuration problem now, rather than as a pg_dump error later that names
+// nothing useful.
+func pgEnv(dsn secret.Value) (env []string, dbname string, err error) {
+	u, parseErr := url.Parse(dsn.Reveal())
+	if parseErr != nil || u.Host == "" {
+		return nil, "", errs.New(errs.Internal,
+			"This installation's database address could not be read, so Pando cannot back it up.")
+	}
+
+	host := u.Hostname()
+	port := u.Port()
+	if port == "" {
+		port = "5432"
+	}
+	dbname = strings.TrimPrefix(u.Path, "/")
+	if dbname == "" {
+		return nil, "", errs.New(errs.Internal, "This installation's database address names no database.")
+	}
+
+	env = append(os.Environ(),
+		"PGHOST="+host,
+		"PGPORT="+port,
+		"PGDATABASE="+dbname,
+	)
+	if user := u.User.Username(); user != "" {
+		env = append(env, "PGUSER="+user)
+	}
+	if pw, ok := u.User.Password(); ok {
+		env = append(env, "PGPASSWORD="+pw)
+	}
+	// sslmode and anything else the URL carried.
+	if mode := u.Query().Get("sslmode"); mode != "" {
+		env = append(env, "PGSSLMODE="+mode)
+	}
+	return env, dbname, nil
+}
+
+func addFile(b *Writer, name, path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return errs.Wrap(errs.Internal, fmt.Sprintf("Pando could not read %s for the backup.", filepath.Base(path)), err)
+	}
+	defer func() { _ = f.Close() }()
+
+	info, err := f.Stat()
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Pando could not read part of the backup.", err)
+	}
+	return b.Add(name, info.Size(), f)
+}
+
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
+}
+
+func bytesReader(b []byte) io.Reader { return &sliceReader{b: b} }
+
+type sliceReader struct {
+	b []byte
+	i int
+}
+
+func (r *sliceReader) Read(p []byte) (int, error) {
+	if r.i >= len(r.b) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.b[r.i:])
+	r.i += n
+	return n, nil
+}
+
+func trimForMessage(out []byte) string {
+	const max = 400
+	s := string(out)
+	if len(s) > max {
+		return s[:max] + "…"
+	}
+	return s
+}
