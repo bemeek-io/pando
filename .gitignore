@@ -1,7 +1,7 @@
 # Build output
 /bin/
 /dist/
-pando
+/pando
 
 # Console build, embedded into internal/console at build time
 # Built console assets. The directory's README.md is committed, because
