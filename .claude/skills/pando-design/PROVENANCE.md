@@ -9,10 +9,14 @@ This design system was **imported**, not authored here.
 | URL | https://claude.ai/design/p/27583278-89f3-4207-b9af-3fa14d54764a |
 | Imported | 2026-09-11 |
 
-**The design project is the source of truth.** Editing files here does not flow
-back. A change to the visual language belongs in the design project first, and
-then comes down through a re-sync — otherwise the two drift and neither is
+**The design project is the source of truth, with three exceptions.** Editing files
+here does not flow back: a change to the visual language belongs in the design
+project first and comes down through a re-sync, or the two drift and neither is
 trustworthy.
+
+The exceptions are the **logo, the icon set and the webfonts** — real assets rather
+than a rendering of the brand, and authoritative in `assets/`. See § Assets below
+before a re-sync, which must not overwrite them.
 
 ## What was imported
 
@@ -82,43 +86,75 @@ its remote path.
 
 ### Writing back
 
-Don't, casually. The design project is the source of truth and changes belong
-there first. The `/design-sync` skill is the supported way to keep a local library
-in step — incrementally, one component at a time, never as a wholesale replace.
+Don't, casually. The design project is the source of truth for the visual language
+and changes belong there first. The `/design-sync` skill is the supported way to
+keep a local library in step — incrementally, one component at a time, never as a
+wholesale replace.
 
-## Known substitutions, from the source readme
+The assets are the other direction: `assets/logo/`, `assets/icons/` and
+`assets/fonts/` are authoritative here, so a sync must leave them alone along with
+the three files that read them. See § Assets.
 
-Two things the brand spec describes but did not ship, both flagged upstream:
+## Assets: this directory is the source of truth
 
-- **Icons — resolved in phase 8.** Ten Lucide SVGs (ISC) are vendored in
-  `assets/icons/`, compiled to a plain JS module by `assets/icons/build.mjs`, and
-  `Icon` imports them synchronously instead of fetching from unpkg at runtime.
-- **Fonts — resolved in phase 8.** The `.woff2` files are in `assets/fonts/` and
-  `tokens/fonts.css` is Google's CSS with local paths. 16 files, 355 KiB, five
-  subsets.
+The general rule at the top of this file — the design project is authoritative and
+edits here do not flow back — has **three carve-outs**. The logo, the icon set and
+the webfonts are authoritative *here*.
 
-  Both were flagged upstream as things to do "for production or offline use", and
-  phase 8 is production: a CDN dependency means an installation on a private
-  network gets no icons and the wrong type, and Pando is software someone runs on
-  their own host.
+They are not local inventions that need pushing upstream. The logo came out of the
+design project as an export, and the icons and fonts are the licensed originals the
+brand spec names. There is nothing upstream to reconcile them against: the project
+holds a rendering of the brand, and these are the brand's actual files.
 
-  **Neither flows upstream.** Same caveat as the logo — these are edits to a copy,
-  so `Icon.jsx`, `tokens/fonts.css`, `assets/icons/` and `assets/fonts/` all need
-  the same change in the design project, or the next re-sync restores the CDN.
-- **The logo** — **resolved 2026-09-12.** Real artwork was supplied and is in
-  `assets/logo/`: `pando-wordmark-{light,dark}.{svg,png}`,
-  `pando-icon-{ink,paper,night}.{svg,png}` and two favicon PNGs.
-  `components/brand/Logo.jsx` is rebuilt from it.
+So `assets/` is where they live and where they are changed:
 
-  The official mark turned out to be **different from the spec's description**: "pando."
-  with a marker-red full stop, rather than three nested contours with a summit dot. See
-  `readme.md` § Assets.
+| Path | Holds | Authority |
+| --- | --- | --- |
+| `assets/logo/` | Wordmark and icon, SVG and PNG, light and dark, two favicons | **Here** |
+| `assets/icons/` | The Lucide glyphs actually used, ISC, plus `build.mjs` | **Here** |
+| `assets/fonts/` | The three families' `.woff2` files, plus `build.mjs` | **Here** |
+| everything else | Tokens, components, `readme.md`, the lint config | Design project |
 
-  **This edit does not flow upstream.** The design project is the source of truth and this
-  directory is a copy of it, so the same change belongs there — `Logo.jsx`, the new
-  `assets/logo/`, and the readme's assets section — or the next re-sync will overwrite the
-  real logo with the constructed one.
+A re-sync must not overwrite these three, and `components/brand/Logo.jsx`,
+`components/core/Icon.jsx` and `tokens/fonts.css` are the files that read them — so
+those three are pinned to this directory too. Anything else in `components/` or
+`tokens/` still comes down from the project.
 
-  C2PA provenance metadata was stripped from the SVGs on the way in: roughly 8 KB per file
-  of signing metadata about how each was produced, for artwork whose content is one rect
-  and one text element.
+### The logo — supplied 2026-09-12
+
+`pando-wordmark-{light,dark}.{svg,png}`, `pando-icon-{ink,paper,night}.{svg,png}`
+and two favicon PNGs. `components/brand/Logo.jsx` is rebuilt from them.
+
+The official mark is **different from the spec's written description**: "pando." with
+a marker-red full stop, rather than three nested contours with a summit dot. Its
+colours are already tokens — the exports hard-code `#1A1C1B`/`#ECE8DE` and
+`#B23A2C`/`#E0654F`, which are exactly `--ink` and `--marker` in the two themes — so
+the component draws from tokens and follows the theme instead of needing two files.
+The exported SVGs carry live Newsreader text rather than outlines. See `readme.md`
+§ Assets.
+
+C2PA provenance metadata was stripped on the way in: roughly 8 KB per file of
+signing metadata about how each was produced, for artwork whose content is one rect
+and one text element.
+
+### Icons and fonts — brought local in phase 8
+
+The brand spec shipped neither, and both were loaded from a CDN: `Icon` fetched each
+glyph from unpkg at runtime, and `tokens/fonts.css` was an `@import` from Google
+Fonts. Both are now local, which is what the spec asked for "for production or
+offline use" — and phase 8 is production. Pando is software someone installs on
+their own host, and an installation on a private network got no icons and the wrong
+type.
+
+- **Icons.** Ten Lucide SVGs (ISC) in `assets/icons/`, compiled to a plain JS module
+  by `assets/icons/build.mjs`. `Icon` imports them synchronously. Add one by dropping
+  its SVG there and re-running the script.
+- **Fonts.** 16 `.woff2` files, 355 KiB, covering latin, latin-ext, cyrillic,
+  cyrillic-ext and vietnamese. `tokens/fonts.css` is Google's own CSS with the URLs
+  swapped for local paths — the unicode-ranges and the subset split are theirs, and
+  re-deriving them breaks a subset quietly. Refresh with `assets/fonts/build.mjs`.
+
+  Both families that are variable — Newsreader and Public Sans — share one file per
+  subset across several `@font-face` blocks, while IBM Plex Mono ships one file per
+  weight. That is why the filenames carry the weight: naming by family and subset
+  alone collides the two Plex files and points the 400 face at the 500 glyphs.
