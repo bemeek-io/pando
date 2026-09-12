@@ -1,24 +1,45 @@
 // The management console.
 //
-// Reached only from the launcher, and only by someone holding an
-// administrative verb (R-265). What it shows should be scoped to the verbs they
-// hold — see the note in app/principal.ts for why that scoping cannot be
-// implemented yet (O-17).
+// Reached only from the launcher, and only by someone holding an administrative
+// verb (R-265). Everything in here is app administration, scoped by the server:
+// `GET /apps` is control-plane scoped and returns the apps this person may
+// manage and no others.
+//
+// Install-level administration — accounts, host policy, the installation's
+// adapters and capacity, the audit log — sits beside Apps in the sidebar, each
+// item shown on the verb it needs and not on "is an administrator". There is no
+// implication graph between verbs (R-082), so a sidebar that assumed one would
+// offer a screen whose every request comes back 403.
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Badge, Button, Logo, SidebarNav, StatusIndicator, Table, Tabs, Tooltip } from '@design';
+import type { SidebarItem } from '@design';
 
 import { api } from '@api/client';
 import type { App } from '@api/types.gen';
+import { InstallVerb, useInstallVerb } from '../app/principal';
+import { Accounts } from '../install/Accounts';
+import { Audit, Installation, Policy } from '../install/Installation';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { DetectionReview } from './DetectionReview';
 import { Sharing } from './Sharing';
 import { AppOverview } from './AppOverview';
 import { Terminal } from './Terminal';
 
+type Section = 'apps' | 'accounts' | 'installation' | 'policy' | 'audit';
+
 export function AdminConsole({ onLeave }: { onLeave: () => void }) {
   const [selected, setSelected] = useState<App | null>(null);
+  const [section, setSection] = useState<Section>('apps');
+
+  // One question per screen. `install.view` is not a master key: an account can
+  // hold install.audit.read and nothing else, and for them the console is the
+  // audit log.
+  const canView = useInstallVerb(InstallVerb.View);
+  const canManageUsers = useInstallVerb(InstallVerb.UsersManage);
+  const canManagePolicy = useInstallVerb(InstallVerb.PolicyManage);
+  const canReadAudit = useInstallVerb(InstallVerb.AuditRead);
 
   const apps = useQuery({
     queryKey: ['apps'],
@@ -27,12 +48,27 @@ export function AdminConsole({ onLeave }: { onLeave: () => void }) {
 
   const rows = apps.data?.apps ?? [];
 
+  const items: SidebarItem[] = [
+    { value: 'apps', label: 'Apps', trailing: <Badge count={rows.length} /> },
+  ];
+  // Reading accounts needs install.view; changing one needs
+  // install.users.manage. Either is a reason to see the screen, and the screen
+  // itself is read-only without the second.
+  if (canView || canManageUsers) items.push({ value: 'accounts', label: 'Accounts' });
+  if (canView) items.push({ value: 'installation', label: 'Installation' });
+  if (canView || canManagePolicy) items.push({ value: 'policy', label: 'Policy' });
+  if (canReadAudit) items.push({ value: 'audit', label: 'Audit log' });
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--paper)' }}>
       <SidebarNav
-        value="apps"
+        value={section}
+        onChange={(v) => {
+          setSection(v as Section);
+          setSelected(null);
+        }}
         header={<Logo size={20} />}
-        items={[{ value: 'apps', label: 'Apps', trailing: <Badge count={rows.length} /> }]}
+        items={items}
         footer={
           <Button variant="ghost" onClick={onLeave}>
             Back to my apps
@@ -41,11 +77,16 @@ export function AdminConsole({ onLeave }: { onLeave: () => void }) {
       />
 
       <main style={{ flex: 1, minWidth: 0 }}>
-        {selected ? (
-          <AppScreen app={selected} onBack={() => setSelected(null)} />
-        ) : (
-          <AppsList rows={rows} onOpen={setSelected} />
-        )}
+        {section === 'accounts' && <Accounts />}
+        {section === 'installation' && <Installation />}
+        {section === 'policy' && <Policy canEdit={canManagePolicy} />}
+        {section === 'audit' && <Audit />}
+        {section === 'apps' &&
+          (selected ? (
+            <AppScreen app={selected} onBack={() => setSelected(null)} />
+          ) : (
+            <AppsList rows={rows} onOpen={setSelected} />
+          ))}
       </main>
     </div>
   );

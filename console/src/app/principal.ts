@@ -3,44 +3,51 @@
 // R-265: "users holding any administrative verb see an Admin entry point from
 // the launcher, exposing the console scoped to whatever privileges they hold."
 //
-// **There is no install-level verb to hold.** R-080's catalog is entirely
-// `app.*`, grants are per-app (`grants.app_id` is NOT NULL), users carry no
-// admin flag, and the first-run "administrator" is an ordinary local user. Even
-// `app.create`, which Sequence A step 1 calls install-level, is not in the
-// catalog and is not checked anywhere.
+// "Any administrative verb" is two things, because there are two scopes. A
+// person may administer the installation — users, policy, adapters, the audit
+// log — or they may administer one app they hold a control-plane grant on.
+// Either is a reason to see the console, and the console it opens differs.
 //
-// So the gate reads the half of R-265 that *is* implementable, and it is the
-// half the existing screens need: a person sees the management console when
-// they hold a **control-plane** grant on at least one app. `GET /apps` is
-// control-plane scoped — a different list from `GET /me/apps`, which is
-// data-plane scoped (R-070, R-071) — so a non-empty result means exactly
-// "there is something here you can administer", and the console it opens is
-// scoped to those apps and no others. That is "scoped to whatever privileges
-// they hold", enforced by the server rather than asserted by the console.
+// Both answers come from the server. `GET /me` returns the install-level verbs
+// the caller holds; `GET /apps` is control-plane scoped, a different list from
+// `GET /me/apps` (R-070, R-071), so a non-empty result means "there is an app
+// here you can administer". This file composes the two into one boolean and
+// decides nothing on its own.
 //
-// What is still missing is install-level administration: users, hosts, host
-// policy, the audit log. Those need verbs that do not exist, and none of those
-// screens exist either, so nothing is being hidden. Recorded as O-17.
+// Until install verbs existed (O-17) only the second half was implementable,
+// which is why the first half is new here and the second is not.
+//
+// The entry is an affordance, not the enforcement: every install-level endpoint
+// checks its verb itself, so a hand-typed /admin URL reaches a page whose
+// requests are refused.
 
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@api/client';
+
+/** Install-scoped verbs (design 06 §5). The `app.*` verbs are per-app and are
+ *  never in this list. */
+export const InstallVerb = {
+  View: 'install.view',
+  UsersManage: 'install.users.manage',
+  PolicyManage: 'install.policy.manage',
+  AdaptersManage: 'install.adapters.manage',
+  AuditRead: 'install.audit.read',
+  AppCreate: 'app.create',
+} as const;
+
+export type InstallVerb = (typeof InstallVerb)[keyof typeof InstallVerb];
 
 export interface Principal {
   principal_kind: string;
   id: string;
   user_id?: string;
+  username?: string;
   email?: string;
   display_name?: string;
   groups?: string[] | null;
   must_change_password?: boolean;
 
-  /**
-   * Install-level verbs the principal holds.
-   *
-   * Absent from `GET /me` today — see the note above. Typed as optional so that
-   * the console reads it the moment the API supplies it, without a second
-   * change here.
-   */
+  /** Install-level verbs the principal holds. Empty for most accounts. */
   verbs?: string[] | null;
 }
 
@@ -53,11 +60,36 @@ export function usePrincipal() {
 }
 
 /**
- * Whether to show the management console (R-265).
+ * The install-level verbs the signed-in principal holds.
  *
- * Asked once, here, so that resolving O-17 changes one function.
+ * One query, shared with `usePrincipal` through the query key, so asking twice
+ * on one screen costs one request.
  */
-export function useAdministrative(): boolean {
+export function useInstallVerbs(): string[] {
+  const me = usePrincipal();
+  return me.data?.verbs ?? [];
+}
+
+/**
+ * Whether the principal holds a specific install verb.
+ *
+ * For deciding what to put *inside* the console — the users screen needs
+ * `install.users.manage`, the policy screen `install.policy.manage`. There is
+ * no implication graph (R-082): holding one verb says nothing about another, so
+ * each screen asks for the one it needs.
+ */
+export function useInstallVerb(verb: InstallVerb): boolean {
+  return useInstallVerbs().includes(verb);
+}
+
+/**
+ * Whether the principal holds a control-plane grant on at least one app.
+ *
+ * The server's scoping: the list contains the apps they may administer and no
+ * others, which is the "scoped to whatever privileges they hold" half of R-265
+ * for app administration.
+ */
+export function useManageableApps(): number {
   const apps = useQuery({
     queryKey: ['apps'],
     queryFn: () => api.get<{ apps: unknown[] | null }>('/apps'),
@@ -65,6 +97,18 @@ export function useAdministrative(): boolean {
     // failure — so it is not retried and not surfaced as an error.
     retry: false,
   });
+  return (apps.data?.apps ?? []).length;
+}
 
-  return (apps.data?.apps ?? []).length > 0;
+/**
+ * Whether to show the Admin entry (R-265).
+ *
+ * Either scope. An install administrator with no app grants sees it, and so
+ * does someone who owns exactly one app and administers nothing else — they
+ * need the app screens, and those screens are in here.
+ */
+export function useAdministrative(): boolean {
+  const install = useInstallVerbs().length > 0;
+  const apps = useManageableApps();
+  return install || apps > 0;
 }

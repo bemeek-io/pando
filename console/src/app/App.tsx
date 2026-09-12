@@ -14,6 +14,7 @@
 import { useState } from 'react';
 
 import { useAdministrative, usePrincipal } from './principal';
+import { ChangePassword, Login } from '../auth/Login';
 import { Launcher } from '../launcher/Launcher';
 import { AdminConsole } from '../admin/AdminConsole';
 
@@ -28,15 +29,20 @@ export function App() {
     return <Centered>Loading.</Centered>;
   }
 
-  // Not signed in. The proxy sends an unauthenticated visitor to the login page
-  // (R-023), so reaching here without a principal means the session expired
-  // while the page was open.
+  // Not signed in. The proxy sends an unauthenticated visitor here (R-023), and
+  // so does an expired session on an open page. Both land on the same form
+  // rather than a link to one: this used to render a link to /login, and /login
+  // rendered this component, so the only way into a fresh install was the API.
   if (principal.isError) {
-    return (
-      <Centered>
-        <a href="/login">Sign in to Pando</a>
-      </Centered>
-    );
+    return <Login />;
+  }
+
+  // R-046: the generated first-run credential must be changed before anything
+  // else. Placed here rather than inside the launcher so there is no screen
+  // that can be reached around it — a "you should change your password" banner
+  // is a suggestion, and R-046 says must.
+  if (principal.data?.must_change_password) {
+    return <ChangePassword username={principal.data.username} />;
   }
 
   if (view === 'admin' && isAdmin) {
