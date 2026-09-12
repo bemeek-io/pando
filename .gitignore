@@ -4,7 +4,11 @@
 pando
 
 # Console build, embedded into internal/console at build time
-/internal/console/dist/
+# Built console assets. The directory's README.md is committed, because
+# go:embed fails the build when its pattern matches nothing and a fresh clone
+# would otherwise not compile until someone had run npm.
+/internal/console/dist/*
+!/internal/console/dist/README.md
 /console/node_modules/
 /console/dist/
 

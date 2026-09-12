@@ -1,0 +1,16 @@
+node_modules/
+
+# Copied from .claude/skills/pando-design at build time by
+# scripts/vendor-design.mjs. Not committed: the skill directory is the copy
+# under version control, and a second one here is a third place for the visual
+# language to drift.
+src/design/
+
+# src/api/types.gen.ts is deliberately NOT ignored.
+#
+# It is generated from the Go types by cmd/gen-api-types and committed, the same
+# way docs/traceability/requirements-index.md is: CI regenerates it and fails on
+# a diff, so drift is caught, and a reviewer sees a change to the API's surface
+# in the pull request rather than only in a build artifact. Never hand-edited —
+# R-261 makes the API authoritative and a hand-written type is a second opinion
+# about what it returns.

@@ -70,6 +70,12 @@ type Server struct {
 	Grants     *state.Grants
 	HostPolicy AnonymousPolicy
 
+	// Console serves the embedded UI on Pando's own paths. Nil when the binary
+	// was built without it, in which case those paths 404 like any other and
+	// the API is unaffected — the API is the product (R-261), and the console
+	// is one of its clients.
+	Console http.Handler
+
 	// AppProxy serves every request to every app (R-023). Mounted last, as the
 	// catch-all, so Pando's own routes are reachable and everything else goes
 	// through enforcement. There is no path that reaches an app without it.
@@ -226,6 +232,18 @@ func (s *Server) Routes() http.Handler {
 		})
 	})
 
+	// The console, on Pando's own paths only.
+	//
+	// Never as the fallback: that belongs to the proxy, and a console mounted
+	// there would shadow every app whose slug it did not recognize. The routes
+	// listed here are the console's own, and each one is a path no app can
+	// have because the slug would collide with a reserved name.
+	if s.Console != nil {
+		for _, route := range consoleRoutes {
+			r.Handle(route, s.Console)
+		}
+	}
+
 	// Everything that is not one of Pando's own routes is a request to an app,
 	// and goes through the proxy (R-023). Mounting it as the fallback rather
 	// than on a prefix is what makes "there is no bypass" structural: a route
@@ -235,4 +253,18 @@ func (s *Server) Routes() http.Handler {
 	}
 
 	return r
+}
+
+// consoleRoutes are the paths the console owns.
+//
+// Enumerated rather than a prefix wildcard, so that adding a console route is a
+// deliberate act that a reviewer sees. Every one of these is also a slug an app
+// cannot have, which is what keeps the two namespaces from colliding.
+var consoleRoutes = []string{
+	"/",
+	"/index.html",
+	"/assets/*",
+	"/login",
+	"/admin",
+	"/admin/*",
 }

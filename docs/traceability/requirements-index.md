@@ -10,7 +10,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | | Count | Of total |
 |---|---:|---:|
 | Requirements | 207 | — |
-| Specified in a design doc | 143 | 69% |
+| Specified in a design doc | 145 | 70% |
 | Assigned to a phase | 107 | 51% |
 | Covered by a named test | 58 | 28% |
 
@@ -135,7 +135,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-149** | P | Restart backoff: immediate, then 5s, 15s, 60s, capped at 5 minutes. | 10.4 Failure handling | 00, 05 | 07 | — |
 | **R-150** | P | Ten failures within 30 minutes marks the app `failed`. | 10.4 Failure handling | 05 | 07 | `TestR150_ACrashLoopingAppReachesFailed`, `TestR150_RepeatedFailureReachesFailedAndStops` |
 | **R-151** | D | A `failed` app stays failed until a human intervenes. | 10.4 Failure handling | 05 | 07 | `TestR151_ACrashLoopingAppReachesFailedAndStaysThere`, `TestR151_AFailedAppIsNeverTouched` |
-| **R-152** | P | Revision history retains the last 10 pinned specs for rollback. | 10.4 Failure handling | 01, 02, 04 | 02, 07 | `TestR152_PinningMarksARevisionEverPinned`, `TestR152_RevisionsAreNumberedMonotonically`, `TestR152_SpecRevisionsCannotBeEdited` |
+| **R-152** | P | Revision history retains the last 10 pinned specs for rollback. | 10.4 Failure handling | 01, 02, 04 | 02, 07 | `TestR152_PinningMarksARevisionEverPinned`, `TestR152_PruningNeverRemovesARevisionThatWasEverPinned`, `TestR152_RevisionsAreNumberedMonotonically`, `TestR152_SpecRevisionsCannotBeEdited` |
 | **R-153** | D | One app, one place (R-010). | 10.5 Scale | — | — | — |
 | **R-160** | D | Routing is an adapter category. | 11. Networking and Routing | — | — | — |
 | **R-161** | D | Each routing adapter advertises which addressing modes it supports: subdomain, path prefix,… | 11. Networking and Routing | — | — | — |
@@ -248,9 +248,7 @@ Check each against the categories above before treating it as a gap.
 - **R-042** (5.1 Adapter model) — Local users must be secure but are not claimed to be the most secure option.
 - **R-043** (5.1 Adapter model) — Additional identity adapters: GitHub OAuth, generic OIDC, SAML.
 - **R-045** (5.1 Adapter model) — Multiple identity adapters may be configured simultaneously.
-- **R-046** (5.2 Bootstrap) — First run creates a single administrative local user.
 - **R-050** (5.3 Sessions and revocation) — For adapters that cannot push revocation, Pando falls back to expiry at next token refresh.
-- **R-080** (6.4 Verbs and roles) — Control-plane permissions are individual verbs.
 - **R-090** (7.1 Input) — The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting…
 - **R-095** (7.2 Detection) — For tier 4, wrap an existing buildpack implementation (Paketo, nixpacks) rather than…
 - **R-106** (7.3 When detection cannot decide) — AI assistance is optional supporting functionality, never required.

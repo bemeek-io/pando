@@ -1,0 +1,31 @@
+{
+  "name": "pando-console",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "node scripts/vendor-design.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/vendor-design.mjs && npm run types",
+    "build": "tsc --noEmit && vite build",
+    "types": "go run ../cmd/gen-api-types",
+    "lint": "eslint src",
+    "check": "npm run lint && tsc --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.90.2",
+    "@tanstack/react-router": "1.132.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "@typescript-eslint/parser": "^8.46.0",
+    "@vitejs/plugin-react": "5.0.4",
+    "eslint": "^9.38.0",
+    "eslint-plugin-react": "^7.37.5",
+    "oxlint": "1.22.0",
+    "typescript": "5.9.3",
+    "vite": "7.1.9"
+  }
+}

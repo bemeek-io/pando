@@ -58,6 +58,10 @@ sqlc: ## Regenerate typed queries from SQL
 console: ## Build the console into assets embedded by internal/console
 	cd console && npm ci && npm run build
 
+.PHONY: console-check
+console-check: ## Brand adherence and types for the console (needs npm)
+	cd console && npm ci && npm run check
+
 # ---------------------------------------------------------------------------
 # Detection
 

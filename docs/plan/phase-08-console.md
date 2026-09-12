@@ -36,21 +36,29 @@ see `.claude/skills/pando-design/PROVENANCE.md` for how to pull it.
 
 ## Tasks
 
-- [ ] Pull the per-component `.d.ts` and `.prompt.md` sidecars from the design project — the console
+- [x] Pull the per-component `.d.ts` and `.prompt.md` sidecars from the design project — the console
       is TypeScript and needs the types, and each `.prompt.md` states when *not* to use a component
-- [ ] Vite + React + TypeScript in `console/`, built to static assets embedded via `embed.FS`
-- [ ] Link `styles.css` from the design system; dark theme is `<html data-theme="dark">`
-- [ ] Wire `_adherence.oxlintrc.json` into the console's lint step, so a raw hex or px fails CI the
-      way the adapter import rule does for R-027
-- [ ] **API types generated from the OpenAPI spec** — never hand-written (R-261)
-- [ ] Launcher at root: tiles from `GET /me/apps`, data-plane grants only (R-264)
-- [ ] Admin entry, visible only to users holding an administrative verb, scoped to what they hold
-      (R-265)
-- [ ] Detection review screen (R-102, R-103, R-105)
-- [ ] Warnings, rendered inline where they apply (R-201, R-168, R-028)
-- [ ] Sharing screen (R-076, R-077)
-- [ ] Deploy settings (R-145, R-147)
-- [ ] Log streaming via `EventSource`; exec via WebSocket + xterm.js
+- [x] Vite + React + TypeScript in `console/`, built to static assets embedded via `embed.FS`
+- [x] Link `styles.css` from the design system; dark theme is `<html data-theme="dark">`
+- [x] Wire `_adherence.oxlintrc.json` into the console's lint step, so a raw hex or px fails CI the
+      way the adapter import rule does for R-027 — **it does not run under oxlint**, which implements
+      neither rule the file uses. Run under ESLint instead, and its per-component prop rules are
+      filtered out because they reject `onClick` on a `<Button>`
+      ([note](../design/notes-console-findings.md))
+- [x] **API types generated, never hand-written** (R-261) — there is no OpenAPI spec in the
+      repository, so `cmd/gen-api-types` reflects the Go types the handlers serialize. Committed and
+      diff-checked in CI, like the traceability index
+- [x] Launcher at root: tiles from `GET /me/apps`, data-plane grants only (R-264)
+- [~] Admin entry (R-265) — **half**. There is no administrative verb anywhere in the model (O-17).
+      Shipped: the console opens for someone holding a control-plane grant on at least one app,
+      scoped by the server to those apps. Missing: install-level administration, which has neither
+      verbs nor screens
+- [x] Detection review screen (R-102, R-103, R-105)
+- [x] Warnings, rendered inline where they apply (R-201, R-168, R-028) — carrying no red at all,
+      which is what makes them distinct from an error in a palette that has no amber
+- [x] Sharing screen (R-076, R-077)
+- [x] Deploy settings (R-145, R-147)
+- [~] Log streaming via `EventSource` — **done**. Exec via WebSocket + xterm.js — **not started**
 
 ## Requirements in scope
 
@@ -60,6 +68,17 @@ R-005, R-076, R-077, R-102–R-105, R-145, R-147, R-168, R-201, R-261, R-264, R-
 
 A user with no admin verbs sees only tiles; a user with admin verbs sees the management console scoped
 to what they hold; the four screens below meet their stated requirements.
+
+**Verified in a browser against the shipped binary**, with two apps from the bemeek-io org: the
+launcher renders tiles with symbol-plus-word status and no Admin entry for a user with no
+control-plane grant; the Admin entry appears for one who has; detection review shows the winning bid
+with its evidence, the question **verbatim** with a working copy button, the runners-up behind a
+disclosure, and the path-routing warning inline and quiet; answering the question enabled Accept, and
+accepting pinned revision 1 and left the app `proposed` — it did not deploy.
+
+**The second clause is half met.** "Scoped to what they hold" is the server's scoping of
+`GET /apps`; "holding an administrative verb" has no implementation because no such verb exists
+(O-17).
 
 ## The four screens that carry requirement weight
 

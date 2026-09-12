@@ -1,0 +1,125 @@
+// The launcher (R-264).
+//
+// Root is this, not a dashboard. A non-technical user's first experience is a
+// page of tiles for the apps they can reach — and R-005 is the reason: someone
+// who may not know what a port is should not be met by a management console.
+//
+// Tiles come from GET /me/apps, which is scoped to **data-plane** grants. That
+// is a different list from GET /apps, which is control-plane scoped: two
+// planes, two endpoints (R-070, R-071). Using the wrong one here would show
+// someone an app they can administer but not open, or hide one they use daily.
+//
+// R-266: sharing sends no message. An app appearing here is the notification,
+// so the list is the whole mechanism and has to be right.
+
+import { useQuery } from '@tanstack/react-query';
+import { Card, EmptyState, Logo, StatusIndicator } from '@design';
+
+import { api } from '@api/client';
+import type { App } from '@api/types.gen';
+import { statusLabel, statusSymbol } from '../ui/status';
+
+export function Launcher({ onAdmin }: { onAdmin?: () => void }) {
+  const apps = useQuery({
+    queryKey: ['me', 'apps'],
+    queryFn: () => api.get<{ apps: App[] | null }>('/me/apps'),
+  });
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--paper)' }}>
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: 'var(--space-5) var(--console-padding)',
+          borderBottom: 'var(--border-width) solid var(--rule)',
+        }}
+      >
+        <Logo size={20} />
+        {onAdmin && (
+          <button
+            onClick={onAdmin}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              cursor: 'pointer',
+              font: 'var(--type-body-ui)',
+              color: 'var(--ink-secondary)',
+            }}
+          >
+            Admin
+          </button>
+        )}
+      </header>
+
+      <main
+        style={{
+          maxWidth: 'var(--console-max)',
+          margin: '0 auto',
+          padding: 'var(--space-7) var(--console-padding)',
+        }}
+      >
+        {apps.isPending && <Quiet>Loading your apps.</Quiet>}
+
+        {apps.isError && (
+          <Quiet>Pando couldn&rsquo;t load your apps. Reload the page to try again.</Quiet>
+        )}
+
+        {apps.data && <Tiles apps={apps.data.apps ?? []} />}
+      </main>
+    </div>
+  );
+}
+
+function Tiles({ apps }: { apps: App[] }) {
+  if (apps.length === 0) {
+    // Not "you have no apps" — nothing has gone wrong, and an empty launcher is
+    // the normal state for someone who has just been given an account.
+    return (
+      <EmptyState heading="Nothing shared with you yet">
+        When someone shares an app with you, it shows up here.
+      </EmptyState>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(22ch, 1fr))',
+        gap: 'var(--space-4)',
+      }}
+    >
+      {apps.map((app) => (
+        <Tile key={app.id} app={app} />
+      ))}
+    </div>
+  );
+}
+
+function Tile({ app }: { app: App }) {
+  // The tile is the whole link, which is what `interactive` is for. The app
+  // opens through Pando's proxy at its slug — the only route in (R-023).
+  return (
+    <Card
+      as="a"
+      interactive
+      padding="md"
+      {...({ href: `/${app.slug}/` } as object)}
+      style={{ textDecoration: 'none' }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+        <span style={{ font: 'var(--type-h4)', color: 'var(--ink)' }}>{app.name}</span>
+        <StatusIndicator status={statusSymbol(app.state)} label={statusLabel(app.state)} />
+      </div>
+    </Card>
+  );
+}
+
+function Quiet({ children }: { children: React.ReactNode }) {
+  return (
+    <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)' }}>{children}</p>
+  );
+}

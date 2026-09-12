@@ -1,8 +1,8 @@
 # Open decisions
 
-Sixteen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
-design; O-15 and O-16 were found while implementing phases 6 and 7. **Eleven are resolved. Five
-remain, none blocking.**
+Seventeen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
+design; O-15 through O-17 were found while implementing phases 6, 7 and 8. **Eleven are resolved. Six
+remain, none blocking, though O-17 blocks half of R-265.**
 
 **These are not TODOs to resolve at your discretion.** An agent hitting an open one should raise it,
 state which options the docs already identify, and stop — not pick quietly and move on. Record any
@@ -17,6 +17,7 @@ resolution both here and in the requirements or design doc that owns it.
 | **O-6** | Which backup destinations ship — local, S3, mounted share | Provider-shaped. The *design* half is settled: a destination is not an adapter category (design 03 §8.1) | Phase 9 |
 | **O-15** | How a host port is chosen in port-mode routing | Nothing in the requirements says. Has a `[P]` answer in code | Phase 6 (shipped), revisit at phase 10 |
 | **O-16** | How log retention is actually enforced (R-222–R-224) | The requirement is clear; no mechanism exists to carry it out | Phase 7 (deferred), needed before an install runs many apps |
+| **O-17** | What an "administrative verb" is (R-265) | The concept appears in a requirement and exists nowhere in the model | Phase 8 (half shipped), blocks install-level admin screens |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything not typed to
 a known service, and let the trial run settle it — a slot whose absence crashes the trial run is
@@ -72,6 +73,26 @@ Options, none free:
 
 Recorded rather than decided. Spec revision pruning (R-152) is implemented — it is the part of GC
 that operates on data Pando actually owns.
+
+**O-17** was found building the launcher. R-265 says "users holding any administrative verb see an
+**Admin** entry point from the launcher, exposing the console scoped to whatever privileges they
+hold." There is no administrative verb: R-080's catalog is thirteen `app.*` verbs and nothing
+install-level, `grants.app_id` is `NOT NULL` so an install-level grant cannot be written, users carry
+no admin flag, and the first-run administrator is an ordinary local user. `app.create` — which
+Sequence A step 1 calls install-level — is not in the catalog and is checked nowhere.
+
+The half of R-265 that *is* implementable is shipped: the management console opens for someone holding
+a control-plane grant on at least one app, scoped by the server to those apps. What needs a decision
+is install-level administration — users, hosts, host policy, the audit log — none of which has a verb
+and none of which has a screen. Related: design 05 §3 promises the console lists policy-violating apps
+before a policy is saved, and R-085 lets host policy disable exec install-wide; both need the same
+missing concept.
+
+Options: add install-level verbs to R-080's catalog and allow a grant with a null `app_id`; or make
+install administration a property of the user rather than a grant; or define a distinct "install
+role" separate from the per-app roles of R-081. The first keeps one authorization model and is the
+smallest change to the schema. Recorded rather than decided, because it is an authorization
+boundary.
 
 **O-5** is open the way `SessionPolicy` is open: deferring it to each adapter *is* the answer (R-047's
 shape). A routing adapter that issues certificates declares how; one that cannot says so through

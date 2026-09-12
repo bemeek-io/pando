@@ -45,6 +45,47 @@ jobs:
           git diff --exit-code docs/traceability/requirements-index.md \
             || { echo "::error::Run 'make requirements-index' and commit the result."; exit 1; }
 
+  console:
+    runs-on: ubuntu-latest
+    # The console's checks are its own job because they need Node rather than
+    # Go, and because a Go developer running `make check` should not need npm.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+
+      - run: npm ci
+        working-directory: console
+
+      # Brand adherence: a raw hex value, a raw px value or a font that is not
+      # Newsreader / Public Sans / IBM Plex Mono fails here, the way the
+      # depguard rule fails for R-027. Plus TypeScript against the design
+      # system's own 24 declaration files, which is what checks component props.
+      - run: npm run check
+        working-directory: console
+
+      # The generated API types must match the Go types they came from. R-261
+      # makes the API authoritative, and a stale checked-in type is the drift
+      # the generator exists to prevent.
+      - name: Generated API types are up to date
+        working-directory: console
+        run: |
+          npm run types
+          git diff --exit-code src/api/types.gen.ts \
+            || { echo "::error::Run 'npm run types' in console/ and commit the result."; exit 1; }
+
+      - run: npm run build
+        working-directory: console
+
   integration:
     runs-on: ubuntu-latest
     # Real Postgres and real Docker, via testcontainers. The four sequences in

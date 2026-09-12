@@ -5,6 +5,12 @@ dist
 docs
 console/node_modules
 console/dist
-internal/console/dist
 *.md
 !entrypoint.sh
+
+# internal/console/dist is deliberately NOT ignored: it is the built console,
+# and embedding it is the whole point (R-253, one binary includes the UI).
+# Excluding it made `go build` fail inside the image — go:embed fails outright
+# when its pattern matches nothing — so the image could not be built at all.
+!internal/console/dist
+!internal/console/dist/**

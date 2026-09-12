@@ -1,0 +1,368 @@
+// Detection review (R-102, R-103, R-105).
+//
+// Three things here are requirements rather than presentation, and each is easy
+// to lose without noticing:
+//
+// **Question text is rendered verbatim.** Design 08 §1.3: "the console does not
+// paraphrase it, or the R-105 guarantee is lost in the UI layer." R-105 makes
+// every question answerable by something that cannot see the repository,
+// because the intended workflow is pasting it into the assistant that wrote the
+// app. A console that shortened "Pando could not determine which port this
+// Node.js app serves HTTP on. Valid answer: a port number, such as 3000." to
+// "Port?" would destroy that guarantee while looking tidier.
+//
+// **Every question has a copy button**, for the same reason. It copies the
+// prompt exactly, with nothing added.
+//
+// **The runners-up are shown.** R-102 is "ask, never guess", and showing what
+// else bid is how that becomes visible rather than asserted — the user sees the
+// auction instead of a verdict.
+
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button, Card, CodeBlock, Icon, IconButton, Input, Select, Tag } from '@design';
+
+import { api, RequestFailed } from '@api/client';
+import type { Candidate, Proposal, Question } from '@api/types.gen';
+import { InlineWarning } from '../ui/InlineWarning';
+
+interface DetectionResponse {
+  status: string;
+  detection: Proposal;
+  answers: Record<string, string> | null;
+  commit: string;
+}
+
+export function DetectionReview({ appID }: { appID: string }) {
+  const queries = useQueryClient();
+
+  const detection = useQuery({
+    queryKey: ['apps', appID, 'detection'],
+    queryFn: () => api.get<DetectionResponse>(`/apps/${appID}/detection`),
+    // Detection runs in the background after an app is created, so this polls
+    // until it settles rather than asking the user to reload.
+    refetchInterval: (query) =>
+      query.state.data?.status === 'running' ? 2_000 : false,
+  });
+
+  const answer = useMutation({
+    mutationFn: (answers: Record<string, string>) =>
+      api.post(`/apps/${appID}/detection/answers`, { answers }),
+    onSuccess: () => queries.invalidateQueries({ queryKey: ['apps', appID, 'detection'] }),
+  });
+
+  const accept = useMutation({
+    mutationFn: () => api.post(`/apps/${appID}/detection/accept`),
+    onSuccess: () => queries.invalidateQueries({ queryKey: ['apps', appID] }),
+  });
+
+  if (detection.isPending) return <Quiet>Reading the repository.</Quiet>;
+  if (detection.isError) return <Failure error={detection.error} />;
+
+  const { status, detection: proposal, answers } = detection.data;
+
+  if (status === 'running') return <Quiet>Reading the repository.</Quiet>;
+
+  if (status === 'blocked') {
+    return <Blocked proposal={proposal} />;
+  }
+
+  const asked = (proposal.questions ?? []).filter((q) => !q.deferred);
+  const unanswered = asked.filter((q) => !(answers ?? {})[q.key]);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+      <WinningBid candidate={proposal.winning_bid} />
+
+      {asked.length > 0 && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <div>
+            <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>
+              {asked.length === 1 ? 'One question' : `${asked.length} questions`}
+            </h4>
+            <p
+              style={{
+                font: 'var(--type-body-ui)',
+                color: 'var(--ink-secondary)',
+                margin: 'var(--space-1) 0 0',
+              }}
+            >
+              Pando asks only when it genuinely can&rsquo;t work something out. Copy a question into
+              the tool that wrote this app and paste its answer back.
+            </p>
+          </div>
+
+          {asked.map((question) => (
+            <QuestionCard
+              key={question.key}
+              question={question}
+              answer={(answers ?? {})[question.key]}
+              onAnswer={(value) => answer.mutate({ [question.key]: value })}
+              saving={answer.isPending}
+            />
+          ))}
+
+          {answer.isError && <Failure error={answer.error} />}
+        </section>
+      )}
+
+      <Warnings proposal={proposal} />
+
+      <RunnersUp candidates={proposal.runners_up ?? []} />
+
+      <section
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--space-3)',
+          paddingTop: 'var(--space-5)',
+          borderTop: 'var(--border-width) solid var(--rule)',
+        }}
+      >
+        <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
+          Accepting saves this as the app&rsquo;s configuration. It doesn&rsquo;t deploy anything.
+        </p>
+        <Button
+          variant="primary"
+          disabled={unanswered.length > 0 || accept.isPending}
+          onClick={() => accept.mutate()}
+          style={{ alignSelf: 'flex-start' }}
+        >
+          Accept configuration
+        </Button>
+        {unanswered.length > 0 && (
+          <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+            {unanswered.length === 1
+              ? 'One question still needs an answer.'
+              : `${unanswered.length} questions still need answers.`}
+          </p>
+        )}
+        {accept.isError && <Failure error={accept.error} />}
+      </section>
+    </div>
+  );
+}
+
+function WinningBid({ candidate }: { candidate: Candidate }) {
+  return (
+    <Card padding="md">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>How Pando will build this</h4>
+          <Tag mono>{candidate.strategy}</Tag>
+        </div>
+
+        {/* Evidence is why Pando thinks what it thinks (R-102). Shown as the
+            API worded it — this is the reasoning, not a summary of it. */}
+        <ul
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-1)',
+            margin: 0,
+            paddingLeft: 'var(--space-4)',
+          }}
+        >
+          {(candidate.evidence ?? []).map((line) => (
+            <li key={line} style={{ font: 'var(--type-body-ui)', color: 'var(--ink)' }}>
+              {line}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </Card>
+  );
+}
+
+function QuestionCard({
+  question,
+  answer,
+  onAnswer,
+  saving,
+}: {
+  question: Question;
+  answer: string | undefined;
+  onAnswer: (value: string) => void;
+  saving: boolean;
+}) {
+  const [value, setValue] = useState(answer ?? '');
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    // The prompt exactly, and nothing else. Anything prepended would arrive in
+    // the assistant as part of the question.
+    await navigator.clipboard.writeText(question.prompt);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2_000);
+  }
+
+  return (
+    <Card padding="md">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+          {/* Verbatim. Not shortened, not re-worded, not split up. */}
+          <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink)', margin: 0, flex: 1 }}>
+            {question.prompt}
+          </p>
+          <IconButton label={copied ? 'Copied' : 'Copy this question'} onClick={copy}>
+            <Icon name={copied ? 'check' : 'copy'} size={16} />
+          </IconButton>
+        </div>
+
+        {question.why && (
+          <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+            {question.why}
+          </p>
+        )}
+
+        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-end' }}>
+          {question.kind === 'choice' ? (
+            <Select
+              label="Answer"
+              options={[
+                { value: '', label: 'Choose one' },
+                ...(question.options ?? []).map((option) => ({ value: option, label: option })),
+              ]}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              style={{ flex: 1 }}
+            />
+          ) : (
+            <Input
+              label="Answer"
+              mono={question.kind === 'port' || question.kind === 'path'}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              style={{ flex: 1 }}
+            />
+          )}
+          <Button onClick={() => onAnswer(value)} disabled={!value || saving}>
+            Save answer
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function Warnings({ proposal }: { proposal: Proposal }) {
+  const warnings = proposal.draft_spec?.warnings ?? [];
+  if (warnings.length === 0) return null;
+
+  return (
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+      {warnings.map((warning) => (
+        <InlineWarning key={warning.code + warning.message} code={warning.code}>
+          {warning.message}
+        </InlineWarning>
+      ))}
+    </section>
+  );
+}
+
+function RunnersUp({ candidates }: { candidates: Candidate[] }) {
+  const [open, setOpen] = useState(false);
+  if (candidates.length === 0) return null;
+
+  return (
+    <section>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          border: 'none',
+          background: 'transparent',
+          padding: 0,
+          cursor: 'pointer',
+          font: 'var(--type-body-ui)',
+          color: 'var(--ink-secondary)',
+        }}
+      >
+        {open ? 'Hide' : 'Show'} what else Pando considered ({candidates.length})
+      </button>
+
+      {open && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-3)',
+            marginTop: 'var(--space-3)',
+          }}
+        >
+          {candidates.map((candidate) => (
+            <div
+              key={candidate.detector + candidate.strategy}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-1)',
+                paddingBottom: 'var(--space-3)',
+                borderBottom: 'var(--border-width) solid var(--rule)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                <Tag mono>{candidate.strategy}</Tag>
+              </div>
+              {(candidate.evidence ?? []).map((line) => (
+                <span
+                  key={line}
+                  style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}
+                >
+                  {line}
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Blocked({ proposal }: { proposal: Proposal }) {
+  // R-099: the reason is the most useful thing Pando has, and it is shown
+  // rather than replaced with a generic failure. The compose importer produces
+  // a remedy naming the lines to change.
+  const blocked = proposal.blocked;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+      <div>
+        <h4 style={{ font: 'var(--type-h4)', margin: 0, color: 'var(--marker-deep)' }}>
+          Pando can&rsquo;t run this app as it&rsquo;s written
+        </h4>
+        <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink)', margin: 'var(--space-2) 0 0' }}>
+          {blocked?.message}
+        </p>
+      </div>
+      {blocked?.remedy && (
+        <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
+          {blocked.remedy}
+        </p>
+      )}
+      {proposal.trial_log && <CodeBlock title="What Pando saw" lines={proposal.trial_log} />}
+    </div>
+  );
+}
+
+function Quiet({ children }: { children: React.ReactNode }) {
+  return <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)' }}>{children}</p>;
+}
+
+function Failure({ error }: { error: unknown }) {
+  // The envelope's message is written to the R-105 standard, so it is shown as
+  // the server wrote it. The remedy goes below it, which is where the design
+  // system's voice rules put "and what to do".
+  const failed = error instanceof RequestFailed ? error : null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+      <p style={{ font: 'var(--type-body-ui)', color: 'var(--marker-deep)', margin: 0 }}>
+        {failed?.message ?? 'Something went wrong. Reload the page to try again.'}
+      </p>
+      {failed?.remedy && (
+        <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+          {failed.remedy}
+        </p>
+      )}
+    </div>
+  );
+}
