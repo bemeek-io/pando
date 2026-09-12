@@ -8,14 +8,22 @@
 
 ## Tasks
 
-- [ ] CLI (cobra) per design 04 §4
-- [ ] `pando deploy ./` from a local path — R-262's agent workflow depends on it, because a generated
-      app cannot drop a config file but an agent can invoke a command
-- [ ] MCP server over the **same service layer** as `httpapi` (R-262)
-- [ ] Idempotency keys on infrastructure-creating POSTs — required for MCP, where an agent retry must
-      not deploy twice
-- [ ] Traefik routing adapter: subdomain and path modes, TLS
-- [ ] Notify adapter interface exercised by the console-only v1 implementation (R-231)
+- [x] CLI (cobra) per design 04 §4. `internal/cli` imports no core package, so a command needing
+      something the API lacks fails to compile — R-261 as a dependency rule rather than a review note
+- [x] `pando deploy ./` from a local path. Packs the directory, uploads it, runs detection, accepts
+      and deploys; detection questions print **verbatim** (R-105) because they are written to be
+      pasted into whatever wrote the app. Needed a source type (`upload`), an endpoint, and token
+      endpoints that had never been wired
+- [x] MCP server over the same API (R-262), JSON-RPC 2.0 on stdio. Ten tools, one per endpoint
+- [x] Idempotency keys on `POST /apps` and `POST /apps/{id}/deployments`, by header or body field.
+      Scoped to the principal as well as the endpoint
+- [x] Traefik routing adapter: subdomain and path, TLS when a resolver is configured. **The routing
+      interface did not change**
+- [x] Notify adapter exercised by the console-only v1 implementation (R-231)
+- [x] O-12 resolved as designed: host policy now sees the principal, so agent exclusions are a policy
+      scoped to token principals rather than a list the MCP server keeps
+- [ ] `pando exec`. The endpoint exists and the console uses it; the CLI side needs raw mode, a
+      resize channel and signal handling, and says so rather than pretending
 
 ## Requirements in scope
 
@@ -25,6 +33,30 @@ R-231, R-232, R-251, R-260–R-262.
 
 Every capability in the API is reachable from the CLI and (excepting the exclusions below) from MCP,
 and Traefik routes an app end to end **without any change to the routing interface**.
+
+**Met, with one gap.** Traefik was run for real — `docker compose --profile traefik up` — and a
+request to an app's hostname on Traefik's port is served by the app, an anonymous one is redirected
+to login, and Pando's own console still answers on its own hostname. `RoutingAdapter` and its types
+are untouched, which is the only real evidence that the abstraction held. The gap is `pando exec`.
+
+Running it found three bugs that reading it would not have:
+
+- **The proxy resolved one way only**, switching on an install-wide mode. Design 03 §4.1 says an
+  install can mix addressing modes; it could not. A subdomain app on a path-default install fell
+  through to the console, looking to its owner like the app did not exist. The proxy's test double
+  had been returning the same app for either lookup, so it agreed with the proxy no matter what the
+  proxy did.
+- **The console shadowed every subdomain app's root**, because it owns `/` and answered there on
+  every hostname.
+- **Every upgrade cut Pando off from every existing app.** The Docker adapter joined Pando's
+  container to an app's private network only when *creating* that network, and a replaced container
+  is a different container. Nothing detected it because a fresh install has no existing networks and
+  a test suite recreates everything.
+
+Two smaller ones worth recording: viper's `AutomaticEnv` resolves only keys it already knows, so
+`PANDO_SERVER_BASE_DOMAIN` set nothing and said nothing; and adapter seeding was all-or-nothing on
+first install, so a category added in a later version was never seeded on an install that already had
+others.
 
 ## Traps
 

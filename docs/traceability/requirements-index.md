@@ -12,7 +12,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | Requirements | 207 | — |
 | Specified in a design doc | 147 | 71% |
 | Assigned to a phase | 111 | 53% |
-| Covered by a named test | 69 | 33% |
+| Covered by a named test | 70 | 33% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -37,7 +37,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-020** | D | Nothing lives in the repo. | 3. Core Invariants | 01, 02, 03, 07 | 02, 06 | `TestR020_SpecCarriesNoSecretValues` |
 | **R-021** | D | Pando fills declared slots; it never invents topology. | 3. Core Invariants | 01 | 06 | `TestR021_SlotsComeFromWhatTheRepoDeclares` |
 | **R-022** | D | Detection never re-runs implicitly. | 3. Core Invariants | 01, 04 | — | — |
-| **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 05, 06 | 05 | `TestR023_RoutingPointsAtPandoNotTheWorkload` |
+| **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 05, 06 | 05 | `TestR023_ARouteWithNoUpstreamIsRefused`, `TestR023_RoutingPointsAtPandoNotTheWorkload`, `TestR023_TraefikPointsAtPandoNeverAtTheWorkload` |
 | **R-024** | D | Builds never execute on the host. | 3. Core Invariants | 00, 04, 05, 07 | 03 | `TestR024_NoAdapterMeetsPolicyBlocksDeploy`, `TestR024_SourceThatMustBeBuiltNeedsABuilder` |
 | **R-025** | D | Apps are isolated from each other. | 3. Core Invariants | 06 | — | `TestR025_EachBundleGetsItsOwnNetwork` |
 | **R-026** | D | Non-exposed workloads are unreachable from outside their bundle. | 3. Core Invariants | 01, 03, 05, 06 | 02, 05 | `TestR026_NoPortsArePublishedToTheHost` |
@@ -103,7 +103,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-102** | D | Ask, never guess. | 7.3 When detection cannot decide | 03, 04, 08 | 08 | `TestR102_ACloseCallBecomesAQuestion` |
 | **R-103** | D | The number of questions is the product metric. | 7.3 When detection cannot decide | 01, 08 | 06, 08 | — |
 | **R-104** | D | Questions are blockers; everything else is configuration. | 7.3 When detection cannot decide | 03, 08 | 08 | — |
-| **R-105** | D | Every question must be self-contained and pasteable. | 7.3 When detection cannot decide | 00, 03, 04, 07, 08 | 00, 03, 06, 08 | `TestR105_EveryQuestionAnyDetectorProducesIsSelfContained`, `TestR105_ValidatorCatchesTheRealFailureModes`, `TestR105_ValidatorRejectsTheDesignsCounterExample` |
+| **R-105** | D | Every question must be self-contained and pasteable. | 7.3 When detection cannot decide | 00, 03, 04, 07, 08 | 00, 03, 06, 08, 10 | `TestR105_EveryQuestionAnyDetectorProducesIsSelfContained`, `TestR105_ValidatorCatchesTheRealFailureModes`, `TestR105_ValidatorRejectsTheDesignsCounterExample` |
 | **R-106** | D | AI assistance is optional supporting functionality, never required. | 7.3 When detection cannot decide | — | — | — |
 | **R-107** | D | The correct failure: a repo needs Postgres and never mentions it anywhere — no compose… | 7.3 When detection cannot decide | 01 | 06 | `TestR107_ACrashDoesNotInventASlotTheRepoNeverDeclared`, `TestR107_ACrashingTrialReturnsItsLog` |
 | **R-110** | D | Builds never run on the host (R-024). | 8. Build | — | — | — |
@@ -139,12 +139,12 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-153** | D | One app, one place (R-010). | 10.5 Scale | — | — | — |
 | **R-160** | D | Routing is an adapter category. | 11. Networking and Routing | — | — | — |
 | **R-161** | D | Each routing adapter advertises which addressing modes it supports: subdomain, path prefix,… | 11. Networking and Routing | — | — | — |
-| **R-162** | D | Each routing adapter declares a default mode (e.g. | 11. Networking and Routing | 03 | 03 | — |
+| **R-162** | D | Each routing adapter declares a default mode (e.g. | 11. Networking and Routing | 03 | 03 | `TestR162_CapabilitiesAreHonestAboutTLS` |
 | **R-163** | D | Deviating from the default requires `app.routing.override`. | 11. Networking and Routing | 01 | — | — |
 | **R-164** | D | Proxy mode is a supported topology: one hostname, one certificate, one thing to open on the… | 11. Networking and Routing | 03 | — | — |
 | **R-165** | D | In the non-proxy topology, apps have their own hostnames; users bookmark URLs and carry a… | 11. Networking and Routing | 03 | — | — |
 | **R-166** | D | Subdomain is preferred where a wildcard is available. | 11. Networking and Routing | — | — | — |
-| **R-167** | D | Under path routing, Pando strips the prefix before forwarding and sends `X-Forwarded-Prefix`. | 11. Networking and Routing | 03, 06, 07 | 05 | `TestR167_PathModeStripsThePrefix`, `TestR167_PathPrefixIsStrippedAndDeclared` |
+| **R-167** | D | Under path routing, Pando strips the prefix before forwarding and sends `X-Forwarded-Prefix`. | 11. Networking and Routing | 03, 06, 07 | 05 | `TestR167_PathModeStripsThePrefix`, `TestR167_PathPrefixIsStrippedAndDeclared`, `TestR167_ThePathPrefixIsNotStrippedAtTheEdge` |
 | **R-168** | D | Where Pando can detect a likely path-routing incompatibility, it shows a dismissible warning,… | 11. Networking and Routing | 01, 07, 08 | 06, 08 | `TestR168_NothingToCheckIsNotAWarning`, `TestR168_RelativeAssetsAreFine`, `TestR168_RootAbsoluteAssetsRaiseADismissibleWarning` |
 | **R-169** | O-5 | TLS issuance (built-in ACME, wildcard requirement, self-signed local) is a per-adapter concern… | 11. Networking and Routing | — | — | — |
 | **R-170** | P | The proxy must support websockets, server-sent events, streaming responses, and large uploads. | 11. Networking and Routing | 06, 07 | 05 | `TestR170_SSEIsNotBuffered` |
