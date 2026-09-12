@@ -26,9 +26,19 @@
 - [ ] Rolling backups per app, retained per `Retention.BackupDaily` (R-211). The schema, the
       retention column and the `Expired` query are here; nothing schedules them yet, so every backup
       today is taken by hand
-- [ ] On-delete backups (R-204, R-205). The `kind` and its CHECK exist — an `on_delete` row can
-      never carry an expiry — but app deletion does not take one
+- [x] On-delete backups (R-204, R-205). Deleting an app with storage takes a final backup, kept
+      until explicitly discarded. A failed backup refuses the delete and says how to proceed anyway.
+      Encrypted under the install's own secrets key rather than a passphrase — R-213 governs the DR
+      bundle and its reasoning (a fresh machine cannot unwrap the dead machine's keys) does not apply
+      to an in-place app restore (R-206)
+- [ ] **Restoring** a per-app backup. Creation works and the bundle holds everything a restore needs —
+      spec and volume data — but nothing reads it back yet. R-206 says in-place only, matched by
+      Pando's own identity for the app, and that matching is the work
 - [ ] Provisioned services in the bundle (R-212). Volumes are in; services are not
+- [ ] **A deleted app's Docker volume is never reclaimed.** With `backup=true` the data is safely in
+      a bundle and the row is removed, but the volume itself stays on disk with nothing referencing
+      it. Leaving data is the safe direction and disk is the lesser evil, so this is recorded rather
+      than guessed at — but it is a leak, and it is the same shape as the bundle-teardown one
 - [ ] GC integration: aggregate disk budget (R-224). Blocked on the same gap as O-16
 
 ## Requirements in scope
@@ -57,6 +67,10 @@ Three things running it found that reading it would not:
 - **Restoring erased the record of the bundle being restored from.** A backup cannot contain the row
   describing itself, so that row vanishes with the restore — one use and the bundle became
   unlistable and unrestorable. `Record` is idempotent now and the handler puts the row back.
+- **The DR bundle had no app data in it.** Volumes are in the bundle format, `SnapshotVolume` works
+  and was tested at the adapter level — but the query that lists volumes to snapshot read a table
+  nothing ever wrote to. Marked done in this phase on the strength of the plumbing, and false in
+  practice until phase 10's debt pass. A test now asserts a real bundle contains a real volume.
 - **pg_dump refuses a server newer than itself.** Alpine 3.20 stops at `postgresql16-client` and the
   server is 17, so the runtime base moved to 3.21. Bump it with the postgres service, never
   separately.

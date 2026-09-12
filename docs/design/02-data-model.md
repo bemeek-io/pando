@@ -395,6 +395,8 @@ CREATE TABLE backups (
 
 **[D]** The `manifest` is what restore verifies against before applying anything (R-215). Pando keeps this copy; the copy inside the bundle is the one being checked against it.
 
+**[D]** A per-app backup is encrypted under the **install's own secrets key**, not a supplied passphrase. R-213 governs the DR bundle and its reasoning does not carry over: it exists because a restore onto a fresh machine cannot unwrap keys held by the machine that died, and because shipping the key inside the bundle makes it plaintext for anyone holding the file. An app backup is restored in place, onto this install (R-206), so the machine that can read it is the machine that wrote it. The alternative — prompting for a passphrase on every app deletion — is a prompt people learn to type "password" into, which is weaker than the key already protecting every secret in the install. Pando keeps this copy; the copy inside the bundle is the one being checked against it.
+
 ---
 
 ## 3. Things deliberately not in the schema

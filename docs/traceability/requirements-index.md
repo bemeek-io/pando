@@ -11,8 +11,8 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 |---|---:|---:|
 | Requirements | 207 | — |
 | Specified in a design doc | 147 | 71% |
-| Assigned to a phase | 111 | 53% |
-| Covered by a named test | 70 | 33% |
+| Assigned to a phase | 112 | 54% |
+| Covered by a named test | 71 | 34% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -44,7 +44,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-027** | D | Authorization decisions, the audit log, the state store, and the identity assertion path live… | 3. Core Invariants | 00, 02, 03, 06 | 00, 08 | `TestR027_AnOwningRoleCanUndoTheRevoke`, `TestR027_ApplicationRoleDoesNotOwnTheSchema`, `TestR027_AuditLogIsNotRewritable`, `TestR027_AuditRemainsImmutableAcrossRestarts` |
 | **R-028** | D | Pando observes and reports; it does not remediate the app. | 3. Core Invariants | 03, 05, 08 | 08 | — |
 | **R-029** | D | Control plane and data plane are separate grants (§6), with one exception: owning an app… | 3. Core Invariants | 06 | — | `TestR029_AnOperatorIsDeniedUseThroughTheProxy`, `TestR029_AnOperatorWithNoDataGrantIsDenied`, `TestR029_ControlPlaneRoleDoesNotGrantDataPlaneUse`, `TestR029_OwnerRoleAloneDoesNotGrantUse` |
-| **R-030** | D | The following are first-class objects in Pando's state: | 4. Object Model | — | — | — |
+| **R-030** | D | The following are first-class objects in Pando's state: | 4. Object Model | — | — | `TestR030_AnAppsStorageIsRecordedWhenItDeploys` |
 | **R-031** | P | An app has exactly one owner of record at any time, plus any number of additional grants. | 4. Object Model | 02 | — | — |
 | **R-040** | D | Identity is an adapter category like any other. | 5.1 Adapter model | — | — | — |
 | **R-041** | D V1 | Local users — username and password, stored by Pando. | 5.1 Adapter model | — | — | — |
@@ -163,13 +163,13 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-201** | D | Where no volume is declared, Pando shows a warning at setup rather than inferring one: | 14. Persistence and Volumes | 01, 04, 07, 08 | 02, 06, 08 | `TestR201_NoDeclaredVolumeWarnsEvenWithNothingObserved` |
 | **R-202** | P | The trial run improves this warning: where Pando observed the app writing to a directory… | 14. Persistence and Volumes | 01, 03, 07 | 06 | `TestR202_ATrialRunObservesWritesOutsideDeclaredStorage`, `TestR202_TheWarningNamesTheDirectoryTheAppActuallyWrote` |
 | **R-203** | D | Rationale for treating this specially: an undeclared Postgres fails loudly on first boot. | 14. Persistence and Volumes | 05 | 07 | `TestR203_AVolumeThatHeldDataIsReportedNeverRecreated` |
-| **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 04, 05 | 02, 09 | `TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes`, `TestR204_DestroyKeepsVolumesByDefault` |
+| **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 04, 05 | 02, 09 | `TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes`, `TestR204_DeletingAnAppKeepsAFinalBackup`, `TestR204_DeletingAnAppTearsDownItsBundleButKeepsVolumes`, `TestR204_DestroyKeepsVolumesByDefault` |
 | **R-205** | D | Non-interactive delete (CLI, API, MCP) backs up by default. | 14. Persistence and Volumes | 04 | 02, 09 | — |
-| **R-206** | D | Restore is in-place only. | 14. Persistence and Volumes | 01 | — | — |
+| **R-206** | D | Restore is in-place only. | 14. Persistence and Volumes | 01, 02 | 09 | — |
 | **R-210** | D | Per-app rolling backups of app data. | 15. Backup and Disaster Recovery | — | — | — |
 | **R-211** | P | Default: daily, 7 retained. | 15. Backup and Disaster Recovery | 01, 03, 05 | 07, 09 | — |
 | **R-212** | D | Full-host DR bundle. | 15. Backup and Disaster Recovery | 01, 07 | 09 | `TestR212_ADRBundleContainsWhatItPromises`, `TestR212_AVolumeRoundTripsThroughSnapshotAndRestore`, `TestR212_AnEmptyVolumeSnapshotsCleanly`, `TestR212_RestoreReplacesRatherThanMerges`, `TestR212_RestoreReturnsTheInstallToItsBackedUpState` |
-| **R-213** | D | The DR bundle is encrypted under a separate passphrase or key supplied at backup time, never… | 15. Backup and Disaster Recovery | 01, 07 | 09 | `TestR213_ADowngradedHeaderIsRejected`, `TestR213_AShortPassphraseIsRefused`, `TestR213_AnEncryptedBundleVerifiesAfterDecryption`, `TestR213_BundleRoundTripsAtEveryChunkBoundary`, `TestR213_ReorderedChunksAreRejected`, `TestR213_TheWrongPassphraseRevealsNothing` |
+| **R-213** | D | The DR bundle is encrypted under a separate passphrase or key supplied at backup time, never… | 15. Backup and Disaster Recovery | 01, 02, 07 | 09 | `TestR213_ADowngradedHeaderIsRejected`, `TestR213_AShortPassphraseIsRefused`, `TestR213_AnEncryptedBundleVerifiesAfterDecryption`, `TestR213_BundleRoundTripsAtEveryChunkBoundary`, `TestR213_ReorderedChunksAreRejected`, `TestR213_TheWrongPassphraseRevealsNothing` |
 | **R-214** | D | Consequence, accepted: DR restore is deliberately interactive. | 15. Backup and Disaster Recovery | 07 | 09 | `TestR214_AWrongPassphraseRevealsNothing` |
 | **R-215** | D | Restore verifies before applying. | 15. Backup and Disaster Recovery | 02, 04, 07 | 09 | `TestR215_ABundleWithNoManifestIsRejected`, `TestR215_ATamperedBundleIsRejected`, `TestR215_ATamperedBundleIsRejectedWithTheTargetUntouched`, `TestR215_ATruncatedBundleIsRejected`, `TestR215_AWholeBundleVerifies`, `TestR215_AWrongPassphraseLeavesTheInstallUntouched`, `TestR215_AnAlteredEntryIsRejectedByChecksum`, `TestR215_RestoreRefusesWithoutConfirmation`, `TestR215_TrailingBytesAreRejected`, `TestR215_VerifyReadsAndWritesNothingElse` |
 | **R-216** | P | Verification should also be invocable against a bundle without committing it, so a backup can… | 15. Backup and Disaster Recovery | 03, 04 | 09 | — |
