@@ -14,6 +14,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/deploy"
 	"github.com/bemeek-io/pando/internal/core/planner"
+	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
 	"github.com/bemeek-io/pando/internal/log"
@@ -70,6 +71,22 @@ type Server struct {
 	Grants     *state.Grants
 	HostPolicy AnonymousPolicy
 
+	// Verbs answers "what may this principal do install-wide" for GET /me.
+	// Nil leaves the list empty, which denies nothing — every install-level
+	// endpoint checks the verb itself — but it does hide the admin entry.
+	Verbs InstallVerbs
+
+	// PolicyStore reads and writes the host policy document (R-274). Distinct
+	// from HostPolicy above, which *evaluates* it: one is the document, the
+	// other is the decision, and an endpoint that edits the document has no
+	// business asking the evaluator anything.
+	PolicyStore PolicyDocument
+
+	// AuditLog reads the append-only log (R-227). Nil on an install where the
+	// endpoint should 500 rather than quietly return nothing — an empty audit
+	// log and an unreadable one are very different answers.
+	AuditLog AuditReader
+
 	// Console serves the embedded UI on Pando's own paths. Nil when the binary
 	// was built without it, in which case those paths 404 like any other and
 	// the API is unaffected — the API is the product (R-261), and the console
@@ -80,6 +97,17 @@ type Server struct {
 	// catch-all, so Pando's own routes are reachable and everything else goes
 	// through enforcement. There is no path that reaches an app without it.
 	AppProxy http.Handler
+}
+
+// PolicyDocument reads and writes host policy.
+type PolicyDocument interface {
+	Load(ctx context.Context) (corepolicy.Document, error)
+	Save(ctx context.Context, doc corepolicy.Document, updatedBy string) error
+}
+
+// AuditReader queries the audit log.
+type AuditReader interface {
+	List(ctx context.Context, q audit.Query) ([]audit.Record, error)
 }
 
 // AnonymousPolicy gates sharing an app with everyone (R-076).
@@ -156,20 +184,50 @@ func (s *Server) Routes() http.Handler {
 		r.Delete("/sessions", s.handleLogout)
 		r.Get("/me", s.handleMe)
 
+		// Changing your own password. Self only, no verb — see the handler.
+		r.Post("/me/password", s.handleChangePassword)
+
 		// The launcher (R-264). Data-plane scoped, deliberately a different
 		// list from GET /apps.
 		r.Get("/me/apps", s.handleMyApps)
 
-		// GET /adapters returns live capabilities, not stored config, so the
-		// console can grey out choices that would fail at plan time.
+		// Accounts. Reading or changing your own needs nothing
+		// administrative; doing either to someone else needs an
+		// install-scoped verb (O-17). Before those verbs existed these were
+		// gated only by being signed in, which meant any account could suspend
+		// the administrator.
 		r.Route("/users", func(r chi.Router) {
+			r.Get("/", s.handleListUsers)
 			r.Post("/", s.handleCreateUser)
 			r.Get("/{userID}", s.handleGetUser)
 			r.Patch("/{userID}", s.handlePatchUser)
+
+			// Promotion and demotion, deliberately not a field on PATCH.
+			// Changing someone's status and changing their power are different
+			// acts, and folding them into one body is how a status update
+			// quietly becomes a promotion.
+			r.Put("/{userID}/role", s.handlePutUserRole)
+			r.Delete("/{userID}/role", s.handleDeleteUserRole)
 		})
 
+		// The roles that can be granted across the installation (R-082).
+		r.Get("/roles", s.handleListRoles)
+
+		// The install's own inventory, behind install.view. GET /adapters
+		// returns live capabilities, not stored config, so the console can grey
+		// out choices that would fail at plan time.
 		r.Get("/adapters", s.handleListAdapters)
 		r.Get("/capacity", s.handleCapacity)
+
+		// Host policy: read with install.view, written with
+		// install.policy.manage. Seeing the rules you work under is not the
+		// same privilege as changing them (R-274).
+		r.Get("/policy", s.handleGetPolicy)
+		r.Put("/policy", s.handlePutPolicy)
+
+		// The audit log (R-227). Its own verb: it records what everyone did,
+		// including inside apps they own.
+		r.Get("/audit", s.handleListAudit)
 
 		r.Route("/apps", func(r chi.Router) {
 			r.Get("/", s.handleListApps)

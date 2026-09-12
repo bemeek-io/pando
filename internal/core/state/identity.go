@@ -131,6 +131,43 @@ func (u *Users) ByID(ctx context.Context, userID string) (User, bool, error) {
 	return user, true, nil
 }
 
+// List returns every account, newest first.
+//
+// Includes suspended accounts and excludes deleted ones: suspension is not
+// deletion (R-049), and an administrator managing accounts needs to see the
+// suspended ones — they are the ones most likely to need attention.
+//
+// Unpaginated. An install is one organization (R-015) and its account list is
+// a screenful, not a feed. When that stops being true this grows a cursor like
+// every other list, and the shape of the response already allows it.
+func (u *Users) List(ctx context.Context) ([]User, error) {
+	rows, err := u.db.Query(ctx, `
+		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password
+		FROM users WHERE deleted_at IS NULL ORDER BY id DESC`)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the accounts.", err)
+	}
+	defer rows.Close()
+
+	out := make([]User, 0)
+	for rows.Next() {
+		var user User
+		var email, display *string
+		if err := rows.Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display,
+			&user.Status, &user.MustChangePassword); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the accounts.", err)
+		}
+		if email != nil {
+			user.Email = *email
+		}
+		if display != nil {
+			user.DisplayName = *display
+		}
+		out = append(out, user)
+	}
+	return out, rows.Err()
+}
+
 // SetStatus changes a user's status.
 //
 // Suspension is not deletion (R-049): this is the endpoint behind PATCH, and it
@@ -145,6 +182,32 @@ func (u *Users) SetStatus(ctx context.Context, userID, status string) error {
 		`UPDATE users SET status = $2, updated_at = now() WHERE id = $1`, userID, status)
 	if err != nil {
 		return errs.Wrap(errs.Internal, "Could not update the account.", err)
+	}
+	return nil
+}
+
+// SetPassword replaces a local account's password and clears the
+// must-change-on-first-login flag (R-046).
+//
+// The flag is cleared here rather than by a separate call because there is no
+// state in which a person has chosen their own password and must still change
+// it. Two statements would make that state reachable by forgetting one.
+//
+// Local accounts only. An external identity provider owns its own credentials
+// (R-044), and a password Pando could change would be a second copy of one.
+func (u *Users) SetPassword(ctx context.Context, userID, passwordHash string) error {
+	tag, err := u.db.Exec(ctx, `
+		UPDATE users
+		SET password_hash = $2, must_change_password = false, updated_at = now()
+		WHERE id = $1 AND adapter_id = $3 AND deleted_at IS NULL`,
+		userID, passwordHash, LocalAdapterID)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not change the password.", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return errs.New(errs.ValidInvalid,
+			"This account signs in through an external identity provider, so Pando cannot change its password.").
+			WithRemedy("Change it where that account lives.")
 	}
 	return nil
 }
@@ -230,6 +293,21 @@ func (s *Sessions) RevokeAllForUser(ctx context.Context, userID string) error {
 		`UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, userID)
 	if err != nil {
 		return errs.Wrap(errs.Internal, "Could not end the account's sessions.", err)
+	}
+	return nil
+}
+
+// RevokeOthersForUser ends every session a user holds except one.
+//
+// For a password change: the sessions someone did not know about should end,
+// and the one they are typing in should not — being signed out by your own
+// password change teaches people that changing it is a risky thing to do.
+func (s *Sessions) RevokeOthersForUser(ctx context.Context, userID, keepSessionID string) error {
+	_, err := s.db.Exec(ctx, `
+		UPDATE sessions SET revoked_at = now()
+		WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL`, userID, keepSessionID)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not end the account's other sessions.", err)
 	}
 	return nil
 }

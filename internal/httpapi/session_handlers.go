@@ -10,6 +10,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/bemeek-io/pando/internal/hash"
 	"github.com/bemeek-io/pando/internal/secret"
 )
 
@@ -117,10 +118,30 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The installation-wide verbs the caller holds (R-265). The console reads
+	// this to decide whether to show the administrative entry and what to put
+	// in it — the server's answer, not the client's inference. An empty list is
+	// the normal case: most accounts hold nothing install-wide, and their
+	// console is the launcher.
+	// Never nil: a missing key and an empty list are the same thing to a client
+	// reading `verbs ?? []`, and only one of them is an answer.
+	verbs := []string{}
+	if s.Verbs != nil {
+		held, err := s.Verbs.InstallVerbsFor(r.Context(), p)
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		if held != nil {
+			verbs = held
+		}
+	}
+
 	body := map[string]any{
 		"principal_kind": string(p.Kind),
 		"id":             p.ID,
 		"groups":         p.Groups,
+		"verbs":          verbs,
 	}
 	if p.UserID != "" {
 		user, found, err := s.Users.ByID(r.Context(), p.UserID)
@@ -130,6 +151,12 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		}
 		if found {
 			body["user_id"] = user.ID
+
+			// The sign-in name. The console shows it on the first-run password
+			// screen so a password manager has something to file the new
+			// credential under, and so the person can see which account they
+			// are changing.
+			body["username"] = user.ExternalID
 			body["email"] = user.Email
 			body["display_name"] = user.DisplayName
 			body["must_change_password"] = user.MustChangePassword
@@ -156,3 +183,121 @@ func cut(s string, sep byte) (string, string, bool) {
 	}
 	return s, "", false
 }
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// handleChangePassword changes the caller's own password (R-046).
+//
+// Self only, and deliberately not a verb. Changing your own password is not
+// administration, and changing somebody else's is a *reset* — a different
+// action with different consequences, which does not exist yet and should not
+// arrive by relaxing this route.
+//
+// The current password is required even though the caller is already
+// authenticated. A session cookie is a bearer credential: someone holding a
+// borrowed one could otherwise lock the owner out of their own account, which
+// is the same escalation shape as O-17 on a smaller scale. Re-authentication
+// goes through the identity adapter rather than comparing hashes here, so the
+// adapter's own rules — including its failure timing — still apply (R-044).
+//
+// Without this endpoint R-046's "must be changed on first login" is a flag that
+// nothing can clear, which is what it was until now.
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	p := PrincipalFrom(r.Context())
+	if p.Kind == authz.KindAnonymous {
+		Error(w, r, errs.New(errs.AuthRequired, "You need to sign in."))
+		return
+	}
+	if p.UserID == "" {
+		// An account token is its own principal and has no account to hold a
+		// password (R-060).
+		Error(w, r, errs.New(errs.ValidInvalid, "A token has no password to change."))
+		return
+	}
+
+	var req changePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read."))
+		return
+	}
+	if req.NewPassword == "" {
+		Error(w, r, errs.New(errs.ValidInvalid, "A password cannot be empty."))
+		return
+	}
+	if len(req.NewPassword) < minPasswordLength {
+		Error(w, r, errs.Newf(errs.ValidInvalid,
+			"A password needs at least %d characters.", minPasswordLength).
+			WithRemedy("A short phrase you will remember is a good password."))
+		return
+	}
+
+	user, found, err := s.Users.ByID(r.Context(), p.UserID)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	if !found {
+		Error(w, r, errs.New(errs.AuthInvalid, "This account no longer exists."))
+		return
+	}
+
+	if _, err := s.Identity.Authenticate(r.Context(), api.Credential{
+		Username: user.ExternalID,
+		Password: secret.New(req.CurrentPassword),
+	}); err != nil {
+		s.audit(r, audit.Event{
+			PrincipalKind: audit.PrincipalKind(p.Kind),
+			PrincipalID:   p.ID,
+			OnBehalfOf:    p.UserID,
+			Action:        "user.password.denied",
+			TargetKind:    "user",
+			TargetID:      p.UserID,
+		})
+		Error(w, r, errs.New(errs.AuthInvalid, "That current password is not right."))
+		return
+	}
+
+	digest, err := hash.New(secret.New(req.NewPassword))
+	if err != nil {
+		Error(w, r, errs.Wrap(errs.Internal, "Could not secure the password.", err))
+		return
+	}
+	if err := s.Users.SetPassword(r.Context(), p.UserID, digest); err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	// Every other session ends. A password change is what someone does when
+	// they think a credential has leaked, and leaving the leaked session alive
+	// would make the act cosmetic. The current one survives so that changing a
+	// password does not sign you out of the page you changed it on.
+	if cookie, err := r.Cookie(SessionCookie); err == nil && cookie.Value != "" {
+		if err := s.Sessions.RevokeOthersForUser(r.Context(), p.UserID, cookie.Value); err != nil {
+			Error(w, r, err)
+			return
+		}
+	} else if err := s.Sessions.RevokeAllForUser(r.Context(), p.UserID); err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	s.audit(r, audit.Event{
+		PrincipalKind: audit.PrincipalKind(p.Kind),
+		PrincipalID:   p.ID,
+		OnBehalfOf:    p.UserID,
+		Action:        "user.password.change",
+		TargetKind:    "user",
+		TargetID:      p.UserID,
+	})
+	JSON(w, http.StatusNoContent, nil)
+}
+
+// minPasswordLength is the only rule.
+//
+// No composition requirements — no "one uppercase, one symbol" — because they
+// produce shorter, more guessable passwords and a note on a monitor. Length is
+// the property that matters, and the bootstrap credential is 32 characters.
+const minPasswordLength = 10
