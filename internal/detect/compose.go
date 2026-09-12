@@ -465,7 +465,7 @@ func parseMounts(entries []any) []mount {
 		if !ok {
 			continue
 		}
-		source, target := scalar(m["source"]), scalar(m["target"])
+		source, target := interpolate(scalar(m["source"])), scalar(m["target"])
 		out := mount{
 			raw:           source + ":" + target,
 			containerPath: target,
@@ -483,7 +483,7 @@ func parseMounts(entries []any) []mount {
 }
 
 func parseShortMount(text string) mount {
-	parts := strings.Split(text, ":")
+	parts := splitMountSpec(interpolate(text))
 	switch len(parts) {
 	case 1:
 		// An anonymous volume: "/var/lib/data".
@@ -501,6 +501,87 @@ func parseShortMount(text string) mount {
 		}
 		return m
 	}
+}
+
+// splitMountSpec splits a compose volume entry on ":", ignoring colons inside
+// a ${...} substitution.
+//
+// "${CONFIG_DIR:-./config}:/app/config:ro" has five colons and three fields.
+// Splitting naively produces a volume named "${CONFIG_DIR" mounted at
+// "-./config}", which is not a parse error anywhere — it is a bundle that comes
+// up with a garbage volume attached to a nonsense path, and an app that cannot
+// find its configuration for reasons nothing explains.
+func splitMountSpec(text string) []string {
+	var parts []string
+	var current strings.Builder
+	depth := 0
+
+	for i := 0; i < len(text); i++ {
+		switch {
+		case text[i] == '$' && i+1 < len(text) && text[i+1] == '{':
+			depth++
+			current.WriteByte(text[i])
+		case text[i] == '}' && depth > 0:
+			depth--
+			current.WriteByte(text[i])
+		case text[i] == ':' && depth == 0:
+			parts = append(parts, current.String())
+			current.Reset()
+		default:
+			current.WriteByte(text[i])
+		}
+	}
+	parts = append(parts, current.String())
+	return parts
+}
+
+// interpolate resolves compose variable substitutions to their defaults.
+//
+// Pando has no environment to interpolate from — the compose file is being read
+// out of a repository, not run from a shell — so the default is the only value
+// available, and compose's own semantics say that is what an unset variable
+// takes. "${CONFIG_DIR:-./config}" becomes "./config", which then travels the
+// ordinary relative-bind path and becomes a managed volume.
+//
+// A variable with no default is left as written. It is not a path, so it fails
+// the host-path checks and ends up named as-is rather than silently becoming an
+// empty string — which would mount the repository root.
+func interpolate(text string) string {
+	var out strings.Builder
+
+	for i := 0; i < len(text); {
+		if text[i] != '$' || i+1 >= len(text) || text[i+1] != '{' {
+			out.WriteByte(text[i])
+			i++
+			continue
+		}
+
+		end := strings.IndexByte(text[i:], '}')
+		if end < 0 {
+			out.WriteString(text[i:])
+			break
+		}
+		inner := text[i+2 : i+end]
+		out.WriteString(defaultOf(inner))
+		i += end + 1
+	}
+	return out.String()
+}
+
+// defaultOf returns the default from a compose substitution body.
+//
+// The forms with a usable default are "VAR:-default" and "VAR-default". The
+// error forms — "VAR:?message" and "VAR?message" — have no default by
+// definition, and neither does a bare "VAR"; all three keep their original
+// spelling so that what Pando could not resolve stays visible.
+func defaultOf(inner string) string {
+	if name, fallback, found := strings.Cut(inner, ":-"); found && name != "" {
+		return fallback
+	}
+	if name, fallback, found := strings.Cut(inner, "-"); found && name != "" && !strings.Contains(name, ":") {
+		return fallback
+	}
+	return "${" + inner + "}"
 }
 
 // isAbsoluteHostPath reports whether a mount source names a path on the host.

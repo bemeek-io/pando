@@ -31,16 +31,21 @@ default supports **neither** — it is port mode only (design 03 §4.1). So on a
 app needs a host port, and no requirement says where one comes from. R-005 rules out asking the user:
 someone who may not know what a port is cannot pick a free one.
 
-`[P]` implemented: the lowest free port in a configured range, default `9000-9999`, counting both
-pinned specs and outstanding detection proposals. Counting only pinned specs would hand the same port
-to two apps detected before either was accepted, which is the normal case when someone adds a few at
-once. Exhausting the range returns `CAPACITY_NO_FREE_PORT` naming the setting to widen.
+`[P]` implemented: the lowest free port in a configured range, default `9000-9999`, held in a
+`port_allocations` row keyed `(adapter_ref, port)`. Exhausting the range returns
+`CAPACITY_NO_FREE_PORT` naming the setting to widen.
+
+**Half of this question is now answered, by being got wrong.** The first version derived the port —
+"the lowest number no pinned spec is using" — and that is not an allocation, it is a guess about one.
+It raced immediately, and in the ordinary case rather than an exotic one: adding five apps at once
+runs five background detections, two computed the same answer before either had written anything
+down, and both were handed port 9001 with nothing anywhere noticing. So a port **is** a durable
+allocation with its own table, and the unique constraint is what makes a collision impossible rather
+than unlikely.
 
 Lowest-free rather than random so an app tends to keep its port across a rebuild and a bookmark keeps
 working; reused rather than ever-increasing so a deleted app's port comes back. What needs deciding is
-whether that is the rule, whether the range is right, and whether a port should be a durable
-allocation with its own table rather than something re-derived from specs — which matters once
-something other than the spec can hold one. Traefik (phase 10) does subdomain and path, so an install
+whether lowest-free is the rule and whether `9000-9999` is the right range. Traefik (phase 10) does subdomain and path, so an install
 using it never reaches this path at all; that is the reason it is not blocking.
 
 **O-5** is open the way `SessionPolicy` is open: deferring it to each adapter *is* the answer (R-047's

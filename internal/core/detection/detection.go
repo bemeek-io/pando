@@ -66,7 +66,7 @@ type Runner struct {
 
 // PortAllocator hands out host ports for port-mode routing.
 type PortAllocator interface {
-	NextFree(ctx context.Context, adapterRef string, from, to int) (int, error)
+	Allocate(ctx context.Context, adapterRef, appID string, from, to int) (int, error)
 }
 
 // Detect runs detection for an app and records the result.
@@ -171,7 +171,7 @@ func (r *Runner) applyDefaults(ctx context.Context, s *spec.AppSpec, slug string
 	// handed 9000. So it is allocated rather than defaulted, and only when the
 	// mode that needs it is the one in effect.
 	if s.Routing.Mode == spec.RoutingPort && s.Routing.Port == 0 && r.Ports != nil {
-		port, err := r.Ports.NextFree(ctx, s.Routing.AdapterRef, r.PortRangeStart, r.PortRangeEnd)
+		port, err := r.Ports.Allocate(ctx, s.Routing.AdapterRef, s.AppID, r.PortRangeStart, r.PortRangeEnd)
 		if err != nil {
 			// Left at zero. Validation refuses the spec with a message about
 			// the port, and the proposal still reaches the user carrying

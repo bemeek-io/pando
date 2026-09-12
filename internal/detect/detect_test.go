@@ -683,3 +683,100 @@ func hasWarning(warnings []spec.Warning, code, mentions string) bool {
 	}
 	return false
 }
+
+// --- what real repositories caught -----------------------------------------
+//
+// Both of these came from running detection against apps in the bemeek-io org.
+// Neither shape appears in the corpus or in any fixture written from
+// imagination, and both were producing confidently wrong output.
+
+// A HEALTHCHECK's continuation line begins with CMD.
+//
+// From bemeek-io/skyjo-online. Detection reported the health probe as the app's
+// start command and never reached the real CMD two lines below it.
+func TestAHealthcheckContinuationIsNotTheStartCommand(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"Dockerfile": "FROM node:22-alpine\n" +
+			"EXPOSE 3001\n" +
+			"HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\\n" +
+			"  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/ || exit 1\n" +
+			"\n" +
+			`CMD ["node", "dist/server/index.js"]` + "\n",
+	})
+	require.NoError(t, err)
+
+	evidence := strings.Join(result.Winner.Evidence, " | ")
+	require.Contains(t, evidence, "dist/server/index.js",
+		"the real CMD is two lines below the healthcheck and has to win")
+	require.NotContains(t, evidence, "--spider",
+		"evidence that is confidently wrong is worse than none")
+	require.Contains(t, evidence, "EXPOSE 3001")
+}
+
+// A compose volume source carrying a variable substitution.
+//
+// From bemeek-io/mashboard: "${CONFIG_DIR:-./config}:/app/config:delegated".
+// Splitting that on ":" yields a volume named "${CONFIG_DIR" mounted at
+// "-./config}" — not a parse error anywhere, just a bundle that comes up with a
+// garbage volume on a nonsense path and an app that cannot find its config.
+func TestAComposeVolumeWithAVariableDefaultIsResolved(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yml": "services:\n" +
+			"  backend:\n" +
+			"    image: example/backend:latest\n" +
+			"    volumes:\n" +
+			"      - ${CONFIG_DIR:-./config}:/app/config:delegated\n" +
+			"      - redis-data:/data\n" +
+			"volumes:\n" +
+			"  redis-data:\n",
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, detect.StatusBlocked, result.Status)
+
+	draft := result.Winner.Draft
+	for _, v := range draft.Volumes {
+		require.NotContains(t, v.Name, "$", "a volume name is not a shell expression")
+		require.NotContains(t, v.Name, "{")
+	}
+
+	mounts := draft.Workloads[0].Mounts
+	require.Len(t, mounts, 2)
+
+	var configPath string
+	for _, m := range mounts {
+		if m.Path != "/data" {
+			configPath = m.Path
+		}
+	}
+	require.Equal(t, "/app/config", configPath,
+		"the container path is the field after the source, not the middle of a substitution")
+}
+
+// ":ro" is the third field, and finding it depends on splitting correctly.
+func TestAReadOnlyMountBehindAVariableIsStillReadOnly(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yml": "services:\n  web:\n    image: nginx\n" +
+			"    volumes:\n      - ${CONFIG_DIR:-./config}:/app/config:ro\n",
+	})
+	require.NoError(t, err)
+
+	mounts := result.Winner.Draft.Workloads[0].Mounts
+	require.Len(t, mounts, 1)
+	require.Equal(t, "/app/config", mounts[0].Path)
+	require.True(t, mounts[0].ReadOnly)
+}
+
+// A substitution with no default cannot be resolved, and says so rather than
+// becoming an empty string — which would mount the repository root.
+func TestAVariableWithNoDefaultIsNotSilentlyEmptied(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yml": "services:\n  web:\n    image: nginx\n" +
+			"    volumes:\n      - ${DATA_DIR}:/var/data\n",
+	})
+	require.NoError(t, err)
+
+	mounts := result.Winner.Draft.Workloads[0].Mounts
+	require.Len(t, mounts, 1)
+	require.Equal(t, "/var/data", mounts[0].Path,
+		"an unresolvable source must not shift every other field along")
+}

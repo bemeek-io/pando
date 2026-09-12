@@ -431,8 +431,7 @@ func readDockerfile(src api.SourceView, name string) ([]int, string) {
 	var command string
 
 	scanner := bufio.NewScanner(io.LimitReader(f, 256<<10))
-	for scanner.Scan() {
-		line := scanner.Text()
+	for _, line := range joinContinuations(scanner) {
 		if m := exposePattern.FindStringSubmatch(line); m != nil {
 			for _, field := range strings.Fields(m[1]) {
 				if n, err := strconv.Atoi(strings.SplitN(field, "/", 2)[0]); err == nil {
@@ -445,6 +444,44 @@ func readDockerfile(src api.SourceView, name string) ([]int, string) {
 		}
 	}
 	return ports, command
+}
+
+// joinContinuations folds backslash-continued lines into one.
+//
+// Without this a Dockerfile written the ordinary way lies to the reader:
+//
+//	HEALTHCHECK --interval=30s --timeout=3s --retries=3 \\
+//	  CMD wget --spider http://localhost:3001/ || exit 1
+//
+//	CMD ["node", "dist/server/index.js"]
+//
+// The second physical line begins with CMD, so a line-at-a-time scan reports
+// the health probe as the app's start command and never reaches the real one.
+// This is shown to a user as the evidence for what Pando decided, and evidence
+// that is confidently wrong is worse than none at all.
+func joinContinuations(scanner *bufio.Scanner) []string {
+	var lines []string
+	var pending strings.Builder
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if trimmed := strings.TrimRight(line, " 	"); strings.HasSuffix(trimmed, "\\") {
+			pending.WriteString(strings.TrimSuffix(trimmed, "\\"))
+			pending.WriteString(" ")
+			continue
+		}
+		if pending.Len() > 0 {
+			pending.WriteString(line)
+			lines = append(lines, pending.String())
+			pending.Reset()
+			continue
+		}
+		lines = append(lines, line)
+	}
+	if pending.Len() > 0 {
+		lines = append(lines, pending.String())
+	}
+	return lines
 }
 
 // slotsFromComposeServices turns recognizable backing services into slots.

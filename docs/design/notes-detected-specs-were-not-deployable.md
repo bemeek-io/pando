@@ -82,3 +82,50 @@ disturbed its routing enough that the next outbound clone hung for minutes. It
 presented as a slow network, not as the suite sabotaging the server, and it only
 appeared on cold runs. Networks are now reclaimed at suite start, when the Pando
 attached to them is already gone.
+
+## Postscript: five real repositories
+
+Run against apps in the bemeek-io org rather than against the public corpus.
+Five added at once, which is how someone actually uses this.
+
+Detection was right about all five — a Dockerfile app, a three-service compose
+stack with Redis extracted as a slot, another Dockerfile app, and two Go SDK
+libraries honestly reported as `buildpack` at 0.45 with questions, because a
+library is not a deployment. `skyjo-online` built and deployed from nothing but
+its repository URL and one answered question, and served its front page through
+the proxy.
+
+Three defects came out of it that no synthetic fixture had produced.
+
+**A HEALTHCHECK's continuation line begins with CMD.**
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/ || exit 1
+
+CMD ["node", "dist/server/index.js"]
+```
+
+Read a line at a time, the health probe is the first thing matching `^CMD`, so
+it was reported as the app's start command and the real one two lines below was
+never reached. Shown to a user as the evidence for what Pando decided.
+
+**A compose volume source carrying a variable.**
+`${CONFIG_DIR:-./config}:/app/config:delegated` has five colons and three
+fields. Split naively it produced a volume named `${CONFIG_DIR` mounted at
+`-./config}` — no parse error anywhere, just a bundle that would come up with a
+garbage volume on a nonsense path and an app unable to find its configuration.
+
+**Port allocation raced.** Covered above and in O-15: derived ports are not
+allocated ports, and five concurrent detections proved it inside a minute.
+
+### And one thing that worked exactly as designed
+
+`skyjo-online` deployed, returned HTTP 200, and served a real page. Its HTML
+references `/assets/index-CMbrcU-4.js` — rooted at the domain — and through the
+proxy that request is a 404 while the same file under the app's prefix is a 200.
+The app renders blank with nothing in any log to say why.
+
+`WARN_PATH_ROUTING_INCOMPATIBLE` named that file and described that outcome
+before anything was built. R-028 forbids rewriting response bodies to paper over
+it, so the warning is the whole intervention, and it was accurate.
