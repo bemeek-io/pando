@@ -58,7 +58,11 @@ see `.claude/skills/pando-design/PROVENANCE.md` for how to pull it.
       which is what makes them distinct from an error in a palette that has no amber
 - [x] Sharing screen (R-076, R-077)
 - [x] Deploy settings (R-145, R-147)
-- [~] Log streaming via `EventSource` — **done**. Exec via WebSocket + xterm.js — **not started**
+- [x] Log streaming via `EventSource`; exec via WebSocket + xterm.js — the server endpoint did not
+      exist either and no phase claimed it, so both halves are here
+- [x] Vendor the icons and self-host the fonts, so an installation with no internet renders the
+      product rather than a fallback of it — flagged upstream as production work and assigned to no
+      phase
 
 ## Requirements in scope
 
@@ -79,6 +83,14 @@ accepting pinned revision 1 and left the app `proposed` — it did not deploy.
 **The second clause is half met.** "Scoped to what they hold" is the server's scoping of
 `GET /apps`; "holding an administrative verb" has no implementation because no such verb exists
 (O-17).
+
+Exec is verified the same way: a live shell inside a running nginx container from the Terminal tab,
+with the R-086 warning stated before anything opens. Six acceptance tests cover the ordering that
+matters — the audit event is written **before** the session, so one authorized and abandoned without
+a byte sent is still recorded, and the stream is confirmed absent from the log.
+
+The console now ships with no CDN dependency at all: `grep` for `fonts.googleapis`, `fonts.gstatic`
+or `unpkg.com` in the built assets returns nothing.
 
 ## The four screens that carry requirement weight
 

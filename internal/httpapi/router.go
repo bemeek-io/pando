@@ -201,6 +201,15 @@ func (s *Server) Routes() http.Handler {
 				r.Get("/status", s.handleAppStatus)
 				r.Get("/logs", s.handleAppLogs)
 
+				// A terminal inside a running workload (design 04 §2.4).
+				//
+				// The most privileged action in the system (R-086): a holder
+				// can read the database directly and read injected environment
+				// including secrets. The handler checks the verb, then host
+				// policy (R-085), then writes the audit event, and only then
+				// opens the session.
+				r.Get("/exec", s.handleExec)
+
 				r.Route("/deployments", func(r chi.Router) {
 					r.Get("/", s.handleListDeployments)
 					r.Post("/", s.handleDeploy)

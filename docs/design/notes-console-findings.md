@@ -137,20 +137,61 @@ That broke the build twice, in different places:
   inside Docker even with the assets present locally. Excluding the built
   console from the image defeats the point of embedding it (R-253).
 
-## Still unresolved: the console needs the internet
+## The console needed the internet — fixed
 
 Two substitutions flagged upstream, both of which matter more for Pando than for
-most products, because Pando is software someone installs on their own host:
+most products, because Pando is software someone installs on their own host. An
+installation on a private network is a normal way to run it, and there both of
+these fail silently — the product renders, just wrong.
 
-- **Icons** load from the unpkg CDN. `readme.md` says "for production or offline
-  use, vendor the icons you actually use". Phase 8 is production, and the
-  working set is seven named glyphs.
-- **Fonts** load from Google Fonts. An install on a private network renders in
-  fallback faces.
+**Icons** were fetched from the unpkg CDN *at runtime*, per glyph, on first
+render. Offline that meant no icons at all; online it meant every icon appearing
+a moment after the rest of the interface. Ten Lucide SVGs (ISC) are vendored in
+`assets/icons/` and compiled to a plain JS module by `assets/icons/build.mjs`,
+which `Icon` imports synchronously. A module rather than `import.meta.glob`
+because the design system has no build step and no npm dependencies — bundler
+magic would give that up.
 
-Neither is addressed here. An air-gapped install currently gets a console with
-no icons and the wrong type, which is a real defect for a self-hosted product
-rather than a cosmetic one.
+**Fonts** were a `@import` from Google Fonts. The `.woff2` files are now in
+`assets/fonts/`: 16 files, 355 KiB, five subsets, so an app named in Cyrillic or
+Vietnamese still renders in the real face. `tokens/fonts.css` is Google's own CSS
+with the URLs swapped, because the unicode-ranges and subset split are theirs and
+re-deriving them is how a subset quietly stops loading.
+
+That second point is not hypothetical — the first attempt *did* re-derive the
+names and broke nine of twenty-five faces, because Newsreader and Public Sans are
+variable fonts where several `@font-face` blocks share one file while IBM Plex
+Mono ships one file per weight. Naming by family and subset alone made the two
+Plex files collide and pointed the 400 face at the 500 glyphs.
+
+Verified at the artifact level: `grep` for `fonts.googleapis`, `fonts.gstatic` or
+`unpkg.com` across the built CSS and JS returns nothing.
+
+## Exec: the endpoint did not exist
+
+Phase 8's task list says "exec via WebSocket + xterm.js", which reads like console
+work. The server side was missing too — no route, no handler — and no phase file
+claimed it. Design 04 specified it, so both halves landed here.
+
+One correction to that spec: it wrote `POST /api/v1/apps/{id}/exec`. A WebSocket
+handshake is a **GET** by protocol; RFC 6455 requires it and a browser's
+`new WebSocket()` cannot issue anything else, so `POST` was not implementable
+from the console the endpoint exists for. Design 04 now says GET, and nothing
+about the ordering or the checks changed.
+
+The ordering is the requirement, and it is what the tests assert: check
+`app.exec`, then host policy (R-085 → `POLICY_EXEC_DISABLED`, which denies the
+owner too), then **write the audit event**, and only then open the session. A
+session authorized and abandoned without a byte sent is still recorded — there is
+a test for exactly that.
+
+R-086 also decides what the screen says. It requires the documentation to state
+plainly that the verb list is not a security boundary against someone holding
+`app.exec`, so the console says so before opening anything: a terminal can read
+the database directly, read the values Pando passed the app including its
+secrets, and change the running app in ways that will not appear in its
+configuration. And it says what is recorded — the command, not the session (O-7)
+— because someone about to type a password is entitled to know which.
 
 ## No OpenAPI spec exists
 

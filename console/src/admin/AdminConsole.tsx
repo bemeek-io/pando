@@ -15,6 +15,7 @@ import { statusLabel, statusSymbol } from '../ui/status';
 import { DetectionReview } from './DetectionReview';
 import { Sharing } from './Sharing';
 import { AppOverview } from './AppOverview';
+import { Terminal } from './Terminal';
 
 export function AdminConsole({ onLeave }: { onLeave: () => void }) {
   const [selected, setSelected] = useState<App | null>(null);
@@ -101,6 +102,7 @@ function AppScreen({ app, onBack }: { app: App; onBack: () => void }) {
     ? [
         { value: 'overview', label: 'Overview' },
         { value: 'sharing', label: 'Sharing' },
+        { value: 'terminal', label: 'Terminal' },
         { value: 'detection', label: 'Configuration' },
       ]
     : [{ value: 'detection', label: 'Set up' }];
@@ -132,6 +134,7 @@ function AppScreen({ app, onBack }: { app: App; onBack: () => void }) {
         {tab === 'detection' && <DetectionReview appID={app.id} />}
         {tab === 'sharing' && <Sharing appID={app.id} appName={app.name} />}
         {tab === 'overview' && <AppOverview app={app} />}
+        {tab === 'terminal' && <Terminal appID={app.id} />}
       </div>
     </div>
   );

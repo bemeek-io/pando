@@ -11,8 +11,8 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 |---|---:|---:|
 | Requirements | 207 | — |
 | Specified in a design doc | 145 | 70% |
-| Assigned to a phase | 107 | 51% |
-| Covered by a named test | 58 | 28% |
+| Assigned to a phase | 108 | 52% |
+| Covered by a named test | 60 | 28% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -85,8 +85,8 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-082** | D | Custom roles may be composed from the verb list and assigned to users or groups. | 6.4 Verbs and roles | 04, 06 | 01 | `TestR082_NoVerbImplicationGraph` |
 | **R-083** | D | `app.secrets.write` is deliberately separable from `app.secrets.read` — rotating a credential… | 6.4 Verbs and roles | 04 | — | — |
 | **R-084** | D | `app.exec` is its own verb, not bundled into app-admin. | 6.4 Verbs and roles | 03 | — | — |
-| **R-085** | D | Host policy may disable exec install-wide. | 6.4 Verbs and roles | 00, 03, 04, 06 | — | — |
-| **R-086** | D | Exec is the highest-privilege action in the system. | 6.4 Verbs and roles | 03, 04 | — | — |
+| **R-085** | D | Host policy may disable exec install-wide. | 6.4 Verbs and roles | 00, 03, 04, 06 | — | `TestR085_HostPolicyCanDisableExecInstallWide` |
+| **R-086** | D | Exec is the highest-privilege action in the system. | 6.4 Verbs and roles | 03, 04 | 08 | `TestR086_AnAbandonedSessionIsStillRecorded`, `TestR086_ExecOpensATerminalInTheRunningWorkload`, `TestR086_ExecRecordsTheCommandAndNotTheStream` |
 | **R-087** | D | Pando does not claim to defend against its own host operator. | 6.4 Verbs and roles | 06 | 01, 05 | — |
 | **R-090** | D | The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting… | 7.1 Input | — | — | — |
 | **R-091** | D LATER | Private repos are in scope, supporting the credential mechanisms GitHub offers (PAT, GitHub… | 7.1 Input | 01 | — | — |

@@ -90,11 +90,21 @@ in step — incrementally, one component at a time, never as a wholesale replace
 
 Two things the brand spec describes but did not ship, both flagged upstream:
 
-- **Icons** are Lucide, loaded from the unpkg CDN rather than vendored. For
-  production or offline use, vendor the icons actually used and point `Icon` at
-  them.
-- **Fonts** are loaded from Google Fonts. Self-hosting means supplying licensed
-  `.woff2` files and turning `tokens/fonts.css` into local `@font-face` rules.
+- **Icons — resolved in phase 8.** Ten Lucide SVGs (ISC) are vendored in
+  `assets/icons/`, compiled to a plain JS module by `assets/icons/build.mjs`, and
+  `Icon` imports them synchronously instead of fetching from unpkg at runtime.
+- **Fonts — resolved in phase 8.** The `.woff2` files are in `assets/fonts/` and
+  `tokens/fonts.css` is Google's CSS with local paths. 16 files, 355 KiB, five
+  subsets.
+
+  Both were flagged upstream as things to do "for production or offline use", and
+  phase 8 is production: a CDN dependency means an installation on a private
+  network gets no icons and the wrong type, and Pando is software someone runs on
+  their own host.
+
+  **Neither flows upstream.** Same caveat as the logo — these are edits to a copy,
+  so `Icon.jsx`, `tokens/fonts.css`, `assets/icons/` and `assets/fonts/` all need
+  the same change in the design project, or the next re-sync restores the CDN.
 - **The logo** — **resolved 2026-09-12.** Real artwork was supplied and is in
   `assets/logo/`: `pando-wordmark-{light,dark}.{svg,png}`,
   `pando-icon-{ink,paper,night}.{svg,png}` and two favicon PNGs.

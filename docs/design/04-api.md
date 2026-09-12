@@ -169,11 +169,13 @@ POST /api/v1/apps/{id}/grants
 
 ```
 GET  /api/v1/apps/{id}/logs?follow=true      SSE
-POST /api/v1/apps/{id}/exec                  WebSocket upgrade; requires app.exec
+GET  /api/v1/apps/{id}/exec                  WebSocket upgrade; requires app.exec
 GET  /api/v1/apps/{id}/status                observed state, health, restarts
 ```
 
-**[D]** `POST /exec` checks `app.exec`, then host policy (R-085, returning `POLICY_EXEC_DISABLED`), then writes the audit event, **then** opens the session. Audit before access, so an aborted session is still recorded.
+**[D]** `/exec` checks `app.exec`, then host policy (R-085, returning `POLICY_EXEC_DISABLED`), then writes the audit event, **then** opens the session. Audit before access, so an aborted session is still recorded.
+
+**[D]** It is a `GET`, not the `POST` this line said until phase 8. A WebSocket handshake is a GET by protocol — RFC 6455 requires it and a browser's `new WebSocket()` cannot issue anything else — so `POST` was not implementable from the console the endpoint exists for. Nothing else about the ordering or the checks changes.
 
 ### 2.7 Identity and principals
 

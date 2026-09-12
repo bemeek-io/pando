@@ -215,11 +215,15 @@ in the console and 20px on marketing, colored `--ink-secondary` by default. The
 `Icon` component fetches the Lucide glyph and rewrites its stroke width to 1.5 so the
 brand weight holds; it renders `currentColor`, so tinting the parent tints the icon.
 
-**⚠️ Substitution flagged.** No icon assets were provided — no sprite, no icon font, no
-SVG folder. Lucide is loaded **from the unpkg CDN** (`lucide-static@0.469.0`) rather
-than vendored into `assets/`, because the spec names Lucide directly and there was no
-local set to copy. For production or offline use, vendor the icons you actually use into
-`assets/icons/` and point `Icon` at them.
+**Vendored, as of phase 8.** No icon assets came with the brief, and `Icon` originally
+fetched each glyph from the unpkg CDN at runtime. That cost an installation on a private
+network every icon in the product, and cost even an online one a visible pop-in. The set
+actually used now lives in `assets/icons/` as Lucide SVGs (ISC), compiled into
+`assets/icons/index.js` by `assets/icons/build.mjs` and imported synchronously.
+
+Add one by dropping its SVG there and re-running the script. An unknown name renders
+nothing and warns, rather than throwing — a typo should cost a gap in the chrome, not a
+blank screen.
 
 **Never** hand-roll SVG paths; the only bespoke drawing in this system is `ContourMap`,
 which is generated procedurally to the spec's construction rules. **Never** use emoji.
@@ -232,8 +236,9 @@ icons entirely.
 
 ## Assets
 
-`assets/logo/` holds the real logo artwork, supplied 2026-09-12. Nothing else was
-supplied with the brief — no illustration, photograph, icon sprite or font binary.
+`assets/` holds the logo artwork (supplied 2026-09-12), the icon set and the webfonts.
+Nothing else was supplied with the brief — no illustration or photograph, and there is
+none by design.
 
 - **Logo — supplied, and it is not what the spec described.** The official mark is
   **"pando." with the full stop in marker red**: a wordmark, no contour ring, no summit
@@ -253,11 +258,17 @@ supplied with the brief — no illustration, photograph, icon sprite or font bin
   five places the contour figure appears. It is no longer one of them. The other four —
   hero, docs home header, empty states, 404 — are unchanged, and `ContourMap` is
   untouched.
-- **Fonts.** Newsreader, Public Sans and IBM Plex Mono are all free on Google Fonts and
-  are loaded from the Google CDN in `tokens/fonts.css` using the exact family/axis URL
-  from the spec. No binaries were shipped. **⚠️ If you need self-hosted fonts, send the
-  licensed `.woff2` files and `tokens/fonts.css` becomes local `@font-face` rules.**
-  No substitute families were used — all three specified faces are the real ones.
+- **Fonts — self-hosted, as of phase 8.** Newsreader, Public Sans and IBM Plex Mono are
+  all free under the SIL Open Font License, and their `.woff2` files are in
+  `assets/fonts/`: 16 files, 355 KiB, covering latin, latin-ext, cyrillic, cyrillic-ext
+  and vietnamese, so an app named in any of those scripts renders in the real face.
+  `tokens/fonts.css` is Google's own CSS with the URLs swapped for local paths — the
+  unicode-ranges and the subset split are theirs, because re-deriving them is how a
+  subset quietly stops loading. Refresh with `assets/fonts/build.mjs`.
+
+  The CDN `@import` it replaced rendered the entire product in fallback faces on any host
+  without internet access, which is a normal way to run software someone installs
+  themselves.
 - **Imagery.** There is none, by design. The brand has no photography or illustration
   besides the contour system.
 
