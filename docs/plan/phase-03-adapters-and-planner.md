@@ -11,25 +11,29 @@ mid-deploy crash.
 
 ## Tasks
 
-- [ ] `internal/adapter/api` — all seven interfaces, definitions only
-- [ ] Capability structs; **returned as data, never type assertions** (R-254)
-- [ ] `IsolationClass` as an ordered integer with gaps of 10
-- [ ] The registry: `Register`, `Get`, `ByCategory`, `Default`; registration in `main`
-- [ ] `adapter_configs` migration and endpoints; `GET /adapters` returns **live** capabilities
-- [ ] Docker runtime adapter: apply, observe, stop, destroy, volumes, logs, exec, capacity
-- [ ] Loopback routing adapter (port mode, no TLS — the laptop default)
-- [ ] `DefaultMode` per routing adapter (R-162) — this is what makes an install feel like proxy mode
+- [x] `internal/adapter/api` — all seven interfaces, definitions only
+- [x] Capability structs; **returned as data, never type assertions** (R-254)
+- [x] `IsolationClass` as an ordered integer with gaps of 10
+- [x] The registry: `Register`, `Get`, `ByCategory`, `Default`; registration in `main`
+- [x] `adapter_configs` migration and endpoints; `GET /adapters` returns **live** capabilities
+- [x] Docker runtime adapter: apply, observe, stop, destroy, volumes, logs, exec, capacity
+- [x] Loopback routing adapter (port mode, no TLS — the laptop default)
+- [x] `DefaultMode` per routing adapter (R-162) — this is what makes an install feel like proxy mode
       or per-hostname (design 03 §4.1); neither topology is a global setting
-- [ ] Local secrets adapter, encrypted at rest, key on disk (R-190)
-- [ ] Host policy evaluation and the `host_policy` singleton
-- [ ] The planner: steps 1–7 of the deployment pipeline, side-effect-free
-- [ ] `POST /apps/{id}:plan`
+- [x] Local secrets adapter, encrypted at rest, key on disk (R-190)
+- [x] Host policy evaluation and the `host_policy` singleton
+- [x] The planner: steps 1–7 of the deployment pipeline, side-effect-free
+- [x] `POST /apps/{id}:plan`
 
 ## Requirements in scope
 
 R-024, R-114, R-132, R-182, R-190, R-242, R-243, R-250, R-251, R-253, R-254, R-255, R-274.
 
 ## Done when
+
+**Met.** Shipped in an earlier phase; the named tests exist and the full acceptance
+suite is green. The boxes below went unticked at the time — corrected here rather than
+left to imply the work is outstanding.
 
 `POST /apps/{id}:plan` returns each of `PLAN_SLOT_UNFILLED`, `PLAN_CAPABILITY_UNSUPPORTED`,
 `CAPACITY_WOULD_OVERSUBSCRIBE`, and `PLAN_NO_ADAPTER_MEETS_POLICY` **on the right inputs** — four

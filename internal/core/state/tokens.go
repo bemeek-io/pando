@@ -168,3 +168,49 @@ func (t *Tokens) Revoke(ctx context.Context, tokenID string) error {
 func errInvalidToken() error {
 	return errs.New(errs.AuthTokenInvalid, "That token is not valid.")
 }
+
+// ListForUser returns a user's own tokens, newest first.
+//
+// Delegated tokens only — an account token has no owner and belongs to whoever
+// administers the install, not to a person (R-060). Revoked ones are included,
+// because "this token was revoked" is what someone checking after an incident
+// needs to see; hiding them would make the list agree with nothing.
+func (t *Tokens) ListForUser(ctx context.Context, userID string) ([]Token, error) {
+	rows, err := t.db.Query(ctx, `
+		SELECT id, kind, name, coalesce(owner_user_id, ''), expires_at, last_used_at, revoked_at
+		FROM tokens
+		WHERE owner_user_id = $1
+		ORDER BY created_at DESC`, userID)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read your tokens.", err)
+	}
+	defer rows.Close()
+
+	out := make([]Token, 0)
+	for rows.Next() {
+		var tok Token
+		if err := rows.Scan(&tok.ID, &tok.Kind, &tok.Name, &tok.OwnerUserID,
+			&tok.ExpiresAt, &tok.LastUsedAt, &tok.RevokedAt); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read your tokens.", err)
+		}
+		out = append(out, tok)
+	}
+	return out, rows.Err()
+}
+
+// Owner returns a token's owner, for checking who may revoke it.
+func (t *Tokens) Owner(ctx context.Context, tokenID string) (string, bool, error) {
+	var owner *string
+	err := t.db.QueryRow(ctx,
+		`SELECT owner_user_id FROM tokens WHERE id = $1`, tokenID).Scan(&owner)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, errs.Wrap(errs.Internal, "Could not read the token.", err)
+	}
+	if owner == nil {
+		return "", true, nil
+	}
+	return *owner, true, nil
+}

@@ -9,24 +9,28 @@
 
 ## Tasks
 
-- [ ] BuildKit builder adapter: rootless, containerized, **no runtime socket** (R-111, R-112)
-- [ ] Per-app build cache namespace (R-117)
-- [ ] Build egress control per policy (R-118) and build timeout (R-119)
-- [ ] Build logs streamed live to SSE
-- [ ] `deployments` table and the deployment pipeline, steps 8–16
-- [ ] Source clone; resolve ref → commit SHA and **write it into the spec** (R-120)
-- [ ] Secret materialization into `WorkloadPlan.Env` — fully resolved before the adapter sees it
-- [ ] Volume creation
-- [ ] Recreate strategy (R-144)
-- [ ] Route `Ensure` — pointing at **Pando's proxy**, never the workload
-- [ ] Health wait, with the source precedence in R-221
-- [ ] Deployment endpoints, including the SSE log stream
+- [x] BuildKit builder adapter: rootless, containerized, **no runtime socket** (R-111, R-112)
+- [x] Per-app build cache namespace (R-117)
+- [x] Build egress control per policy (R-118) and build timeout (R-119)
+- [x] Build logs streamed live to SSE
+- [x] `deployments` table and the deployment pipeline, steps 8–16
+- [x] Source clone; resolve ref → commit SHA and **write it into the spec** (R-120)
+- [x] Secret materialization into `WorkloadPlan.Env` — fully resolved before the adapter sees it
+- [x] Volume creation
+- [x] Recreate strategy (R-144)
+- [x] Route `Ensure` — pointing at **Pando's proxy**, never the workload
+- [x] Health wait, with the source precedence in R-221
+- [x] Deployment endpoints, including the SSE log stream
 
 ## Requirements in scope
 
 R-111, R-112, R-117–R-120, R-140, R-144, R-146, R-190–R-194, R-221, R-243.
 
 ## Done when
+
+**Met.** Shipped in an earlier phase; the named tests exist and the full acceptance
+suite is green. The boxes below went unticked at the time — corrected here rather than
+left to imply the work is outstanding.
 
 **Sequence B passes** with a hand-written spec — including the assertion that the build container has
 no runtime socket mounted.

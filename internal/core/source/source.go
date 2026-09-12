@@ -64,6 +64,8 @@ func Fetch(ctx context.Context, src spec.Source) (*Checkout, error) {
 	case spec.SourceImage:
 		// Nothing to fetch: a prebuilt image is run as it is.
 		return &Checkout{Dir: "", Commit: src.Digest}, nil
+	case spec.SourceUpload:
+		return fetchUpload(ctx, src)
 	default:
 		return nil, errs.Newf(errs.ValidInvalid,
 			"Pando does not know how to fetch source of type %q.", src.Type)

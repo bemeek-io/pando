@@ -10,17 +10,17 @@ and the one where a mistake is worst.
 
 ## Tasks
 
-- [ ] App resolution from Host header, and from path prefix in proxy mode
-- [ ] Session and bearer authentication → `Principal`, or anonymous
-- [ ] `CheckData` at the proxy; denied+anonymous → 302 login, denied+authed → 403
-- [ ] Assertion minting: Ed25519, `aud` = app ID, 120s lifetime, per request (R-051, R-054, R-055)
-- [ ] **Unconditional inbound `X-Pando-*` strip**, before setting anything (R-053)
-- [ ] Convenience headers, documented as unverified
-- [ ] JWKS at `/.well-known/jwks.json`, with key IDs and overlap rotation (R-057)
-- [ ] Path mode: strip prefix, set `X-Forwarded-Prefix` (R-167)
-- [ ] Streaming: no buffering, `Flush()` per SSE write, websocket hijack, no body size limit (R-170)
-- [ ] Anonymous assertion with the constant `sub: "anonymous"` (R-056)
-- [ ] Long-lived connection re-authorization (O-13, resolved): re-run `CheckData` on the assertion
+- [x] App resolution from Host header, and from path prefix in proxy mode
+- [x] Session and bearer authentication → `Principal`, or anonymous
+- [x] `CheckData` at the proxy; denied+anonymous → 302 login, denied+authed → 403
+- [x] Assertion minting: Ed25519, `aud` = app ID, 120s lifetime, per request (R-051, R-054, R-055)
+- [x] **Unconditional inbound `X-Pando-*` strip**, before setting anything (R-053)
+- [x] Convenience headers, documented as unverified
+- [x] JWKS at `/.well-known/jwks.json`, with key IDs and overlap rotation (R-057)
+- [x] Path mode: strip prefix, set `X-Forwarded-Prefix` (R-167)
+- [x] Streaming: no buffering, `Flush()` per SSE write, websocket hijack, no body size limit (R-170)
+- [x] Anonymous assertion with the constant `sub: "anonymous"` (R-056)
+- [x] Long-lived connection re-authorization (O-13, resolved): re-run `CheckData` on the assertion
       lifetime — the same 120s, not a second number — and close with a policy-violation close frame
       so a client can tell revocation from a network fault
 
@@ -29,6 +29,10 @@ and the one where a mistake is worst.
 R-023, R-026, R-051–R-057, R-072, R-075, R-079, R-087, R-167, R-170.
 
 ## Done when
+
+**Met.** Shipped in an earlier phase; the named tests exist and the full acceptance
+suite is green. The boxes below went unticked at the time — corrected here rather than
+left to imply the work is outstanding.
 
 **Sequence C passes**, including the forged-header test and the cross-app `aud` rejection.
 

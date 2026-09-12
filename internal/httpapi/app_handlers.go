@@ -140,7 +140,13 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 	// timeout, and tying it to the connection would cancel detection the moment
 	// the console navigated away. The result is written to the detections table
 	// either way, which is what GET /detection reads.
-	if s.Detector != nil && app.Source.Type != "" {
+	// Not for an upload that has not arrived yet: `pando deploy ./` creates the
+	// app first and sends the directory second, so there is nothing to look at
+	// here and detecting now produces a failure that is purely an artifact of
+	// the ordering. The CLI re-runs detection explicitly once the source is up,
+	// which is R-022's explicit re-detection doing exactly what it is for.
+	pending := app.Source.Type == spec.SourceUpload && app.Source.UploadID == ""
+	if s.Detector != nil && app.Source.Type != "" && !pending {
 		go s.detectInBackground(context.WithoutCancel(r.Context()), app.ID)
 	}
 

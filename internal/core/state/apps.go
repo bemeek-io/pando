@@ -431,6 +431,26 @@ func isForeignKeyViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.SQLState() == "23503"
 }
 
+// SetSource replaces an app's source.
+//
+// For `pando deploy ./`, which turns an app into one fed by uploads. Recorded
+// on the app rather than inferred at deploy time: R-020 makes the spec the sole
+// record of how an app runs, and a source nobody wrote down is a deploy nobody
+// can explain afterwards.
+func (a *Apps) SetSource(ctx context.Context, appID string, src spec.Source) error {
+	body, err := json.Marshal(src)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not record the app's source.", err)
+	}
+	_, err = a.db.Exec(ctx,
+		`UPDATE apps SET source = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL`,
+		appID, body)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not record the app's source.", err)
+	}
+	return nil
+}
+
 // Volumes records storage attached to apps.
 type Volumes struct{ db *DB }
 

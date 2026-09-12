@@ -127,14 +127,24 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 	// reaching here without one means the caller skipped that step — and a
 	// deploy that silently built whatever the branch points at now would be
 	// unreproducible in exactly the way R-120 exists to prevent.
-	if needsBuild(appSpec) && appSpec.Source.Commit == "" {
+	//
+	// An upload is the exception, and it does not weaken the rule. There is no
+	// revision to resolve: the archive on the server IS the pinned thing, and
+	// it cannot change under the deploy because the next upload writes a new
+	// one. Demanding a commit here would mean inventing one, which is the
+	// failure R-120 actually names.
+	if needsBuild(appSpec) && appSpec.Source.Commit == "" && appSpec.Source.Type != spec.SourceUpload {
 		return fail("fetch", errs.New(errs.StateInvalid,
 			"This app's spec does not say which commit to build.").
 			WithRemedy("Pin a commit for this revision before deploying it."))
 	}
 
 	// Step 8: fetch the pinned commit.
-	fmt.Fprintf(sink, "=> Fetching source at %s\n", short(appSpec.Source.Commit))
+	if appSpec.Source.Type == spec.SourceUpload {
+		fmt.Fprintln(sink, "=> Using the uploaded source")
+	} else {
+		fmt.Fprintf(sink, "=> Fetching source at %s\n", short(appSpec.Source.Commit))
+	}
 	checkout, err := source.Fetch(ctx, appSpec.Source)
 	if err != nil {
 		return fail("fetch", err)

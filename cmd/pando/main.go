@@ -25,6 +25,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/routing/loopback"
 	dockerruntime "github.com/bemeek-io/pando/internal/adapter/runtime/docker"
 	secretslocal "github.com/bemeek-io/pando/internal/adapter/secrets/local"
+	"github.com/bemeek-io/pando/internal/cli"
 	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/console"
 	"github.com/bemeek-io/pando/internal/core/assertion"
@@ -68,6 +69,12 @@ func rootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&configPath, "config", "", "path to a config file")
 
 	root.AddCommand(serveCmd(&configPath), migrateCmd(&configPath), versionCmd())
+
+	// The client half (design 04 §4). In the same binary because Pando ships as
+	// one, and a client of the API like any other (R-261) — internal/cli
+	// imports no core package, so a command that needed something the API
+	// cannot do would not compile rather than quietly growing a shortcut.
+	root.AddCommand(cli.Commands()...)
 	return root
 }
 

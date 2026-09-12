@@ -12,38 +12,42 @@ from phase 3.
 
 ## Tasks
 
-- [ ] `go.mod`, repo layout per design 00 §2 (already scaffolded — fill it in)
-- [ ] Config loading: viper, YAML + env + flags (R-271)
-- [ ] zap logger, threaded through `context.Context` alongside request ID, principal, deadline
-- [ ] `internal/id` — prefixed ULID generation for every object kind
-- [ ] `internal/errs` — the error envelope and the full code taxonomy from design 00 §3.2, including
+- [x] `go.mod`, repo layout per design 00 §2 (already scaffolded — fill it in)
+- [x] Config loading: viper, YAML + env + flags (R-271)
+- [x] zap logger, threaded through `context.Context` alongside request ID, principal, deadline
+- [x] `internal/id` — prefixed ULID generation for every object kind
+- [x] `internal/errs` — the error envelope and the full code taxonomy from design 00 §3.2, including
       every named code the requirements promise
-- [ ] `internal/secret` — `secret.Value` whose `String()`, `MarshalJSON()`, and `MarshalLogObject()`
+- [x] `internal/secret` — `secret.Value` whose `String()`, `MarshalJSON()`, and `MarshalLogObject()`
       all return `[redacted]` (R-194)
-- [ ] `Clock` interface in core, so backoff is testable without sleeping
-- [ ] Postgres connection via pgx, migrations via golang-migrate, embedded in the binary
-- [ ] Compose file: `pando` and `postgres` services, starting together (design 00 §1.1)
-- [ ] Bounded connect retry at startup — both services start at once, so Postgres will not be ready
+- [x] `Clock` interface in core, so backoff is testable without sleeping
+- [x] Postgres connection via pgx, migrations via golang-migrate, embedded in the binary
+- [x] Compose file: `pando` and `postgres` services, starting together (design 00 §1.1)
+- [x] Bounded connect retry at startup — both services start at once, so Postgres will not be ready
       when Pando first dials. This is the standard Compose race; handle it rather than assuming
       readiness
-- [ ] External-database support: `PANDO_DATABASE_URL` config path
-- [ ] **Privilege preflight for the external path** — verify at startup that Pando can create and
+- [x] External-database support: `PANDO_DATABASE_URL` config path
+- [x] **Privilege preflight for the external path** — verify at startup that Pando can create and
       constrain the restricted application role, and **fail loudly** if not. A degraded mode that runs
       with a rewritable audit log is not acceptable; the value of the grant is that it holds without
       anyone checking. Error text is held to R-105
-- [ ] `audit_events` table, and `REVOKE UPDATE, DELETE` from the application role
-- [ ] `apps.unobservable_since` and `apps.applied_env_fingerprint` when the apps table lands in phase
+- [x] `audit_events` table, and `REVOKE UPDATE, DELETE` from the application role
+- [x] `apps.unobservable_since` and `apps.applied_env_fingerprint` when the apps table lands in phase
       2 — noted here so the columns are not discovered late (design 02 §2.3)
-- [ ] sqlc wired up and generating
-- [ ] chi router, `/healthz`
-- [ ] The adapter import-lint rule in CI (`.golangci.yml` depguard) — design 03 §9
-- [ ] `make check` green in CI
+- [x] sqlc wired up and generating
+- [x] chi router, `/healthz`
+- [x] The adapter import-lint rule in CI (`.golangci.yml` depguard) — design 03 §9
+- [x] `make check` green in CI
 
 ## Requirements in scope
 
 R-027 (import rule + audit grant), R-194 (`secret.Value`), R-253 (single binary), R-271 (config).
 
 ## Done when
+
+**Met.** Shipped in an earlier phase; the named tests exist and the full acceptance
+suite is green. The boxes below went unticked at the time — corrected here rather than
+left to imply the work is outstanding.
 
 The server starts, `/healthz` responds, **and an audit event can be written and provably not
 modified** — a test that attempts `UPDATE` and `DELETE` on `audit_events` as the application role and

@@ -133,13 +133,24 @@ func matches(kind, id string, p authz.Principal) bool {
 	return false
 }
 
-type denyingPolicy struct{ verb authz.Verb }
+type denyingPolicy struct {
+	verb authz.Verb
 
-func (d denyingPolicy) Allows(_ context.Context, v authz.Verb, _ string) error {
-	if v == d.verb {
-		return errs.New(errs.PolicyExecDisabled, "Running commands in apps is turned off for this installation.")
+	// agentsOnly narrows the rule to token principals, which is how O-12
+	// expresses "agents may not exec here" — as policy rather than as a list
+	// the MCP server keeps, because an agent holding a token can call the REST
+	// API directly.
+	agentsOnly bool
+}
+
+func (d denyingPolicy) Allows(_ context.Context, p authz.Principal, v authz.Verb, _ string) error {
+	if v != d.verb {
+		return nil
 	}
-	return nil
+	if d.agentsOnly && p.Kind != authz.KindToken {
+		return nil
+	}
+	return errs.New(errs.PolicyExecDisabled, "Running commands in apps is turned off for this installation.")
 }
 
 type recorder struct{ denials int }
@@ -549,4 +560,38 @@ func TestR060_AccountTokenHoldsItsOwnInstallGrant(t *testing.T) {
 
 	other := authz.Principal{Kind: authz.KindToken, ID: "tok_2", TokenID: "tok_2"}
 	require.Error(t, a.CheckInstall(ctx, other, authz.InstallView))
+}
+
+// TestO12_AgentExclusionsAreHostPolicyNotAnMCPList asserts the resolution of
+// O-12: "agents may not exec here" is a policy scoped to token principals.
+//
+// The tempting alternative is a list of tools the MCP server refuses to expose,
+// and it does not work — an agent holding a token can call the REST API
+// directly, so an MCP-layer exclusion is a speed bump rather than a boundary.
+// Expressed as policy, it is evaluated before grants on every surface.
+func TestO12_AgentExclusionsAreHostPolicyNotAnMCPList(t *testing.T) {
+	ctx := context.Background()
+	s := newStore()
+	s.userStatus[alice] = "active"
+	s.owner[app] = alice
+	s.control[app] = []authz.Grant{
+		{Plane: "control", PrincipalKind: "user", PrincipalID: alice, RoleID: authz.RoleOwner},
+	}
+
+	a := authz.New(s, denyingPolicy{verb: authz.AppExec, agentsOnly: true}, nil)
+
+	// The person keeps the verb they hold.
+	require.NoError(t, a.CheckControl(ctx, activeUser(alice), app, authz.AppExec))
+
+	// Their delegated token does not. Authorization otherwise runs against the
+	// owner exactly as if they made the request (R-058), so the *only* thing
+	// separating these two calls is the principal's kind — which is the whole
+	// mechanism.
+	agent := authz.Principal{Kind: authz.KindToken, ID: "tok_agent", UserID: alice}
+	err := a.CheckControl(ctx, agent, app, authz.AppExec)
+	require.Error(t, err)
+	require.Equal(t, errs.PolicyExecDisabled, errs.CodeOf(err))
+
+	// And it does not leak into verbs the rule does not name.
+	require.NoError(t, a.CheckControl(ctx, agent, app, authz.AppDeploy))
 }

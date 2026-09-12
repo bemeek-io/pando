@@ -104,7 +104,14 @@ type Policy interface {
 	// Allows reports whether host policy permits the verb at all. Policy is a
 	// floor, not an override (R-272): a policy disabling exec install-wide
 	// denies the owner too.
-	Allows(ctx context.Context, verb Verb, appID string) error
+	//
+	// The principal is passed because O-12's resolution needs it. "Agents may
+	// not exec here" is expressed as a policy scoped to token principals rather
+	// than as an MCP-layer exclusion list, because an agent holding a token can
+	// call the REST API directly — an MCP-specific block is a speed bump, not a
+	// boundary. Enforcement has to live where every surface passes through it,
+	// and this is that place.
+	Allows(ctx context.Context, p Principal, verb Verb, appID string) error
 }
 
 // Auditor records authorization outcomes.
@@ -150,7 +157,7 @@ func (a *Authorizer) CheckControl(ctx context.Context, p Principal, appID string
 	// Step 5: host policy, before grants. A policy that disables a verb
 	// install-wide denies the owner too (R-272).
 	if a.policy != nil {
-		if err := a.policy.Allows(ctx, verb, appID); err != nil {
+		if err := a.policy.Allows(ctx, p, verb, appID); err != nil {
 			return a.deny(ctx, p, appID, verb, err)
 		}
 	}
@@ -204,7 +211,7 @@ func (a *Authorizer) CheckInstall(ctx context.Context, p Principal, verb Verb) e
 	}
 
 	if a.policy != nil {
-		if err := a.policy.Allows(ctx, verb, ""); err != nil {
+		if err := a.policy.Allows(ctx, p, verb, ""); err != nil {
 			return a.deny(ctx, p, "", verb, err)
 		}
 	}

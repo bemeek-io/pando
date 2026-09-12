@@ -220,6 +220,15 @@ func (s *Server) Routes() http.Handler {
 		// The roles that can be granted across the installation (R-082).
 		r.Get("/roles", s.handleListRoles)
 
+		// Tokens: how the CLI and an agent authenticate (R-262). Self-service,
+		// because a token holds nothing its owner does not — it is a second
+		// credential for power already held, not new power.
+		r.Route("/tokens", func(r chi.Router) {
+			r.Get("/", s.handleListTokens)
+			r.Post("/", s.handleCreateToken)
+			r.Delete("/{tokenID}", s.handleRevokeToken)
+		})
+
 		// The install's own inventory, behind install.view. GET /adapters
 		// returns live capabilities, not stored config, so the console can grey
 		// out choices that would fail at plan time.
@@ -256,6 +265,11 @@ func (s *Server) Routes() http.Handler {
 				r.Delete("/", s.handleDeleteApp)
 
 				r.Get("/export", s.handleExportSpec)
+
+				// `pando deploy ./` — a gzipped tar becomes the app's source
+				// (design 04 §4). Gated by app.spec.edit, not app.deploy:
+				// replacing the source changes what the app *is*.
+				r.Post("/source", s.handleUploadSource)
 
 				// Detection (design 04 §2.2). Re-detection is explicit
 				// (R-022): nothing here runs on its own, because a spec that

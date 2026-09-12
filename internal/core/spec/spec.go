@@ -80,6 +80,12 @@ type Source struct {
 	Image  string `json:"image,omitempty"`
 	Digest string `json:"digest,omitempty"`
 
+	// UploadID names a stored upload — the app's own ID, for `pando deploy ./`
+	// (design 04 §4). An upload has no commit and no ref: there is no revision
+	// to resolve, and pretending otherwise would put a fabricated commit in the
+	// spec, which R-120 exists to prevent.
+	UploadID string `json:"upload_id,omitempty"`
+
 	// CredentialRef names an app-owned secret (O-3). The credential belongs to
 	// the app, not the person who supplied it, so an app keeps deploying after
 	// its author leaves; the supplier is recorded in the audit event instead.

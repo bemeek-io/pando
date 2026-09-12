@@ -1,0 +1,961 @@
+package cli
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/cookiejar"
+	"os"
+	"path/filepath"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
+)
+
+// Commands returns the client half of the CLI (design 04 §4).
+//
+// Every one of these is a wrapper over an endpoint. That is the constraint
+// R-261 puts on this package and the reason it reads repetitively: a command
+// that did something the API cannot do would be a capability the console and
+// MCP could never have.
+func Commands() []*cobra.Command {
+	var server string
+
+	withServer := func(c *cobra.Command) *cobra.Command {
+		c.PersistentFlags().StringVar(&server, "server", "", "Pando server URL (defaults to the one you logged in to)")
+		return c
+	}
+
+	client := func() (*Client, error) { return New(server) }
+
+	return []*cobra.Command{
+		withServer(loginCmd(&server)),
+		withServer(appCmd(client)),
+		withServer(deployCmd(client)),
+		withServer(execCmd(client)),
+		withServer(slotCmd(client)),
+		withServer(planCmd(client)),
+		withServer(logsCmd(client)),
+		withServer(secretCmd(client)),
+		withServer(grantCmd(client)),
+		withServer(rollbackCmd(client)),
+		withServer(exportCmd(client)),
+		withServer(backupCmd(client)),
+		withServer(policyCmd(client)),
+		withServer(tokenCmd(client)),
+	}
+}
+
+func loginCmd(server *string) *cobra.Command {
+	var username string
+
+	cmd := &cobra.Command{
+		Use:   "login [server-url]",
+		Short: "Sign in and store a token for this machine",
+		Long: "Signs in with a username and password, then creates a token and stores it.\n" +
+			"The token acts as you and holds nothing you do not.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			url := "http://localhost:8080"
+			if len(args) == 1 {
+				url = strings.TrimSuffix(args[0], "/")
+			} else if *server != "" {
+				url = *server
+			}
+
+			if username == "" {
+				var err error
+				username, err = prompt(cmd, "Username: ")
+				if err != nil {
+					return err
+				}
+			}
+
+			// Read without echo. A password in a terminal's scrollback is a
+			// password in the scrollback, and `--password` would put it in the
+			// shell history as well.
+			password, err := promptSecret(cmd, "Password: ")
+			if err != nil {
+				return err
+			}
+
+			// A cookie jar for exactly two calls: sign in, then mint a token
+			// with the session. The token is what gets stored — a session is
+			// bound to a browser's lifetime and dies on a password change,
+			// which is right for a browser and wrong for a script at 3am.
+			jar, err := cookiejar.New(nil)
+			if err != nil {
+				return err
+			}
+			anon := &Client{BaseURL: url, HTTP: &http.Client{Jar: jar, Timeout: time.Minute}}
+
+			var session struct {
+				UserID             string `json:"user_id"`
+				MustChangePassword bool   `json:"must_change_password"`
+			}
+			if err := anon.Do("POST", "/sessions",
+				map[string]string{"username": username, "password": password}, &session); err != nil {
+				return err
+			}
+			if session.MustChangePassword {
+				return fmt.Errorf("this account still has the password Pando generated for it.\n" +
+					"Open the web console and choose your own first")
+			}
+
+			name, _ := os.Hostname()
+			if name == "" {
+				name = "cli"
+			}
+			var issued struct {
+				Secret string `json:"secret"`
+			}
+			if err := anon.Do("POST", "/tokens",
+				map[string]any{"name": name + " CLI"}, &issued); err != nil {
+				return err
+			}
+
+			// The session has done its job. Revoking it means the only
+			// credential left on this machine is the one in the file, with the
+			// permissions that file has.
+			_ = anon.Do("DELETE", "/sessions", nil, nil)
+
+			if err := SaveCredentials(Credentials{URL: url, Token: issued.Secret, User: username}); err != nil {
+				return err
+			}
+
+			path, _ := credentialsPath()
+			fmt.Fprintf(cmd.OutOrStdout(), "Signed in to %s. Token stored in %s.\n", url, path)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&username, "username", "", "username to sign in as")
+	return cmd
+}
+
+func appCmd(client func() (*Client, error)) *cobra.Command {
+	cmd := &cobra.Command{Use: "app", Short: "Work with apps"}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List the apps you can manage",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var out struct {
+				Apps []struct {
+					ID    string `json:"id"`
+					Name  string `json:"name"`
+					Slug  string `json:"slug"`
+					State string `json:"state"`
+				} `json:"apps"`
+			}
+			if err := c.Do("GET", "/apps", nil, &out); err != nil {
+				return err
+			}
+
+			t := table(cmd.OutOrStdout(), "NAME", "STATE", "ID")
+			for _, a := range out.Apps {
+				fmt.Fprintf(t, "%s\t%s\t%s\n", a.Name, a.State, a.ID)
+			}
+			return t.Flush()
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "add <source-url>",
+		Short: "Create an app from a repository",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			name, _ := cmd.Flags().GetString("name")
+			if name == "" {
+				name = nameFromURL(args[0])
+			}
+
+			var app map[string]any
+			if err := c.Do("POST", "/apps", map[string]any{
+				"name":   name,
+				"source": map[string]string{"type": "git", "url": args[0]},
+			}, &app); err != nil {
+				return err
+			}
+			// 202: the app exists in draft and detection has been queued.
+			// Saying so is the difference between waiting and wondering.
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"Created %s (%s). Pando is working out how to run it — `pando app show %s` when you're ready.\n",
+				name, app["id"], app["id"])
+			return nil
+		},
+	})
+	cmd.Commands()[len(cmd.Commands())-1].Flags().String("name", "", "name for the app (defaults to the repository name)")
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "show <app>",
+		Short: "Show an app",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var app map[string]any
+			if err := c.Do("GET", "/apps/"+args[0], nil, &app); err != nil {
+				return err
+			}
+			return printJSON(cmd.OutOrStdout(), app)
+		},
+	})
+
+	return cmd
+}
+
+func deployCmd(client func() (*Client, error)) *cobra.Command {
+	var asApp string
+
+	cmd := &cobra.Command{
+		Use:   "deploy <app|path>",
+		Short: "Deploy an app, or a directory on this machine",
+		Long: "With an app ID, deploys that app.\n" +
+			"With a path, packs the directory, uploads it as the app's source, and deploys that.\n\n" +
+			"The second form exists for R-262's agent workflow: something that has just\n" +
+			"generated an app cannot commit and push, but it can run a command.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			target := args[0]
+
+			// A path, not an app. Deciding by "does this exist on disk" rather
+			// than by a flag, because `pando deploy ./` is the form the design
+			// names and a flag would make the common case the verbose one.
+			if info, statErr := os.Stat(target); statErr == nil && info.IsDir() {
+				appID := asApp
+				if appID == "" {
+					// No app named, so make one from the directory. Named for
+					// the directory, which is what a person would have called
+					// it anyway.
+					abs, _ := filepath.Abs(target)
+					var created map[string]any
+					if err := c.Do("POST", "/apps", map[string]any{
+						"name":   filepath.Base(abs),
+						"source": map[string]string{"type": "upload"},
+					}, &created); err != nil {
+						return err
+					}
+					appID, _ = created["id"].(string)
+					fmt.Fprintf(cmd.ErrOrStderr(), "Created %s (%s).\n", filepath.Base(abs), appID)
+				}
+
+				archive, files, err := PackDirectory(target)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.ErrOrStderr(), "Uploading %d files (%s)...\n", files, humanBytes(len(archive)))
+				if err := c.UploadSource(appID, archive); err != nil {
+					return err
+				}
+
+				// The source only exists now, so detection has to run against
+				// it — it could not have run at creation, when there was
+				// nothing to look at. Explicit, which is R-022: detection never
+				// re-runs on its own.
+				if err := c.prepareUploadedApp(cmd, appID); err != nil {
+					return err
+				}
+				target = appID
+			}
+
+			var dep map[string]any
+			if err := c.Do("POST", "/apps/"+target+"/deployments", map[string]any{}, &dep); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Deploying. Watch it with `pando logs %s -f`.\n", target)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&asApp, "app", "", "deploy a directory as an existing app, instead of creating one")
+	return cmd
+}
+
+// prepareUploadedApp runs detection over a freshly uploaded directory and pins
+// the result, or prints the questions and stops.
+//
+// The questions are printed **verbatim** (R-105). They are written to be
+// self-contained and pasteable into the assistant that wrote the app, which is
+// the whole intended workflow for R-262 — and paraphrasing them here would undo
+// that at the last step, exactly as it would in the console.
+func (c *Client) prepareUploadedApp(cmd *cobra.Command, appID string) error {
+	if err := c.Do("POST", "/apps/"+appID+"/detection/rerun", map[string]any{}, nil); err != nil {
+		return err
+	}
+	fmt.Fprintln(cmd.ErrOrStderr(), "Working out how to run it...")
+
+	type detection struct {
+		Status    string `json:"status"`
+		Detection struct {
+			Questions []struct {
+				Key      string   `json:"key"`
+				Question string   `json:"question"`
+				Valid    string   `json:"valid_answer"`
+				Deferred bool     `json:"deferred"`
+				Options  []string `json:"options"`
+			} `json:"questions"`
+			Winner struct {
+				Detector string `json:"detector"`
+				Strategy string `json:"strategy"`
+			} `json:"winning_bid"`
+		} `json:"detection"`
+		Answers map[string]string `json:"answers"`
+	}
+
+	deadline := time.Now().Add(10 * time.Minute)
+	var d detection
+	for {
+		if err := c.Do("GET", "/apps/"+appID+"/detection", nil, &d); err != nil {
+			return err
+		}
+		if d.Status != "running" && d.Status != "pending" && d.Status != "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("detection is still running after 10 minutes — check `pando app show %s`", appID)
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	if d.Status == "failed" {
+		return fmt.Errorf("pando could not work out how to run this directory — "+
+			"run `pando app show %s` to see what it found", appID)
+	}
+
+	var open []string
+	for _, q := range d.Detection.Questions {
+		if q.Deferred {
+			continue
+		}
+		if _, answered := d.Answers[q.Key]; !answered {
+			open = append(open, q.Question)
+		}
+	}
+	if len(open) > 0 {
+		fmt.Fprintln(cmd.ErrOrStderr())
+		fmt.Fprintln(cmd.ErrOrStderr(), "Pando needs to know a few things before it can deploy this:")
+		for _, q := range open {
+			fmt.Fprintf(cmd.ErrOrStderr(), "\n  %s\n", q)
+		}
+		fmt.Fprintln(cmd.ErrOrStderr(),
+			"\nAnswer them in the web console, or paste a question into whatever wrote this app.")
+		return fmt.Errorf("%d question(s) still to answer", len(open))
+	}
+
+	// Nothing outstanding, so accept the proposal and pin revision 1. Accepting
+	// does not deploy — that is the next call, and keeping them separate is
+	// what makes "accepted but not deployed" a state someone can sit in.
+	if err := c.Do("POST", "/apps/"+appID+"/detection/accept", map[string]any{}, nil); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "Recognized it: %s, built with %s.\n",
+		d.Detection.Winner.Detector, d.Detection.Winner.Strategy)
+	return nil
+}
+
+func execCmd(client func() (*Client, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "exec <app> [workload] -- <command>...",
+		Short: "Run a command inside a running app",
+		Long: "Opens a terminal inside a running workload.\n\n" +
+			"This is the most privileged thing you can do to an app: what runs here can read\n" +
+			"the app's database directly and read its injected environment, including secrets.\n" +
+			"The command is recorded in the audit log; what happens inside the session is not.",
+		Args: cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, err := client()
+			if err != nil {
+				return err
+			}
+			// The endpoint is a websocket (design 04 §2.4, and RFC 6455 is why
+			// it is a GET). Wiring a terminal here needs raw mode, a resize
+			// channel and signal handling — it is a real piece of work rather
+			// than a wrapper, and it is not done.
+			return fmt.Errorf("pando exec is not implemented yet — use the Terminal tab in the web console.\n" +
+				"The endpoint exists and the console uses it; only this client is missing")
+		},
+	}
+}
+
+func slotCmd(client func() (*Client, error)) *cobra.Command {
+	cmd := &cobra.Command{Use: "slot", Short: "Fill an app's service slots"}
+
+	set := &cobra.Command{
+		Use:   "set <app> <key>",
+		Short: "Say how a slot is filled",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			provision, _ := cmd.Flags().GetBool("provision")
+			bind, _ := cmd.Flags().GetString("bind")
+			literal, _ := cmd.Flags().GetString("literal")
+
+			chosen := 0
+			body := map[string]any{"key": args[1]}
+			if provision {
+				chosen++
+				body["mode"] = "provision"
+			}
+			if bind != "" {
+				chosen++
+				body["mode"] = "bind"
+				body["target"] = bind
+			}
+			if literal != "" {
+				chosen++
+				body["mode"] = "literal"
+				body["value"] = literal
+			}
+			if chosen != 1 {
+				return fmt.Errorf("choose exactly one of --provision, --bind or --literal")
+			}
+
+			if err := c.Do("PUT", "/apps/"+args[0]+"/slots/"+args[1], body, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Set %s.\n", args[1])
+			return nil
+		},
+	}
+	set.Flags().Bool("provision", false, "let Pando create the service")
+	set.Flags().String("bind", "", "bind to an existing service")
+	set.Flags().String("literal", "", "use this value directly")
+	cmd.AddCommand(set)
+	return cmd
+}
+
+func humanBytes(n int) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.0f KB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
+}
+
+func planCmd(client func() (*Client, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "plan <app>",
+		Short: "Show what a deploy would do, without doing it",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var plan map[string]any
+			if err := c.Do("POST", "/apps/"+args[0]+"/plan", map[string]any{}, &plan); err != nil {
+				return err
+			}
+			return printJSON(cmd.OutOrStdout(), plan)
+		},
+	}
+}
+
+func logsCmd(client func() (*Client, error)) *cobra.Command {
+	var follow bool
+
+	cmd := &cobra.Command{
+		Use:   "logs <app>",
+		Short: "Read an app's logs",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			path := "/apps/" + args[0] + "/logs"
+			if follow {
+				path += "?follow=true"
+			}
+			body, err := c.Stream("GET", path, nil)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = body.Close() }()
+
+			_, err = io.Copy(cmd.OutOrStdout(), body)
+			return err
+		},
+	}
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "keep the connection open and print new lines")
+	return cmd
+}
+
+func secretCmd(client func() (*Client, error)) *cobra.Command {
+	cmd := &cobra.Command{Use: "secret", Short: "Manage an app's secrets"}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "set <app> <key>",
+		Short: "Set a secret value, read from the terminal",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			// Read without echo and never from a flag. A secret passed as an
+			// argument is in the shell history and in /proc for every process
+			// on the machine to read.
+			value, err := promptSecret(cmd, "Value: ")
+			if err != nil {
+				return err
+			}
+			if err := c.Do("PUT", "/apps/"+args[0]+"/secrets/"+args[1],
+				map[string]string{"value": value}, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Set %s.\n", args[1])
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list <app>",
+		Short: "List which secrets are set, without their values",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var out map[string]any
+			if err := c.Do("GET", "/apps/"+args[0]+"/secrets", nil, &out); err != nil {
+				return err
+			}
+			return printJSON(cmd.OutOrStdout(), out)
+		},
+	})
+	return cmd
+}
+
+func grantCmd(client func() (*Client, error)) *cobra.Command {
+	cmd := &cobra.Command{Use: "grant", Short: "Share an app, or stop sharing it"}
+
+	add := &cobra.Command{
+		Use:   "add <app>",
+		Short: "Give someone access to an app",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			user, _ := cmd.Flags().GetString("user")
+			plane, _ := cmd.Flags().GetString("plane")
+			role, _ := cmd.Flags().GetString("role")
+			if user == "" {
+				return fmt.Errorf("say who to share with: --user=<id>")
+			}
+
+			body := map[string]any{"plane": plane, "principal_kind": "user", "principal_id": user}
+			if role != "" {
+				body["role_id"] = role
+			}
+			if err := c.Do("POST", "/apps/"+args[0]+"/grants", body, nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Shared.")
+			return nil
+		},
+	}
+	add.Flags().String("user", "", "user ID to share with")
+	// "data" by default: sharing an app normally means letting someone use it,
+	// not letting them redeploy it. The dangerous one has to be asked for.
+	add.Flags().String("plane", "data", "data (use the app) or control (manage it)")
+	add.Flags().String("role", "", "role ID, for control-plane grants")
+	cmd.AddCommand(add)
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list <app>",
+		Short: "Show who an app is shared with",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var out map[string]any
+			if err := c.Do("GET", "/apps/"+args[0]+"/grants", nil, &out); err != nil {
+				return err
+			}
+			return printJSON(cmd.OutOrStdout(), out)
+		},
+	})
+	return cmd
+}
+
+func rollbackCmd(client func() (*Client, error)) *cobra.Command {
+	var to int
+
+	cmd := &cobra.Command{
+		Use:   "rollback <app>",
+		Short: "Roll an app back to an earlier spec",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			body := map[string]any{}
+			if to > 0 {
+				body["spec_revision"] = to
+			}
+			var out map[string]any
+			if err := c.Do("POST", "/apps/"+args[0]+"/deployments/rollback", body, &out); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Rolling back.")
+			return nil
+		},
+	}
+	cmd.Flags().IntVar(&to, "to", 0, "spec revision to roll back to (defaults to the previous one)")
+	return cmd
+}
+
+func exportCmd(client func() (*Client, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "export <app>",
+		Short: "Print an app's spec",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var spec map[string]any
+			if err := c.Do("GET", "/apps/"+args[0]+"/export", nil, &spec); err != nil {
+				return err
+			}
+			return printJSON(cmd.OutOrStdout(), spec)
+		},
+	}
+}
+
+func backupCmd(client func() (*Client, error)) *cobra.Command {
+	cmd := &cobra.Command{Use: "backup", Short: "Back up and restore this installation"}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List backups",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var out struct {
+				Backups []struct {
+					ID         string `json:"id"`
+					Kind       string `json:"kind"`
+					AdapterRef string `json:"adapter_ref"`
+					CreatedAt  string `json:"created_at"`
+					SizeBytes  int64  `json:"size_bytes"`
+				} `json:"backups"`
+			}
+			if err := c.Do("GET", "/backups", nil, &out); err != nil {
+				return err
+			}
+			t := table(cmd.OutOrStdout(), "TAKEN", "SIZE", "DESTINATION", "ID")
+			for _, b := range out.Backups {
+				fmt.Fprintf(t, "%s\t%d\t%s\t%s\n", b.CreatedAt, b.SizeBytes, b.AdapterRef, b.ID)
+			}
+			return t.Flush()
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "create",
+		Short: "Take a backup of the whole installation",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			// R-214, said before the passphrase is chosen rather than after.
+			fmt.Fprintln(cmd.ErrOrStderr(),
+				"Pando doesn't keep this passphrase. If you lose it, nothing in this backup\n"+
+					"can be read again — not by you, and not by anyone who takes the file.")
+
+			passphrase, err := promptSecret(cmd, "Passphrase: ")
+			if err != nil {
+				return err
+			}
+			again, err := promptSecret(cmd, "Passphrase again: ")
+			if err != nil {
+				return err
+			}
+			if passphrase != again {
+				return fmt.Errorf("those two passphrases are different")
+			}
+
+			var out map[string]any
+			if err := c.Do("POST", "/backups", map[string]any{"passphrase": passphrase}, &out); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Backed up: %s\n", out["id"])
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "verify <backup-id>",
+		Short: "Check a backup is complete, without restoring it",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			passphrase, err := promptSecret(cmd, "Passphrase: ")
+			if err != nil {
+				return err
+			}
+			var out map[string]any
+			if err := c.Do("POST", "/backups/"+args[0]+"/verify",
+				map[string]any{"passphrase": passphrase}, &out); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "This backup is complete and can be restored.")
+			return nil
+		},
+	})
+
+	restore := &cobra.Command{
+		Use:   "restore <backup-id>",
+		Short: "Replace this installation from a backup",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			yes, _ := cmd.Flags().GetBool("yes")
+
+			// Typed confirmation, like the console. A --yes flag alone would
+			// make the most destructive action in the system a thing that fits
+			// in a shell alias.
+			if !yes {
+				fmt.Fprintln(cmd.ErrOrStderr(),
+					"This replaces everything in this installation: every app, every account,\n"+
+						"every secret. Anything created since the backup is gone.")
+				answer, err := prompt(cmd, "Type replace to confirm: ")
+				if err != nil {
+					return err
+				}
+				if answer != "replace" {
+					return fmt.Errorf("not confirmed, so nothing was changed")
+				}
+			}
+
+			passphrase, err := promptSecret(cmd, "Passphrase: ")
+			if err != nil {
+				return err
+			}
+			var out map[string]any
+			if err := c.Do("POST", "/backups/"+args[0]+"/restore",
+				map[string]any{"passphrase": passphrase, "confirm": true}, &out); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Restored.")
+			return nil
+		},
+	}
+	restore.Flags().Bool("yes", false, "skip the typed confirmation (for scripts that already have one)")
+	cmd.AddCommand(restore)
+
+	return cmd
+}
+
+func policyCmd(client func() (*Client, error)) *cobra.Command {
+	cmd := &cobra.Command{Use: "policy", Short: "Read and set host policy"}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "show",
+		Short: "Print the installation's policy",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var doc map[string]any
+			if err := c.Do("GET", "/policy", nil, &doc); err != nil {
+				return err
+			}
+			return printJSON(cmd.OutOrStdout(), doc)
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "set",
+		Short: "Replace the policy with a document read from stdin",
+		Long: "Reads a whole policy document as JSON on stdin and replaces the current one.\n" +
+			"Replaces rather than merges: a merge would make it impossible to remove a rule.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			raw, err := io.ReadAll(cmd.InOrStdin())
+			if err != nil {
+				return err
+			}
+			var doc map[string]any
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				return fmt.Errorf("that is not valid JSON: %w", err)
+			}
+			if err := c.Do("PUT", "/policy", doc, nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Policy saved. Apps that are already running are unchanged.")
+			return nil
+		},
+	})
+	return cmd
+}
+
+func tokenCmd(client func() (*Client, error)) *cobra.Command {
+	cmd := &cobra.Command{Use: "token", Short: "Manage your API tokens"}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List your tokens",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var out struct {
+				Tokens []struct {
+					ID        string  `json:"id"`
+					Name      string  `json:"name"`
+					RevokedAt *string `json:"revoked_at"`
+				} `json:"tokens"`
+			}
+			if err := c.Do("GET", "/tokens", nil, &out); err != nil {
+				return err
+			}
+			t := table(cmd.OutOrStdout(), "NAME", "STATE", "ID")
+			for _, tok := range out.Tokens {
+				state := "active"
+				if tok.RevokedAt != nil {
+					state = "revoked"
+				}
+				fmt.Fprintf(t, "%s\t%s\t%s\n", tok.Name, state, tok.ID)
+			}
+			return t.Flush()
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "revoke <token-id>",
+		Short: "Revoke a token",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("DELETE", "/tokens/"+args[0], nil, nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Revoked. It stops working immediately.")
+			return nil
+		},
+	})
+	return cmd
+}
+
+// --- helpers ---------------------------------------------------------------
+
+func table(w io.Writer, headers ...string) *tabwriter.Writer {
+	t := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(t, strings.Join(headers, "\t"))
+	return t
+}
+
+func printJSON(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+// buffered returns one reader per underlying stdin, reused across prompts.
+//
+// A fresh bufio.Reader per prompt reads ahead and keeps what it buffered, so
+// asking for a username and then a password loses the password to the first
+// reader's buffer — which presents as EOF on the second prompt and is
+// thoroughly confusing. One reader, remembered.
+var buffers = map[io.Reader]*bufio.Reader{}
+
+func buffered(r io.Reader) *bufio.Reader {
+	if b, ok := buffers[r]; ok {
+		return b
+	}
+	b := bufio.NewReader(r)
+	buffers[r] = b
+	return b
+}
+
+func prompt(cmd *cobra.Command, label string) (string, error) {
+	fmt.Fprint(cmd.ErrOrStderr(), label)
+	line, err := buffered(cmd.InOrStdin()).ReadString('\n')
+	if err != nil && line == "" {
+		return "", err
+	}
+	return strings.TrimSpace(line), nil
+}
+
+// promptSecret reads without echoing.
+//
+// Falls back to a plain read when stdin is not a terminal, so a script can pipe
+// a passphrase in — but it says so on stderr, because a secret that ends up in
+// a log because someone did not realize it was being echoed is a secret that
+// has leaked.
+func promptSecret(cmd *cobra.Command, label string) (string, error) {
+	if f, ok := cmd.InOrStdin().(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		fmt.Fprint(cmd.ErrOrStderr(), label)
+		raw, err := term.ReadPassword(int(f.Fd()))
+		fmt.Fprintln(cmd.ErrOrStderr())
+		return string(raw), err
+	}
+	// Not a terminal, so there is nothing to turn echo off on. A script piping
+	// a secret in is a legitimate thing to do; it is worth saying that the
+	// value was not hidden, because a secret nobody realized was echoed is a
+	// secret that has leaked into a log.
+	fmt.Fprintln(cmd.ErrOrStderr(), "(reading from a pipe, so this value is not hidden)")
+	return prompt(cmd, label)
+}
+
+func nameFromURL(raw string) string {
+	trimmed := strings.TrimSuffix(strings.TrimSuffix(raw, "/"), ".git")
+	if i := strings.LastIndex(trimmed, "/"); i >= 0 {
+		trimmed = trimmed[i+1:]
+	}
+	if trimmed == "" {
+		return "app"
+	}
+	return trimmed
+}

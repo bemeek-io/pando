@@ -11,16 +11,16 @@ right.
 
 ## Tasks
 
-- [ ] `AppSpec` types per design 01 §2, with `schema_version`
-- [ ] Validation, every rule in design 01 §3, each with its `VALID_*` / `PLAN_*` code
-- [ ] The classified differ: `benign` / `restart` / `rebuild` / `destructive` (design 01 §4).
+- [x] `AppSpec` types per design 01 §2, with `schema_version`
+- [x] Validation, every rule in design 01 §3, each with its `VALID_*` / `PLAN_*` code
+- [x] The classified differ: `benign` / `restart` / `rebuild` / `destructive` (design 01 §4).
       A changed runtime adapter is `destructive` (R-257, O-8) — not a migration path
-- [ ] `apps` and `spec_revisions` migrations, with the append-only trigger
-- [ ] Grants wired to app creation — two rows (R-073)
-- [ ] App CRUD endpoints, including the `409 STATE_BACKUP_DECISION_REQUIRED` delete shape (R-204/205)
-- [ ] Spec revision endpoints: list, get, create, diff
-- [ ] Export: spec plus resolved non-secret configuration; secrets named, never valued (R-020)
-- [ ] Import lands as a proposal requiring review, `OriginImported`, never a live deployment
+- [x] `apps` and `spec_revisions` migrations, with the append-only trigger
+- [x] Grants wired to app creation — two rows (R-073)
+- [x] App CRUD endpoints, including the `409 STATE_BACKUP_DECISION_REQUIRED` delete shape (R-204/205)
+- [x] Spec revision endpoints: list, get, create, diff
+- [x] Export: spec plus resolved non-secret configuration; secrets named, never valued (R-020)
+- [x] Import lands as a proposal requiring review, `OriginImported`, never a live deployment
 
 ## Requirements in scope
 
@@ -28,6 +28,10 @@ R-020, R-026, R-100, R-101, R-120, R-131 (declaration only), R-132 (validation),
 R-241, R-261.
 
 ## Done when
+
+**Met.** Shipped in an earlier phase; the named tests exist and the full acceptance
+suite is green. The boxes below went unticked at the time — corrected here rather than
+left to imply the work is outstanding.
 
 An app can be created and a spec hand-written, validated, and pinned via the API. **Nothing runs yet.**
 

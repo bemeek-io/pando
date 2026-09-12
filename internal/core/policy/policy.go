@@ -28,6 +28,19 @@ type Document struct {
 	// containing app.exec.
 	DisabledVerbs []string `json:"disabled_verbs,omitempty"`
 
+	// AgentDisabledVerbs are denied to token principals only — the CLI token an
+	// agent holds, and the MCP server acting through one (R-262).
+	//
+	// This is O-12's resolution. The tempting alternative is a list of tools
+	// the MCP server refuses to expose, and it does not work: an agent holding
+	// a token can call the REST API directly, so an MCP-layer exclusion is a
+	// speed bump rather than a boundary. Expressed here, it is evaluated before
+	// grants for every surface, which is the only place it means anything.
+	//
+	// Default-closed: Default() ships the exclusions design 04 §3 lists, and an
+	// install can lift them by editing policy like any other rule.
+	AgentDisabledVerbs []string `json:"agent_disabled_verbs,omitempty"`
+
 	// AllowAnonymousGrants controls whether an app may be shared with everyone
 	// (R-076). Pointer so that "unset" is distinguishable from "explicitly
 	// false", which matters when a policy document is partially written.
@@ -60,6 +73,20 @@ func Default() Document {
 		AllowAnonymousGrants: &allowAnonymous,
 		MinBuildIsolation:    spec.IsolationContainer,
 		MinRuntimeIsolation:  spec.IsolationContainer,
+
+		// Design 04 §3's exclusions, as the shipped default rather than as a
+		// hard-coded list in the MCP server (O-12). These are the
+		// highest-consequence actions in the system, and R-086 already concedes
+		// exec is not bounded by the verb list — an agent should not hold them
+		// by default. An install can lift any of them by editing policy.
+		AgentDisabledVerbs: []string{
+			string(authz.AppExec),
+			string(authz.AppSecretsRead),
+			string(authz.AppGrantsManage),
+			string(authz.InstallPolicyManage),
+			string(authz.InstallUsersManage),
+			string(authz.InstallBackupManage),
+		},
 	}
 }
 
@@ -87,10 +114,24 @@ func Static(d Document) *Evaluator {
 //
 // Evaluated before grants (design 06 §2, step 5). A policy that disables exec
 // install-wide denies the owner too.
-func (e *Evaluator) Allows(ctx context.Context, verb authz.Verb, _ string) error {
+func (e *Evaluator) Allows(ctx context.Context, p authz.Principal, verb authz.Verb, _ string) error {
 	doc, err := e.load(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Agents first, so the more specific rule produces the more specific
+	// message. A person told "this is turned off for the installation" when it
+	// is only turned off for their agent would go looking in the wrong place.
+	if p.Kind == authz.KindToken {
+		for _, disabled := range doc.AgentDisabledVerbs {
+			if authz.Verb(disabled) == verb {
+				return errs.Newf(errs.PolicyExecDisabled,
+					"Tokens and agents are not allowed to do this on this installation.").
+					WithDetail("verb", string(verb)).
+					WithRemedy("Do it signed in, or ask an administrator to allow it for agents in the installation's policy settings.")
+			}
+		}
 	}
 
 	for _, disabled := range doc.DisabledVerbs {
