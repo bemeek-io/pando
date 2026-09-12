@@ -28,3 +28,4 @@ pando
 .DS_Store
 coverage.out
 *.test
+/gen-api-types
