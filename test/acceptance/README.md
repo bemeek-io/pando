@@ -5,10 +5,10 @@ subsystem: **if all four pass against real Postgres and real Docker, v1 works.**
 
 | Sequence | File | Covers | Phase | Status |
 |---|---|---|---|---|
-| A — Add an app | `sequence_a_onboard_test.go` | Detection auction, trial run, questions, proposal acceptance | 6 | not written |
-| B — Deploy | `sequence_b_deploy_test.go` | Plan boundary, build isolation, slots, secrets, routing | 4 | **passing** |
-| C — A request through the proxy | `sequence_c_proxy_test.go` | Both planes, assertion minting, header stripping, streaming | 5 | not written |
-| D — Disaster recovery | `sequence_d_dr_test.go` | Backup, manifest verification, restore, reconvergence | 9 | not written |
+| A — Add an app | `sequence_a_detection_test.go` | Detection auction, trial run, questions, proposal acceptance | 7 | **passing** |
+| B — Deploy | `sequence_b_deploy_test.go` | Plan boundary, build isolation, slots, secrets, routing | 6 | **passing** |
+| C — A request through the proxy | `sequence_c_proxy_test.go` | Both planes, assertion minting, header stripping, streaming | 8 | **passing** |
+| D — Disaster recovery | `sequence_d_backup_test.go` | Backup, manifest verification, restore, reconvergence | 9 | **passing** |
 
 These drive a running Compose stack over HTTP, as a client would. Bring it up first:
 
@@ -19,6 +19,15 @@ go test -tags=integration ./test/acceptance/
 
 A fresh `down -v` matters: the first-run administrator password is shown once (R-046),
 and the tests read it from the server log to sign in.
+
+Two ordinary things make the log a dead end — rebuilding the image, which replaces the
+container that printed the password, and changing the password, which R-046 says you must.
+Either one used to turn the whole suite into dozens of identical failures. Set
+`PANDO_TEST_PASSWORD` to sign in without the log:
+
+```
+PANDO_TEST_PASSWORD=... go test -tags=integration ./test/acceptance/
+```
 
 Run everything with `make test-integration`. They use `testcontainers-go` against real Postgres and real Docker,
 and are behind an `integration` build tag so `make test` stays fast.

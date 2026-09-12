@@ -51,16 +51,30 @@ type client struct {
 var passwordPattern = regexp.MustCompile(`"password":"([^"]+)"`)
 
 // login signs in as the first-run administrator.
+//
+// The password is read from PANDO_TEST_PASSWORD when set, and scraped from the
+// server log otherwise. The override exists because the log is a worse source
+// than it looks: it holds the password only while the container that printed it
+// survives, so rebuilding the image loses it, and changing the password — which
+// R-046 says you must — invalidates it. Both are ordinary things to do, and
+// either one previously turned the whole suite into 48 identical failures whose
+// message was about the log rather than about the change.
 func login(t *testing.T) *client {
 	t.Helper()
 	requireStack(t)
 
-	out, err := exec.Command("docker", "compose", "logs", "pando").CombinedOutput()
-	require.NoError(t, err)
+	password := os.Getenv("PANDO_TEST_PASSWORD")
+	if password == "" {
+		out, err := exec.Command("docker", "compose", "logs", "pando").CombinedOutput()
+		require.NoError(t, err)
 
-	matches := passwordPattern.FindStringSubmatch(string(out))
-	require.Len(t, matches, 2,
-		"could not find the first-run password in the server log — bring the stack up fresh with `docker compose down -v && docker compose up -d`")
+		matches := passwordPattern.FindStringSubmatch(string(out))
+		require.Len(t, matches, 2,
+			"could not find the first-run password in the server log.\n"+
+				"Either bring the stack up fresh — `docker compose down -v && docker compose up -d` —\n"+
+				"or set PANDO_TEST_PASSWORD if the admin password has been changed.")
+		password = matches[1]
+	}
 
 	// Generous, because POST /deployments is not the quick call its 202 status
 	// suggests. It resolves the app's ref to a commit before returning, and
@@ -71,10 +85,11 @@ func login(t *testing.T) *client {
 	c := &client{http: &http.Client{Timeout: 2 * time.Minute}}
 
 	resp, err := c.http.Post(baseURL()+"/sessions", "application/json",
-		strings.NewReader(fmt.Sprintf(`{"username":"admin","password":%q}`, matches[1])))
+		strings.NewReader(fmt.Sprintf(`{"username":"admin","password":%q}`, password)))
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusOK, resp.StatusCode,
+		"the admin password did not work — set PANDO_TEST_PASSWORD if it has been changed")
 
 	for _, ck := range resp.Cookies() {
 		if ck.Name == "pando_session" {
