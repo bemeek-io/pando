@@ -19,8 +19,8 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pando ./cmd/pando
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata su-exec postgresql17-client \
     && adduser -D -u 10001 pando \
-    && mkdir -p /var/lib/pando \
-    && chown pando:pando /var/lib/pando
+    && mkdir -p /var/lib/pando /etc/traefik/dynamic \
+    && chown pando:pando /var/lib/pando /etc/traefik/dynamic
 
 WORKDIR /var/lib/pando
 

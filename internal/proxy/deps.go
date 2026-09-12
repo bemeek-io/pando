@@ -135,3 +135,16 @@ var (
 	_ Upstreams = (*RuntimeUpstreams)(nil)
 	_ Metrics   = (*Counters)(nil)
 )
+
+// IsAppHostname reports whether a hostname belongs to an app.
+//
+// For the HTTP router, which has to decide between the console and the proxy
+// before either runs. Deliberately only a yes or no: the caller uses it to pick
+// a handler, and the proxy still resolves and authorizes the request itself.
+func (r *StateResolver) IsAppHostname(ctx context.Context, hostname string) (bool, error) {
+	if hostname == "" {
+		return false, nil
+	}
+	_, _, found, err := r.apps.ByRouting(ctx, "hostname", hostname)
+	return found, err
+}

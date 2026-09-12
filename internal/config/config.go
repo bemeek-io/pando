@@ -96,9 +96,30 @@ func Load(path string) (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
-	// PANDO_DATABASE_URL is the documented spelling, so bind it explicitly
-	// rather than relying on the replacer to find it.
-	_ = v.BindEnv("database.url", "PANDO_DATABASE_URL")
+	// Every key is bound explicitly, and that is not belt-and-braces.
+	//
+	// AutomaticEnv looks up an environment variable only for keys viper already
+	// knows — from a default, a config file, or a bind. A key with none of
+	// those is invisible to Unmarshal, so `PANDO_SERVER_BASE_DOMAIN=…` sets
+	// nothing and says nothing: the process starts, the setting is empty, and
+	// the failure surfaces much later as an app with no hostname. That happened
+	// to base_domain.
+	//
+	// A key that is only ever set from the environment therefore has to be
+	// listed here. Defaults elsewhere in this function register their keys as a
+	// side effect; these have no sensible default to register them.
+	for key, env := range map[string]string{
+		"database.url":          "PANDO_DATABASE_URL",
+		"server.base_domain":    "PANDO_SERVER_BASE_DOMAIN",
+		"server.proxy_upstream": "PANDO_SERVER_PROXY_UPSTREAM",
+		"server.issuer":         "PANDO_SERVER_ISSUER",
+		"server.addr":           "PANDO_SERVER_ADDR",
+		"server.routing_mode":   "PANDO_SERVER_ROUTING_MODE",
+		"server.work_dir":       "PANDO_SERVER_WORK_DIR",
+		"log.level":             "PANDO_LOG_LEVEL",
+	} {
+		_ = v.BindEnv(key, env)
+	}
 
 	if path != "" {
 		v.SetConfigFile(path)

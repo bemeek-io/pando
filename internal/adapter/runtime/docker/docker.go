@@ -567,6 +567,22 @@ func (a *Adapter) ensureNetwork(ctx context.Context, bundleID string) (string, e
 	if err == nil {
 		for _, n := range existing {
 			if n.Name == name {
+				// Attached on every pass, not only when the network is new.
+				//
+				// Pando's container is joined to each app's private network —
+				// that is the only way the proxy can reach an app (R-023). A
+				// replaced Pando container is a *different* container, so a
+				// network created by the old one has the old one attached and
+				// the new one nowhere. Attaching only at creation therefore
+				// meant every upgrade silently cut Pando off from every
+				// existing app, and the app came back only if something
+				// recreated its network.
+				//
+				// Idempotent: Docker answers "already exists" and attachProxy
+				// treats that as success.
+				if err := a.attachProxy(ctx, n.ID); err != nil {
+					return "", err
+				}
 				return n.ID, nil
 			}
 		}

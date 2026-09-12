@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"net"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -106,6 +107,11 @@ type Server struct {
 	// is one of its clients.
 	Console http.Handler
 
+	// AppHosts tells the console handler when a request belongs to an app
+	// instead. Nil means the console answers on every hostname, which is
+	// correct for a path-addressed install and wrong for a subdomain one.
+	AppHosts AppHosts
+
 	// AppProxy serves every request to every app (R-023). Mounted last, as the
 	// catch-all, so Pando's own routes are reachable and everything else goes
 	// through enforcement. There is no path that reaches an app without it.
@@ -121,6 +127,17 @@ type PolicyDocument interface {
 // AuditReader queries the audit log.
 type AuditReader interface {
 	List(ctx context.Context, q audit.Query) ([]audit.Record, error)
+}
+
+// AppHosts answers whether a hostname belongs to an app.
+//
+// Used only to decide whether the console or the proxy should handle a request
+// (see consoleOrApp). It is not an authorization decision — the proxy still
+// makes that — and a failure here falls back to the console, which is the safe
+// direction: someone sees Pando instead of their app, rather than reaching an
+// app without passing through the proxy.
+type AppHosts interface {
+	IsAppHostname(ctx context.Context, host string) (bool, error)
 }
 
 // AnonymousPolicy gates sharing an app with everyone (R-076).
@@ -343,8 +360,9 @@ func (s *Server) Routes() http.Handler {
 	// listed here are the console's own, and each one is a path no app can
 	// have because the slug would collide with a reserved name.
 	if s.Console != nil {
+		console := s.consoleOrApp()
 		for _, route := range consoleRoutes {
-			r.Handle(route, s.Console)
+			r.Handle(route, console)
 		}
 	}
 
@@ -357,6 +375,34 @@ func (s *Server) Routes() http.Handler {
 	}
 
 	return r
+}
+
+// consoleOrApp serves the console, unless the request is addressed to an app.
+//
+// The console owns "/" and a handful of other paths, which is right when Pando
+// is reached at its own hostname. It is wrong the moment an app has a hostname
+// of its own: a request to https://notes.example.com/ matches the console's "/"
+// route and never reaches the proxy, so the app's owner gets Pando's console
+// where their app should be — and every app in an install using subdomain
+// addressing is unreachable at its root.
+//
+// Resolved by asking whether the Host names an app, rather than by removing "/"
+// from the console's routes: the console does own "/" on Pando's own hostname,
+// and in path mode that is the only hostname there is.
+func (s *Server) consoleOrApp() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.AppProxy != nil && s.AppHosts != nil {
+			host := r.Host
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+			if isApp, err := s.AppHosts.IsAppHostname(r.Context(), host); err == nil && isApp {
+				s.AppProxy.ServeHTTP(w, r)
+				return
+			}
+		}
+		s.Console.ServeHTTP(w, r)
+	})
 }
 
 // consoleRoutes are the paths the console owns.

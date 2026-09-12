@@ -77,7 +77,10 @@ type Proxy struct {
 	// LoginPath is where an unauthenticated caller is sent.
 	LoginPath string
 
-	// Mode is how apps are addressed: subdomain or path (design 03 §4.1).
+	// Mode is the install's default shape, for building URLs to show people
+	// (design 03 §4.1). It is NOT how a request is resolved: resolution tries
+	// both, because an install can mix the two and a request does not care what
+	// the default was.
 	Mode spec.RoutingMode
 }
 
@@ -258,25 +261,45 @@ func stripInbound(h http.Header) {
 	h.Del("X-Forwarded-Prefix")
 }
 
-// resolve finds the app and, in path mode, the prefix to strip.
+// resolve finds the app and, for a path-addressed one, the prefix to strip.
+//
+// Both addressing modes are tried, always, because design 03 §4.1 says neither
+// is a global setting: the topology is the aggregate of each app's
+// Routing.Mode, and an install can mix them — an internal tool on a path and a
+// customer-facing app on its own hostname, on one Pando.
+//
+// This used to switch on p.Mode and resolve one way only, which made the
+// install-wide default a hard constraint and quietly broke the other half of
+// every mixed install: a subdomain app on a path-mode install resolved to
+// nothing and fell through to the console, looking like the app did not exist.
+//
+// Hostname first. A request whose Host names an app is unambiguous, and a
+// path-addressed app never has a hostname to be found under — so the order
+// costs nothing and avoids mistaking a path segment for an app when the real
+// answer was the Host.
 func (p *Proxy) resolve(r *http.Request) (state.App, *spec.AppSpec, string, bool, error) {
 	ctx := r.Context()
-
-	if p.Mode == spec.RoutingPath {
-		segment := firstSegment(r.URL.Path)
-		if segment == "" {
-			return state.App{}, nil, "", false, nil
-		}
-		app, s, found, err := p.Resolver.BySlug(ctx, segment)
-		return app, s, "/" + segment, found, err
-	}
 
 	host := r.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	app, s, found, err := p.Resolver.ByHostname(ctx, host)
-	return app, s, "", found, err
+	if host != "" {
+		app, s, found, err := p.Resolver.ByHostname(ctx, host)
+		if err != nil {
+			return state.App{}, nil, "", false, err
+		}
+		if found {
+			return app, s, "", true, nil
+		}
+	}
+
+	segment := firstSegment(r.URL.Path)
+	if segment == "" {
+		return state.App{}, nil, "", false, nil
+	}
+	app, s, found, err := p.Resolver.BySlug(ctx, segment)
+	return app, s, "/" + segment, found, err
 }
 
 // redirectToLogin sends an anonymous caller to sign in.

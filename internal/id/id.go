@@ -30,6 +30,7 @@ const (
 	Secret       Kind = "sec"
 	Service      Kind = "svc"
 	Backup       Kind = "bkp"
+	Notification Kind = "ntf"
 	IdentityAdpt Kind = "idp"
 	Request      Kind = "req"
 

@@ -81,11 +81,25 @@ type resolver struct {
 	spec *spec.AppSpec
 }
 
-func (r *resolver) ByHostname(context.Context, string) (state.App, *spec.AppSpec, bool, error) {
-	return r.app, r.spec, r.app.ID != "", nil
+// ByHostname matches only an app that actually has that hostname in its spec,
+// which is what the real query does — `routing->>'hostname' = $1`.
+//
+// This fake used to return the app for any lookup of either kind. That made it
+// agree with the proxy no matter what the proxy did, so it could not catch the
+// proxy resolving the wrong way — and it did not, until the proxy started
+// trying both.
+func (r *resolver) ByHostname(_ context.Context, hostname string) (state.App, *spec.AppSpec, bool, error) {
+	if r.app.ID == "" || r.spec == nil || r.spec.Routing.Hostname != hostname {
+		return state.App{}, nil, false, nil
+	}
+	return r.app, r.spec, true, nil
 }
-func (r *resolver) BySlug(context.Context, string) (state.App, *spec.AppSpec, bool, error) {
-	return r.app, r.spec, r.app.ID != "", nil
+
+func (r *resolver) BySlug(_ context.Context, slug string) (state.App, *spec.AppSpec, bool, error) {
+	if r.app.ID == "" || r.app.Slug != slug {
+		return state.App{}, nil, false, nil
+	}
+	return r.app, r.spec, true, nil
 }
 
 type fixedUpstream struct{ addr string }
@@ -126,6 +140,11 @@ func harness(t *testing.T, principal authz.Principal, configure func(*store)) (*
 		Resolver: &resolver{
 			app: state.App{ID: appID, Slug: "notes", State: state.StateRunning},
 			spec: &spec.AppSpec{
+				// Addressed by hostname, and httptest serves on 127.0.0.1 — so
+				// that is the Host the proxy sees once it drops the port. Set
+				// explicitly because the resolver fake now matches on it, the
+				// way the real query does.
+				Routing: spec.Routing{Mode: spec.RoutingSubdomain, Hostname: "127.0.0.1"},
 				Workloads: []spec.Workload{{Name: "web", Primary: true,
 					Ports: []spec.Port{{Number: 80, Protocol: "http"}}}},
 			},
@@ -444,8 +463,15 @@ func TestAnAppThatIsNotRunningIs503(t *testing.T) {
 
 	p := &proxy.Proxy{
 		Resolver: &resolver{
-			app:  state.App{ID: appID, State: state.StateStopped},
-			spec: &spec.AppSpec{},
+			// Addressed by hostname, matching what httptest serves on. The
+			// fake matches on it the way the real query does, so an app with
+			// neither hostname nor matching slug is simply not found — which
+			// is correct, and would make this test assert 404 instead of the
+			// 503 it is about.
+			app: state.App{ID: appID, Slug: "notes", State: state.StateStopped},
+			spec: &spec.AppSpec{
+				Routing: spec.Routing{Mode: spec.RoutingSubdomain, Hostname: "127.0.0.1"},
+			},
 		},
 		Authenticator: staticAuth{principal: activeUser("usr_alice")},
 		Authz:         authz.New(s, nil, nil),
@@ -495,9 +521,12 @@ func TestR170_SSEIsNotBuffered(t *testing.T) {
 
 	front := httptest.NewServer(&proxy.Proxy{
 		Resolver: &resolver{
-			app: state.App{ID: appID, State: state.StateRunning},
-			spec: &spec.AppSpec{Workloads: []spec.Workload{{Name: "web", Primary: true,
-				Ports: []spec.Port{{Number: 80, Protocol: "http"}}}}},
+			app: state.App{ID: appID, Slug: "notes", State: state.StateRunning},
+			spec: &spec.AppSpec{
+				Routing: spec.Routing{Mode: spec.RoutingSubdomain, Hostname: "127.0.0.1"},
+				Workloads: []spec.Workload{{Name: "web", Primary: true,
+					Ports: []spec.Port{{Number: 80, Protocol: "http"}}}},
+			},
 		},
 		Authenticator: staticAuth{principal: activeUser("usr_alice")},
 		Authz:         authz.New(s, nil, nil),
@@ -546,4 +575,54 @@ func decodeClaims(t *testing.T, token string) assertion.Claims {
 
 func base64Decode(s string) ([]byte, error) {
 	return base64.RawURLEncoding.DecodeString(s)
+}
+
+// TestAnInstallCanMixAddressingModes asserts design 03 §4.1: neither topology
+// is a global setting, and an install can run both at once.
+//
+// The proxy used to switch on its configured Mode and resolve one way only,
+// which made the install's default a hard constraint — a subdomain app on a
+// path-default install resolved to nothing and fell through to the console,
+// looking to its owner like the app did not exist.
+func TestAnInstallCanMixAddressingModes(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, r.URL.Path)
+	}))
+	defer upstream.Close()
+
+	s := newStore()
+	s.owner[appID] = "usr_alice"
+	minter, err := assertion.NewMinter("https://pando.test", nil)
+	require.NoError(t, err)
+
+	// One app, addressed by path, on an install whose default is subdomain.
+	front := httptest.NewServer(&proxy.Proxy{
+		Resolver: &resolver{
+			app: state.App{ID: appID, Slug: "notes", State: state.StateRunning},
+			spec: &spec.AppSpec{
+				Routing: spec.Routing{Mode: spec.RoutingPath, PathPrefix: "/notes"},
+				Workloads: []spec.Workload{{Name: "web", Primary: true,
+					Ports: []spec.Port{{Number: 80, Protocol: "http"}}}},
+			},
+		},
+		Authenticator: staticAuth{principal: activeUser("usr_alice")},
+		Authz:         authz.New(s, nil, nil),
+		Minter:        minter,
+		Upstreams:     fixedUpstream{addr: upstream.URL},
+		Logger:        zap.NewNop(),
+
+		// The install's default shape, and deliberately the *other* one.
+		Mode: spec.RoutingSubdomain,
+	})
+	defer front.Close()
+
+	resp, err := http.Get(front.URL + "/notes/dashboard")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode,
+		"a path-addressed app must resolve on an install that defaults to subdomains")
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, "/dashboard", string(body), "and its prefix is still stripped (R-167)")
 }

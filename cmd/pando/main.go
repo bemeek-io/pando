@@ -21,8 +21,10 @@ import (
 	backuplocal "github.com/bemeek-io/pando/internal/adapter/backup/local"
 	buildkitadapter "github.com/bemeek-io/pando/internal/adapter/builder/buildkit"
 	"github.com/bemeek-io/pando/internal/adapter/identity/local"
+	notifyconsole "github.com/bemeek-io/pando/internal/adapter/notify/console"
 	"github.com/bemeek-io/pando/internal/adapter/registry/ociprobe"
 	"github.com/bemeek-io/pando/internal/adapter/routing/loopback"
+	"github.com/bemeek-io/pando/internal/adapter/routing/traefik"
 	dockerruntime "github.com/bemeek-io/pando/internal/adapter/runtime/docker"
 	secretslocal "github.com/bemeek-io/pando/internal/adapter/secrets/local"
 	"github.com/bemeek-io/pando/internal/cli"
@@ -200,7 +202,9 @@ func serve(ctx context.Context, configPath string) error {
 	// (R-253). There is no plugin protocol and none is planned.
 	identity := local.New(users)
 
-	registry, err := registerAdapters(ctx, adapters, logger)
+	notifications := state.NewNotifications(db)
+
+	registry, err := registerAdapters(ctx, adapters, notifications, logger)
 	if err != nil {
 		return err
 	}
@@ -299,9 +303,14 @@ func serve(ctx context.Context, configPath string) error {
 	}
 	authorizer := authz.New(authzStore, hostPolicy, auditDenials{auditor})
 
+	// One resolver, used by the proxy to route and by the router to tell an
+	// app's hostname from Pando's own.
+	appResolver := proxy.NewStateResolver(apps)
+
 	// The single enforcement point for every request to every app (R-023).
+
 	appProxy := &proxy.Proxy{
-		Resolver:      proxy.NewStateResolver(apps),
+		Resolver:      appResolver,
 		Authenticator: authenticator,
 		Authz:         authorizer,
 		Minter:        minter,
@@ -341,10 +350,14 @@ func serve(ctx context.Context, configPath string) error {
 
 			// Policy is evaluated before grants, so it is wired into the
 			// authorizer rather than checked alongside it (R-272).
-			Authz:      authorizer,
-			Authent:    authenticator,
-			Minter:     minter,
-			AppProxy:   appProxy,
+			Authz:    authorizer,
+			Authent:  authenticator,
+			Minter:   minter,
+			AppProxy: appProxy,
+
+			// So the console does not answer on an app's own hostname. Without
+			// this the console's "/" route shadows every subdomain app's root.
+			AppHosts:   appResolver,
 			Grants:     grants,
 			HostPolicy: hostPolicy,
 			Verbs:      authzStore,
@@ -429,7 +442,7 @@ func serve(ctx context.Context, configPath string) error {
 // preventing startup: one broken adapter should not take the whole install
 // offline, and the planner already refuses to plan against an adapter it cannot
 // reach (R-254).
-func registerAdapters(ctx context.Context, store *state.Adapters, logger *zap.Logger) (*adapterapi.Registry, error) {
+func registerAdapters(ctx context.Context, store *state.Adapters, notifications *state.Notifications, logger *zap.Logger) (*adapterapi.Registry, error) {
 	if err := seedDefaultAdapters(ctx, store); err != nil {
 		return nil, err
 	}
@@ -457,6 +470,12 @@ func registerAdapters(ctx context.Context, store *state.Adapters, logger *zap.Lo
 			adapter = buildkitadapter.New()
 		case c.Category == string(adapterapi.CategoryBackup) && c.Kind == backuplocal.Kind:
 			adapter = backuplocal.New()
+		case c.Category == string(adapterapi.CategoryRouting) && c.Kind == traefik.Kind:
+			adapter = traefik.New()
+		case c.Category == string(adapterapi.CategoryNotify) && c.Kind == notifyconsole.Kind:
+			// The sink is supplied by core. The adapter stores nothing itself,
+			// which is R-027 — an adapter never touches state.
+			adapter = notifyconsole.New(notifications)
 		default:
 			logger.Warn("skipping adapter of unknown kind",
 				zap.String("id", c.ID), zap.String("category", c.Category), zap.String("kind", c.Kind))
@@ -489,8 +508,22 @@ func seedDefaultAdapters(ctx context.Context, store *state.Adapters) error {
 	if err != nil {
 		return err
 	}
-	if len(existing) > 0 {
-		return nil
+
+	// Seeded per category, not once per install.
+	//
+	// The original rule was "if any adapter exists, do nothing", which is right
+	// on the first run and wrong on every upgrade: an adapter category added in
+	// a later version would never be seeded on an install that already had
+	// others, so the feature would ship and silently not exist. That is exactly
+	// what happened to notifications.
+	//
+	// The tradeoff is that deleting the *last* adapter in a category brings the
+	// built-in default back on the next start. That is the better failure: a
+	// category with nothing in it does nothing, and an install with no
+	// notification adapter is not a considered posture — it is a gap.
+	filled := map[string]bool{}
+	for _, c := range existing {
+		filled[c.Category] = true
 	}
 
 	for _, c := range []state.AdapterConfig{
@@ -509,7 +542,15 @@ func seedDefaultAdapters(ctx context.Context, store *state.Adapters) error {
 		// backups testable, not the one an operator should keep.
 		{ID: "bkp_local", Category: string(adapterapi.CategoryBackup), Kind: backuplocal.Kind,
 			Name: "Local disk", IsDefault: true, Enabled: true},
+
+		// Console-only notifications (R-231). Nothing is sent anywhere; a
+		// message waits in Pando for the next time the recipient looks.
+		{ID: "ntf_console", Category: string(adapterapi.CategoryNotify), Kind: notifyconsole.Kind,
+			Name: "In the console", IsDefault: true, Enabled: true},
 	} {
+		if filled[c.Category] {
+			continue
+		}
 		if err := store.Upsert(ctx, c); err != nil {
 			return err
 		}

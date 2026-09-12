@@ -26,6 +26,12 @@ services:
       # than trusting this healthcheck — see phase 0.
       PANDO_DATABASE_URL: postgres://pando:${POSTGRES_PASSWORD:-pando}@postgres:5432/pando?sslmode=disable
       PANDO_BUILDKIT_ADDRESS: tcp://buildkit:1234
+      # Where per-app subdomains are carved from. localtest.me resolves every
+      # subdomain to 127.0.0.1, so a laptop can exercise subdomain routing
+      # without touching DNS or /etc/hosts.
+      PANDO_SERVER_BASE_DOMAIN: ${PANDO_BASE_DOMAIN:-localtest.me}
+      # Where routing adapters send traffic: always Pando's proxy (R-023).
+      PANDO_SERVER_PROXY_UPSTREAM: http://pando:8080
     command: ["serve"]
     ports:
       - "${PANDO_PORT:-8080}:8080"
@@ -35,6 +41,41 @@ services:
       # integration test in phase 4.
       - /var/run/docker.sock:/var/run/docker.sock
       - pando-data:/var/lib/pando
+      # Where the Traefik adapter writes its per-app configuration. Mounted
+      # even when Traefik is not running: an empty directory costs nothing, and
+      # the alternative is a compose file that has to be edited before the
+      # adapter can be turned on.
+      - traefik-dynamic:/etc/traefik/dynamic
+    restart: unless-stopped
+
+  # Traefik, as an optional edge (R-160, R-164). Off unless you ask for it:
+  #
+  #   docker compose --profile traefik up -d
+  #
+  # It sits in FRONT of Pando and forwards to Pando's proxy. It never points at
+  # an app's container — every request to every app goes through Pando so that
+  # authorization happens exactly once, in one place (R-023). The adapter writes
+  # one file per app into the watched directory below; there is no API call and
+  # no credential, which is why this service has no secrets.
+  traefik:
+    image: traefik:v3.2
+    profiles: ["traefik"]
+    command:
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
+      - "--entrypoints.web.address=:80"
+      # Deliberately no Docker provider. Labels live on the workload container,
+      # which would mean this reaching into the runtime adapter's objects — two
+      # adapters owning one thing, and a route that vanishes when a deploy
+      # recreates the container.
+      - "--api.insecure=false"
+      - "--log.level=INFO"
+    ports:
+      - "${TRAEFIK_PORT:-8088}:80"
+    volumes:
+      - traefik-dynamic:/etc/traefik/dynamic:ro
+    depends_on:
+      - pando
     restart: unless-stopped
 
   # Rootless BuildKit, in its own container (R-111).
@@ -78,3 +119,8 @@ volumes:
   pando-data:
   postgres-data:
   buildkit-cache:
+
+  # Shared between Pando and Traefik: Pando writes, Traefik reads. Read-only on
+  # the Traefik side, because the edge has no business editing the routes it is
+  # given.
+  traefik-dynamic:
