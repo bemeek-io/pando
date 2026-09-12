@@ -17,7 +17,7 @@ resolution both here and in the requirements or design doc that owns it.
 | **O-6** | Which backup destinations ship — local, S3, mounted share | Provider-shaped. The *design* half is settled: a destination is not an adapter category (design 03 §8.1) | Phase 9 |
 | **O-15** | How a host port is chosen in port-mode routing | Nothing in the requirements says. Has a `[P]` answer in code | Phase 6 (shipped), revisit at phase 10 |
 | **O-16** | How log retention is actually enforced (R-222–R-224) | The requirement is clear; no mechanism exists to carry it out | Phase 7 (deferred), needed before an install runs many apps |
-| **O-17** | What an "administrative verb" is (R-265) | The concept appears in a requirement and exists nowhere in the model | Phase 8 (half shipped), blocks install-level admin screens |
+| **O-17** | What an "administrative verb" is (R-265) | The concept appears in a requirement and exists nowhere in the model — and six endpoints are already exposed without one | **Blocking.** A signed-in user with no grants can suspend the administrator |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything not typed to
 a known service, and let the trial run settle it — a slot whose absence crashes the trial run is
@@ -74,6 +74,24 @@ Options, none free:
 Recorded rather than decided. Spec revision pruning (R-152) is implemented — it is the part of GC
 that operates on data Pando actually owns.
 
+**O-17 is not only a console gap — it is a live privilege escalation.** Six endpoints are gated by
+"are you signed in" and nothing else, because there is no install-level authority to gate them with.
+Three of them mutate:
+
+| Endpoint | What a user with no grants can do |
+|---|---|
+| `PATCH /users/{id}` | **Suspend any user, including the administrator.** Sessions are revoked immediately (R-048), so the install is locked out |
+| `POST /users` | Create accounts |
+| `POST /apps` | Create apps and consume host capacity — Sequence A step 1 says this checks install-level `app.create`, which does not exist |
+| `GET /users/{id}` | Read any user's record |
+| `GET /capacity` | Read host sizing |
+| `GET /adapters` | Read which adapters are configured and what they support |
+
+Demonstrated end to end on the shipped stack: create an ordinary user, sign in as them, `PATCH` the
+administrator to `suspended`, and the administrator's next login returns 401. Two calls, no grants
+needed. `GET /apps` correctly returns nothing for that user the whole time — the per-app authorization
+works exactly as designed, which is what makes the gap so easy to miss.
+
 **O-17** was found building the launcher. R-265 says "users holding any administrative verb see an
 **Admin** entry point from the launcher, exposing the console scoped to whatever privileges they
 hold." There is no administrative verb: R-080's catalog is thirteen `app.*` verbs and nothing
@@ -88,11 +106,69 @@ and none of which has a screen. Related: design 05 §3 promises the console list
 before a policy is saved, and R-085 lets host policy disable exec install-wide; both need the same
 missing concept.
 
-Options: add install-level verbs to R-080's catalog and allow a grant with a null `app_id`; or make
-install administration a property of the user rather than a grant; or define a distinct "install
-role" separate from the per-app roles of R-081. The first keeps one authorization model and is the
-smallest change to the schema. Recorded rather than decided, because it is an authorization
-boundary.
+### The three options
+
+**1. Install-level verbs, as grants with no app.** Add `install.*` verbs to R-080's catalog —
+`install.users.manage`, `install.policy.manage`, `install.adapters.manage`, `install.audit.read`,
+plus the `app.create` that Sequence A already assumes — and relax `grants.app_id` to nullable so a
+grant can be install-scoped. `CheckControl` grows an install-scoped path beside its app-scoped one.
+
+*For:* one authorization model, one table, one function. Custom roles (R-082) compose from the same
+catalog, so "can manage users but not policy" costs nothing extra. The audit log already records
+grants, so who made someone an admin is answerable.
+
+*Against:* `grants.app_id NOT NULL` is currently doing real work — it is why an app-scoped grant
+cannot accidentally become global. Making it nullable moves that guarantee from the schema into a
+`CHECK` constraint and into `CheckControl`'s branching. R-070/071's two planes also need saying
+explicitly: an install grant is control-plane only, and `grants_role_is_control_plane_only` already
+half-says it.
+
+**2. A flag on the user.** `users.is_admin boolean`, set by bootstrap for the first account.
+
+*For:* smallest possible change, and it makes the lockout above impossible today.
+
+*Against:* it is a second authorization mechanism beside grants and roles, which is exactly the shape
+R-080 rejected when it chose individual verbs over a role bit — "there is no implication graph"
+because graphs are where authorization bugs live, and a boolean is the most implicit graph there is.
+It cannot express "manages users but not policy", so R-265's "scoped to whatever privileges they
+hold" becomes untrue the moment anyone asks for it. It is a decision that has to be taken again later.
+
+**3. A separate install role.** A distinct role table and grant table for install scope, parallel to
+R-081's per-app roles.
+
+*For:* leaves the per-app model completely untouched.
+
+*Against:* two of everything — two role catalogs, two grant tables, two check functions — and the
+console has to explain the difference to a person who does not care. It is the option most likely to
+drift, because a new verb has to be added in the right one of two places.
+
+### Recommendation
+
+**Option 1.** It is the only one that answers R-265 as written — "scoped to whatever privileges they
+hold" needs privileges, plural, and separable. It also costs the least *conceptually*: an
+administrator becomes someone with a grant, which is already how everything else in the system
+works, and the console's Admin entry becomes "do you hold any `install.*` verb" — one line, in the
+one place the question is already asked.
+
+The schema cost is real but contained: `app_id` becomes nullable with a `CHECK` that an install-scoped
+grant has no app and an app-scoped one does, which is the same shape as the two constraints already on
+that table.
+
+What needs deciding is not really which option — it is **the verb list**. That is a product question
+about how finely install administration should divide, and it belongs to whoever owns R-080.
+
+### Containment, independent of the decision
+
+The escalation above should not wait for the verb list. The narrow fix is to refuse the three mutating
+endpoints unless the caller is acting on themselves, which is correct under every option:
+
+- `PATCH /users/{id}` — deny unless `id` is the caller's own, until there is a verb for it. Nobody
+  loses a capability they legitimately had, because nobody legitimately had this one.
+- `POST /users` and `POST /apps` — these genuinely need install authority, so they need a decision or
+  an interim gate.
+
+Say the word and I will land the containment on its own, with a test that Bob cannot suspend the
+administrator.
 
 **O-5** is open the way `SessionPolicy` is open: deferring it to each adapter *is* the answer (R-047's
 shape). A routing adapter that issues certificates declares how; one that cannot says so through
