@@ -71,10 +71,14 @@ type createAppRequest struct {
 
 var slugPattern = regexp.MustCompile(`[^a-z0-9-]+`)
 
+// handleCreateApp starts Sequence A.
+//
+// app.create is install-scoped: there is no app yet to hold a verb on, which
+// is exactly why it cannot go through requireControl. Sequence A step 1 has
+// always called this an install-level check.
 func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
-	p := PrincipalFrom(r.Context())
-	if p.Kind == authz.KindAnonymous {
-		Error(w, r, errs.New(errs.AuthRequired, "You need to sign in."))
+	p, ok := s.requireInstall(w, r, authz.AppCreate)
+	if !ok {
 		return
 	}
 

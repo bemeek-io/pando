@@ -69,6 +69,12 @@ type Store interface {
 	// direct, by group, or by account token.
 	ControlGrantsFor(ctx context.Context, appID string, p Principal) ([]Grant, error)
 
+	// InstallGrantsFor returns the principal's installation-wide grants: the
+	// ones with no app (O-17). A separate query from ControlGrantsFor rather
+	// than a nullable argument, so an app-scoped lookup can never return an
+	// install grant by passing the wrong value.
+	InstallGrantsFor(ctx context.Context, p Principal) ([]Grant, error)
+
 	// IsOwner reports whether userID owns the app (R-031).
 	IsOwner(ctx context.Context, appID, userID string) (bool, error)
 
@@ -122,6 +128,14 @@ func New(store Store, policy Policy, auditor Auditor) *Authorizer {
 // The order is fixed and each step can only deny; none can restore access denied
 // by an earlier step (design 06 §2).
 func (a *Authorizer) CheckControl(ctx context.Context, p Principal, appID string, verb Verb) error {
+	// An install verb has no app to be held on, and evaluating one here would
+	// search for a grant that cannot exist and deny — safe, but it would hide a
+	// call site that meant CheckInstall. Refused loudly instead.
+	if InstallScoped(verb) {
+		return errs.Newf(errs.Internal,
+			"%s is an installation-wide permission and cannot be checked against an app.", verb)
+	}
+
 	if p.Kind == KindSystem {
 		// The reconciler and background jobs. Grant checks are bypassed; audit
 		// is not.
@@ -158,6 +172,59 @@ func (a *Authorizer) CheckControl(ctx context.Context, p Principal, appID string
 
 	return a.deny(ctx, p, appID, verb,
 		errs.Newf(errs.PermVerbRequired, "You do not have permission to do this. It requires %s on this app.", verb))
+}
+
+// CheckInstall authorizes an installation-wide action (O-17, R-265).
+//
+// A separate function from CheckControl, taking different arguments, for the
+// same reason CheckData is separate: the scopes are different questions and a
+// single function with an optional appID is one missed argument away from
+// authorizing an app verb install-wide. That mistake has already been made once
+// in this package's history, in the other direction (design 06 §2).
+//
+// Host policy still runs first (R-272) and still denies the holder: an install
+// that has disabled a verb has disabled it for administrators too.
+func (a *Authorizer) CheckInstall(ctx context.Context, p Principal, verb Verb) error {
+	// The mirror of the guard in CheckControl, and the more important half. An
+	// app verb evaluated install-wide would look for a grant that *can* exist
+	// and could allow.
+	if !InstallScoped(verb) {
+		return errs.Newf(errs.Internal,
+			"%s is a per-app permission and cannot be checked installation-wide.", verb)
+	}
+
+	if p.Kind == KindSystem {
+		// The reconciler and background jobs, as in CheckControl. Audit is not
+		// bypassed.
+		return nil
+	}
+
+	if err := a.checkPrincipal(ctx, p); err != nil {
+		return a.deny(ctx, p, "", verb, err)
+	}
+
+	if a.policy != nil {
+		if err := a.policy.Allows(ctx, verb, ""); err != nil {
+			return a.deny(ctx, p, "", verb, err)
+		}
+	}
+
+	grants, err := a.store.InstallGrantsFor(ctx, p)
+	if err != nil {
+		return err
+	}
+	for _, g := range grants {
+		role, err := a.store.Role(ctx, g.RoleID)
+		if err != nil {
+			return err
+		}
+		if role.Has(verb) {
+			return nil
+		}
+	}
+
+	return a.deny(ctx, p, "", verb, errs.Newf(errs.PermVerbRequired,
+		"You do not have permission to do this. It requires %s for this installation.", verb))
 }
 
 // CheckData authorizes data-plane access: using an app through the proxy.

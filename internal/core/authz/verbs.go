@@ -8,6 +8,23 @@ package authz
 type Verb string
 
 const (
+	// Install-scoped verbs. Held through a grant with no app (O-17), which is
+	// what makes "an administrator" a principal with a grant rather than a
+	// separate mechanism beside grants and roles.
+	//
+	// Namespaced `install.*` so the scope is visible at every call site: a verb
+	// that reads `install.` cannot be mistaken for one that needs an app, which
+	// is the mistake that would reintroduce the hole these close.
+	InstallView           Verb = "install.view"
+	InstallUsersManage    Verb = "install.users.manage"
+	InstallPolicyManage   Verb = "install.policy.manage"
+	InstallAdaptersManage Verb = "install.adapters.manage"
+	InstallAuditRead      Verb = "install.audit.read"
+
+	// AppCreate is install-scoped despite its name: there is no app yet when it
+	// is checked. Sequence A step 1 has always called it install-level.
+	AppCreate Verb = "app.create"
+
 	AppView             Verb = "app.view"
 	AppLogsRead         Verb = "app.logs.read"
 	AppDeploy           Verb = "app.deploy"
@@ -31,6 +48,13 @@ const (
 // sensible combinations instead, which is a UI concern and cannot go wrong
 // silently.
 var Verbs = []Verb{
+	InstallView,
+	InstallUsersManage,
+	InstallPolicyManage,
+	InstallAdaptersManage,
+	InstallAuditRead,
+	AppCreate,
+
 	AppView,
 	AppLogsRead,
 	AppDeploy,
@@ -66,6 +90,14 @@ const (
 	RoleViewer   = "role_viewer"
 	RoleOperator = "role_operator"
 	RoleOwner    = "role_owner"
+
+	// RoleAdministrator is install-scoped and holds no app verbs. An
+	// administrator is not an owner of every app: they can create apps, manage
+	// users, policy and adapters, and read the audit log, and to manage a
+	// particular app they need a grant on it like anyone else. That is R-031 —
+	// every app has an owner of record — surviving the arrival of an admin role
+	// rather than being quietly overridden by it.
+	RoleAdministrator = "role_administrator"
 )
 
 // Role is a named set of verbs.
@@ -84,4 +116,24 @@ func (r Role) Has(v Verb) bool {
 		}
 	}
 	return false
+}
+
+// InstallScoped reports whether a verb is held install-wide rather than on one
+// app.
+//
+// Checked at the boundary between CheckControl and CheckInstall so that a verb
+// cannot be authorized in the wrong scope. Passing an install verb to
+// CheckControl, or an app verb to CheckInstall, is a programming error and is
+// refused rather than evaluated — an install verb evaluated against an app
+// would look for a grant that cannot exist and deny, which is safe; an app verb
+// evaluated install-wide would look for a grant that *can* exist and allow,
+// which is not.
+func InstallScoped(v Verb) bool {
+	switch v {
+	case InstallView, InstallUsersManage, InstallPolicyManage,
+		InstallAdaptersManage, InstallAuditRead, AppCreate:
+		return true
+	default:
+		return false
+	}
 }

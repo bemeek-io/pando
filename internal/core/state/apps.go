@@ -423,6 +423,14 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.SQLState() == "23505"
 }
 
+// isForeignKeyViolation reports a 23503. A foreign key refusing a write is
+// usually a caller passing an ID that names the wrong kind of thing, which is
+// worth a sentence rather than an internal error.
+func isForeignKeyViolation(err error) bool {
+	var pgErr interface{ SQLState() string }
+	return errors.As(err, &pgErr) && pgErr.SQLState() == "23503"
+}
+
 // Volumes records storage attached to apps.
 type Volumes struct{ db *DB }
 

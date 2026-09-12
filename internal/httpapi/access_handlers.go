@@ -114,9 +114,8 @@ type createUserRequest struct {
 // Local adapter only — an external identity provider's users arrive by
 // authenticating, not by being created here (R-044).
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
-	p := PrincipalFrom(r.Context())
-	if p.Kind == authz.KindAnonymous {
-		Error(w, r, errs.New(errs.AuthRequired, "You need to sign in."))
+	p, ok := s.requireInstall(w, r, authz.InstallUsersManage)
+	if !ok {
 		return
 	}
 
@@ -154,12 +153,18 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusCreated, user)
 }
 
+// handleGetUser returns one account.
+//
+// Your own without any administrative power; anyone else's with install.view.
+// The directory is not public: an account carries an email address and a
+// display name, and "every signed-in user can enumerate every user" is a
+// disclosure nobody asked for.
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
-	if PrincipalFrom(r.Context()).Kind == authz.KindAnonymous {
-		Error(w, r, errs.New(errs.AuthRequired, "You need to sign in."))
+	userID := chi.URLParam(r, "userID")
+	if _, ok := s.requireSelfOrInstall(w, r, userID, authz.InstallView); !ok {
 		return
 	}
-	user, found, err := s.Users.ByID(r.Context(), chi.URLParam(r, "userID"))
+	user, found, err := s.Users.ByID(r.Context(), userID)
 	if err != nil {
 		Error(w, r, err)
 		return
@@ -177,8 +182,9 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 // must never trigger the destruction rules that DELETE does (R-282), which is
 // why they are separate routes rather than one with a flag.
 func (s *Server) handlePatchUser(w http.ResponseWriter, r *http.Request) {
-	if PrincipalFrom(r.Context()).Kind == authz.KindAnonymous {
-		Error(w, r, errs.New(errs.AuthRequired, "You need to sign in."))
+	userID := chi.URLParam(r, "userID")
+	p, ok := s.requireSelfOrInstall(w, r, userID, authz.InstallUsersManage)
+	if !ok {
 		return
 	}
 
@@ -190,7 +196,6 @@ func (s *Server) handlePatchUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := chi.URLParam(r, "userID")
 	if err := s.Users.SetStatus(r.Context(), userID, req.Status); err != nil {
 		Error(w, r, err)
 		return
@@ -207,9 +212,9 @@ func (s *Server) handlePatchUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.audit(r, audit.Event{
-		PrincipalKind: audit.PrincipalKind(PrincipalFrom(r.Context()).Kind),
-		PrincipalID:   PrincipalFrom(r.Context()).ID,
-		OnBehalfOf:    PrincipalFrom(r.Context()).UserID,
+		PrincipalKind: audit.PrincipalKind(p.Kind),
+		PrincipalID:   p.ID,
+		OnBehalfOf:    p.UserID,
 		Action:        "user.update",
 		TargetKind:    "user",
 		TargetID:      userID,

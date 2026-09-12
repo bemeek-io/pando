@@ -47,6 +47,14 @@ func (s *store) UserStatus(_ context.Context, id string) (string, error) {
 func (s *store) ControlGrantsFor(context.Context, string, authz.Principal) ([]authz.Grant, error) {
 	return nil, nil
 }
+
+// Always empty. The proxy is the data plane, and no install-wide grant reaches
+// it: R-087 says being an administrator does not confer access to an app, and
+// this returning nil is that requirement in the fixture.
+func (s *store) InstallGrantsFor(context.Context, authz.Principal) ([]authz.Grant, error) {
+	return nil, nil
+}
+
 func (s *store) IsOwner(_ context.Context, appID, userID string) (bool, error) {
 	return userID != "" && s.owner[appID] == userID, nil
 }

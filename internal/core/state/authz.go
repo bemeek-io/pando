@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"sort"
 
 	"github.com/jackc/pgx/v5"
 
@@ -65,6 +66,78 @@ func (s *AuthzStore) ControlGrantsFor(ctx context.Context, appID string, p authz
 		out = append(out, g)
 	}
 	return out, rows.Err()
+}
+
+// InstallGrantsFor returns the principal's installation-wide grants (O-17).
+//
+// `app_id IS NULL` is the whole definition of install scope, and the schema
+// guarantees such a row carries an install-scoped role: grants.role_scope is
+// tied to roles.scope by a composite foreign key, and a CHECK ties role_scope
+// to whether app_id is null. So this cannot return a grant carrying app verbs
+// however the row was written.
+//
+// Group membership counts, as it does per app. Token principals do too — an
+// account token acts for its user (design 06 §2) — which means an install-wide
+// administrator's token is administrative, and that is the point of R-262's
+// "an agent holds what its user holds" rather than an exception to it.
+func (s *AuthzStore) InstallGrantsFor(ctx context.Context, p authz.Principal) ([]authz.Grant, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT g.id, coalesce(g.app_id, ''), g.plane, g.principal_kind,
+		       coalesce(g.principal_id, ''), coalesce(g.role_id, '')
+		FROM grants g
+		WHERE g.app_id IS NULL
+		  AND g.plane = 'control'
+		  AND (
+		        (g.principal_kind = 'user'  AND g.principal_id = $1)
+		     OR (g.principal_kind = 'token' AND g.principal_id = $2)
+		     OR (g.principal_kind = 'group' AND g.principal_id IN (
+		            SELECT group_id FROM group_members WHERE user_id = $1))
+		  )`,
+		nullable(p.UserID), nullable(accountTokenID(p)))
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read installation permissions.", err)
+	}
+	defer rows.Close()
+
+	var out []authz.Grant
+	for rows.Next() {
+		var g authz.Grant
+		if err := rows.Scan(&g.ID, &g.AppID, &g.Plane, &g.PrincipalKind, &g.PrincipalID, &g.RoleID); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read installation permissions.", err)
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// InstallVerbsFor returns every installation-wide verb the principal holds.
+//
+// For GET /me, so the console can decide whether to show the Admin entry and
+// what to put in it (R-265) without guessing. The list is the server's answer,
+// which is what keeps the console a client of the API rather than a second
+// opinion about authorization (R-261).
+func (s *AuthzStore) InstallVerbsFor(ctx context.Context, p authz.Principal) ([]string, error) {
+	grants, err := s.InstallGrantsFor(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := map[string]bool{}
+	var verbs []string
+	for _, g := range grants {
+		role, err := s.Role(ctx, g.RoleID)
+		if err != nil {
+			return nil, err
+		}
+		for _, verb := range role.Verbs {
+			if !seen[string(verb)] {
+				seen[string(verb)] = true
+				verbs = append(verbs, string(verb))
+			}
+		}
+	}
+	sort.Strings(verbs)
+	return verbs, nil
 }
 
 // IsOwner reports whether userID is the app's owner of record (R-031).
@@ -241,6 +314,162 @@ func (g *Grants) Create(ctx context.Context, appID, plane, kind, principalID, ro
 		return GrantRow{}, errs.Wrap(errs.Internal, "Could not share the app.", err)
 	}
 	return row, nil
+}
+
+// GrantInstall gives a principal an installation-wide control-plane grant (O-17).
+//
+// Install grants are deliberately not reachable through Create: an app-scoped
+// grant and an install-scoped one are different powers, and a caller that can
+// pass an empty app ID into the sharing path would be able to make an
+// administrator out of a sharing request. They are separate methods so the
+// callers are separate too — this one is reached from bootstrap, and will be
+// reached by the accounts screen's promote/demote route when that exists; never
+// from `POST /apps/{id}/grants`.
+//
+// There is no anonymous install grant, and the schema is what says so: an
+// anonymous grant has a NULL principal (R-074) and this refuses an empty one.
+//
+// A principal already holding an install grant has its role replaced rather
+// than a second row added — the schema allows exactly one control grant per
+// principal install-wide, so "grant administrator to someone who is already a
+// viewer" has only one sensible meaning. That also makes it idempotent, which
+// is what the bootstrap path needs: it runs on every start.
+func (g *Grants) GrantInstall(ctx context.Context, kind, principalID, roleID, createdBy string) (GrantRow, error) {
+	if principalID == "" {
+		return GrantRow{}, errs.New(errs.ValidInvalid, "This grant needs someone to grant it to.")
+	}
+	if roleID == "" {
+		return GrantRow{}, errs.New(errs.ValidInvalid, "An installation-wide grant needs a role.")
+	}
+
+	row := GrantRow{
+		ID: id.New(id.Grant), Plane: "control",
+		PrincipalKind: kind, PrincipalID: principalID, RoleID: roleID,
+	}
+
+	// ON CONFLICT infers grants_unique_principal, whose NULLS NOT DISTINCT is
+	// doing the work: with app_id null it reads "one control grant per
+	// principal, install-wide".
+	err := g.db.QueryRow(ctx, `
+		INSERT INTO grants (id, app_id, plane, role_scope, principal_kind, principal_id, role_id, created_by)
+		VALUES ($1, NULL, 'control', 'install', $2, $3, $4, $5)
+		ON CONFLICT (app_id, plane, principal_kind, principal_id) DO UPDATE
+		  SET role_id = excluded.role_id, role_scope = 'install'
+		RETURNING id, coalesce(role_id, '')`,
+		row.ID, kind, principalID, roleID, createdBy).Scan(&row.ID, &row.RoleID)
+	if err != nil {
+		// The composite foreign key refuses an app-scoped role here. That is a
+		// caller mistake rather than a database failure, and it deserves a
+		// sentence saying which of the two scopes the role belongs to.
+		if isForeignKeyViolation(err) {
+			return GrantRow{}, errs.New(errs.ValidInvalid,
+				"That role applies to a single app, so it cannot be granted across the installation.").
+				WithRemedy("Grant it on an app instead, or choose an installation role.")
+		}
+		return GrantRow{}, errs.Wrap(errs.Internal, "Could not grant installation-wide access.", err)
+	}
+	return row, nil
+}
+
+// RevokeInstall removes a principal's installation-wide grant.
+//
+// Refuses to remove the last account that can manage accounts. Without that
+// check the install becomes unadministrable in one click and the only way back
+// is a psql prompt — which is the same lockout O-17 allowed by accident, now
+// reachable on purpose. The check and the delete share a transaction, so two
+// administrators removing each other at the same moment cannot both succeed.
+//
+// The rule is stated in terms of `install.users.manage` rather than "the
+// administrator role", because a custom role (R-082) holding that verb is just
+// as much an administrator and a rule naming the built-in role would not see it.
+func (g *Grants) RevokeInstall(ctx context.Context, kind, principalID string) error {
+	tx, err := g.db.Begin(ctx)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not remove installation-wide access.", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM grants
+		WHERE app_id IS NULL AND plane = 'control'
+		  AND principal_kind = $1 AND principal_id = $2`, kind, principalID); err != nil {
+		return errs.Wrap(errs.Internal, "Could not remove installation-wide access.", err)
+	}
+
+	var remaining int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*)
+		FROM grants g
+		JOIN roles r ON r.id = g.role_id
+		WHERE g.app_id IS NULL
+		  AND g.plane = 'control'
+		  AND $1 = ANY (r.verbs)`, string(authz.InstallUsersManage)).Scan(&remaining); err != nil {
+		return errs.Wrap(errs.Internal, "Could not remove installation-wide access.", err)
+	}
+	if remaining == 0 {
+		return errs.New(errs.ValidInvalid,
+			"This is the only account that can manage accounts, so Pando cannot remove its access.").
+			WithRemedy("Make someone else an administrator first, then remove this one.")
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return errs.Wrap(errs.Internal, "Could not remove installation-wide access.", err)
+	}
+	return nil
+}
+
+// InstallRolesByPrincipal maps each principal holding an install grant to its
+// role ID, for the accounts screen.
+//
+// One query rather than one per account: the list is small (R-015 — one
+// install, one organization) but a per-row lookup is the shape that stops being
+// small quietly.
+func (g *Grants) InstallRolesByPrincipal(ctx context.Context) (map[string]string, error) {
+	rows, err := g.db.Query(ctx, `
+		SELECT principal_id, role_id
+		FROM grants
+		WHERE app_id IS NULL AND plane = 'control' AND principal_id IS NOT NULL`)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read installation-wide access.", err)
+	}
+	defer rows.Close()
+
+	out := map[string]string{}
+	for rows.Next() {
+		var principal, role string
+		if err := rows.Scan(&principal, &role); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read installation-wide access.", err)
+		}
+		out[principal] = role
+	}
+	return out, rows.Err()
+}
+
+// InstallRoles returns the roles that may be granted installation-wide (R-082).
+//
+// Read from the roles table rather than hardcoded, so a custom install-scoped
+// role appears in the console the moment it exists without a second change here.
+func (g *Grants) InstallRoles(ctx context.Context) ([]authz.Role, error) {
+	rows, err := g.db.Query(ctx,
+		`SELECT id, name, builtin, verbs FROM roles WHERE scope = 'install' ORDER BY name`)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the roles.", err)
+	}
+	defer rows.Close()
+
+	out := make([]authz.Role, 0)
+	for rows.Next() {
+		var r authz.Role
+		var verbs []string
+		if err := rows.Scan(&r.ID, &r.Name, &r.Builtin, &verbs); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the roles.", err)
+		}
+		for _, v := range verbs {
+			r.Verbs = append(r.Verbs, authz.Verb(v))
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // ListForApp returns an app's grants.

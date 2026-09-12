@@ -55,10 +55,12 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 // modes an adapter does not support instead of offering choices that fail at
 // plan time. Stored capabilities would drift the first time an adapter was
 // upgraded.
+// install.view rather than something app-scoped: this is the install's
+// inventory, including which adapters are configured and whether each is
+// reachable, which is operational detail about the host rather than about any
+// app.
 func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
-	p := PrincipalFrom(r.Context())
-	if p.Kind == authz.KindAnonymous {
-		Error(w, r, errs.New(errs.AuthRequired, "You need to sign in."))
+	if _, ok := s.requireInstall(w, r, authz.InstallView); !ok {
 		return
 	}
 
@@ -117,9 +119,7 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 
 // handleCapacity aggregates what the runtime adapters report (R-243).
 func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
-	p := PrincipalFrom(r.Context())
-	if p.Kind == authz.KindAnonymous {
-		Error(w, r, errs.New(errs.AuthRequired, "You need to sign in."))
+	if _, ok := s.requireInstall(w, r, authz.InstallView); !ok {
 		return
 	}
 
