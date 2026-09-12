@@ -195,10 +195,17 @@ func TestR265_TheServerReportsWhatTheConsoleScopesOn(t *testing.T) {
 
 	// The administrator: every install verb, and no app verb — so the console
 	// can offer the install screens and must not assume anything about apps.
+	//
+	// Listed exhaustively rather than counted. A new install verb should fail
+	// here until someone has decided whether the built-in administrator holds
+	// it — which is the decision R-081 says is made by migration, and this is
+	// the test that makes forgetting it noisy. install.backup.manage arrived in
+	// phase 9 and did exactly that.
 	held := verbsOf(t, admin)
 	require.ElementsMatch(t, []string{
 		"install.view", "install.users.manage", "install.policy.manage",
-		"install.adapters.manage", "install.audit.read", "app.create",
+		"install.adapters.manage", "install.audit.read", "install.backup.manage",
+		"app.create",
 	}, held)
 
 	// An ordinary account: the key is present and the list is empty. Present,

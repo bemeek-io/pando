@@ -16,9 +16,50 @@ import (
 // live in the database (adapter_configs), not here, so they can be changed
 // through the API without a restart or a file edit.
 type Config struct {
-	Server   Server   `mapstructure:"server"`
-	Database Database `mapstructure:"database"`
-	Log      Log      `mapstructure:"log"`
+	Server     Server     `mapstructure:"server"`
+	Database   Database   `mapstructure:"database"`
+	Log        Log        `mapstructure:"log"`
+	Reconciler Reconciler `mapstructure:"reconciler"`
+}
+
+// Reconciler tunes R-149's retry backoff and R-150's give-up rule.
+//
+// Present because the acceptance test for R-151 has to wait out the real
+// schedule, and at the shipped numbers that is forty minutes. Leave these unset
+// in production: the defaults are the requirement, and Pando says so at startup
+// if they are set faster.
+type Reconciler struct {
+	// Backoff is the retry schedule, indexed by consecutive failures, as a
+	// comma-separated list of durations: "0s,5s,15s,60s,5m".
+	Backoff string `mapstructure:"backoff"`
+
+	// FailureThreshold is how many failures inside FailureWindow before an app
+	// is given up on and left failed (R-150).
+	FailureThreshold int `mapstructure:"failure_threshold"`
+
+	// FailureWindow is measured from the last failure, so a slow crash loop
+	// still reaches the threshold rather than resetting forever.
+	FailureWindow time.Duration `mapstructure:"failure_window"`
+}
+
+// BackoffSchedule parses Backoff, returning nil when it is unset.
+func (r Reconciler) BackoffSchedule() ([]time.Duration, error) {
+	if strings.TrimSpace(r.Backoff) == "" {
+		return nil, nil
+	}
+
+	var out []time.Duration
+	for _, part := range strings.Split(r.Backoff, ",") {
+		d, err := time.ParseDuration(strings.TrimSpace(part))
+		if err != nil {
+			return nil, fmt.Errorf("reconciler.backoff: %q is not a duration like 5s or 2m: %w", part, err)
+		}
+		if d < 0 {
+			return nil, fmt.Errorf("reconciler.backoff: %q is negative", part)
+		}
+		out = append(out, d)
+	}
+	return out, nil
 }
 
 type Server struct {
@@ -95,6 +136,21 @@ func Load(path string) (*Config, error) {
 	v.SetEnvPrefix("PANDO")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
+
+	// Registering every key with a zero default, so Unmarshal can see it.
+	//
+	// This is the other half of the same viper trap as the binds below. BindEnv
+	// makes a key readable through Get; it does not necessarily put the key in
+	// the settings map that Unmarshal walks. A key with neither a default nor a
+	// config-file entry can therefore be bound, be present in the environment,
+	// and still arrive as the zero value — silently, which is the part that
+	// costs an afternoon.
+	//
+	// A zero default is not a value: it is how the key gets registered.
+	v.SetDefault("server.base_domain", "")
+	v.SetDefault("reconciler.backoff", "")
+	v.SetDefault("reconciler.failure_threshold", 0)
+	v.SetDefault("reconciler.failure_window", time.Duration(0))
 
 	// Every key is bound explicitly, and that is not belt-and-braces.
 	//

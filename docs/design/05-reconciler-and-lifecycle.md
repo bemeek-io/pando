@@ -200,6 +200,21 @@ const (
 )
 ```
 
+**[D] Both are configurable, and unset in production.** `reconciler.backoff`,
+`reconciler.failure_threshold` and `reconciler.failure_window` override the numbers above; a zero
+value means the shipped default, so an install that sets nothing gets the requirement.
+
+They exist for one reason. The acceptance test for R-151 — a crash-looping app reaches `failed` and
+stays there — has to wait out the real schedule, and at these numbers that is **forty minutes of a
+forty-three minute suite**. The test asserts the state machine and was paying for the durations.
+Compressed to `0s,1s,2s,3s,4s` it runs in three minutes and asserts exactly the same transitions:
+changing how long each step waits changes nothing about which step comes next.
+
+There is no floor, because a floor would put the schedule back out of reach of the test that needed
+it. Instead Pando **warns at startup** when the cap is below `MinProductionCap`, naming it as a
+testing setting — an install retrying a broken app every second forever is a real way to melt a host,
+and this is exactly the kind of line that gets copied out of a test compose file into a real one.
+
 **[D]** Counter resets when the app reaches `running` with health passing. A flapping app that recovers between failures still accumulates toward the threshold, which is correct — flapping is a failure mode.
 
 **[D] The window is measured from the last failure, not the first.** Measured from the first, the

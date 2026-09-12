@@ -32,6 +32,23 @@ services:
       PANDO_SERVER_BASE_DOMAIN: ${PANDO_BASE_DOMAIN:-localtest.me}
       # Where routing adapters send traffic: always Pando's proxy (R-023).
       PANDO_SERVER_PROXY_UPSTREAM: http://pando:8080
+
+      # Retry backoff (R-149) and the give-up rule (R-150). Unset here, so the
+      # shipped defaults apply — they are the requirement.
+      #
+      # The acceptance suite is the reason these exist: at the real numbers,
+      # TestR151_ACrashLoopingAppReachesFailedAndStaysThere is forty minutes of
+      # a forty-three minute run, and it is asserting the state machine rather
+      # than the durations. To run the suite quickly:
+      #
+      #   PANDO_RECONCILER_BACKOFF=0s,1s,2s,3s,4s       #   PANDO_RECONCILER_FAILURE_WINDOW=2m docker compose up -d
+      #
+      # Pando warns at startup if these are set faster than the default, because
+      # an install retrying a broken app every second forever is a real way to
+      # melt a host.
+      PANDO_RECONCILER_BACKOFF: ${PANDO_RECONCILER_BACKOFF:-}
+      PANDO_RECONCILER_FAILURE_WINDOW: ${PANDO_RECONCILER_FAILURE_WINDOW:-}
+      PANDO_RECONCILER_FAILURE_THRESHOLD: ${PANDO_RECONCILER_FAILURE_THRESHOLD:-}
     command: ["serve"]
     ports:
       - "${PANDO_PORT:-8080}:8080"

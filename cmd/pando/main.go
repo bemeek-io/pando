@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -382,6 +383,12 @@ func serve(ctx context.Context, configPath string) error {
 	// The reconciler. Apps that kept running while Pando was away are converged
 	// to, not restarted for tidiness — an app that was running and is still
 	// running needs nothing done to it (design 05 §2.1.1).
+	backoffSchedule, err := cfg.Reconciler.BackoffSchedule()
+	if err != nil {
+		return err
+	}
+	warnIfRetriesAreFast(logger, backoffSchedule)
+
 	loop := &reconciler.Reconciler{
 		Apps:          apps,
 		Reconciles:    reconciles,
@@ -392,6 +399,11 @@ func serve(ctx context.Context, configPath string) error {
 		Logger:        logger,
 		Clock:         clock.System{},
 		ProxyUpstream: proxyUpstream,
+
+		// Unset in production: the zero values mean R-149 and R-150's defaults.
+		Backoff:          backoffSchedule,
+		FailureThreshold: cfg.Reconciler.FailureThreshold,
+		FailureWindow:    cfg.Reconciler.FailureWindow,
 	}
 	loopCtx, stopLoop := context.WithCancel(ctx)
 	defer stopLoop()
@@ -593,6 +605,29 @@ func secretsKeyPath(ctx context.Context, store *state.Adapters, logger *zap.Logg
 // is a release process; "dev" until then, which is honest rather than a version
 // number nobody set.
 const buildVersion = "dev"
+
+// warnIfRetriesAreFast says so when the retry schedule is configured faster than
+// R-149's default.
+//
+// Not refused, because a floor would make the schedule untestable end to end
+// and that is the whole reason it is configurable. But an install retrying a
+// broken app every couple of seconds forever is a real way to melt a host, and
+// nobody should be able to do that without being told — especially since the
+// setting exists for tests and is exactly the kind of thing that gets copied
+// out of a test compose file into a real one.
+func warnIfRetriesAreFast(logger *zap.Logger, schedule []time.Duration) {
+	if len(schedule) == 0 {
+		return
+	}
+	cap := schedule[len(schedule)-1]
+	if cap >= reconciler.MinProductionCap {
+		return
+	}
+	logger.Warn("retry backoff is configured faster than the shipped default",
+		zap.Duration("cap", cap),
+		zap.Duration("default_cap", reconciler.DefaultBackoff[len(reconciler.DefaultBackoff)-1]),
+		zap.String("note", "this is a testing setting (R-149). An app that cannot start will be retried this often, forever."))
+}
 
 // auditDenials writes an audit event for every authorization denial.
 //

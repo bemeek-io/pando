@@ -30,18 +30,28 @@ const (
 	// Concurrency is how many apps are reconciled at once.
 	Concurrency = 8
 
-	// FailureThreshold and FailureWindow are R-150's give-up rule.
-	FailureThreshold = 10
-	FailureWindow    = 30 * time.Minute
+	// DefaultFailureThreshold and DefaultFailureWindow are R-150's give-up rule.
+	DefaultFailureThreshold = 10
+	DefaultFailureWindow    = 30 * time.Minute
 )
 
-// Backoff is R-149, capped at five minutes.
+// DefaultBackoff is R-149, capped at five minutes.
 //
 // Indexed by consecutive failures, so the first correction is immediate: a
 // container killed once should come back now, not in five seconds. The cap
 // matters more than the curve — an app that cannot start must not be retried
 // forever at speed, and must still be retried.
-var Backoff = []time.Duration{0, 5 * time.Second, 15 * time.Second, 60 * time.Second, 5 * time.Minute}
+var DefaultBackoff = []time.Duration{0, 5 * time.Second, 15 * time.Second, 60 * time.Second, 5 * time.Minute}
+
+// MinProductionCap is the smallest last-step backoff that is not obviously a
+// test setting.
+//
+// Not enforced — a floor would make the schedule untestable end to end, which
+// is the problem this configurability exists to solve. It is the threshold for
+// saying so loudly at startup instead: an install retrying a broken app every
+// two seconds forever is a real way to melt a host, and it should not be
+// something an operator can do without being told.
+const MinProductionCap = 30 * time.Second
 
 // Registry resolves adapters by reference.
 type Registry interface {
@@ -65,6 +75,23 @@ type Reconciler struct {
 	Notifier   Notifier
 	Logger     *zap.Logger
 	Clock      clock.Clock
+
+	// Backoff, FailureThreshold and FailureWindow override R-149 and R-150's
+	// defaults. Zero values mean the defaults, so a caller that does not care
+	// sets nothing.
+	//
+	// Configurable because the acceptance test for R-151 — a crash-looping app
+	// reaches failed and stays there — has to wait out the real schedule, and
+	// at the production numbers that is forty minutes of a forty-three minute
+	// suite. The test is asserting the state machine, not the durations, and it
+	// was paying for the durations.
+	//
+	// The state machine is what stays under test either way: compressing the
+	// schedule changes how long each step waits and nothing about which step
+	// comes next.
+	Backoff          []time.Duration
+	FailureThreshold int
+	FailureWindow    time.Duration
 
 	// ProxyUpstream is where routes point. Every route points at Pando's proxy
 	// and never at a workload (R-023) — the reconciler re-ensuring a route must
@@ -400,13 +427,13 @@ func (r *Reconciler) report(ctx context.Context, app state.Reconcilable, drift D
 // error is a detail of how it was not working. What resets the count is the app
 // actually running with health passing, and nothing else.
 func (r *Reconciler) attempt(ctx context.Context, app state.Reconcilable, reason string) {
-	count, err := r.Reconciles.RecordFailure(ctx, app.ID, reason, FailureWindow, r.nextAttempt(app.ConsecutiveFailures+1))
+	count, err := r.Reconciles.RecordFailure(ctx, app.ID, reason, r.failureWindow(), r.nextAttempt(app.ConsecutiveFailures+1))
 	if err != nil {
 		r.Logger.Warn("could not record the attempt", zap.String("app_id", app.ID), zap.Error(err))
 		return
 	}
 
-	if count < FailureThreshold {
+	if count < r.failureThreshold() {
 		if app.State != state.StateDegraded {
 			_ = r.Apps.SetState(ctx, app.ID, state.StateDegraded)
 		}
@@ -419,11 +446,11 @@ func (r *Reconciler) attempt(ctx context.Context, app state.Reconcilable, reason
 	_ = r.Auditor.Write(ctx, AuditEvent{
 		Action: "app.failed",
 		AppID:  app.ID,
-		Detail: map[string]any{"failures": count, "window": FailureWindow.String(), "reason": reason},
+		Detail: map[string]any{"failures": count, "window": r.failureWindow().String(), "reason": reason},
 	})
 	r.notify(ctx, app, api.NotifyAppFailed,
 		"Pando has stopped trying to start this app",
-		"It failed "+itoa(count)+" times in "+FailureWindow.String()+". "+reason+
+		"It failed "+itoa(count)+" times in "+r.failureWindow().String()+". "+reason+
 			" Pando will not try again on its own — fix what is wrong and deploy again.")
 }
 
@@ -452,13 +479,36 @@ func (r *Reconciler) notify(ctx context.Context, app state.Reconcilable, kind ap
 	})
 }
 
+// backoff is the configured schedule, or R-149's default.
+func (r *Reconciler) backoff() []time.Duration {
+	if len(r.Backoff) > 0 {
+		return r.Backoff
+	}
+	return DefaultBackoff
+}
+
+func (r *Reconciler) failureThreshold() int {
+	if r.FailureThreshold > 0 {
+		return r.FailureThreshold
+	}
+	return DefaultFailureThreshold
+}
+
+func (r *Reconciler) failureWindow() time.Duration {
+	if r.FailureWindow > 0 {
+		return r.FailureWindow
+	}
+	return DefaultFailureWindow
+}
+
 // nextAttempt returns when this app may be tried again.
 func (r *Reconciler) nextAttempt(failures int) time.Time {
+	schedule := r.backoff()
 	index := failures
-	if index >= len(Backoff) {
-		index = len(Backoff) - 1
+	if index >= len(schedule) {
+		index = len(schedule) - 1
 	}
-	return r.now().Add(Backoff[index])
+	return r.now().Add(schedule[index])
 }
 
 func (r *Reconciler) now() time.Time {

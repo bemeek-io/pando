@@ -29,6 +29,30 @@ Either one used to turn the whole suite into dozens of identical failures. Set
 PANDO_TEST_PASSWORD=... go test -tags=integration ./test/acceptance/
 ```
 
+### Running it in three minutes instead of forty-three
+
+One test dominates: `TestR151_ACrashLoopingAppReachesFailedAndStaysThere` waits out R-149's
+real retry backoff, which at the shipped numbers is about forty minutes of a
+forty-three minute run. It is asserting the state machine, not the durations.
+
+Compress the schedule and it finishes in three:
+
+```
+PANDO_RECONCILER_BACKOFF=0s,1s,2s,3s,4s \
+PANDO_RECONCILER_FAILURE_WINDOW=2m \
+PANDO_PORT=8099 docker compose up -d
+
+PANDO_RECONCILER_BACKOFF=0s,1s,2s,3s,4s \
+PANDO_RECONCILER_FAILURE_WINDOW=2m \
+go test -tags=integration ./test/acceptance/
+```
+
+Both sides need it: the server runs the schedule and the test sizes its deadlines from the
+same variables, so it cannot pass for the wrong reason. Pando warns at startup when the
+backoff is faster than the default, because an install retrying a broken app every second
+forever is a real way to melt a host — leave these unset in production, where the shipped
+numbers *are* the requirement.
+
 Run everything with `make test-integration`. They use `testcontainers-go` against real Postgres and real Docker,
 and are behind an `integration` build tag so `make test` stays fast.
 

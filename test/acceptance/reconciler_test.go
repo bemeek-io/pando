@@ -4,7 +4,9 @@ package acceptance_test
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -130,17 +132,73 @@ func TestR151_ACrashLoopingAppReachesFailedAndStaysThere(t *testing.T) {
 	dep := c.deploy(t, app, 0)
 	c.awaitDeployment(t, app, dep["id"].(string), 10*time.Minute)
 
-	// Ten attempts, spread by a backoff that caps at five minutes.
-	state := awaitState(t, c, app, 40*time.Minute, "failed")
+	// Sized from the schedule the stack is actually running, rather than from
+	// the production numbers. At those, this one test is forty minutes of a
+	// forty-three minute suite — and it is asserting the state machine, not the
+	// durations. See PANDO_RECONCILER_BACKOFF in the README.
+	reachFailed, stayFailed := crashLoopDeadlines()
+
+	state := awaitState(t, c, app, reachFailed, "failed")
 	require.Equal(t, "failed", state)
 
-	// And stays. Six minutes is past every retry interval the loop has.
-	deadline := time.Now().Add(6 * time.Minute)
+	// And stays. The window is past every retry interval the loop has, so if
+	// anything were still trying, it would have tried by now.
+	deadline := time.Now().Add(stayFailed)
 	for time.Now().Before(deadline) {
 		require.Equal(t, "failed", c.get(t, "/apps/"+app)["state"],
 			"a failed app stays failed until a person intervenes (R-151)")
-		time.Sleep(30 * time.Second)
+		time.Sleep(stayFailed / 6)
 	}
+}
+
+// crashLoopDeadlines works out how long to wait from the schedule the server is
+// running, read from the same environment variables that configured it.
+//
+// Derived rather than hardcoded so the test cannot quietly pass for the wrong
+// reason: with a compressed schedule a fixed 40-minute deadline would still
+// pass, but it would also pass if the give-up rule had stopped working and the
+// app reached failed by some other route.
+func crashLoopDeadlines() (reachFailed, stayFailed time.Duration) {
+	schedule := []time.Duration{0, 5 * time.Second, 15 * time.Second, 60 * time.Second, 5 * time.Minute}
+	if raw := os.Getenv("PANDO_RECONCILER_BACKOFF"); raw != "" {
+		var parsed []time.Duration
+		ok := true
+		for _, part := range strings.Split(raw, ",") {
+			d, err := time.ParseDuration(strings.TrimSpace(part))
+			if err != nil {
+				ok = false
+				break
+			}
+			parsed = append(parsed, d)
+		}
+		if ok && len(parsed) > 0 {
+			schedule = parsed
+		}
+	}
+
+	threshold := 10
+	if raw := os.Getenv("PANDO_RECONCILER_FAILURE_THRESHOLD"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			threshold = n
+		}
+	}
+
+	// The sum of the first `threshold` steps, extending the last one.
+	var total time.Duration
+	for i := 0; i < threshold; i++ {
+		step := schedule[len(schedule)-1]
+		if i < len(schedule) {
+			step = schedule[i]
+		}
+		total += step
+	}
+
+	// Double it, plus the reconcile tick and the time each attempt takes to
+	// actually fail. Generous, because a flaky deadline in this test is worse
+	// than a slow one.
+	reachFailed = 2*total + 2*time.Minute
+	stayFailed = schedule[len(schedule)-1]*2 + 30*time.Second
+	return reachFailed, stayFailed
 }
 
 // Design 05 §2.1.1: Pando stopping does not stop apps, and coming back does not
