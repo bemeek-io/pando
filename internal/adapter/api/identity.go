@@ -19,6 +19,12 @@ const (
 	CategorySecrets  Category = "secrets"
 	CategoryServices Category = "services"
 	CategoryNotify   Category = "notify"
+
+	// CategoryBackup is the eighth (R-252), added in phase 9. It reverses a
+	// decision recorded in design 03 §8.1 through phase 8; that section now
+	// carries the reversal and the reasoning, rather than the change being
+	// visible only here.
+	CategoryBackup Category = "backup"
 )
 
 // Adapter is implemented by every adapter in every category.

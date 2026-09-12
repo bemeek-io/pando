@@ -222,6 +222,7 @@ Install-scoped:
 | `install.policy.manage` | Edit host policy |
 | `install.adapters.manage` | Configure adapters |
 | `install.audit.read` | Read the install-wide audit log |
+| `install.backup.manage` | Take, verify and restore backups (R-212–R-216) |
 | `app.create` | Create an app. Install-scoped despite the name: there is no app yet when it is checked |
 
 App-scoped:
@@ -501,7 +502,10 @@ administrator holds a grant on it like anyone else (R-087).
 
 **R-216 [P]** Verification should also be invocable against a bundle without committing it, so a backup can be checked before it is needed rather than at the moment of disaster.
 
-**R-217 [O-6]** Backup destination. Local disk by default is nearly useless for the disk-failure case; a configurable remote destination (S3, mounted share) is expected but unspecified.
+**R-217 [D]** Backup destination is an **adapter category** (R-252). Local disk by default is nearly
+useless for the disk-failure case; a remote destination is configured the way every other provider is,
+by configuring an adapter. **[V1]** `local` — a filesystem path. Others are ordinary adapters, added
+without touching core (O-6 resolved).
 
 ---
 
@@ -563,7 +567,15 @@ administrator holds a grant on it like anyone else (R-087).
 
 **R-251 [D]** Core never learns a provider's vocabulary. A requirement crossing the interface is expressed in Pando's terms — "2 GB, one persistent volume, one exposed HTTP port" — and the adapter turns it into a VM profile or container arguments.
 
-**R-252 [D]** Adapter categories: identity, routing/ingress, builder, runtime, secrets, services, notification.
+**R-252 [D]** Adapter categories: identity, routing/ingress, builder, runtime, secrets, services, notification, **backup**.
+
+Backup was added in phase 9, reversing an earlier decision that a backup destination was a byte sink
+rather than a category (design 03 §8.1). The earlier reasoning still describes a *destination*
+correctly — a thing that takes bytes and gives them back has nothing to negotiate. What it missed is
+that the destinations people actually want are not byte sinks: an object store expires objects and
+versions them, a mounted share does neither, and whether a destination can enforce retention itself
+is exactly the kind of question R-254 says belongs in a capabilities struct rather than in a type
+assertion. A `Destination` interface would have had to grow one anyway, under a different name.
 
 **R-253 [D]** **Adapters are compiled in-tree.** Pando ships as a single binary. Third parties contribute adapters by pull request. There is no external plugin protocol and none is planned.
 

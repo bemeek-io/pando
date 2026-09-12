@@ -92,6 +92,8 @@ func satisfiesCategory(a Adapter) error {
 		_, ok = a.(IdentityAdapter)
 	case CategoryNotify:
 		_, ok = a.(NotifyAdapter)
+	case CategoryBackup:
+		_, ok = a.(BackupAdapter)
 	default:
 		return fmt.Errorf("unknown category %q", a.Category())
 	}
@@ -179,6 +181,16 @@ func (r *Registry) Secrets(ref string) (SecretsAdapter, bool) {
 	}
 	s, ok := a.(SecretsAdapter)
 	return s, ok
+}
+
+// Backup returns a backup adapter by reference (R-217).
+func (r *Registry) Backup(ref string) (BackupAdapter, bool) {
+	a, ok := r.Get(ref)
+	if !ok {
+		return nil, false
+	}
+	b, ok := a.(BackupAdapter)
+	return b, ok
 }
 
 // HealthCheckAll reports which adapters are unhealthy, by reference.

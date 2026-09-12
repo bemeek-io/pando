@@ -1,8 +1,8 @@
 # Open decisions
 
 Seventeen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
-design; O-15 through O-17 were found while implementing phases 6, 7 and 8. **Twelve are resolved. Five
-remain, none blocking.**
+design; O-15 through O-17 were found while implementing phases 6, 7 and 8. **Thirteen are resolved.
+Four remain, none blocking.**
 
 **These are not TODOs to resolve at your discretion.** An agent hitting an open one should raise it,
 state which options the docs already identify, and stop — not pick quietly and move on. Record any
@@ -14,7 +14,6 @@ resolution both here and in the requirements or design doc that owns it.
 |---|---|---|---|
 | **O-4** | Required vs optional slot detection — the forty-key `.env.example` problem | Has a `[P]` answer that needs measuring, not deciding | Phase 6 |
 | **O-5** | TLS issuance — ACME, wildcards, self-signed local | Genuinely per-adapter; each routing adapter answers it for itself | Per adapter |
-| **O-6** | Which backup destinations ship — local, S3, mounted share | Provider-shaped. The *design* half is settled: a destination is not an adapter category (design 03 §8.1) | Phase 9 |
 | **O-15** | How a host port is chosen in port-mode routing | Nothing in the requirements says. Has a `[P]` answer in code | Phase 6 (shipped), revisit at phase 10 |
 | **O-16** | How log retention is actually enforced (R-222–R-224) | The requirement is clear; no mechanism exists to carry it out | Phase 7 (deferred), needed before an install runs many apps |
 
@@ -92,7 +91,23 @@ shape). A routing adapter that issues certificates declares how; one that cannot
 | **O-12** | MCP exclusion list hard or policy-controlled | Policy-controlled, default-closed, expressed as host policy — not a second mechanism | design 04 §3 |
 | **O-13** | Session revocation mid-websocket | Re-authorize on the assertion lifetime; close on failure | design 06 §4.2 |
 | **O-14** | DR restore bootstrap ordering | Largely dissolved by O-11; confirm sequencing in phase 9 | design 07 D |
+| **O-6** | Which backup destinations ship | Backup is an adapter category; destinations are adapters, and `local` ships in v1 | R-217, R-252, design 03 §8.1 |
 | **O-17** | What an "administrative verb" is (R-265) | Install-scoped verbs, held as a grant with no app; a fourth built-in role | design 06 §2.1, R-080/R-081 |
+
+### O-6, and the `[D]` it reversed
+
+**O-6 — resolved by making backup a category, which reversed a `[D]`.** The question was "which
+destinations ship"; the answer changes the shape rather than the list. Destinations are adapters, so
+which ones ship is the same kind of question as which runtimes ship, and it stops being an open
+decision — `local` is v1, anything else is a pull request that touches no core code.
+
+The reversal is the interesting part and it is recorded in full in design 03 §8.1, including what the
+old argument got right. Short version: it described a byte sink correctly, then assumed the
+destinations people want are byte sinks. An object store expires and versions objects on its own
+schedule and a filesystem path does not, so R-211's retention has two possible owners and picking the
+wrong one silently breaks either pruning or restoring. That is a capabilities question (R-254), and a
+`Destination` interface would have grown a capabilities struct one provider later, consulted through
+the type assertion R-254 exists to forbid.
 
 ### O-17 in full, because it was a live escalation
 

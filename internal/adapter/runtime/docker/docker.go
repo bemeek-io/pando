@@ -450,13 +450,7 @@ func (a *Adapter) DestroyVolume(ctx context.Context, h api.VolumeHandle) error {
 //
 // They return a plan-time-shaped error rather than a silent no-op, because a
 // backup that quietly does nothing is worse than one that refuses.
-func (a *Adapter) SnapshotVolume(context.Context, api.VolumeHandle, io.Writer) error {
-	return errs.New(errs.AdapterFailed, "Backing up storage is not available yet.")
-}
-
-func (a *Adapter) RestoreVolume(context.Context, api.VolumeHandle, io.Reader) error {
-	return errs.New(errs.AdapterFailed, "Restoring storage is not available yet.")
-}
+// SnapshotVolume and RestoreVolume are in volumes_backup.go (R-212).
 
 // ImportImage loads an image tarball into the daemon.
 //

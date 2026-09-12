@@ -394,10 +394,10 @@ func TestSystemPrincipalBypassesGrantsButIsStillAPrincipal(t *testing.T) {
 }
 
 func TestVerbCatalogIsClosed(t *testing.T) {
-	// 13 app verbs plus the six install-scoped ones (O-17). The count is here
+	// 13 app verbs plus the seven install-scoped ones (O-17, R-217). The count is here
 	// deliberately: R-080 says the catalog is fixed, so adding a verb should
 	// require editing a test rather than only a constant.
-	require.Len(t, authz.Verbs, 19)
+	require.Len(t, authz.Verbs, 20)
 	require.True(t, authz.IsVerb(authz.AppEgressOverride), "R-184's verb must exist")
 	require.False(t, authz.IsVerb(authz.Verb("app.do.anything")))
 
@@ -409,7 +409,7 @@ func TestVerbCatalogIsClosed(t *testing.T) {
 			app++
 		}
 	}
-	require.Equal(t, 6, install)
+	require.Equal(t, 7, install)
 	require.Equal(t, 13, app)
 }
 

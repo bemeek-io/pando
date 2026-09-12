@@ -21,6 +21,12 @@ const (
 	InstallAdaptersManage Verb = "install.adapters.manage"
 	InstallAuditRead      Verb = "install.audit.read"
 
+	// InstallBackupManage covers taking, verifying and restoring backups.
+	// Its own verb rather than part of install.policy.manage: a restore
+	// replaces the entire install, and folding that into the verb that edits a
+	// source allowlist would hand it to everyone who could edit one.
+	InstallBackupManage Verb = "install.backup.manage"
+
 	// AppCreate is install-scoped despite its name: there is no app yet when it
 	// is checked. Sequence A step 1 has always called it install-level.
 	AppCreate Verb = "app.create"
@@ -53,6 +59,7 @@ var Verbs = []Verb{
 	InstallPolicyManage,
 	InstallAdaptersManage,
 	InstallAuditRead,
+	InstallBackupManage,
 	AppCreate,
 
 	AppView,
@@ -131,7 +138,7 @@ func (r Role) Has(v Verb) bool {
 func InstallScoped(v Verb) bool {
 	switch v {
 	case InstallView, InstallUsersManage, InstallPolicyManage,
-		InstallAdaptersManage, InstallAuditRead, AppCreate:
+		InstallAdaptersManage, InstallAuditRead, InstallBackupManage, AppCreate:
 		return true
 	default:
 		return false

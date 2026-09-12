@@ -474,22 +474,38 @@ type Notification struct {
 
 ---
 
-## 8.1 What is deliberately not an adapter category
+## 8.1 What is and is not an adapter category
 
-**[D] Backup destinations are not an eighth category.** Writing a DR bundle to local disk, S3, or a
-mounted share is a choice of byte sink, resolved from a URL scheme in configuration. It gets a small
-`Destination` interface over `io.Writer`/`io.Reader` and nothing more.
+**[D] Backup is the eighth category (R-252).** This reverses the decision recorded here through phase
+8, and the reversal is written down rather than quietly applied.
 
-The adapter model exists for two things: capability negotiation and vocabulary translation. A runtime
-adapter has capabilities the planner must check and a vocabulary core must never learn. A destination
-has neither — it accepts bytes and returns them, there is nothing to negotiate, and no plan-time
-decision depends on which one is configured. Making it a category would give it a `Capabilities()` no
-caller consults and a `HealthCheck()` whose failure means nothing until a backup runs.
+**What this section used to say**, and why it was reasonable: writing a DR bundle to local disk, S3 or
+a mounted share is a choice of byte sink. The adapter model exists for capability negotiation and
+vocabulary translation; a destination that accepts bytes and returns them has neither, so it should be
+a small `Destination` interface over `io.Writer`/`io.Reader` and nothing more. Making it a category
+would give it a `Capabilities()` no caller consults and a `HealthCheck()` whose failure means nothing
+until a backup runs.
 
-This is the general test to apply before adding a category: **does the planner need to ask it a
-question, and does it have a vocabulary worth hiding?** If neither, it is a library, and the eight
-categories stay seven plus config. Which destinations ship is a separate, provider-shaped question
-(O-6) and does not change this answer.
+**Why that was wrong.** It described a *destination* accurately and then assumed the destinations
+people want are destinations. They are not. An object store expires objects on its own schedule,
+versions them, and may hold a compliance lock that prevents deletion; a filesystem path does none of
+those. So R-211's retention has two possible owners — Pando, or the destination — and which one is in
+charge is a real question with a real wrong answer: if Pando prunes what the store has already locked,
+every prune fails; if the store expires what Pando still counts as retained, a restore finds nothing.
+That is precisely the "advertise capabilities as data" case R-254 exists for. A `Destination`
+interface would have grown a capabilities struct within one more provider, under a worse name, and it
+would have been consulted through a type assertion — which R-254 forbids because a type assertion is
+invisible to the caller that needs to plan around it.
+
+`HealthCheck()` earns its place for the same reason the argument dismissed it: an unreachable backup
+destination is worth knowing about *before* the disaster, not at the moment a backup runs. That is
+R-216's argument for verifying a bundle before it is needed, one level up.
+
+**The test to apply before adding a ninth** is unchanged, and it is a good test: **does the planner
+need to ask it a question, and does it have a vocabulary worth hiding?** Backup passes the first half
+— retention ownership and whether the destination can list and expire are questions with plan-time
+consequences. It passes the second thinly: "bucket" and "prefix" are a vocabulary, if a small one.
+A category that passes neither is a library.
 
 ---
 
@@ -520,5 +536,6 @@ func (r *Registry) Default(c Category) (Adapter, error)
 | builder | `buildkit` | rootless, containerized, no socket (R-111) |
 | runtime | `docker` | container isolation class |
 | secrets | `local` | encrypted at rest, key on disk (R-190) |
+| backup | `local` | a filesystem path; retention owned by Pando |
 | services | `docker` | postgres, mysql, redis in-bundle |
 | notify | `console` | R-231 |

@@ -368,19 +368,32 @@ CREATE INDEX ON sessions (user_id) WHERE revoked_at IS NULL;
 ```sql
 CREATE TABLE backups (
     id           text PRIMARY KEY,            -- bkp_...
-    app_id       text,                        -- NULL for full-host DR bundles
-    kind         text NOT NULL,               -- rolling | on_delete | dr_bundle
-    destination  text NOT NULL,
+    app_id       text REFERENCES apps(id) ON DELETE SET NULL,  -- NULL for DR bundles
+    kind         text NOT NULL CHECK (kind IN ('rolling','on_delete','dr_bundle')),
+    adapter_ref  text NOT NULL,               -- which backup adapter holds it (R-217)
+    object_name  text NOT NULL,
     size_bytes   bigint,
     manifest     jsonb NOT NULL,              -- what's inside; drives restore verification (R-215)
     retain_until timestamptz,                 -- NULL for on_delete: kept until discarded (R-204)
-    created_at   timestamptz NOT NULL DEFAULT now()
+    created_by   text NOT NULL,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT backups_on_delete_is_never_aged_out CHECK (
+        kind <> 'on_delete' OR retain_until IS NULL),
+    CONSTRAINT backups_scope_matches_kind CHECK (
+        (kind =  'dr_bundle' AND app_id IS     NULL) OR
+        (kind <> 'dr_bundle' AND app_id IS NOT NULL)),
+    CONSTRAINT backups_object_is_unique UNIQUE (adapter_ref, object_name)
 );
 ```
 
-**[D]** `kind = 'on_delete'` rows have `retain_until IS NULL` — R-204 says these are kept until explicitly discarded, not aged out.
+**[D]** `kind = 'on_delete'` rows have `retain_until IS NULL` — R-204 says these are kept until explicitly discarded, not aged out. The CHECK makes that structural rather than a convention the pruning query has to remember.
 
-**[D]** The `manifest` is what restore verifies against before applying anything (R-215).
+**[D]** `app_id` is `ON DELETE SET NULL`, **not** `CASCADE`. R-204 keeps a final backup after the app is gone; cascading would delete the record of that backup at exactly the moment it starts mattering. The row outlives its app on purpose, and `backups_scope_matches_kind` is therefore written against `kind`, which does not change, rather than against the app still existing.
+
+**[D]** The destination is stored as an adapter reference plus an object name (R-217, R-252). Resolved at write time and recorded, never re-resolved at restore: a bundle written to one destination is not findable in another, and quietly looking elsewhere is how a restore reports "not found" for a bundle that exists.
+
+**[D]** The `manifest` is what restore verifies against before applying anything (R-215). Pando keeps this copy; the copy inside the bundle is the one being checked against it.
 
 ---
 
