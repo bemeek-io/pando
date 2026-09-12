@@ -1,7 +1,8 @@
 # Open decisions
 
-Fourteen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
-design. **Eleven are resolved. Three remain, none blocking.**
+Fifteen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
+design; O-15 was found while implementing phase 6. **Eleven are resolved. Four remain, none
+blocking.**
 
 **These are not TODOs to resolve at your discretion.** An agent hitting an open one should raise it,
 state which options the docs already identify, and stop — not pick quietly and move on. Record any
@@ -14,12 +15,33 @@ resolution both here and in the requirements or design doc that owns it.
 | **O-4** | Required vs optional slot detection — the forty-key `.env.example` problem | Has a `[P]` answer that needs measuring, not deciding | Phase 6 |
 | **O-5** | TLS issuance — ACME, wildcards, self-signed local | Genuinely per-adapter; each routing adapter answers it for itself | Per adapter |
 | **O-6** | Which backup destinations ship — local, S3, mounted share | Provider-shaped. The *design* half is settled: a destination is not an adapter category (design 03 §8.1) | Phase 9 |
+| **O-15** | How a host port is chosen in port-mode routing | Nothing in the requirements says. Has a `[P]` answer in code | Phase 6 (shipped), revisit at phase 10 |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything not typed to
 a known service, and let the trial run settle it — a slot whose absence crashes the trial run is
 promoted to required with the crash log as evidence. This turns an unanswerable question into an
 observation. It is open because it needs a false-block rate measured against the detection corpus, not
 because nobody has decided.
+
+**O-15** was found by asking whether a detected app could actually deploy. It could not: the spec had
+no routing, and filling that in surfaced the question nobody had answered.
+
+R-166 prefers subdomain and falls back to path. The `loopback` adapter that ships as the laptop
+default supports **neither** — it is port mode only (design 03 §4.1). So on a default install every
+app needs a host port, and no requirement says where one comes from. R-005 rules out asking the user:
+someone who may not know what a port is cannot pick a free one.
+
+`[P]` implemented: the lowest free port in a configured range, default `9000-9999`, counting both
+pinned specs and outstanding detection proposals. Counting only pinned specs would hand the same port
+to two apps detected before either was accepted, which is the normal case when someone adds a few at
+once. Exhausting the range returns `CAPACITY_NO_FREE_PORT` naming the setting to widen.
+
+Lowest-free rather than random so an app tends to keep its port across a rebuild and a bookmark keeps
+working; reused rather than ever-increasing so a deleted app's port comes back. What needs deciding is
+whether that is the rule, whether the range is right, and whether a port should be a durable
+allocation with its own table rather than something re-derived from specs — which matters once
+something other than the spec can hold one. Traefik (phase 10) does subdomain and path, so an install
+using it never reaches this path at all; that is the reason it is not blocking.
 
 **O-5** is open the way `SessionPolicy` is open: deferring it to each adapter *is* the answer (R-047's
 shape). A routing adapter that issues certificates declares how; one that cannot says so through

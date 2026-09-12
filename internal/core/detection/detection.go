@@ -17,9 +17,24 @@ import (
 	"github.com/bemeek-io/pando/internal/errs"
 )
 
-// SourcePolicy is the source allowlist check (R-092).
+// SourcePolicy is the source allowlist check (R-092), plus the isolation floors
+// a detected spec inherits (R-024, R-114).
 type SourcePolicy interface {
 	AllowsSource(ctx context.Context, url string) error
+	IsolationFloors(ctx context.Context) (build, runtime spec.IsolationClass, err error)
+}
+
+// Installation supplies the answers a repository cannot give about itself.
+//
+// A repository says it builds from a Dockerfile and listens on 3000. It cannot
+// say which runtime this install uses or how apps here are addressed, and R-104
+// is explicit that none of that is a question worth asking — it is
+// configuration, and configuration gets a default.
+type Installation interface {
+	// Defaults returns the install's adapters, routing mode and limits. The
+	// routing mode comes from the routing adapter's own declared default
+	// (R-162): adding an app uses it without asking.
+	Defaults(ctx context.Context) spec.Defaults
 }
 
 // Runner detects for an app and stores the proposal.
@@ -32,6 +47,26 @@ type Runner struct {
 	// change between the two, and a re-detection (R-022) of an app whose source
 	// is no longer allowed must not clone it.
 	Policy SourcePolicy
+
+	// Install fills in everything the repository cannot answer. Without it a
+	// detected spec describes the app and says nothing about where it runs,
+	// which is a spec that cannot be planned — the gap that made detection
+	// produce proposals nobody could deploy.
+	Install Installation
+
+	// Ports assigns a host port in port-mode routing. Only consulted when the
+	// routing adapter's default mode is `port`, which the loopback adapter that
+	// ships as the laptop default is.
+	Ports PortAllocator
+
+	// PortRange bounds that allocation.
+	PortRangeStart int
+	PortRangeEnd   int
+}
+
+// PortAllocator hands out host ports for port-mode routing.
+type PortAllocator interface {
+	NextFree(ctx context.Context, adapterRef string, from, to int) (int, error)
 }
 
 // Detect runs detection for an app and records the result.
@@ -66,7 +101,7 @@ func (r *Runner) Detect(ctx context.Context, appID string) (state.Detection, err
 		return state.Detection{}, err
 	}
 
-	proposal, err := r.run(ctx, appID, app.Source)
+	proposal, err := r.run(ctx, appID, app.Slug, app.Source)
 	if err != nil {
 		// The failure is recorded rather than only returned: detection runs in
 		// the background after app creation, and a user who comes back to the
@@ -83,7 +118,7 @@ func (r *Runner) Detect(ctx context.Context, appID string) (state.Detection, err
 	return r.Detections.Get(ctx, appID)
 }
 
-func (r *Runner) run(ctx context.Context, appID string, src spec.Source) (detect.Proposal, error) {
+func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (detect.Proposal, error) {
 	checkout, err := source.Fetch(ctx, src)
 	if err != nil {
 		return detect.Proposal{}, err
@@ -95,10 +130,55 @@ func (r *Runner) run(ctx context.Context, appID string, src spec.Source) (detect
 		return detect.Proposal{}, err
 	}
 
+	// Fill in the install's own answers before the proposal is shown, not when
+	// it is accepted. The review is where someone sees how their app will run,
+	// and a draft that says nothing about routing or limits is not something
+	// they can review — they would be approving blanks and finding out at
+	// deploy time (R-102: the user sees the reasoning, not a verdict).
+	r.applyDefaults(ctx, &proposal.DraftSpec, slug)
+
 	// R-120: Ref is what the user asked for, Commit is what runs. Recorded on
 	// the proposal so that accepting it pins a revision against a specific
 	// commit rather than against a branch that has since moved.
 	proposal.Commit = checkout.Commit
 	proposal.DraftSpec.Source.Commit = checkout.Commit
 	return proposal, nil
+}
+
+// applyDefaults folds the install's configuration into a draft spec.
+//
+// Isolation floors come from host policy rather than from the defaults struct,
+// because policy is a floor and not a preference (R-272): an install that
+// requires VM-class isolation must have every new app inherit that, not a
+// value someone configured elsewhere.
+func (r *Runner) applyDefaults(ctx context.Context, s *spec.AppSpec, slug string) {
+	if r.Install == nil {
+		return
+	}
+	defaults := r.Install.Defaults(ctx)
+
+	if r.Policy != nil {
+		if build, runtime, err := r.Policy.IsolationFloors(ctx); err == nil {
+			defaults.BuildIsolation = build
+			defaults.RuntimeIsolation = runtime
+		}
+	}
+
+	defaults.Apply(s, slug)
+
+	// A port is the one routing field that cannot be derived from the app's
+	// name: two apps called different things still collide if they are both
+	// handed 9000. So it is allocated rather than defaulted, and only when the
+	// mode that needs it is the one in effect.
+	if s.Routing.Mode == spec.RoutingPort && s.Routing.Port == 0 && r.Ports != nil {
+		port, err := r.Ports.NextFree(ctx, s.Routing.AdapterRef, r.PortRangeStart, r.PortRangeEnd)
+		if err != nil {
+			// Left at zero. Validation refuses the spec with a message about
+			// the port, and the proposal still reaches the user carrying
+			// everything else detection worked out — which is more use than
+			// failing the whole run over one field.
+			return
+		}
+		s.Routing.Port = port
+	}
 }

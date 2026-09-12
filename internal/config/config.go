@@ -38,6 +38,18 @@ type Server struct {
 	// §4.1). Neither is a global setting in the spec sense; this is the
 	// install's default shape, and each app's spec still names its own mode.
 	RoutingMode spec.RoutingMode `mapstructure:"routing_mode"`
+
+	// BaseDomain is what a per-app subdomain is carved out of, so an app
+	// called "notes" is reached at notes.example.com. Only used in subdomain
+	// mode; empty is correct for an install addressing apps by path, which is
+	// the default and needs no DNS at all (R-002 — setup cost is paid once).
+	BaseDomain string `mapstructure:"base_domain"`
+
+	// PortRangeStart and PortRangeEnd bound the ports handed to apps in
+	// port-mode routing — the loopback adapter's only mode, and so the laptop
+	// default. [P]: the requirements do not specify a range (O-15).
+	PortRangeStart int `mapstructure:"port_range_start"`
+	PortRangeEnd   int `mapstructure:"port_range_end"`
 }
 
 type Database struct {
@@ -66,6 +78,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("database.connect_timeout", 60*time.Second)
 	v.SetDefault("server.issuer", "https://pando.local")
 	v.SetDefault("server.routing_mode", string(spec.RoutingPath))
+	v.SetDefault("server.port_range_start", 9000)
+	v.SetDefault("server.port_range_end", 9999)
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.development", false)
 

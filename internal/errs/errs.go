@@ -65,6 +65,11 @@ const (
 	// CAPACITY_* — insufficient host resources. 409.
 	CapacityWouldOversubscribe Code = "CAPACITY_WOULD_OVERSUBSCRIBE" // R-242
 
+	// CapacityNoFreePort: port-mode routing has run out of range. A limit of
+	// the install's configuration rather than of the machine, so the remedy
+	// names the setting to change.
+	CapacityNoFreePort Code = "CAPACITY_NO_FREE_PORT"
+
 	// BACKUP_* — backup and restore. 422.
 	BackupDecryptFailed Code = "BACKUP_DECRYPT_FAILED"
 	BackupIncomplete    Code = "BACKUP_INCOMPLETE" // R-215, verify before applying

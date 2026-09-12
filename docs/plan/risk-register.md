@@ -12,9 +12,10 @@ column, the mitigation is not optional.
 | Postgres prerequisite undermines the hobbyist install | 0 | Resolved: Compose supplies Postgres beside Pando, adding no prerequisite a containerized runtime did not already impose. | **Closed** |
 | Routing abstraction is Docker/Traefik-shaped | 10 | Sketch the Cloudflare adapter **on paper during phase 3**, before the interface is fixed. | **Done** — sketched ([notes](../design/notes-cloudflare-routing-sketch.md)); interface unchanged, two documentation clarifications recorded in design 03 §4 |
 | Required-vs-optional slots (O-4) | 6 | Trial-run promotion fallback. Measure false-block rate against the corpus. | **Mitigated** — promotion requires the app to have named the slot in its own crash log, so one syntax error cannot become forty required slots and forty deploy blockers. Tested both ways. False-block rate still needs measuring against a corpus with crashing apps in it, which the current ten do not have |
+| An app's bundle is never destroyed | 7 | Nothing calls `RuntimeAdapter.Destroy`. Deleting an app archives the row and leaves its containers and private network running; Docker's default address pool holds ~30, so an install that adds and deletes apps eventually cannot start one. Found because the acceptance suite exhausted the pool. The reconciler owns convergence, so it owns this | Open |
 | The two planes get conflated again | 1 | The comment in `CheckData` explaining that this was reversed once, **plus** a test asserting an operator on someone else's app is denied use. | Not started |
 
-## Why these seven
+## Why these
 
 They share a property: each is a failure that a code review would plausibly wave through, and each
 becomes dramatically more expensive to fix later than to prevent now. Four of the seven are mitigated

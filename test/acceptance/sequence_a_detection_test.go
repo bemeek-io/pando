@@ -32,7 +32,10 @@ func (c *client) createAppFromSource(t *testing.T, name, url, ref, subdir string
 
 	var app map[string]any
 	require.NoError(t, json.Unmarshal([]byte(body), &app))
-	return app["id"].(string)
+
+	appID := app["id"].(string)
+	cleanupBundle(t, appID)
+	return appID
 }
 
 // awaitDetection polls until detection reaches a terminal status.
@@ -299,4 +302,100 @@ func (c *client) acceptDetection(t *testing.T, appID string) {
 	require.NoError(t, json.Unmarshal([]byte(body), &out))
 	require.Equal(t, float64(1), out["revision"], "a detected proposal pins as revision 1")
 	require.Equal(t, false, out["deployed"])
+}
+
+// The seam between Sequence A and Sequence B: a repository, detected, accepted,
+// and actually deployed.
+//
+// This test exists because its absence hid a real gap. Sequence A ends at
+// pinning revision 1 and asserts that accepting does not deploy; Sequence B
+// deploys a hand-written spec. Both passed while the spec that detection
+// produced could not be planned at all — it described the app and said nothing
+// about which runtime, which routing mode, or what limits, so the very first
+// plan-time check refused it. "Accepting does not deploy" and "what was pinned
+// can be deployed" are different claims, and only the first was being tested.
+//
+// R-104 is the rule the fix implements: questions are blockers, everything else
+// is configuration, and configuration gets a default.
+func TestSequenceAtoB_ADetectedRepositoryDeploysAndServes(t *testing.T) {
+	c := login(t)
+
+	appID := c.createAppFromSource(t, "seq-ab-"+stamp(),
+		"https://github.com/docker/welcome-to-docker", "main", "")
+
+	response := c.awaitDetection(t, appID)
+	require.Equal(t, "ready", response["status"])
+	c.acceptDetection(t, appID)
+
+	// The dry run is the check that was failing. It is side-effect-free, so the
+	// console calls it on every spec edit — and a detected spec has to pass it
+	// without anyone editing anything.
+	body, status := c.postRaw(t, "/apps/"+appID+"/plan", "")
+	require.Equal(t, http.StatusOK, status, body)
+
+	var plan map[string]any
+	require.NoError(t, json.Unmarshal([]byte(body), &plan))
+	checks := plan["checks"].(map[string]any)
+	for _, name := range []string{"spec_valid", "policy", "adapters", "capabilities", "isolation", "slots", "capacity"} {
+		require.Equal(t, "ok", checks[name], "plan check %q", name)
+	}
+
+	// Every field detection could not learn from the repository got a default
+	// rather than a question (R-104).
+	pinned := c.get(t, "/apps/"+appID+"/specs/1")
+	s := pinned["body"].(map[string]any)
+
+	routing := s["routing"].(map[string]any)
+	require.NotEmpty(t, routing["adapter_ref"])
+	require.NotEmpty(t, routing["mode"])
+	require.Equal(t, "adapter_default", routing["mode_source"],
+		"R-163: the console shows whether a mode was inherited or chosen")
+
+	require.NotEmpty(t, s["runtime"].(map[string]any)["adapter_ref"])
+	require.NotEmpty(t, s["build"].(map[string]any)["adapter_ref"])
+	require.Equal(t, "recreate", s["deploy"].(map[string]any)["strategy"], "R-144")
+	require.Greater(t, s["resources"].(map[string]any)["memory_bytes"].(float64), float64(0), "R-240")
+	require.Greater(t, s["retention"].(map[string]any)["spec_revisions"].(float64), float64(0), "R-152")
+
+	// And what it did learn is still there, unchanged by any of it.
+	build := s["build"].(map[string]any)
+	require.Equal(t, "dockerfile", build["strategy"])
+	require.Equal(t, "Dockerfile", build["dockerfile"])
+
+	// Now deploy the thing detection proposed.
+	dep := c.deploy(t, appID, 1)
+	final := c.awaitDeployment(t, appID, dep["id"].(string), 10*time.Minute)
+	require.Equal(t, "succeeded", final["status"],
+		"the build and deploy of a spec nobody hand-wrote\n%s",
+		c.deploymentLogs(t, appID, dep["id"].(string)))
+
+	// R-023: it is reachable through Pando's proxy, which is the only way in.
+	// Addressed by slug rather than by the spec's routing fields — the proxy is
+	// the fallback route and resolves the app itself, so there is no separate
+	// proxy port whatever mode the app is in.
+	app := c.get(t, "/apps/"+appID)
+	slug := app["slug"].(string)
+
+	require.Eventually(t, func() bool {
+		return c.appResponds(t, slug)
+	}, 120*time.Second, 3*time.Second,
+		"the deployed app never answered through the proxy")
+}
+
+// appResponds asks the app for its front page, through the proxy.
+func (c *client) appResponds(t *testing.T, slug string) bool {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodGet,
+		strings.TrimSuffix(baseURL(), "/api/v1")+"/"+slug+"/", nil)
+	require.NoError(t, err)
+	req.AddCookie(&http.Cookie{Name: "pando_session", Value: c.cookie})
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_ = resp.Body
+	return resp.StatusCode == http.StatusOK
 }

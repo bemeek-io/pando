@@ -62,7 +62,13 @@ func login(t *testing.T) *client {
 	require.Len(t, matches, 2,
 		"could not find the first-run password in the server log — bring the stack up fresh with `docker compose down -v && docker compose up -d`")
 
-	c := &client{http: &http.Client{Timeout: 30 * time.Second}}
+	// Generous, because POST /deployments is not the quick call its 202 status
+	// suggests. It resolves the app's ref to a commit before returning, and
+	// resolving a ref means cloning — design 01 §2.1 is explicit that a deploy
+	// never resolves a ref implicitly at runtime, so the work happens here. A
+	// cold clone of a real repository takes longer than a conversational
+	// timeout allows.
+	c := &client{http: &http.Client{Timeout: 2 * time.Minute}}
 
 	resp, err := c.http.Post(baseURL()+"/sessions", "application/json",
 		strings.NewReader(fmt.Sprintf(`{"username":"admin","password":%q}`, matches[1])))
@@ -127,7 +133,68 @@ func (c *client) createApp(t *testing.T, name string) string {
 
 	var app map[string]any
 	require.NoError(t, json.Unmarshal([]byte(body), &app))
-	return app["id"].(string)
+
+	appID := app["id"].(string)
+	cleanupBundle(t, appID)
+	return appID
+}
+
+// cleanupBundle removes the containers a deployed test app leaves running.
+//
+// Nothing in Pando does this, and that is a real gap rather than a test
+// convenience: deleting an app archives the row and never tells the runtime to
+// destroy the bundle. The adapter implements Destroy and no caller invokes it.
+// Convergence — including tearing down what should no longer exist — is the
+// reconciler's job, and the reconciler is phase 7.
+//
+// Containers only. The bundle's private network is deliberately left alone:
+// Pando's own container is joined to every one of them, because that is how the
+// proxy reaches an app at all (R-023), and force-disconnecting a running Pando
+// from a bridge network disturbs its routing badly enough that its next
+// outbound clone hangs for minutes. That was a real failure here, and it looked
+// exactly like a slow network rather than like the test suite sabotaging the
+// server. Networks are reclaimed at suite start instead, by pruneStaleBundles,
+// when the Pando attached to them is already gone.
+func cleanupBundle(t *testing.T, appID string) {
+	t.Helper()
+	t.Cleanup(func() {
+		out, _ := exec.Command("docker", "ps", "-aq",
+			"--filter", "label=io.pando.app="+appID).Output()
+		for _, id := range strings.Fields(string(out)) {
+			_ = exec.Command("docker", "rm", "-f", id).Run()
+		}
+	})
+}
+
+// TestMain reclaims what previous runs left behind.
+//
+// Bundle networks are not Compose-managed, so `docker compose down -v` does not
+// remove them and they accumulate one per deployed app across runs. Docker's
+// default address pool holds about thirty; once it is full every deploy fails
+// with a capacity error that has nothing to do with the test reporting it.
+//
+// Safe here in a way it is not mid-suite: the Pando that was attached to these
+// networks belongs to a previous stack and is already gone.
+func TestMain(m *testing.M) {
+	pruneStaleBundles()
+	os.Exit(m.Run())
+}
+
+func pruneStaleBundles() {
+	out, err := exec.Command("docker", "network", "ls", "-q",
+		"--filter", "label=io.pando.managed").Output()
+	if err != nil {
+		return
+	}
+
+	for _, network := range strings.Fields(string(out)) {
+		attached, _ := exec.Command("docker", "network", "inspect", network,
+			"--format", "{{range .Containers}}{{.Name}} {{end}}").Output()
+		for _, name := range strings.Fields(string(attached)) {
+			_ = exec.Command("docker", "network", "disconnect", "-f", network, name).Run()
+		}
+		_ = exec.Command("docker", "network", "rm", network).Run()
+	}
 }
 
 func (c *client) putSpec(t *testing.T, appID, spec string) {
