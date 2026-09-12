@@ -358,6 +358,11 @@ func serve(ctx context.Context, configPath string) error {
 
 			Backups: backups,
 			Backup:  backupService,
+
+			// Retried deploys replay rather than repeat (R-262). An agent
+			// retries on a timeout, and a deploy that clones regularly outlasts
+			// a client's patience.
+			Idempotency: state.NewIdempotency(db),
 		}).Routes(),
 	}
 

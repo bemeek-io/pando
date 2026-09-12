@@ -83,8 +83,16 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createAppRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read."))
+	idempotencyKey, err := decodeWithKey(r, &req)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	// Creating an app is infrastructure-creating, so a retry must not produce
+	// two apps with the same name — which would fail the second time on the
+	// unique constraint and look to an agent like the first attempt failed.
+	if s.replayed(w, r, idempotencyKey, "POST /apps") {
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
@@ -149,6 +157,8 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 	if s.Detector != nil && app.Source.Type != "" && !pending {
 		go s.detectInBackground(context.WithoutCancel(r.Context()), app.ID)
 	}
+
+	s.remember(r, idempotencyKey, "POST /apps", http.StatusAccepted, app)
 
 	// 202, not 201: the app exists but is in draft. Detection has been queued,
 	// and nothing is deployed.

@@ -48,7 +48,19 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req deployRequest
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	idempotencyKey, err := decodeWithKey(r, &req)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	// A retry of a deploy that already happened replays the first answer rather
+	// than deploying again. This is what makes the endpoint safe to give an
+	// agent (R-262): an agent retries on a timeout, and a deploy resolves a ref
+	// — which means cloning — so it regularly outlasts a client's patience.
+	if s.replayed(w, r, idempotencyKey, "POST /apps/{id}/deployments") {
+		return
+	}
 
 	// Two deploys racing on one bundle is how an app ends up in a state neither
 	// intended. Refused rather than queued — a queue on a fast-moving branch
@@ -115,6 +127,8 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		TargetID:      dep.ID,
 		Detail:        map[string]any{"spec_revision": prepared.Revision, "trigger": trigger},
 	})
+
+	s.remember(r, idempotencyKey, "POST /apps/{id}/deployments", http.StatusAccepted, dep)
 
 	// Detached from the request context deliberately: a client that disconnects
 	// must not cancel a deploy that is already changing things.

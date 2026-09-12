@@ -94,6 +94,12 @@ type Server struct {
 	Backups *state.Backups
 	Backup  *backup.Service
 
+	// Idempotency deduplicates retried infrastructure-creating requests. Nil
+	// disables replay rather than failing: the cost is a possible duplicate,
+	// and refusing to deploy because a deduplication table is missing would be
+	// a worse outcome than deploying twice.
+	Idempotency *state.Idempotency
+
 	// Console serves the embedded UI on Pando's own paths. Nil when the binary
 	// was built without it, in which case those paths 404 like any other and
 	// the API is unaffected — the API is the product (R-261), and the console
