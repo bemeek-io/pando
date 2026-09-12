@@ -95,6 +95,11 @@ type Server struct {
 	Backups *state.Backups
 	Backup  *backup.Service
 
+	// BundleSource supplies what goes into a backup. Held separately from
+	// Backups because one records what was taken and the other reads what is
+	// being taken — and the record has to outlive the thing (R-204).
+	BundleSource *state.BundleSource
+
 	// Idempotency deduplicates retried infrastructure-creating requests. Nil
 	// disables replay rather than failing: the cost is a possible duplicate,
 	// and refusing to deploy because a deduplication table is missing would be

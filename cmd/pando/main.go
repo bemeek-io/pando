@@ -220,6 +220,7 @@ func serve(ctx context.Context, configPath string) error {
 	// store records what it produced, and the record outlives the thing it
 	// records (R-204).
 	backups := state.NewBackups(db)
+	bundleSource := state.NewBundleSource(db)
 	backupService := &backup.Service{
 		Registry:    registry,
 		DatabaseURL: secret.New(cfg.Database.URL),
@@ -231,7 +232,7 @@ func serve(ctx context.Context, configPath string) error {
 		// server config, so there is one place that decides where the key lives.
 		SecretsKeyPath: secretsKeyPath(ctx, adapters, logger),
 
-		State:         state.NewBundleSource(db),
+		State:         bundleSource,
 		Version:       buildVersion,
 		SchemaVersion: db.SchemaVersion(),
 		WorkDir:       cfg.Server.WorkDir,
@@ -249,7 +250,7 @@ func serve(ctx context.Context, configPath string) error {
 		proxyUpstream = "http://pando:8080"
 	}
 	reconciles := state.NewReconciles(db)
-	deployer := deploy.NewRunner(registry, appPlanner, apps, deployments, secrets, reconciles, logStore, proxyUpstream)
+	deployer := deploy.NewRunner(registry, appPlanner, apps, deployments, secrets, reconciles, logStore, volumes, proxyUpstream)
 
 	// Detection (Sequence A). Every detector bids; the runtime supplies the
 	// trial run (R-097), and a registry probe would supply R-094's top tier.
@@ -370,8 +371,9 @@ func serve(ctx context.Context, configPath string) error {
 			PolicyStore: policyStore,
 			AuditLog:    audit.NewReader(db.Pool),
 
-			Backups: backups,
-			Backup:  backupService,
+			Backups:      backups,
+			Backup:       backupService,
+			BundleSource: bundleSource,
 
 			// Retried deploys replay rather than repeat (R-262). An agent
 			// retries on a timeout, and a deploy that clones regularly outlasts

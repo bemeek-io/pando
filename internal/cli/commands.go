@@ -200,6 +200,44 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 	})
 	cmd.Commands()[len(cmd.Commands())-1].Flags().String("name", "", "name for the app (defaults to the repository name)")
 
+	del := &cobra.Command{
+		Use:   "delete <app>",
+		Short: "Delete an app, keeping a final backup of its data",
+		Long: "Deletes an app. Its storage is backed up first and the backup is kept until you\n" +
+			"discard it — not aged out.\n\n" +
+			"If the backup fails the app is not deleted, because a failed backup means the data\n" +
+			"is not safe. Pass --discard-data to delete without one.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			discard, _ := cmd.Flags().GetBool("discard-data")
+
+			// Backing up by default is R-205: a non-interactive delete keeps a
+			// copy unless told not to. The API asks the caller to decide; this
+			// is the CLI deciding, which is where the requirement puts it.
+			query := "?backup=true"
+			if discard {
+				query = "?force=true"
+			}
+
+			if err := c.Do("DELETE", "/apps/"+args[0]+query, nil, nil); err != nil {
+				return err
+			}
+			if discard {
+				fmt.Fprintln(cmd.OutOrStdout(), "Deleted. Its storage was discarded.")
+			} else {
+				fmt.Fprintln(cmd.OutOrStdout(),
+					"Deleted. Its storage is backed up — `pando backup list` to find it.")
+			}
+			return nil
+		},
+	}
+	del.Flags().Bool("discard-data", false, "delete without keeping a backup of the app's storage")
+	cmd.AddCommand(del)
+
 	cmd.AddCommand(&cobra.Command{
 		Use:   "show <app>",
 		Short: "Show an app",

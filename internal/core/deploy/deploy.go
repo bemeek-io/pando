@@ -57,6 +57,10 @@ type Runner struct {
 	// the only thing that makes a rotated secret visible later (R-193).
 	reconciles Reconciles
 
+	// volumes records the storage a deploy created, so Pando knows about the
+	// data it is responsible for.
+	volumes *state.Volumes
+
 	// ProxyUpstream is where routing adapters must send traffic (R-023). It is
 	// Pando's proxy, always, and it is passed to every Ensure so that no adapter
 	// has to work it out.
@@ -90,10 +94,11 @@ func (r *Runner) PrepareRevision(ctx context.Context, rev state.Revision, by str
 	return r.apps.CreateRevision(ctx, rev.AppID, &pinned, spec.OriginEdited, by)
 }
 
-func NewRunner(registry *api.Registry, p *planner.Planner, apps *state.Apps, deploys *state.Deployments, secrets Secrets, reconciles Reconciles, logs *LogStore, proxyUpstream string) *Runner {
+func NewRunner(registry *api.Registry, p *planner.Planner, apps *state.Apps, deploys *state.Deployments, secrets Secrets, reconciles Reconciles, logs *LogStore, volumes *state.Volumes, proxyUpstream string) *Runner {
 	return &Runner{
 		registry: registry, planner: p, apps: apps, deploys: deploys,
-		secrets: secrets, reconciles: reconciles, logs: logs, ProxyUpstream: proxyUpstream,
+		secrets: secrets, reconciles: reconciles, logs: logs, volumes: volumes,
+		ProxyUpstream: proxyUpstream,
 	}
 }
 
@@ -205,6 +210,27 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 	fmt.Fprintf(sink, "=> Starting the app\n")
 	if _, err := runtime.Apply(ctx, bundle); err != nil {
 		return fail("apply", err)
+	}
+
+	// Record the storage Pando now owns.
+	//
+	// Not bookkeeping. Until this existed the `volumes` table stayed empty
+	// however many volumes an app declared, and three things quietly did
+	// nothing: R-204's ON DELETE RESTRICT guarded no rows, deleting an app
+	// never offered to keep its data because it counted none, and a DR bundle
+	// contained the database and no app data whatsoever.
+	//
+	// The handles come from Observe rather than being assembled here, because
+	// how a volume is named is the provider vocabulary core must never learn
+	// (R-251).
+	if r.volumes != nil && len(bundle.Volumes) > 0 {
+		if err := r.recordVolumes(ctx, runtime, appSpec, bundle); err != nil {
+			// Not fatal to the deploy: the app is running and refusing to say
+			// so would be worse. But it is logged loudly, because an app whose
+			// storage Pando does not know about is an app whose storage will
+			// not be backed up.
+			fmt.Fprintf(sink, "!! Could not record this app's storage: %v\n", err)
+		}
 	}
 
 	// Step 14: route. Traffic goes to PANDO'S PROXY, never to the workload.
@@ -621,4 +647,31 @@ func primaryDigest(ctx context.Context, runtime api.RuntimeAdapter, appID string
 		}
 	}
 	return ""
+}
+
+// recordVolumes writes the volume rows for a deploy, reading handles back from
+// the runtime.
+//
+// Observe rather than Apply's return value, because Apply reports a bundle
+// handle and not the volumes inside it — and asking the runtime what exists is
+// the honest question anyway. An adapter that created a volume under a name of
+// its own choosing is answered here rather than guessed at.
+func (r *Runner) recordVolumes(ctx context.Context, runtime api.RuntimeAdapter, s *spec.AppSpec, bundle api.BundlePlan) error {
+	observed, err := runtime.Observe(ctx, api.BundleRef{BundleID: bundle.BundleID})
+	if err != nil {
+		return err
+	}
+
+	handles := make(map[string]string, len(observed.Volumes))
+	for _, v := range observed.Volumes {
+		handles[v.VolumeID] = v.Handle
+	}
+
+	records := make([]state.VolumeRecord, 0, len(s.Volumes))
+	for _, v := range s.Volumes {
+		records = append(records, state.VolumeRecord{
+			VolumeID: v.ID, Name: v.Name, Handle: handles[v.ID],
+		})
+	}
+	return r.volumes.RecordFromRuntime(ctx, s.AppID, s.Runtime.AdapterRef, records)
 }

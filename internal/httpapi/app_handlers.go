@@ -15,6 +15,7 @@ import (
 
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/backup"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
@@ -289,16 +290,33 @@ func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Volumes are ON DELETE RESTRICT (R-204), so they are resolved explicitly
-	// rather than cascading. Snapshotting needs a runtime adapter, which is
-	// phase 3 — until then, a delete that would discard data is refused rather
-	// than silently doing the wrong half of the job.
+	// rather than cascading.
+	var keptBackup string
 	if volumes > 0 {
 		if backup == "true" {
-			Error(w, r, errs.New(errs.StateInvalid,
-				"Backing up storage before deletion is not available yet.").
-				WithRemedy("This arrives with the runtime adapters. Until then, an app with storage can only be deleted with force=true, which discards it."))
-			return
+			id, err := s.backUpBeforeDelete(r, app)
+			if err != nil {
+				// The delete stops here. A failed backup means the data is not
+				// safe, so deleting is the one thing not to do — and the caller
+				// is told exactly how to go ahead anyway if they have decided
+				// the data is not worth keeping.
+				s.audit(r, audit.Event{
+					PrincipalKind: audit.PrincipalKind(PrincipalFrom(r.Context()).Kind),
+					PrincipalID:   PrincipalFrom(r.Context()).ID,
+					OnBehalfOf:    PrincipalFrom(r.Context()).UserID,
+					Action:        "app.delete.backup_failed",
+					AppID:         app.ID, TargetKind: "app", TargetID: app.ID,
+					Detail: map[string]any{"reason": reasonOf(err)},
+				})
+				Error(w, r, errs.Wrap(errs.StateInvalid,
+					"Pando could not back up this app's storage, so it has not been deleted.", err).
+					WithRemedy("Fix the problem and try again, or delete with force=true to remove the app and discard its storage.").
+					WithDetail("backup_error", reasonOf(err)))
+				return
+			}
+			keptBackup = id
 		}
+
 		if err := s.Volumes.DeleteForApp(r.Context(), app.ID); err != nil {
 			Error(w, r, err)
 			return
@@ -318,9 +336,86 @@ func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 		AppID:         app.ID,
 		TargetKind:    "app",
 		TargetID:      app.ID,
-		Detail:        map[string]any{"forced": force, "volumes_discarded": volumes},
+		Detail: map[string]any{
+			"forced":            force,
+			"volumes_discarded": volumes,
+			// Which backup holds this app's data, if any. The question after a
+			// deletion is always "can we get it back", and this is the answer.
+			"backup_id": keptBackup,
+		},
 	})
 	JSON(w, http.StatusNoContent, nil)
+}
+
+// backUpBeforeDelete takes the final copy R-204 promises.
+//
+// Kept until explicitly discarded, never aged out — which is the whole point of
+// it, and why the row carries no retention.
+func (s *Server) backUpBeforeDelete(r *http.Request, app state.App) (string, error) {
+	if s.Backup == nil || s.Backups == nil || s.BundleSource == nil {
+		return "", errs.New(errs.Internal, "Backups are not set up on this installation.")
+	}
+
+	volumes, err := s.BundleSource.VolumesForApp(r.Context(), app.ID)
+	if err != nil {
+		return "", err
+	}
+
+	var pinned json.RawMessage
+	if app.PinnedSpecID != "" {
+		rev, found, err := s.Apps.RevisionByID(r.Context(), app.PinnedSpecID)
+		if err != nil {
+			return "", err
+		}
+		if found && rev.Body != nil {
+			// Marshalled here rather than stored raw: the bundle holds the spec
+			// as it is served, so a person reading the backup by hand sees the
+			// same document the API would have given them.
+			encoded, err := json.Marshal(rev.Body)
+			if err != nil {
+				return "", errs.Wrap(errs.Internal, "Could not record the app's setup in the backup.", err)
+			}
+			pinned = encoded
+		}
+	}
+
+	id := s.Backups.NewID()
+	created, err := s.Backup.CreateForApp(r.Context(), id, backup.AppCreateRequest{
+		AppID:   app.ID,
+		Kind:    "on_delete",
+		Spec:    pinned,
+		Volumes: volumes,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	p := PrincipalFrom(r.Context())
+	if err := s.Backups.Record(r.Context(), state.Backup{
+		ID: id, AppID: app.ID, Kind: "on_delete",
+		AdapterRef: created.AdapterRef, ObjectName: created.ObjectName,
+		SizeBytes: created.SizeBytes, Manifest: created.Manifest,
+		// RetainUntil deliberately nil: R-204 keeps this until somebody
+		// discards it, and the schema refuses to let it carry an expiry.
+		CreatedBy: p.ID,
+	}); err != nil {
+		return "", err
+	}
+
+	s.audit(r, audit.Event{
+		PrincipalKind: audit.PrincipalKind(p.Kind), PrincipalID: p.ID, OnBehalfOf: p.UserID,
+		Action: "backup.create", AppID: app.ID, TargetKind: "backup", TargetID: id,
+		Detail: map[string]any{"kind": "on_delete", "volumes": len(volumes)},
+	})
+	return id, nil
+}
+
+// reasonOf is the message of an error, for an audit detail.
+func reasonOf(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // --- specs -----------------------------------------------------------------

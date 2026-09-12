@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -297,4 +298,131 @@ func composeExec(service string, args ...string) (string, error) {
 	full := append([]string{"compose", "exec", "-T", service}, args...)
 	out, err := exec.Command("docker", full...).CombinedOutput()
 	return strings.TrimSpace(string(out)), err
+}
+
+// TestR204_DeletingAnAppKeepsAFinalBackup asserts the promise R-204 makes and
+// nothing kept: on delete, Pando asks whether to keep a final copy, and the
+// copy it keeps is kept until explicitly discarded.
+//
+// Until now the answer to backup=true was "not available yet" — an excuse left
+// over from phase 3 that was still there in phase 10, pointing at runtime
+// adapters that had long since shipped. So the only way to delete an app with
+// storage was to discard it.
+func TestR204_DeletingAnAppKeepsAFinalBackup(t *testing.T) {
+	admin := login(t)
+	app := deployedAppWithStorage(t, admin, "ondelete-"+stamp())
+
+	before := len(listBackups(t, admin))
+
+	body, status := admin.do(t, http.MethodDelete, "/apps/"+app+"?backup=true", "")
+	require.Equal(t, http.StatusNoContent, status, body)
+
+	after := listBackups(t, admin)
+	require.Len(t, after, before+1, "deleting an app with storage must leave a backup behind")
+
+	var kept map[string]any
+	for _, b := range after {
+		if b["app_id"] == app {
+			kept = b
+		}
+	}
+	require.NotNil(t, kept, "the backup must name the app it came from")
+	require.Equal(t, "on_delete", kept["kind"])
+
+	// R-204: kept until explicitly discarded, never aged out. The schema
+	// refuses to give an on_delete row an expiry, and this is the assertion
+	// that would notice if somebody set one anyway.
+	require.Nil(t, kept["retain_until"],
+		"a final backup is kept until discarded, not aged out")
+
+	// And the record outlives the app, which is the whole reason backups.app_id
+	// is ON DELETE SET NULL rather than CASCADE.
+	_, status = admin.do(t, http.MethodGet, "/apps/"+app, "")
+	require.Equal(t, http.StatusNotFound, status, "the app is gone")
+}
+
+func listBackups(t *testing.T, c *client) []map[string]any {
+	t.Helper()
+	out := c.get(t, "/backups")
+	raw, _ := out["backups"].([]any)
+
+	list := make([]map[string]any, 0, len(raw))
+	for _, b := range raw {
+		if m, ok := b.(map[string]any); ok {
+			list = append(list, m)
+		}
+	}
+	return list
+}
+
+// deployedAppWithStorage deploys an app that has a volume, which is what makes
+// R-204 apply at all — an app with no storage has nothing to keep.
+func deployedAppWithStorage(t *testing.T, c *client, name string) string {
+	t.Helper()
+
+	app := c.createApp(t, name)
+	c.putSpec(t, app, fmt.Sprintf(`{
+		"schema_version": 1,
+		"source": {"type": "image", "image": "nginx:1.27-alpine"},
+		"build": {"strategy": "prebuilt"},
+		"volumes": [{"id": "vol_data", "name": "data", "declared": "user"}],
+		"workloads": [{"name": "web", "primary": true, "exposed": true,
+			"image": "nginx:1.27-alpine",
+			"mounts": [{"volume_id": "vol_data", "path": "/data"}],
+			"ports": [{"number": 80, "protocol": "http", "source": "user"}]}],
+		"routing": {"adapter_ref": "rte_loopback", "mode": "port", "port": %d},
+		"runtime": {"adapter_ref": "rt_docker", "isolation_floor": 10},
+		"deploy": {"strategy": "recreate"}
+	}`, 9400+time.Now().Second()%50))
+	c.pinSpec(t, app, 1)
+
+	dep := c.deploy(t, app, 0)
+	final := c.awaitDeployment(t, app, dep["id"].(string), 10*time.Minute)
+	require.Equal(t, "succeeded", final["status"], c.deploymentLogs(t, app, dep["id"].(string)))
+	return app
+}
+
+// TestR030_AnAppsStorageIsRecordedWhenItDeploys asserts that Pando knows about
+// the storage it created.
+//
+// It did not, for ten phases. The spec declared volumes, the planner planned
+// them and the runtime created them — and the `volumes` table stayed empty. So
+// R-204's ON DELETE RESTRICT guarded no rows, deleting an app never offered to
+// keep its data because it counted none, and **a DR bundle contained the
+// database and no app data at all**. Everything downstream reads this table.
+func TestR030_AnAppsStorageIsRecordedWhenItDeploys(t *testing.T) {
+	admin := login(t)
+	app := deployedAppWithStorage(t, admin, "volrec-"+stamp())
+
+	// Through the API rather than the database, so this asserts what a client
+	// can actually see.
+	out := admin.get(t, "/apps/"+app)
+	require.Equal(t, "running", out["state"])
+
+	// The DR bundle is the thing that was quietly empty, so that is what this
+	// checks: a full backup taken now must contain this app's volume.
+	body, status := admin.do(t, http.MethodPost, "/backups",
+		fmt.Sprintf(`{"passphrase":%q}`, bundlePassphrase))
+	require.Equal(t, http.StatusCreated, status, body)
+
+	var rec struct {
+		Manifest struct {
+			Entries []struct {
+				Name string `json:"name"`
+			} `json:"entries"`
+			Counts map[string]int `json:"counts"`
+		} `json:"manifest"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &rec))
+
+	require.Positive(t, rec.Manifest.Counts["volumes"],
+		"a DR bundle must contain the app volumes it claims to (R-212)")
+
+	var hasVolume bool
+	for _, e := range rec.Manifest.Entries {
+		if strings.HasPrefix(e.Name, "volumes/") {
+			hasVolume = true
+		}
+	}
+	require.True(t, hasVolume, "and the volume's data must actually be in the bundle")
 }

@@ -532,6 +532,48 @@ func (v *Volumes) Create(ctx context.Context, appID, name, adapterRef string) (s
 	return volumeID, nil
 }
 
+// RecordFromRuntime writes the volume rows for an app's spec volumes, using the
+// handles the runtime reports.
+//
+// Nothing used to do this. The spec declared volumes, the planner planned them,
+// the runtime created them — and Pando's own `volumes` table stayed empty. Three
+// things silently did nothing as a result: `ON DELETE RESTRICT` protected no
+// rows, so R-204's "volumes survive app deletion" was a constraint on an empty
+// table; deleting an app never offered to keep a backup, because it counted
+// zero volumes; and the DR bundle contained no app data at all, because the
+// query that finds volumes to snapshot found none.
+//
+// The ID is the spec's volume ID, not a generated one. A spec that says
+// `vol_data` and a row that says `vol_01HQ8…` are two names for one thing, and
+// a restore matching them up is a join nobody wrote.
+//
+// Idempotent: every deploy re-records, and the handle is refreshed in case the
+// runtime's own naming changed under it.
+func (v *Volumes) RecordFromRuntime(ctx context.Context, appID, adapterRef string, observed []VolumeRecord) error {
+	for _, o := range observed {
+		if o.VolumeID == "" {
+			continue
+		}
+		_, err := v.db.Exec(ctx, `
+			INSERT INTO volumes (id, app_id, name, adapter_ref, handle)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (id) DO UPDATE
+			  SET handle = excluded.handle, adapter_ref = excluded.adapter_ref`,
+			o.VolumeID, appID, o.Name, adapterRef, nullable(o.Handle))
+		if err != nil {
+			return errs.Wrap(errs.Internal, "Could not record the app's storage.", err)
+		}
+	}
+	return nil
+}
+
+// VolumeRecord is one volume as the runtime reports it.
+type VolumeRecord struct {
+	VolumeID string
+	Name     string
+	Handle   string
+}
+
 // SetDesiredState records what a human asked for.
 //
 // Separate from state, which is what is true. The reconciler reads both: the

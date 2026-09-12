@@ -274,4 +274,28 @@ func (b *BundleSource) VolumesToSnapshot(ctx context.Context) ([]backup.VolumeRe
 	return out, rows.Err()
 }
 
+// VolumesForApp lists one app's volumes, for a per-app backup (R-204).
+//
+// Includes volumes whose app is already archived: R-204 keeps a volume after
+// its app is gone, and the final backup is taken at exactly that moment.
+func (b *BundleSource) VolumesForApp(ctx context.Context, appID string) ([]backup.VolumeRef, error) {
+	rows, err := b.db.Query(ctx, `
+		SELECT id, coalesce(adapter_ref, ''), coalesce(handle, '')
+		FROM volumes WHERE app_id = $1 ORDER BY id`, appID)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the app's storage.", err)
+	}
+	defer rows.Close()
+
+	out := make([]backup.VolumeRef, 0)
+	for rows.Next() {
+		var v backup.VolumeRef
+		if err := rows.Scan(&v.VolumeID, &v.AdapterRef, &v.Handle); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the app's storage.", err)
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 var _ backup.StateSource = (*BundleSource)(nil)
