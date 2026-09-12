@@ -10,9 +10,9 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | | Count | Of total |
 |---|---:|---:|
 | Requirements | 207 | — |
-| Specified in a design doc | 145 | 70% |
-| Assigned to a phase | 109 | 52% |
-| Covered by a named test | 65 | 31% |
+| Specified in a design doc | 147 | 71% |
+| Assigned to a phase | 111 | 53% |
+| Covered by a named test | 69 | 33% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -80,7 +80,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-077** | P | The console must never present this as the bare word "public." It states the consequence:… | 6.2 Subjects | 04, 08 | 08 | — |
 | **R-078** | D | Groups may be Pando-native or pushed from an IdP (R-048). | 6.3 Groups | 03 | — | — |
 | **R-079** | D | Group membership is evaluated live at request time, not expanded to a member list at grant time. | 6.3 Groups | 02, 06, 07 | 01, 05 | `TestR079_GroupMembershipIsResolvedFromThePrincipal`, `TestR079_GroupMembershipIsResolvedLive`, `TestR079_RemovingAGroupRevokesAccess` |
-| **R-080** | D | Control-plane permissions are individual verbs, in two scopes. | 6.4 Verbs and roles | 02, 06 | — | `TestR080_AnOrdinaryUserCannotSuspendTheAdministrator`, `TestR080_AnonymousHoldsNothingInstallWide`, `TestR080_DeniedInstallChecksAreAudited`, `TestR080_GrantScopeIsEnforcedByTheDatabase`, `TestR080_InstallEndpointsRequireInstallVerbs`, `TestR080_InstallGrantsAreNeverReturnedByAnAppLookup`, `TestR080_InstallVerbRequiresAnInstallGrant`, `TestR080_ScopesCannotBeCheckedAgainstEachOther`, `TestR080_UserEndpointsAreSelfOrVerb` |
+| **R-080** | D | Control-plane permissions are individual verbs, in two scopes. | 6.4 Verbs and roles | 02, 06 | — | `TestR080_AnOrdinaryUserCannotSuspendTheAdministrator`, `TestR080_AnonymousHoldsNothingInstallWide`, `TestR080_BackupsRequireTheirOwnVerb`, `TestR080_DeniedInstallChecksAreAudited`, `TestR080_GrantScopeIsEnforcedByTheDatabase`, `TestR080_InstallEndpointsRequireInstallVerbs`, `TestR080_InstallGrantsAreNeverReturnedByAnAppLookup`, `TestR080_InstallVerbRequiresAnInstallGrant`, `TestR080_ScopesCannotBeCheckedAgainstEachOther`, `TestR080_UserEndpointsAreSelfOrVerb` |
 | **R-081** | D | Four immutable built-in roles ship out of the box. | 6.4 Verbs and roles | 02, 06 | 01 | `TestR081_AdministratorHoldsNoAppVerb`, `TestR081_AdministratorIsImmutableToo`, `TestR081_AnAdministratorCanHandOver`, `TestR081_BuiltInRoleVerbSets`, `TestR081_BuiltInRolesAreImmutable`, `TestR081_SeededVerbSetsMatchTheRequirement`, `TestR081_TheLastAdministratorCannotBeRemoved` |
 | **R-082** | D | Custom roles may be composed from the verb list and assigned to users or groups. | 6.4 Verbs and roles | 02, 04, 06 | 01, 08 | `TestR082_NoVerbImplicationGraph` |
 | **R-083** | D | `app.secrets.write` is deliberately separable from `app.secrets.read` — rotating a credential… | 6.4 Verbs and roles | 04 | — | — |
@@ -167,13 +167,13 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-205** | D | Non-interactive delete (CLI, API, MCP) backs up by default. | 14. Persistence and Volumes | 04 | 02, 09 | — |
 | **R-206** | D | Restore is in-place only. | 14. Persistence and Volumes | 01 | — | — |
 | **R-210** | D | Per-app rolling backups of app data. | 15. Backup and Disaster Recovery | — | — | — |
-| **R-211** | P | Default: daily, 7 retained. | 15. Backup and Disaster Recovery | 01, 05 | 07, 09 | — |
-| **R-212** | D | Full-host DR bundle. | 15. Backup and Disaster Recovery | 01, 07 | 09 | — |
-| **R-213** | D | The DR bundle is encrypted under a separate passphrase or key supplied at backup time, never… | 15. Backup and Disaster Recovery | 01, 07 | 09 | — |
-| **R-214** | D | Consequence, accepted: DR restore is deliberately interactive. | 15. Backup and Disaster Recovery | 07 | 09 | — |
-| **R-215** | D | Restore verifies before applying. | 15. Backup and Disaster Recovery | 02, 04, 07 | 09 | — |
-| **R-216** | P | Verification should also be invocable against a bundle without committing it, so a backup can… | 15. Backup and Disaster Recovery | 04 | 09 | — |
-| **R-217** | O-6 | Backup destination. | 15. Backup and Disaster Recovery | — | — | — |
+| **R-211** | P | Default: daily, 7 retained. | 15. Backup and Disaster Recovery | 01, 03, 05 | 07, 09 | — |
+| **R-212** | D | Full-host DR bundle. | 15. Backup and Disaster Recovery | 01, 07 | 09 | `TestR212_ADRBundleContainsWhatItPromises`, `TestR212_AVolumeRoundTripsThroughSnapshotAndRestore`, `TestR212_AnEmptyVolumeSnapshotsCleanly`, `TestR212_RestoreReplacesRatherThanMerges`, `TestR212_RestoreReturnsTheInstallToItsBackedUpState` |
+| **R-213** | D | The DR bundle is encrypted under a separate passphrase or key supplied at backup time, never… | 15. Backup and Disaster Recovery | 01, 07 | 09 | `TestR213_ADowngradedHeaderIsRejected`, `TestR213_AShortPassphraseIsRefused`, `TestR213_AnEncryptedBundleVerifiesAfterDecryption`, `TestR213_BundleRoundTripsAtEveryChunkBoundary`, `TestR213_ReorderedChunksAreRejected`, `TestR213_TheWrongPassphraseRevealsNothing` |
+| **R-214** | D | Consequence, accepted: DR restore is deliberately interactive. | 15. Backup and Disaster Recovery | 07 | 09 | `TestR214_AWrongPassphraseRevealsNothing` |
+| **R-215** | D | Restore verifies before applying. | 15. Backup and Disaster Recovery | 02, 04, 07 | 09 | `TestR215_ABundleWithNoManifestIsRejected`, `TestR215_ATamperedBundleIsRejected`, `TestR215_ATamperedBundleIsRejectedWithTheTargetUntouched`, `TestR215_ATruncatedBundleIsRejected`, `TestR215_AWholeBundleVerifies`, `TestR215_AWrongPassphraseLeavesTheInstallUntouched`, `TestR215_AnAlteredEntryIsRejectedByChecksum`, `TestR215_RestoreRefusesWithoutConfirmation`, `TestR215_TrailingBytesAreRejected`, `TestR215_VerifyReadsAndWritesNothingElse` |
+| **R-216** | P | Verification should also be invocable against a bundle without committing it, so a backup can… | 15. Backup and Disaster Recovery | 03, 04 | 09 | — |
+| **R-217** | D | Backup destination is an adapter category (R-252). | 15. Backup and Disaster Recovery | 02 | 09 | — |
 | **R-220** | D | Pando runs health listeners — health endpoints, uptime checks — so you know when an app goes… | 16.1 Health | — | — | — |
 | **R-221** | P | Health signal sources, in order: compose healthcheck if declared, HTTP endpoint if configured,… | 16.1 Health | 01, 03, 05, 07 | 04, 07 | — |
 | **R-222** | D | Log retention is bounded by size, not time, so a chatty app cannot fill a disk shared with… | 16.2 Logs | 02 | — | — |
@@ -181,7 +181,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-224** | D | Retention must respect total host disk, in aggregate across all apps. | 16.2 Logs | 02, 05 | 07, 09 | — |
 | **R-225** | D | Log masking is out of scope for now. | 16.2 Logs | — | — | — |
 | **R-226** | D | The audit log is in core and cannot be written or rewritten by an adapter (R-027). | 16.3 Audit | — | — | — |
-| **R-227** | P | Auditable events: every spec mutation, every grant change, every deploy, every secret write,… | 16.3 Audit | — | — | `TestR227_TheAuditLogIsReadableBehindItsOwnVerb` |
+| **R-227** | P | Auditable events: every spec mutation, every grant change, every deploy, every secret write,… | 16.3 Audit | — | — | `TestR227_TheAuditLogIsReadableBehindItsOwnVerb`, `TestR227_TheRestoreIsRecordedInTheInstallItProduced` |
 | **R-228** | P | Exec sessions are audited as a distinct event type — principal, app, workload, start and end. | 16.3 Audit | 03 | — | — |
 | **R-229** | P | Actions taken by a delegated token are recorded under the owning user, annotated with the token. | 16.3 Audit | 02 | 01, 10 | — |
 | **R-230** | D | Notification is an adapter category. | 16.4 Notifications | — | — | — |
@@ -194,7 +194,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-244** | P LATER | Per-user quotas (max apps, max disk) as a policy knob. | 17. Resources and Capacity | — | — | — |
 | **R-250** | D | The app declares requirements; adapters translate. | 18. Adapters | 03 | 03 | — |
 | **R-251** | D | Core never learns a provider's vocabulary. | 18. Adapters | 01, 03, 06 | 02, 03, 10 | — |
-| **R-252** | D | Adapter categories: identity, routing/ingress, builder, runtime, secrets, services,… | 18. Adapters | — | — | — |
+| **R-252** | D | Adapter categories: identity, routing/ingress, builder, runtime, secrets, services,… | 18. Adapters | 02, 03 | 09 | — |
 | **R-253** | D | Adapters are compiled in-tree. | 18. Adapters | 00, 03, 08 | 00, 03 | — |
 | **R-254** | D | Every adapter advertises capabilities as data — `isolation_class`,… | 18. Adapters | 00, 03, 04, 05, 07 | 03 | `TestR254_CapabilitiesAreHonest`, `TestR254_CapabilityUnsupportedBlocksDeploy`, `TestR254_TrialCapabilitiesAreDeclaredNotAssumed` |
 | **R-255** | D | Runtime adapters declare an isolation class. | 18. Adapters | 03 | 03 | — |
@@ -270,14 +270,12 @@ Check each against the categories above before treating it as a gap.
 - **R-192** (13. Secrets) — Environment variables are the default injection mechanism, since slot detection keys on them…
 - **R-200** (14. Persistence and Volumes) — Persistence declared in a compose file is imported and honored.
 - **R-210** (15. Backup and Disaster Recovery) — Per-app rolling backups of app data.
-- **R-217** (15. Backup and Disaster Recovery) — Backup destination.
 - **R-220** (16.1 Health) — Pando runs health listeners — health endpoints, uptime checks — so you know when an app goes…
 - **R-225** (16.2 Logs) — Log masking is out of scope for now.
 - **R-226** (16.3 Audit) — The audit log is in core and cannot be written or rewritten by an adapter (R-027).
 - **R-227** (16.3 Audit) — Auditable events: every spec mutation, every grant change, every deploy, every secret write,…
 - **R-230** (16.4 Notifications) — Notification is an adapter category.
 - **R-244** (17. Resources and Capacity) — Per-user quotas (max apps, max disk) as a policy knob.
-- **R-252** (18. Adapters) — Adapter categories: identity, routing/ingress, builder, runtime, secrets, services,…
 - **R-257** (18. Adapters) — A runtime adapter may be swapped under an existing app, and it is neither a migration nor a…
 - **R-260** (19. Surfaces) — Four first-class administrative surfaces, all shipping: API, CLI, MCP, web console.
 - **R-263** (19. Surfaces) — End users — people who were granted use of an app and nothing else — do not need the console.

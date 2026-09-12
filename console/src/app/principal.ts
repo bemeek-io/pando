@@ -32,6 +32,7 @@ export const InstallVerb = {
   PolicyManage: 'install.policy.manage',
   AdaptersManage: 'install.adapters.manage',
   AuditRead: 'install.audit.read',
+  BackupManage: 'install.backup.manage',
   AppCreate: 'app.create',
 } as const;
 

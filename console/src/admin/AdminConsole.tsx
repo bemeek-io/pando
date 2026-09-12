@@ -20,6 +20,7 @@ import { api } from '@api/client';
 import type { App } from '@api/types.gen';
 import { InstallVerb, useInstallVerb } from '../app/principal';
 import { Accounts } from '../install/Accounts';
+import { Backups } from '../install/Backups';
 import { Audit, Installation, Policy } from '../install/Installation';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { DetectionReview } from './DetectionReview';
@@ -27,7 +28,7 @@ import { Sharing } from './Sharing';
 import { AppOverview } from './AppOverview';
 import { Terminal } from './Terminal';
 
-type Section = 'apps' | 'accounts' | 'installation' | 'policy' | 'audit';
+type Section = 'apps' | 'accounts' | 'installation' | 'policy' | 'backups' | 'audit';
 
 export function AdminConsole({ onLeave }: { onLeave: () => void }) {
   const [selected, setSelected] = useState<App | null>(null);
@@ -40,6 +41,7 @@ export function AdminConsole({ onLeave }: { onLeave: () => void }) {
   const canManageUsers = useInstallVerb(InstallVerb.UsersManage);
   const canManagePolicy = useInstallVerb(InstallVerb.PolicyManage);
   const canReadAudit = useInstallVerb(InstallVerb.AuditRead);
+  const canManageBackups = useInstallVerb(InstallVerb.BackupManage);
 
   const apps = useQuery({
     queryKey: ['apps'],
@@ -57,6 +59,7 @@ export function AdminConsole({ onLeave }: { onLeave: () => void }) {
   if (canView || canManageUsers) items.push({ value: 'accounts', label: 'Accounts' });
   if (canView) items.push({ value: 'installation', label: 'Installation' });
   if (canView || canManagePolicy) items.push({ value: 'policy', label: 'Policy' });
+  if (canManageBackups) items.push({ value: 'backups', label: 'Backups' });
   if (canReadAudit) items.push({ value: 'audit', label: 'Audit log' });
 
   return (
@@ -80,6 +83,7 @@ export function AdminConsole({ onLeave }: { onLeave: () => void }) {
         {section === 'accounts' && <Accounts />}
         {section === 'installation' && <Installation />}
         {section === 'policy' && <Policy canEdit={canManagePolicy} />}
+        {section === 'backups' && <Backups />}
         {section === 'audit' && <Audit />}
         {section === 'apps' &&
           (selected ? (
