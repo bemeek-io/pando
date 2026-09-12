@@ -27,6 +27,8 @@ a migration simpler.
 | `host_policy.id integer PRIMARY KEY DEFAULT 1 CHECK (id = 1)` | R-015 — one install, one org; nobody accidentally builds multi-tenancy |
 | `volumes.app_id … ON DELETE RESTRICT` | R-204 — an app cannot be deleted out from under its volumes |
 | `UNIQUE (app_id, plane, principal_kind, principal_id)` on `grants` | Two planes stay two rows (R-073) |
+| `grants (role_id, role_scope) → roles (id, scope)` + `grants_install_has_no_app` | R-080 — an install role cannot be granted on one app and an app role cannot be granted install-wide; "no app" and "carries install verbs" cannot come apart |
+| `grants_data_plane_is_app_scoped` | R-070 — data-plane use is per-app and binary; there is no install-wide "use" |
 
 ## Things deliberately absent from the schema
 
@@ -50,6 +52,12 @@ Adding any of these is a design change, not a refactor:
 - `users.status` is three-valued: suspended is **not** deleted (R-049, R-282). Destruction rules
   (R-280) fire on `deleted`, never on `suspended`.
 - Group membership is read live at authorization time (R-079), never denormalized into grants.
+- `grants.app_id IS NULL` means **install-scoped** (O-17), and the unique index above is
+  `NULLS NOT DISTINCT` — so it already reads "one control grant per principal, install-wide" for
+  those rows. Do not add a second index for install grants; it would be redundant.
+- An administrator is a principal with a grant. **There is no `is_admin` column and adding one is a
+  design change**, not a shortcut: a boolean cannot express "manages users but not policy", which is
+  what R-265's "scoped to whatever privileges they hold" requires.
 - A delegated token has no grants of its own; authorization resolves through `owner_user_id` live
   (R-059). No cascade to write, so no cascade to miss.
 - `secrets.version` increments on rotation so the reconciler can detect that a restart is required

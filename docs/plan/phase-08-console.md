@@ -49,10 +49,34 @@ see `.claude/skills/pando-design/PROVENANCE.md` for how to pull it.
       repository, so `cmd/gen-api-types` reflects the Go types the handlers serialize. Committed and
       diff-checked in CI, like the traceability index
 - [x] Launcher at root: tiles from `GET /me/apps`, data-plane grants only (R-264)
-- [~] Admin entry (R-265) — **half**. There is no administrative verb anywhere in the model (O-17).
-      Shipped: the console opens for someone holding a control-plane grant on at least one app,
-      scoped by the server to those apps. Missing: install-level administration, which has neither
-      verbs nor screens
+- [x] Admin entry (R-265) — the entry appears for someone holding an install-scoped verb **or** a
+      control-plane grant on at least one app, because "any administrative verb" is two scopes.
+      `GET /me` returns the install verbs and the console reads them; `GET /apps` is control-plane
+      scoped and the server filters it. O-17 is resolved — the install verbs and the fourth built-in
+      role landed with this phase, along with the six endpoints they gate
+- [x] Install-level **screens** — Accounts, Installation, Policy, Audit log, each in the sidebar on
+      the verb it needs (`useInstallVerb`) rather than on "is an administrator". There is no
+      implication graph between verbs (R-082), so a sidebar that assumed one would offer a screen
+      whose every request comes back 403
+- [x] **Grant and revoke an install-scoped role** — `PUT`/`DELETE /users/{id}/role`. Until this
+      existed, the only install grant was the one bootstrap writes on first run, so an install had
+      exactly one administrator forever and no way to hand over. Its own route rather than a field on
+      `PATCH /users/{id}`, and `POST /apps/{id}/grants` still cannot reach install scope — a sharing
+      request that accepted an empty app ID would be a way to make an administrator
+- [x] `GET /users`, `GET /roles`, `GET`/`PUT /policy`, `GET /audit` — three of the six install verbs
+      gated endpoints that did not exist. A verb nobody can exercise is not authorization, it is a
+      string in a table
+- [x] **A login screen, and a password anyone can change.** `/login` rendered the launcher, which
+      rendered a link to `/login`: there was no form anywhere and the only way into a fresh install
+      was to call the API by hand. R-046's "must be changed on first login" was worse — the flag was
+      set at bootstrap, surfaced on `GET /me`, and **nothing could clear it**, because no
+      password-change endpoint existed. Both halves are here: `POST /me/password` and the two screens
+      in `console/src/auth/`
+- [ ] The **policy preview** design 05 §3 promises: "the console lists violating apps when a policy is
+      saved, before it is saved". Saving works and O-10's behaviour is correct — running apps are
+      untouched, the next deploy fails at plan time — but the administrator saves without seeing who
+      it will affect. Needs the planner run against every app's pinned spec, which is the expensive
+      part and why it is not here
 - [x] Detection review screen (R-102, R-103, R-105)
 - [x] Warnings, rendered inline where they apply (R-201, R-168, R-028) — carrying no red at all,
       which is what makes them distinct from an error in a palette that has no amber
@@ -80,9 +104,19 @@ with its evidence, the question **verbatim** with a working copy button, the run
 disclosure, and the path-routing warning inline and quiet; answering the question enabled Accept, and
 accepting pinned revision 1 and left the app `proposed` — it did not deploy.
 
-**The second clause is half met.** "Scoped to what they hold" is the server's scoping of
-`GET /apps`; "holding an administrative verb" has no implementation because no such verb exists
-(O-17).
+Verified in a browser against the shipped binary, from a cold `docker compose down -v`: the sign-in
+form appears at the root, the generated first-run credential is accepted, the change-password screen
+follows it and cannot be navigated around, and the launcher appears after it. The Admin entry opens a
+five-item sidebar; setting the only administrator's role to None is refused inline with the server's
+sentence; the audit log shows `user.password.change`, `grant.create`, `grant.delete`, `policy.update`
+and `authz.denied` from that session.
+
+**The second clause is met for both scopes.** "Scoped to what they hold" is the server's scoping of
+`GET /apps` for app administration, and the verb list from `GET /me` for install administration.
+Verified against the shipped binary: an account with no grants sees no Admin entry, an empty `verbs`
+list, and a 403 naming the missing verb on each of the six endpoints — including
+`PATCH /users/{admin}`, which returned 204 before this phase and locked the install out. What is not
+built is the install-level screens those verbs would open; the verbs and their endpoints are.
 
 Exec is verified the same way: a live shell inside a running nginx container from the Terminal tab,
 with the R-086 warning stated before anything opens. Six acceptance tests cover the ordering that

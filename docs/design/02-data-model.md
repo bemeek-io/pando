@@ -113,26 +113,46 @@ CREATE TABLE roles (
     id            text PRIMARY KEY,          -- role_...
     name          text NOT NULL UNIQUE,
     builtin       boolean NOT NULL DEFAULT false,   -- R-081, immutable
+    scope         text NOT NULL DEFAULT 'app',      -- app | install  (R-080)
     verbs         text[] NOT NULL,
-    created_at    timestamptz NOT NULL DEFAULT now()
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (id, scope)                              -- for the FK below
 );
 ```
 
-**[D]** Built-in rows (`viewer`, `operator`, `owner`) are seeded by migration and protected by a trigger against `UPDATE`/`DELETE` (R-081). New verbs added in a later Pando version are added to built-in roles **by migration**, which is the mechanism R-081 promises.
+**[D]** Built-in rows (`viewer`, `operator`, `owner`, `administrator`) are seeded by migration and protected by a trigger against `UPDATE`/`DELETE` (R-081). New verbs added in a later Pando version are added to built-in roles **by migration**, which is the mechanism R-081 promises.
+
+**[D]** A role is scoped. A role carrying install verbs granted on a single app is nonsense, and a role carrying app verbs granted install-wide is worse. `administrator` is the only install-scoped built-in; custom roles (R-082) are composed within one scope.
+
+**[D]** The `UNIQUE (id, scope)` index is redundant as a uniqueness constraint — `id` is already the primary key — and exists solely so `grants` can reference the pair. It is the cheapest way to make the correspondence a foreign key instead of a convention.
 
 ```sql
 CREATE TABLE grants (
     id            text PRIMARY KEY,          -- gr_...
-    app_id        text NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+    app_id        text REFERENCES apps(id) ON DELETE CASCADE,  -- NULL = install-scoped
     plane         text NOT NULL,             -- control | data   (R-070, R-071)
+    role_scope    text NOT NULL DEFAULT 'app',                 -- app | install
     principal_kind text NOT NULL,            -- user | group | token | anonymous
     principal_id  text,                      -- NULL when kind = anonymous (R-074)
     role_id       text REFERENCES roles(id), -- control plane only
     created_by    text NOT NULL,
     created_at    timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (app_id, plane, principal_kind, principal_id)
+    UNIQUE (app_id, plane, principal_kind, principal_id),      -- NULLS NOT DISTINCT
+
+    FOREIGN KEY (role_id, role_scope) REFERENCES roles (id, scope),
+    CHECK ((role_scope = 'install' AND app_id IS NULL) OR
+           (role_scope = 'app'     AND app_id IS NOT NULL)),
+    CHECK (plane = 'control' OR app_id IS NOT NULL)
 );
 ```
+
+**[D]** A grant with **no app** is install-scoped (R-080, O-17). An administrator is a principal holding a grant, the same as everyone else; the grant simply has no app. There is no admin flag on a user, so the power is revocable and grantable like any other.
+
+**[D]** `app_id NOT NULL` used to be what kept an app-scoped grant from becoming global. Its replacement is the composite foreign key plus the first CHECK: a role carries its scope, a grant carries the scope it was made at, and the two must agree. So "no app" and "carries install verbs" cannot come apart, whatever the application does.
+
+**[D]** The second CHECK says a data grant always names an app. Data-plane use is per-app and binary (R-070) — there is no install-wide "use" — and that was previously implied by the NOT NULL.
+
+**[D]** The unique index is `NULLS NOT DISTINCT`, which already existed so the anonymous grant (whose `principal_id` is NULL) could not be inserted twice. With a NULL `app_id` it does a second job for free: NULL compares equal to itself, so the index reads "one control grant per principal, install-wide". A combination of privileges is a custom role composed from the verb list (R-082), not two grants.
 
 **[D]** Data-plane grants have no role — use is binary (R-070).
 

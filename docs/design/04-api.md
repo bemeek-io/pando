@@ -28,7 +28,7 @@ R-261: the API is the product. Console, CLI, and MCP are clients of it. None may
 
 ```
 GET    /api/v1/apps                      list (filtered by app.view)
-POST   /api/v1/apps                      create — begins onboarding
+POST   /api/v1/apps                      create — begins onboarding; app.create (install-scoped)
 GET    /api/v1/apps/{id}
 PATCH  /api/v1/apps/{id}                 name, owner
 DELETE /api/v1/apps/{id}                 R-204/205 — see below
@@ -180,10 +180,14 @@ GET  /api/v1/apps/{id}/status                observed state, health, restarts
 ### 2.7 Identity and principals
 
 ```
-GET    /api/v1/users
-POST   /api/v1/users                      local adapter only
-PATCH  /api/v1/users/{id}                 status: active | suspended (R-049)
-DELETE /api/v1/users/{id}                 triggers §21 destruction rules
+GET    /api/v1/users                      install.view
+POST   /api/v1/users                      local adapter only; install.users.manage
+GET    /api/v1/users/{id}                 self, or install.view
+PATCH  /api/v1/users/{id}                 status: active | suspended (R-049); self, or install.users.manage
+DELETE /api/v1/users/{id}                 triggers §21 destruction rules; install.users.manage
+
+PUT    /api/v1/users/{id}/role            grant an install-scoped role; install.users.manage
+DELETE /api/v1/users/{id}/role            revoke it; install.users.manage
 
 GET    /api/v1/groups
 POST   /api/v1/groups
@@ -200,15 +204,37 @@ GET    /api/v1/verbs                      the verb catalog, for building custom 
 
 **[D]** `PATCH /users/{id}` with `status: suspended` must not trigger data destruction. `DELETE` does. The API shape makes R-049/R-282 explicit rather than a flag on one endpoint.
 
+**[D]** The two `/users/{id}` routes are **self or verb**. Reading or changing your own account is
+self-service; doing either to someone else is administration and needs an install-scoped verb
+(design 06 §2.1). Both halves are load-bearing: without the first, an install with one administrator
+cannot let anyone manage their own account; without the second, any signed-in account can suspend the
+administrator, which is what these endpoints allowed until O-17 was resolved. A delegated token acts
+as its owner here as everywhere else (R-058), so an agent may act on its owner's account and no
+other.
+
+**[D]** Promotion is its own route, not a field on `PATCH /users/{id}`. Changing someone's status and
+changing their power are different acts with different verbs everywhere else in this system, and
+folding them into one body is how a status update quietly becomes a promotion.
+
+**[D]** `DELETE /users/{id}/role` refuses to remove the last principal holding `install.users.manage`,
+transactionally. An install that cannot be administered has no recovery path inside the product — the
+way back is a psql prompt, which is the same lockout O-17 allowed by accident, reachable on purpose.
+The rule names the *verb* rather than the administrator role, so a custom role (R-082) holding it
+counts.
+
+**[D]** `GET /users/{id}` is not public to signed-in callers. An account carries an email address and
+a display name, and "every user can enumerate every user" is a disclosure nobody asked for.
+
 ### 2.8 Platform
 
 ```
-GET  /api/v1/adapters                     configured instances + live capabilities
-POST /api/v1/adapters
-GET  /api/v1/capacity                     aggregated from adapters (R-243)
-GET  /api/v1/policy
-PUT  /api/v1/policy                       R-274; see O-10
-GET  /api/v1/audit                        filterable
+GET  /api/v1/adapters                     configured instances + live capabilities; install.view
+POST /api/v1/adapters                     install.adapters.manage
+GET  /api/v1/capacity                     aggregated from adapters (R-243); install.view
+GET  /api/v1/policy                       install.view
+PUT  /api/v1/policy                       R-274; see O-10; install.policy.manage
+GET  /api/v1/audit                        filterable; install.audit.read
+GET  /api/v1/roles                        install-scoped roles (R-082); install.view
 GET  /api/v1/backups
 POST /api/v1/backups                      trigger; kind = rolling | dr_bundle
 POST /api/v1/backups/{id}:verify          R-216
@@ -218,12 +244,44 @@ GET  /api/v1/.well-known/jwks.json        assertion keys (R-057)
 
 **[D]** `GET /adapters` returns live capabilities, not stored config, so the console can grey out routing modes an adapter doesn't support instead of offering choices that fail at plan time.
 
+**[D]** Policy is read with `install.view` and written with `install.policy.manage`. Seeing the rules
+you work under is not the same privilege as changing them — the same split as `app.secrets.read` and
+`app.secrets.write` (R-083).
+
+**[D]** `PUT /policy` rejects a `disabled_verbs` entry that is not in the catalog. Policy can only
+deny (R-272), so a typo denies nothing and looks exactly like a rule that works, which is the worst
+failure mode a security control has.
+
+**[D]** `GET /audit` pages on a **cursor** (`before=<id>`), not an offset. The log is append-only with
+monotonic IDs; with an offset, events arriving between requests shift every later page. `action`
+matches a prefix rather than a substring, because actions are dotted namespaces and a substring match
+would make `grant.delete` a result for a search for "delete".
+
 ### 2.9 End-user surface
 
 ```
-GET /api/v1/me                            profile, groups
-GET /api/v1/me/apps                       the launcher tiles (R-264)
+GET  /api/v1/me                           profile, groups, install-scoped verbs
+GET  /api/v1/me/apps                      the launcher tiles (R-264)
+POST /api/v1/me/password                  change your own password (R-046)
 ```
+
+**[D]** `POST /me/password` takes the current password as well as the new one, even though the caller
+is already authenticated. A session cookie is a bearer credential; without the check, anyone holding
+a borrowed one could lock the owner out of their own account. It is self-only and carries no verb:
+changing your own password is not administration, and changing somebody else's is a *reset* — a
+different action with different consequences, which does not exist yet and must not arrive by
+relaxing this route.
+
+**[D]** Success clears `must_change_password` and revokes the caller's **other** sessions. The
+current one survives, because being signed out by your own password change teaches people that
+changing it is risky. R-046 promised "must be changed on first login" from the beginning; until this
+endpoint existed that flag was something nothing could clear.
+
+**[D]** `GET /me` carries `verbs`: the install-scoped verbs the caller holds, always present and
+usually empty. The console reads it to decide whether to show the Admin entry and what to put in it
+(R-265) rather than inferring administration from another response. It is not enforcement — every
+install-level endpoint checks its verb itself — it is what keeps the console a client of the API
+rather than a second opinion about authorization (R-261).
 
 **[D]** `/me/apps` returns apps where the caller holds a **data-plane** grant. It is not the same list as `GET /apps`, which is control-plane scoped. Two planes, two endpoints (R-070/071).
 

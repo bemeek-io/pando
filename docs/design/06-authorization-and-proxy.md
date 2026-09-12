@@ -73,6 +73,50 @@ func (a *Authorizer) CheckData(ctx context.Context, p Principal, appID string) e
 }
 ```
 
+### 2.1 Install scope
+
+**[D]** There are three check functions, not two, and they take different arguments on purpose:
+`CheckControl(p, appID, verb)`, `CheckInstall(p, verb)`, `CheckData(p, appID)`. An install-scoped verb
+(R-080) is held through a grant with no app, so there is nothing to pass as `appID` and no correct
+value to invent.
+
+```go
+func (a *Authorizer) CheckInstall(ctx context.Context, p Principal, verb Verb) error {
+    if !InstallScoped(verb) { return ErrInternal(verb) }   // see below
+    if err := a.checkPrincipal(ctx, p); err != nil { return err }
+    if err := a.policy.Allows(ctx, verb, ""); err != nil { return err }
+
+    for _, g := range a.state.InstallGrantsFor(ctx, p) {   // user, groups, token
+        if a.roles.Has(g.RoleID, verb) {
+            return nil
+        }
+    }
+    return ErrPermission(verb)
+}
+```
+
+**[D]** Same seven steps, in the same order. Policy is still a floor (R-272): an install that has
+disabled a verb has disabled it for administrators too.
+
+**[D]** Each function **refuses a verb from the other's scope**, with an internal error rather than a
+denial. The asymmetry is the reason. An install verb evaluated against an app looks for a grant that
+cannot exist and denies — wrong but safe. An app verb evaluated install-wide looks for a grant that
+*can* exist and could allow. Refusing both is what keeps the safe direction from teaching anyone that
+the unsafe one is also fine.
+
+**[D]** The scope correspondence is enforced by the schema, not by this code (design 02 §2.2):
+`roles.scope`, `grants.role_scope`, a composite foreign key between them, and a CHECK tying
+`role_scope` to whether `app_id` is null. So `app_id IS NULL` and "carries install verbs" cannot come
+apart, and `InstallGrantsFor` cannot return a grant carrying app verbs however the row was written.
+
+**[D]** One install-scoped grant per principal. `grants_unique_principal` is
+`(app_id, plane, principal_kind, principal_id) NULLS NOT DISTINCT`, and NULL comparing equal to itself
+means that index already reads "one control grant per principal, install-wide". A combination of
+privileges is a custom role composed from the verb list (R-082), not two grants.
+
+**[D]** There is no install-wide data plane. Data-plane use is per-app and binary (R-070), enforced by
+`grants_data_plane_is_app_scoped`.
+
 **[D]** `CheckData` contains exactly one cross-plane implication — ownership (R-072). No other control-plane role appears in it. A reviewer seeing another control-plane check added to this function should reject the change; that is R-029 and it was reversed once already during design, so it needs a comment saying so in the code.
 
 **[D]** Being a Pando admin does not appear in `CheckData` at all. R-087: an admin has root and can reach a container outside Pando, but the supported path requires a grant.
@@ -208,6 +252,11 @@ tell revocation from a network fault.
 
 ```go
 var Verbs = []Verb{
+    // Install-scoped: held through a grant with no app (§2.1).
+    "install.view", "install.users.manage", "install.policy.manage",
+    "install.adapters.manage", "install.audit.read", "app.create",
+
+    // App-scoped.
     "app.view", "app.logs.read", "app.deploy", "app.restart",
     "app.spec.edit", "app.secrets.write", "app.secrets.read",
     "app.exec", "app.grants.manage", "app.routing.override",
@@ -215,12 +264,28 @@ var Verbs = []Verb{
 }
 ```
 
+**[D]** `app.create` is install-scoped despite its prefix. There is no app yet when it is checked —
+Sequence A step 1 has always called it install-level — and renaming it to `install.apps.create` would
+churn the string in the seeded role for nothing. `InstallScoped(verb)` is the predicate; the prefix is
+a naming convention, not the rule.
+
+**[D]** The install verbs gate six endpoints that were previously gated by authentication alone:
+`POST /users`, `PATCH /users/{id}`, `GET /users/{id}`, `POST /apps`, `GET /capacity`,
+`GET /adapters`. The two `/users/{id}` routes are **self or verb**: your own account is self-service,
+anyone else's needs `install.users.manage` (write) or `install.view` (read). Without the first half an
+install with one administrator could not let anyone manage their own account; without the second, any
+signed-in account could suspend the administrator — which it could, until O-17 was resolved.
+
 **[D]** The three `*.override` verbs form a set: routing, resources, and egress. Each one permits
 deviating from a default the host operator chose, which is why none of them is in Operator and all
 three sit with Owner. `app.egress.override` is what R-184 requires — an app-level allowlist
 **replaces** the install-wide list rather than narrowing it (R-182, R-183), so defining one is an
 escalation and has to be gated. Adding it to the catalog without gating it would make the install-wide
 list advisory.
+
+**[D]** Administrator holds every install verb and no app verb; Owner is the mirror image. The two
+partition the catalog. An administrator is therefore **not** an owner of every app, which is the same
+line R-087 draws in `CheckData`: the supported path to an app is a grant.
 
 **[D]** Built-in roles (R-081) are seeded by migration and trigger-protected. When a new verb is introduced in a later Pando version, a migration adds it to the appropriate built-in roles. That is the upgrade mechanism R-081 promises, and it is the only sanctioned way built-in role contents change.
 

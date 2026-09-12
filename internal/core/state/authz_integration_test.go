@@ -101,12 +101,132 @@ func TestR081_SeededVerbSetsMatchTheRequirement(t *testing.T) {
 		require.False(t, operator.Has(v), "%s is Owner-only", v)
 	}
 
+	// Owner holds every *app* verb and no install verb. An owner of one app
+	// administers nothing: R-031 gives every app an owner of record, and that
+	// is not the same office as administering the installation (O-17).
 	owner, err := store.Role(ctx, authz.RoleOwner)
 	require.NoError(t, err)
-	require.Len(t, owner.Verbs, len(authz.Verbs), "owner holds every verb in the catalog")
 	for _, v := range authz.Verbs {
+		if authz.InstallScoped(v) {
+			require.False(t, owner.Has(v), "owner must not hold the install verb %s", v)
+			continue
+		}
 		require.True(t, owner.Has(v), "owner is missing %s", v)
 	}
+
+	// And the administrator is the mirror image: every install verb, no app
+	// verb. Managing a particular app still requires a grant on it.
+	admin, err := store.Role(ctx, authz.RoleAdministrator)
+	require.NoError(t, err)
+	require.Equal(t, "administrator", admin.Name)
+	require.True(t, admin.Builtin)
+	for _, v := range authz.Verbs {
+		require.Equal(t, authz.InstallScoped(v), admin.Has(v),
+			"administrator should hold %s only if it is install-scoped", v)
+	}
+	require.Equal(t, len(authz.Verbs), len(owner.Verbs)+len(admin.Verbs),
+		"the two built-in top roles partition the catalog exactly")
+}
+
+// TestR081_AdministratorIsImmutableToo asserts the fourth built-in role is
+// protected by the same trigger as the other three (R-081).
+func TestR081_AdministratorIsImmutableToo(t *testing.T) {
+	ctx := context.Background()
+	db := connected(t)
+
+	_, err := db.Exec(ctx,
+		`UPDATE roles SET verbs = verbs || 'app.exec' WHERE id = $1`, authz.RoleAdministrator)
+	require.Error(t, err, "widening the administrator role at runtime must be refused")
+
+	_, err = db.Exec(ctx, `DELETE FROM roles WHERE id = $1`, authz.RoleAdministrator)
+	require.Error(t, err)
+}
+
+// TestR080_GrantScopeIsEnforcedByTheDatabase asserts the structural half of
+// install-level authorization: the two scopes cannot be mixed, whatever the
+// application does.
+//
+// This is the property that makes "app_id IS NULL" a safe definition of install
+// scope. Without it, a row with a null app and an app role would be a grant the
+// install-wide query returns and whose verbs are app verbs.
+func TestR080_GrantScopeIsEnforcedByTheDatabase(t *testing.T) {
+	ctx := context.Background()
+	db := connected(t)
+	alice := seedUser(t, db, "alice")
+	appID := seedApp(t, db, alice.ID)
+
+	// An app role granted install-wide: refused by the composite foreign key.
+	_, err := db.Exec(ctx, `
+		INSERT INTO grants (id, app_id, plane, role_scope, principal_kind, principal_id, role_id, created_by)
+		VALUES ($1, NULL, 'control', 'install', 'user', $2, $3, 'system')`,
+		id.New(id.Grant), alice.ID, authz.RoleOwner)
+	require.Error(t, err, "an app role cannot be granted installation-wide")
+
+	// An install role granted on one app: refused by the same key.
+	_, err = db.Exec(ctx, `
+		INSERT INTO grants (id, app_id, plane, role_scope, principal_kind, principal_id, role_id, created_by)
+		VALUES ($1, $2, 'control', 'app', 'user', $3, $4, 'system')`,
+		id.New(id.Grant), appID, alice.ID, authz.RoleAdministrator)
+	require.Error(t, err, "an install role cannot be granted on a single app")
+
+	// An install-scoped row that still names an app: refused by the CHECK.
+	_, err = db.Exec(ctx, `
+		INSERT INTO grants (id, app_id, plane, role_scope, principal_kind, principal_id, role_id, created_by)
+		VALUES ($1, $2, 'control', 'install', 'user', $3, $4, 'system')`,
+		id.New(id.Grant), appID, alice.ID, authz.RoleAdministrator)
+	require.Error(t, err)
+
+	// Data-plane use is per-app and binary (R-070): there is no install-wide
+	// "use" to grant.
+	_, err = db.Exec(ctx, `
+		INSERT INTO grants (id, app_id, plane, principal_kind, principal_id, created_by)
+		VALUES ($1, NULL, 'data', 'user', $2, 'system')`, id.New(id.Grant), alice.ID)
+	require.Error(t, err, "a data grant always names an app")
+}
+
+// TestR080_InstallGrantsAreNeverReturnedByAnAppLookup asserts the two scopes stay
+// separate on the read path as well as the write path.
+func TestR080_InstallGrantsAreNeverReturnedByAnAppLookup(t *testing.T) {
+	ctx := context.Background()
+	db := connected(t)
+	alice := seedUser(t, db, "alice")
+	appID := seedApp(t, db, alice.ID)
+
+	grants := state.NewGrants(db)
+	_, err := grants.GrantInstall(ctx, "user", alice.ID, authz.RoleAdministrator, "system")
+	require.NoError(t, err)
+
+	store := state.NewAuthzStore(db)
+	p := authz.Principal{Kind: authz.KindUser, ID: alice.ID, UserID: alice.ID, Status: "active"}
+
+	appScoped, err := store.ControlGrantsFor(ctx, appID, p)
+	require.NoError(t, err)
+	require.Empty(t, appScoped, "an install grant must not appear in an app's grants")
+
+	installScoped, err := store.InstallGrantsFor(ctx, p)
+	require.NoError(t, err)
+	require.Len(t, installScoped, 1)
+
+	verbs, err := store.InstallVerbsFor(ctx, p)
+	require.NoError(t, err)
+	require.Contains(t, verbs, string(authz.InstallUsersManage))
+	require.NotContains(t, verbs, string(authz.AppExec))
+
+	// Granting again replaces rather than duplicates: the schema allows one
+	// control grant per principal install-wide, and GrantInstall is on the
+	// bootstrap path, which runs on every start.
+	_, err = grants.GrantInstall(ctx, "user", alice.ID, authz.RoleAdministrator, "system")
+	require.NoError(t, err)
+	installScoped, err = store.InstallGrantsFor(ctx, p)
+	require.NoError(t, err)
+	require.Len(t, installScoped, 1)
+
+	// And it is revocable like any other grant. Administration is not a column
+	// on the user.
+	require.NoError(t, grants.RevokeInstall(ctx, "user", alice.ID))
+	verbs, err = store.InstallVerbsFor(ctx, p)
+	require.NoError(t, err)
+	require.Empty(t, verbs)
 }
 
 // TestR073_TwoPlanesAreTwoIndependentlyRevocableRows asserts R-073.
@@ -302,7 +422,9 @@ func TestR046_FirstRunCreatesOneAdminAndIsIdempotent(t *testing.T) {
 	users := state.NewUsers(db)
 	auditor := audit.New(db.Pool)
 
-	first, err := bootstrap.Run(ctx, users, db, auditor)
+	grants := state.NewGrants(db)
+
+	first, err := bootstrap.Run(ctx, users, grants, db, auditor)
 	require.NoError(t, err)
 	require.True(t, first.Created)
 	require.NotEmpty(t, first.Password.Reveal())
@@ -314,12 +436,27 @@ func TestR046_FirstRunCreatesOneAdminAndIsIdempotent(t *testing.T) {
 		`SELECT password_hash FROM users WHERE id = $1`, first.User.ID).Scan(&storedHash))
 	require.NotContains(t, storedHash, first.Password.Reveal())
 
-	again, err := bootstrap.Run(ctx, users, db, auditor)
+	again, err := bootstrap.Run(ctx, users, grants, db, auditor)
 	require.NoError(t, err)
 	require.False(t, again.Created, "first run must not repeat")
 
 	var count int
 	require.NoError(t, db.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&count))
+	require.Equal(t, 1, count)
+
+	// The account is administrative because of a grant (O-17), and running
+	// bootstrap twice leaves one. Without this row a fresh install has a user
+	// who can sign in and do nothing.
+	store := state.NewAuthzStore(db)
+	verbs, err := store.InstallVerbsFor(ctx, authz.Principal{
+		Kind: authz.KindUser, ID: first.User.ID, UserID: first.User.ID, Status: "active",
+	})
+	require.NoError(t, err)
+	require.Contains(t, verbs, string(authz.InstallUsersManage))
+	require.Contains(t, verbs, string(authz.AppCreate))
+
+	require.NoError(t, db.QueryRow(ctx,
+		`SELECT count(*) FROM grants WHERE app_id IS NULL`).Scan(&count))
 	require.Equal(t, 1, count)
 }
 

@@ -126,7 +126,7 @@ These are load-bearing. Violating any of them is a design failure, not a tradeof
 
 ### 5.2 Bootstrap
 
-**R-046 [P]** First run creates a single administrative local user. The initial credential is generated and displayed once on the console/CLI, and must be changed on first login.
+**R-046 [P]** First run creates a single administrative local user. The initial credential is generated and displayed once on the console/CLI, and must be changed on first login. The account is administrative because it holds an install-scoped **Administrator** grant (R-080, R-081) — there is no admin flag on a user — so the power is revocable and grantable like any other.
 
 ### 5.3 Sessions and revocation
 
@@ -209,7 +209,22 @@ These are load-bearing. Violating any of them is a design failure, not a tradeof
 
 ### 6.4 Verbs and roles
 
-**R-080 [D]** Control-plane permissions are individual verbs. Proposed set:
+**R-080 [D]** Control-plane permissions are individual verbs, in two scopes. **App-scoped** verbs are
+held through a grant on one app. **Install-scoped** verbs are held through a grant with no app, and
+confer nothing on any particular app.
+
+Install-scoped:
+
+| Verb | Grants |
+|---|---|
+| `install.view` | See the installation: its adapters, its capacity, its accounts |
+| `install.users.manage` | Create accounts and change an account other than one's own |
+| `install.policy.manage` | Edit host policy |
+| `install.adapters.manage` | Configure adapters |
+| `install.audit.read` | Read the install-wide audit log |
+| `app.create` | Create an app. Install-scoped despite the name: there is no app yet when it is checked |
+
+App-scoped:
 
 | Verb | Grants |
 |---|---|
@@ -227,13 +242,19 @@ These are load-bearing. Violating any of them is a design failure, not a tradeof
 | `app.egress.override` | Define an app-level egress allowlist, replacing the install-wide one (R-184) |
 | `app.delete` | Delete the app |
 
-**R-081 [D]** Three **immutable** built-in roles ship out of the box. They cannot be edited; Pando may add newly-introduced verbs to them across versions.
+**R-081 [D]** Four **immutable** built-in roles ship out of the box. They cannot be edited; Pando may add newly-introduced verbs to them across versions.
 
-| Role | Verbs |
-|---|---|
-| **Viewer** | `app.view`, `app.logs.read` |
-| **Operator** | Viewer + `app.deploy`, `app.restart`, `app.spec.edit`, `app.secrets.write` |
-| **Owner** | All verbs |
+| Role | Scope | Verbs |
+|---|---|---|
+| **Viewer** | app | `app.view`, `app.logs.read` |
+| **Operator** | app | Viewer + `app.deploy`, `app.restart`, `app.spec.edit`, `app.secrets.write` |
+| **Owner** | app | All app-scoped verbs |
+| **Administrator** | install | All install-scoped verbs |
+
+Owner and Administrator partition the catalog; neither contains a verb from the other's scope. An
+Owner of every app in the installation still administers nothing, and an Administrator is not an
+owner of any app — R-031 gives every app an owner of record, and to manage a particular app an
+administrator holds a grant on it like anyone else (R-087).
 
 **R-082 [D]** Custom roles may be composed from the verb list and assigned to users or groups.
 

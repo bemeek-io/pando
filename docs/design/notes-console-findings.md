@@ -44,6 +44,16 @@ violating apps when a policy is saved, before it is saved"; there is no policy
 endpoint and no verb to gate one. R-085's "host policy may disable exec
 install-wide" is the same shape.
 
+**Resolved within this phase**, once the privilege escalation this gap allowed was
+demonstrated on the shipped stack:
+option 1 from `open-decisions.md` — install-scoped verbs held as a grant with no
+app, plus a fourth built-in role. `GET /me` now carries `verbs`, and
+`app/principal.ts` reads them rather than inferring administration from
+`GET /apps`. The six endpoints are gated. The paragraphs above describe what was
+true when this note was written, and are left as written; design 06 §2.1 is the
+current account. What is still absent is the install-level *screens* — the verbs
+and endpoints they would use exist now.
+
 ## The design system's lint config does not run
 
 `_adherence.oxlintrc.json` is the phase's stated mechanism: *"Wire

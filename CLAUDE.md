@@ -51,6 +51,7 @@ one of these harder to enforce, the change is wrong.
 | No container runtime socket in a build | R-112 | Integration test asserting build container mounts | design 07 B |
 | Inbound `X-Pando-*` headers are always stripped | R-053 | Unconditional strip in the proxy + forged-header test | design 06 §4, 07 C |
 | Built-in roles are immutable | R-081 | DB trigger; new verbs added by migration only | design 02 §2.2 |
+| An install-scoped grant carries install verbs and no app, and vice versa | R-080 | Composite FK `grants (role_id, role_scope) → roles (id, scope)` + two CHECKs | design 02 §2.2, 06 §2.1 |
 | Spec revisions are append-only | R-152 | DB trigger rejecting `UPDATE`/`DELETE` | design 02 §2.3 |
 | One install, one org — no tenant object | R-015 | Singleton constraint on `host_policy` | design 02 §2.5 |
 | A failed app stays failed | R-151 | The reconciler has *no code path* touching `failed` | design 05 §1.1 |
@@ -61,6 +62,11 @@ Three more that have no mechanism yet and therefore depend on you:
 - **The two planes are never conflated** (R-029, R-070/071). `CheckData` contains exactly one
   cross-plane implication — ownership. If you find yourself adding a control-plane role check to
   `CheckData`, stop. This was reversed once already.
+- **The two *scopes* are never conflated either** (R-080). `CheckControl` takes an app,
+  `CheckInstall` does not, and each refuses the other's verbs with an internal error rather than
+  evaluating it. The asymmetry is why: an install verb checked against an app denies, which is safe;
+  an app verb checked install-wide looks for a grant that *can* exist. An administrator holds no
+  `app.*` verb and is not an owner of every app (R-087).
 - **The proxy is never routed around** (R-023). Routing adapters put traffic *in front of* Pando's
   proxy; they never point at a workload. An adapter author's instinct will be to point Traefik
   straight at the container. That is the bug.
