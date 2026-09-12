@@ -118,3 +118,29 @@ func (s *Secrets) Delete(ctx context.Context, appID, key string) error {
 }
 
 type secretKey = string
+
+// Versions returns each secret's version, without decrypting anything.
+//
+// This is what the environment fingerprint is built from (R-193). Drift
+// detection runs on every tick for every app, and it must never be a reason to
+// decrypt a secret — the version answers "did this change", which is the only
+// question being asked.
+func (s *Secrets) Versions(ctx context.Context, appID string) (map[string]int, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT key, version FROM secrets WHERE app_id = $1`, appID)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the app's secret versions.", err)
+	}
+	defer rows.Close()
+
+	out := map[string]int{}
+	for rows.Next() {
+		var key string
+		var version int
+		if err := rows.Scan(&key, &version); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the app's secret versions.", err)
+		}
+		out[key] = version
+	}
+	return out, rows.Err()
+}

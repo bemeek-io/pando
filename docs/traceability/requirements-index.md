@@ -12,7 +12,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | Requirements | 207 | — |
 | Specified in a design doc | 143 | 69% |
 | Assigned to a phase | 107 | 51% |
-| Covered by a named test | 54 | 26% |
+| Covered by a named test | 58 | 28% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -131,10 +131,10 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-145** | D | Start-then-swap is available as an explicit opt-in. | 10.3 Deploy strategy | 03, 05, 07, 08 | 04, 08 | — |
 | **R-146** | D | Build failure: nothing is replaced. | 10.4 Failure handling | 05, 07 | 04, 07 | `TestR146_AFailedBuildLeavesTheRunningAppAlone` |
 | **R-147** | D | Automatic rollback is disabled by default, available as opt-in. | 10.4 Failure handling | 01, 05, 07, 08 | 08 | — |
-| **R-148** | D | Reconcile when possible; report when not. | 10.4 Failure handling | 03, 05 | — | — |
+| **R-148** | D | Reconcile when possible; report when not. | 10.4 Failure handling | 03, 05 | — | `TestR148_AKilledContainerIsRestored`, `TestR148_EverythingReconcilableIsACreationOrAStart`, `TestR148_UnreconcilableDriftIsReportedAndNothingIsApplied` |
 | **R-149** | P | Restart backoff: immediate, then 5s, 15s, 60s, capped at 5 minutes. | 10.4 Failure handling | 00, 05 | 07 | — |
-| **R-150** | P | Ten failures within 30 minutes marks the app `failed`. | 10.4 Failure handling | 05 | 07 | — |
-| **R-151** | D | A `failed` app stays failed until a human intervenes. | 10.4 Failure handling | 05 | 07 | — |
+| **R-150** | P | Ten failures within 30 minutes marks the app `failed`. | 10.4 Failure handling | 05 | 07 | `TestR150_ACrashLoopingAppReachesFailed`, `TestR150_RepeatedFailureReachesFailedAndStops` |
+| **R-151** | D | A `failed` app stays failed until a human intervenes. | 10.4 Failure handling | 05 | 07 | `TestR151_ACrashLoopingAppReachesFailedAndStaysThere`, `TestR151_AFailedAppIsNeverTouched` |
 | **R-152** | P | Revision history retains the last 10 pinned specs for rollback. | 10.4 Failure handling | 01, 02, 04 | 02, 07 | `TestR152_PinningMarksARevisionEverPinned`, `TestR152_RevisionsAreNumberedMonotonically`, `TestR152_SpecRevisionsCannotBeEdited` |
 | **R-153** | D | One app, one place (R-010). | 10.5 Scale | — | — | — |
 | **R-160** | D | Routing is an adapter category. | 11. Networking and Routing | — | — | — |
@@ -157,12 +157,12 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-190** | D V1 | Local secret storage: encrypted at rest with a key on the same disk. | 13. Secrets | 02, 03 | 03, 04 | — |
 | **R-191** | D | The threat model must be stated, not implied: this protects a leaked backup file or copied… | 13. Secrets | 02 | — | — |
 | **R-192** | D | Environment variables are the default injection mechanism, since slot detection keys on them… | 13. Secrets | — | — | — |
-| **R-193** | D | On the env path, rotation implies a restart. | 13. Secrets | 02, 05, 08 | 07 | `TestR193_ChangedEnvironmentCausesRecreate` |
+| **R-193** | D | On the env path, rotation implies a restart. | 13. Secrets | 02, 05, 08 | 07 | `TestR193_AChangedEnvironmentFingerprintIsDrift`, `TestR193_ChangedEnvironmentCausesRecreate` |
 | **R-194** | P | Secret values are redacted in logs, in spec exports, and in the audit log. | 13. Secrets | 00, 02 | 00, 04 | `TestR194_CredentialsDoNotAppearInErrors`, `TestR194_ErrorStringsDoNotLeak`, `TestR194_RevealIsTheOnlyWayOut`, `TestR194_RoundTrippingARedactedPayloadDoesNotSetTheSecret`, `TestR194_SecretInDetailsDoesNotSerialize`, `TestR194_UnmarshalAcceptsARealSecret`, `TestR194_ValueNeverReachesALogLine`, `TestR194_ValueNeverRendersThroughAnyFormattingVerb`, `TestR194_ValueNeverRendersWhenNested` |
 | **R-200** | D | Persistence declared in a compose file is imported and honored. | 14. Persistence and Volumes | — | — | — |
 | **R-201** | D | Where no volume is declared, Pando shows a warning at setup rather than inferring one: | 14. Persistence and Volumes | 01, 04, 07, 08 | 02, 06, 08 | `TestR201_NoDeclaredVolumeWarnsEvenWithNothingObserved` |
 | **R-202** | P | The trial run improves this warning: where Pando observed the app writing to a directory… | 14. Persistence and Volumes | 01, 03, 07 | 06 | `TestR202_ATrialRunObservesWritesOutsideDeclaredStorage`, `TestR202_TheWarningNamesTheDirectoryTheAppActuallyWrote` |
-| **R-203** | D | Rationale for treating this specially: an undeclared Postgres fails loudly on first boot. | 14. Persistence and Volumes | 05 | 07 | — |
+| **R-203** | D | Rationale for treating this specially: an undeclared Postgres fails loudly on first boot. | 14. Persistence and Volumes | 05 | 07 | `TestR203_AVolumeThatHeldDataIsReportedNeverRecreated` |
 | **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 04, 05 | 02, 09 | `TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes`, `TestR204_DestroyKeepsVolumesByDefault` |
 | **R-205** | D | Non-interactive delete (CLI, API, MCP) backs up by default. | 14. Persistence and Volumes | 04 | 02, 09 | — |
 | **R-206** | D | Restore is in-place only. | 14. Persistence and Volumes | 01 | — | — |

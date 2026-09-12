@@ -166,3 +166,21 @@ func (d *Deployments) InFlight(ctx context.Context, appID string) (bool, error) 
 	}
 	return exists, nil
 }
+
+// SetImageRef records the image a deployment actually ran.
+//
+// The reconciler restores a missing workload with this rather than rebuilding.
+// Rebuilding to correct drift would turn "someone killed a container" into
+// "ship whatever is on the branch now" — a far larger action than the one being
+// corrected, and one nobody asked for (R-120).
+func (d *Deployments) SetImageRef(ctx context.Context, deploymentID, imageRef string) error {
+	if imageRef == "" {
+		return nil
+	}
+	_, err := d.db.Exec(ctx,
+		`UPDATE deployments SET image_ref = $2 WHERE id = $1`, deploymentID, imageRef)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not record the deployed image.", err)
+	}
+	return nil
+}

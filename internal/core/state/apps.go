@@ -526,3 +526,112 @@ func (a *Apps) ByRouting(ctx context.Context, by, value string) (App, *spec.AppS
 	}
 	return app, &s, true, nil
 }
+
+// EverAttached reports which of an app's volumes were actually materialized.
+//
+// The distinction R-203 turns on. A volume row with a handle was created in the
+// runtime and may hold data; recreating it after it disappears produces an
+// empty replacement and an app that comes up healthy having lost everything —
+// the failure that looks exactly like success. A row without a handle has never
+// existed anywhere, so creating it loses nothing.
+func (v *Volumes) EverAttached(ctx context.Context, appID string) (map[string]bool, error) {
+	rows, err := v.db.Query(ctx,
+		`SELECT id, handle IS NOT NULL FROM volumes WHERE app_id = $1`, appID)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the app's storage.", err)
+	}
+	defer rows.Close()
+
+	out := map[string]bool{}
+	for rows.Next() {
+		var volumeID string
+		var materialized bool
+		if err := rows.Scan(&volumeID, &materialized); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the app's storage.", err)
+		}
+		out[volumeID] = materialized
+	}
+	return out, rows.Err()
+}
+
+// PruneSpecRevisions trims revision history to each app's retention setting.
+//
+// R-152 keeps the last ten pinned specs so a rollback has something to roll
+// back to. Two exemptions, and both matter more than the saving:
+//
+//   - **A revision that was ever pinned is never pruned.** Rollback is
+//     repointing at a revision that provably existed, and spec_pins is the
+//     append-only record of which those are. Pruning one would make a rollback
+//     target vanish from under a person who is looking at it.
+//   - **The currently pinned revision is never pruned**, which the first rule
+//     already covers, but a deployment also references it by foreign key and
+//     would refuse.
+//
+// Returns how many rows went.
+func (a *Apps) PruneSpecRevisions(ctx context.Context) (int, error) {
+	tag, err := a.db.Exec(ctx, `
+		WITH keep AS (
+		    SELECT r.id
+		    FROM spec_revisions r
+		    JOIN apps app ON app.id = r.app_id
+		    WHERE r.revision > (
+		        SELECT coalesce(max(r2.revision), 0) - coalesce(
+		            (SELECT (pinned.body->'retention'->>'spec_revisions')::int
+		             FROM spec_revisions pinned WHERE pinned.id = app.pinned_spec_id),
+		            10)
+		        FROM spec_revisions r2 WHERE r2.app_id = r.app_id
+		    )
+		)
+		DELETE FROM spec_revisions r
+		WHERE r.id NOT IN (SELECT id FROM keep)
+		  -- Never a revision that was ever pinned: rollback is repointing at
+		  -- something that provably existed, and this is that proof.
+		  AND NOT EXISTS (SELECT 1 FROM spec_pins p WHERE p.spec_id = r.id)
+		  -- Never one a deployment refers to.
+		  AND NOT EXISTS (SELECT 1 FROM deployments d WHERE d.spec_id = r.id)
+	`)
+	if err != nil {
+		return 0, errs.Wrap(errs.Internal, "Could not prune old spec revisions.", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+// WithAutoDeploy returns apps that track a ref (R-141).
+//
+// Off by default, so this is normally empty and the poll costs one indexed
+// query. The filter is on the pinned spec rather than a column on the app,
+// because auto-deploy is a property of the spec someone reviewed and pinned —
+// putting it on the app row would let it be changed without a revision.
+func (a *Apps) WithAutoDeploy(ctx context.Context) ([]App, error) {
+	rows, err := a.db.Query(ctx, `
+		SELECT app.id, app.name, app.slug, app.owner_user_id, app.state,
+		       app.desired_state, app.pinned_spec_id, app.created_at, app.updated_at
+		FROM apps app
+		JOIN spec_revisions r ON r.id = app.pinned_spec_id
+		WHERE app.deleted_at IS NULL
+		  AND app.state NOT IN ('failed', 'archived', 'deploying')
+		  AND (r.body->'deploy'->'auto_deploy'->>'enabled')::boolean IS TRUE
+	`)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not list apps tracking a branch.", err)
+	}
+	defer rows.Close()
+
+	var out []App
+	for rows.Next() {
+		var app App
+		var owner, pinned *string
+		if err := rows.Scan(&app.ID, &app.Name, &app.Slug, &owner, &app.State,
+			&app.DesiredState, &pinned, &app.CreatedAt, &app.UpdatedAt); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not list apps tracking a branch.", err)
+		}
+		if owner != nil {
+			app.OwnerUserID = *owner
+		}
+		if pinned != nil {
+			app.PinnedSpecID = *pinned
+		}
+		out = append(out, app)
+	}
+	return out, rows.Err()
+}

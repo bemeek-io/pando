@@ -106,9 +106,16 @@ func (r *Runner) Detect(ctx context.Context, appID string) (state.Detection, err
 		// The failure is recorded rather than only returned: detection runs in
 		// the background after app creation, and a user who comes back to the
 		// console later needs to find out what happened.
-		e := errs.As(err)
+		// errs.As is nil for an error carrying no envelope, and storing that
+		// would leave the user looking at "error: null" where the reason should
+		// be. Everything on this path should be enveloped; the fallback is for
+		// the one that is not.
+		recorded := any(map[string]any{"message": err.Error()})
+		if e := errs.As(err); e != nil {
+			recorded = e
+		}
 		_ = r.Detections.Save(ctx, appID, state.DetectionFailed,
-			map[string]any{"error": e}, "")
+			map[string]any{"error": recorded}, "")
 		return state.Detection{}, err
 	}
 

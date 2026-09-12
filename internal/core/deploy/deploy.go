@@ -32,6 +32,16 @@ type Secrets interface {
 	// step 11 — after the plan boundary, because reading a secret is a side
 	// effect and an audited one.
 	Resolve(ctx context.Context, appID string) (map[string]secret.Value, error)
+
+	// Versions returns each secret's version without decrypting anything. It
+	// feeds the environment fingerprint (R-193), which is compared on every
+	// reconciliation and must never be a reason to read a value.
+	Versions(ctx context.Context, appID string) (map[string]int, error)
+}
+
+// Reconciles records what an app was last applied with.
+type Reconciles interface {
+	SetAppliedEnvFingerprint(ctx context.Context, appID, fingerprint string) error
 }
 
 // Runner executes deployments.
@@ -42,6 +52,10 @@ type Runner struct {
 	deploys  *state.Deployments
 	secrets  Secrets
 	logs     *LogStore
+
+	// reconciles records the environment fingerprint a deploy applied, which is
+	// the only thing that makes a rotated secret visible later (R-193).
+	reconciles Reconciles
 
 	// ProxyUpstream is where routing adapters must send traffic (R-023). It is
 	// Pando's proxy, always, and it is passed to every Ensure so that no adapter
@@ -76,10 +90,10 @@ func (r *Runner) PrepareRevision(ctx context.Context, rev state.Revision, by str
 	return r.apps.CreateRevision(ctx, rev.AppID, &pinned, spec.OriginEdited, by)
 }
 
-func NewRunner(registry *api.Registry, p *planner.Planner, apps *state.Apps, deploys *state.Deployments, secrets Secrets, logs *LogStore, proxyUpstream string) *Runner {
+func NewRunner(registry *api.Registry, p *planner.Planner, apps *state.Apps, deploys *state.Deployments, secrets Secrets, reconciles Reconciles, logs *LogStore, proxyUpstream string) *Runner {
 	return &Runner{
 		registry: registry, planner: p, apps: apps, deploys: deploys,
-		secrets: secrets, logs: logs, ProxyUpstream: proxyUpstream,
+		secrets: secrets, reconciles: reconciles, logs: logs, ProxyUpstream: proxyUpstream,
 	}
 }
 
@@ -227,6 +241,24 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 	if err := r.apps.SetDesiredState(ctx, dep.AppID, "running"); err != nil {
 		return fail("commit", err)
 	}
+
+	// What ran, and what it ran with. Both exist for the reconciler: it
+	// restores a missing workload from the recorded image rather than
+	// rebuilding, and it detects a rotated secret (R-193) by comparing this
+	// fingerprint, because Observe returns no environment and never will.
+	if err := r.deploys.SetImageRef(ctx, dep.ID, image); err != nil {
+		return fail("commit", err)
+	}
+	if r.reconciles != nil {
+		versions, err := r.secrets.Versions(ctx, dep.AppID)
+		if err != nil {
+			return fail("commit", err)
+		}
+		if err := r.reconciles.SetAppliedEnvFingerprint(ctx, dep.AppID,
+			EnvFingerprint(rev.Body, versions)); err != nil {
+			return fail("commit", err)
+		}
+	}
 	if err := r.deploys.Finish(ctx, dep.ID, state.DeploySucceeded, "", ""); err != nil {
 		return err
 	}
@@ -320,7 +352,21 @@ func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Ch
 }
 
 // bundlePlan resolves the spec into what the runtime is asked to apply.
+// BundlePlanShape builds the bundle plan without resolving any environment.
+//
+// The reconciler compares what should be running against what is, on every tick
+// for every app. That comparison needs the shape — workloads, images, ports,
+// mounts, volumes — and must never be a reason to decrypt a secret, so this
+// stops short of environment and R-193's fingerprint covers the rest.
+func BundlePlanShape(s *spec.AppSpec, image string) (api.BundlePlan, error) {
+	return bundlePlanFor(s, image, nil, false)
+}
+
 func (r *Runner) bundlePlan(s *spec.AppSpec, image string, secrets map[string]secret.Value) (api.BundlePlan, error) {
+	return bundlePlanFor(s, image, secrets, true)
+}
+
+func bundlePlanFor(s *spec.AppSpec, image string, secrets map[string]secret.Value, withEnv bool) (api.BundlePlan, error) {
 	plan := api.BundlePlan{
 		BundleID: s.AppID,
 		Network: api.NetworkPlan{
@@ -336,9 +382,13 @@ func (r *Runner) bundlePlan(s *spec.AppSpec, image string, secrets map[string]se
 	}
 
 	for _, w := range s.Workloads {
-		env, err := resolveEnv(s, w, secrets)
-		if err != nil {
-			return api.BundlePlan{}, err
+		var env map[string]secret.Value
+		if withEnv {
+			resolved, err := resolveEnv(s, w, secrets)
+			if err != nil {
+				return api.BundlePlan{}, err
+			}
+			env = resolved
 		}
 
 		wp := api.WorkloadPlan{

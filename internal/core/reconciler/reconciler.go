@@ -1,0 +1,536 @@
+// Package reconciler runs the loop that converges observed state toward pinned
+// specs.
+//
+// The dividing line: the reconciler may create and start things; it may not
+// destroy anything a human may have wanted (R-148, R-028). A failed app stays
+// failed — R-151 is true because there is no code path here that touches the
+// failed state, not because a flag is checked. See design 05.
+package reconciler
+
+import (
+	"context"
+	"time"
+
+	"go.uber.org/zap"
+
+	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/clock"
+	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/bemeek-io/pando/internal/core/state"
+	"github.com/bemeek-io/pando/internal/errs"
+)
+
+// Tunables, all [P] from design 05 §2.
+const (
+	// Interval between ticks. Short enough that a killed container comes back
+	// while someone is still looking at the page, long enough that a hundred
+	// apps is not a hundred Observe calls a second.
+	Interval = 15 * time.Second
+
+	// Concurrency is how many apps are reconciled at once.
+	Concurrency = 8
+
+	// FailureThreshold and FailureWindow are R-150's give-up rule.
+	FailureThreshold = 10
+	FailureWindow    = 30 * time.Minute
+)
+
+// Backoff is R-149, capped at five minutes.
+//
+// Indexed by consecutive failures, so the first correction is immediate: a
+// container killed once should come back now, not in five seconds. The cap
+// matters more than the curve — an app that cannot start must not be retried
+// forever at speed, and must still be retried.
+var Backoff = []time.Duration{0, 5 * time.Second, 15 * time.Second, 60 * time.Second, 5 * time.Minute}
+
+// Registry resolves adapters by reference.
+type Registry interface {
+	Runtime(ref string) (api.RuntimeAdapter, bool)
+	Routing(ref string) (api.RoutingAdapter, bool)
+}
+
+// Notifier tells someone an app needs attention.
+type Notifier interface {
+	Notify(ctx context.Context, n api.Notification) error
+}
+
+// Reconciler converges running apps toward their pinned specs.
+type Reconciler struct {
+	Apps       *state.Apps
+	Reconciles *state.Reconciles
+	Secrets    *state.Secrets
+	Volumes    *state.Volumes
+	Registry   Registry
+	Auditor    Auditor
+	Notifier   Notifier
+	Logger     *zap.Logger
+	Clock      clock.Clock
+
+	// ProxyUpstream is where routes point. Every route points at Pando's proxy
+	// and never at a workload (R-023) — the reconciler re-ensuring a route must
+	// not be the one place that forgets.
+	ProxyUpstream string
+}
+
+// Auditor writes the events a reconciliation produces.
+type Auditor interface {
+	Write(ctx context.Context, e AuditEvent) error
+}
+
+// AuditEvent is what the reconciler records.
+type AuditEvent struct {
+	Action string
+	AppID  string
+	Detail map[string]any
+}
+
+// Run ticks until the context is cancelled.
+func (r *Reconciler) Run(ctx context.Context) {
+	ticker := time.NewTicker(Interval)
+	defer ticker.Stop()
+
+	// One immediately, so that starting Pando converges rather than waiting a
+	// quarter of a minute to notice anything.
+	r.Tick(ctx)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			r.Tick(ctx)
+		}
+	}
+}
+
+// Tick reconciles every app that is due.
+func (r *Reconciler) Tick(ctx context.Context) {
+	apps, err := r.Reconciles.Due(ctx, r.now(), 200)
+	if err != nil {
+		r.Logger.Warn("could not list apps to reconcile", zap.Error(err))
+		return
+	}
+
+	sem := make(chan struct{}, Concurrency)
+	done := make(chan struct{})
+
+	for _, app := range apps {
+		select {
+		case <-ctx.Done():
+			return
+		case sem <- struct{}{}:
+		}
+
+		go func(a state.Reconcilable) {
+			defer func() { <-sem; done <- struct{}{} }()
+			defer r.recoverPanic(a)
+			r.reconcileOne(ctx, a)
+		}(app)
+	}
+
+	for range apps {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// recover stops one app's reconciliation from taking the process down.
+//
+// This loop runs forever and every tick calls into adapter code, which is
+// ordinary Go that can panic. A panic in a goroutine is not recoverable by its
+// caller — it kills the process — so a single adapter with a nil map would stop
+// Pando entirely, including for every app that was working. This was not a
+// hypothetical: the first version of the failure path dereferenced the nil that
+// errs.As returns for an unenveloped error, and one adapter returning a plain
+// error would have done exactly that.
+//
+// The app is left alone. The next tick tries again, which is the right
+// behaviour for something that might be transient, and the log line is what
+// makes it visible if it is not.
+func (r *Reconciler) recoverPanic(app state.Reconcilable) {
+	if v := recover(); v != nil {
+		r.Logger.Error("reconciliation panicked",
+			zap.String("app_id", app.ID),
+			zap.Any("panic", v),
+			zap.Stack("stack"))
+	}
+}
+
+// reconcileOne converges a single app.
+func (r *Reconciler) reconcileOne(ctx context.Context, app state.Reconcilable) {
+	release, locked, err := r.Reconciles.Lock(ctx, app.ID)
+	if err != nil {
+		r.Logger.Warn("could not lock app for reconciliation",
+			zap.String("app_id", app.ID), zap.Error(err))
+		return
+	}
+	if !locked {
+		// Another tick has it. The next one is fifteen seconds away.
+		return
+	}
+	defer release()
+
+	rev, found, err := r.Apps.RevisionByID(ctx, app.PinnedSpecID)
+	if err != nil || !found {
+		return
+	}
+	s := rev.Body
+
+	runtime, ok := r.Registry.Runtime(s.Runtime.AdapterRef)
+	if !ok {
+		// The adapter this app runs on is not configured. That is an install
+		// problem and not the app's fault, so it is reported the same way an
+		// unreachable adapter is rather than counted against the app.
+		r.unobservable(ctx, app, "the runtime adapter "+s.Runtime.AdapterRef+" is not configured")
+		return
+	}
+
+	observed, err := runtime.Observe(ctx, api.BundleRef{BundleID: app.ID})
+	if err != nil {
+		r.unobservable(ctx, app, reason(err))
+		return
+	}
+	if app.UnobservableSince != nil {
+		_ = r.Reconciles.ClearUnobservable(ctx, app.ID)
+	}
+
+	// R-140: desired_state is what a person asked for, and it outranks
+	// everything below. An app someone stopped stays stopped.
+	if app.DesiredState == "stopped" {
+		r.holdStopped(ctx, app, runtime, observed)
+		return
+	}
+
+	want, inputs, err := r.desired(ctx, app, s, observed)
+	if err != nil {
+		r.Logger.Warn("could not work out what should be running",
+			zap.String("app_id", app.ID), zap.Error(err))
+		return
+	}
+
+	drift := Classify(want, observed, inputs)
+	healthy := observedHealthy(observed, r.now())
+
+	switch {
+	case drift.None() && healthy:
+		r.settle(ctx, app, state.StateRunning)
+
+	case drift.None():
+		// Matches the spec and is not healthy. Nothing to converge — the app
+		// itself is unwell, which is degraded and counts toward the threshold.
+		r.degrade(ctx, app, "the app is running but not healthy")
+
+	case len(drift.ReportOnly) > 0:
+		// R-148: reconcile when possible, report when not. A single
+		// unreconcilable difference stops the whole app being touched — the
+		// reconcilable half might be the half that destroys the evidence.
+		r.report(ctx, app, drift)
+
+	case drift.Actionable():
+		r.correct(ctx, app, runtime, want, drift, s)
+	}
+}
+
+// desired builds what should be running, and the facts drift classification
+// needs that the plan does not carry.
+//
+// No secrets are fetched. Environment drift is detected by comparing
+// fingerprints, and a fingerprint is built from secret *versions* — so the loop
+// that runs every fifteen seconds for every app never decrypts anything.
+func (r *Reconciler) desired(ctx context.Context, app state.Reconcilable, s *spec.AppSpec, observed api.ObservedBundle) (api.BundlePlan, Inputs, error) {
+	want := PlanShape(s, app.ImageRef)
+
+	versions, err := r.Secrets.Versions(ctx, app.ID)
+	if err != nil {
+		return api.BundlePlan{}, Inputs{}, err
+	}
+
+	held, err := r.Volumes.EverAttached(ctx, app.ID)
+	if err != nil {
+		return api.BundlePlan{}, Inputs{}, err
+	}
+
+	return want, Inputs{
+		ExpectedDigest:      "", // set once deployments record a digest
+		AppliedEnvHash:      app.AppliedEnvHash,
+		CurrentEnvHash:      EnvHash(s, versions),
+		VolumesThatHeldData: held,
+	}, nil
+}
+
+// settle records that an app is as it should be.
+func (r *Reconciler) settle(ctx context.Context, app state.Reconcilable, to string) {
+	if app.State != to {
+		_ = r.Apps.SetState(ctx, app.ID, to)
+	}
+	// Only here. A flapping app that recovers between failures still
+	// accumulates toward the threshold, because flapping is a failure mode.
+	if to == state.StateRunning {
+		_ = r.Reconciles.ClearFailures(ctx, app.ID)
+	}
+}
+
+// holdStopped keeps a stopped app down (design 05 §1.1).
+//
+// The one place the reconciler stops something, and it is not an exception to
+// the rule about not destroying things: desired_state is what a person asked
+// for, and stopping is exactly what they asked for. Nothing is removed —
+// volumes, the bundle and the spec all stay.
+func (r *Reconciler) holdStopped(ctx context.Context, app state.Reconcilable, runtime api.RuntimeAdapter, observed api.ObservedBundle) {
+	running := false
+	for _, w := range observed.Workloads {
+		if w.Running {
+			running = true
+			break
+		}
+	}
+	if !running {
+		r.settle(ctx, app, state.StateStopped)
+		return
+	}
+
+	if err := runtime.Stop(ctx, api.BundleRef{BundleID: app.ID}); err != nil {
+		r.attempt(ctx, app, reason(err))
+		return
+	}
+	_ = r.Auditor.Write(ctx, AuditEvent{
+		Action: "app.stopped_by_reconciler",
+		AppID:  app.ID,
+		Detail: map[string]any{"reason": "desired_state is stopped and something was running"},
+	})
+	r.settle(ctx, app, state.StateStopped)
+}
+
+// correct applies the plan, with backoff and a give-up threshold.
+//
+// Every correction counts as an attempt, whether or not Apply returns an error,
+// and that is the important part. A crash-looping app is the ordinary failure
+// mode: the workload exists, it has exited, Pando recreates it, it exits again.
+// Apply succeeds every time — the container really is created — so counting
+// only Apply errors would correct that app every fifteen seconds forever and
+// never reach R-150's threshold. The counter measures attempts; reaching
+// running with health passing is what clears it (design 05 §2.2).
+func (r *Reconciler) correct(ctx context.Context, app state.Reconcilable, runtime api.RuntimeAdapter, want api.BundlePlan, drift Drift, s *spec.AppSpec) {
+	r.Logger.Info("correcting drift",
+		zap.String("app_id", app.ID),
+		zap.String("drift", drift.Describe()),
+		zap.Int("previous_attempts", app.ConsecutiveFailures))
+
+	if _, err := runtime.Apply(ctx, want); err != nil {
+		r.attempt(ctx, app, "could not start the app: "+reason(err))
+		return
+	}
+
+	if err := r.ensureRoute(ctx, app, s); err != nil {
+		r.attempt(ctx, app, "could not route traffic to the app: "+reason(err))
+		return
+	}
+
+	_ = r.Auditor.Write(ctx, AuditEvent{
+		Action: "app.reconciled",
+		AppID:  app.ID,
+		Detail: map[string]any{"drift": drift.Describe(), "attempt": app.ConsecutiveFailures + 1},
+	})
+
+	// Not settled to running here, and counted as an attempt rather than a
+	// success. The next observation is the only thing entitled to say whether
+	// the correction held — and if it did, that is where the counter clears.
+	r.attempt(ctx, app, "corrected: "+drift.Describe())
+}
+
+// ensureRoute re-points routing at Pando's proxy.
+//
+// R-023: routes put traffic in front of Pando's proxy and never at a workload.
+// The reconciler re-ensuring a route is the easiest place in the system to get
+// that wrong, because the workload's address is right there.
+func (r *Reconciler) ensureRoute(ctx context.Context, app state.Reconcilable, s *spec.AppSpec) error {
+	routing, ok := r.Registry.Routing(s.Routing.AdapterRef)
+	if !ok {
+		return nil
+	}
+	_, err := routing.Ensure(ctx, api.RouteRequest{
+		AppID:         app.ID,
+		Mode:          s.Routing.Mode,
+		Hostname:      s.Routing.Hostname,
+		PathPrefix:    s.Routing.PathPrefix,
+		Port:          s.Routing.Port,
+		ProxyUpstream: r.ProxyUpstream,
+	})
+	return err
+}
+
+// degrade records an unhealthy app and counts it toward the threshold.
+//
+// An app that matches its spec and is not healthy has nothing to converge —
+// there is no drift — but it is not working either, and a permanently unhealthy
+// app must reach `failed` rather than being reported as degraded forever.
+func (r *Reconciler) degrade(ctx context.Context, app state.Reconcilable, why string) {
+	r.attempt(ctx, app, why)
+}
+
+// report records drift the reconciler must not act on (R-148).
+//
+// The app goes degraded and nothing is touched. No failure is counted: the app
+// is not failing, Pando is declining to act, and counting that would march an
+// app someone deliberately modified toward `failed`.
+func (r *Reconciler) report(ctx context.Context, app state.Reconcilable, drift Drift) {
+	if app.State != state.StateDegraded {
+		_ = r.Apps.SetState(ctx, app.ID, state.StateDegraded)
+		_ = r.Auditor.Write(ctx, AuditEvent{
+			Action: "app.drift_unreconcilable",
+			AppID:  app.ID,
+			Detail: map[string]any{"drift": drift.Describe()},
+		})
+		r.notify(ctx, app, api.NotifyAppFailed,
+			"This app has changed in a way Pando will not correct on its own",
+			drift.Describe()+
+				". Pando only creates and starts things — correcting this would mean removing or "+
+				"overwriting something, and it cannot tell whether you put it there deliberately.")
+	}
+}
+
+// attempt records one go at getting an app working, backs off, and gives up at
+// the threshold (R-150).
+//
+// "Attempt" rather than "failure" because that is what is being counted. An app
+// that needed correcting was not working; whether the correction returned an
+// error is a detail of how it was not working. What resets the count is the app
+// actually running with health passing, and nothing else.
+func (r *Reconciler) attempt(ctx context.Context, app state.Reconcilable, reason string) {
+	count, err := r.Reconciles.RecordFailure(ctx, app.ID, reason, FailureWindow, r.nextAttempt(app.ConsecutiveFailures+1))
+	if err != nil {
+		r.Logger.Warn("could not record the attempt", zap.String("app_id", app.ID), zap.Error(err))
+		return
+	}
+
+	if count < FailureThreshold {
+		if app.State != state.StateDegraded {
+			_ = r.Apps.SetState(ctx, app.ID, state.StateDegraded)
+		}
+		return
+	}
+
+	// R-150, and then stop. There is deliberately no path back from here that
+	// does not involve a person (R-151).
+	_ = r.Apps.SetState(ctx, app.ID, state.StateFailed)
+	_ = r.Auditor.Write(ctx, AuditEvent{
+		Action: "app.failed",
+		AppID:  app.ID,
+		Detail: map[string]any{"failures": count, "window": FailureWindow.String(), "reason": reason},
+	})
+	r.notify(ctx, app, api.NotifyAppFailed,
+		"Pando has stopped trying to start this app",
+		"It failed "+itoa(count)+" times in "+FailureWindow.String()+". "+reason+
+			" Pando will not try again on its own — fix what is wrong and deploy again.")
+}
+
+// unobservable records that Pando cannot see the app right now.
+//
+// Not a state, not a failure, and it does not touch the counter. An adapter
+// being down is a platform problem: counting it would mark every app on the
+// host as failed the next time the Docker daemon restarts.
+func (r *Reconciler) unobservable(ctx context.Context, app state.Reconcilable, reason string) {
+	if err := r.Reconciles.MarkUnobservable(ctx, app.ID, reason); err != nil {
+		r.Logger.Warn("could not mark app unobservable",
+			zap.String("app_id", app.ID), zap.Error(err))
+	}
+}
+
+func (r *Reconciler) notify(ctx context.Context, app state.Reconcilable, kind api.NotificationKind, subject, body string) {
+	if r.Notifier == nil {
+		return
+	}
+	_ = r.Notifier.Notify(ctx, api.Notification{
+		Kind:       kind,
+		Subject:    subject,
+		Body:       body,
+		AppID:      app.ID,
+		Recipients: []api.Recipient{{UserID: app.OwnerUserID}},
+	})
+}
+
+// nextAttempt returns when this app may be tried again.
+func (r *Reconciler) nextAttempt(failures int) time.Time {
+	index := failures
+	if index >= len(Backoff) {
+		index = len(Backoff) - 1
+	}
+	return r.now().Add(Backoff[index])
+}
+
+func (r *Reconciler) now() time.Time {
+	if r.Clock == nil {
+		return time.Now().UTC()
+	}
+	return r.Clock.Now()
+}
+
+// observedHealthy reports whether every workload is running and settled.
+//
+// A nil Healthy means no signal, which is not unhealthy (R-221). An app with no
+// health check is running, not perpetually degraded — which is also why
+// auto-rollback defaults off (R-147).
+//
+// Restarting counts as not healthy (design 05 §1.1: degraded is "health failing
+// **or restarting**"), and getting that wrong is subtle. Pando sets a restart
+// policy on its containers, so the runtime restarts a crashed one on its own —
+// which is wanted, because it recovers faster than a fifteen-second tick and
+// keeps working while Pando is away. The cost is that a crash-looping app is
+// briefly `Running` between crashes, and a tick landing in that window would
+// read it as recovered and clear the failure count. The app would then never
+// reach `failed`: every glimpse of it up would undo the progress toward giving
+// up on it.
+//
+// A workload that has restarted before and started again moments ago is in a
+// loop, not recovered. Once it stays up past the settle window it is treated as
+// healthy, which is exactly the distinction being drawn.
+func observedHealthy(observed api.ObservedBundle, now time.Time) bool {
+	for _, w := range observed.Workloads {
+		if !w.Running {
+			return false
+		}
+		if w.Healthy != nil && !*w.Healthy {
+			return false
+		}
+		if w.RestartCount > 0 && !w.StartedAt.IsZero() && now.Sub(w.StartedAt) < RestartSettleWindow {
+			return false
+		}
+	}
+	return true
+}
+
+// RestartSettleWindow is how long a workload that has restarted must stay up
+// before it counts as recovered rather than looping. [P].
+const RestartSettleWindow = 30 * time.Second
+
+// reason renders an adapter's error for a person to read.
+//
+// errs.As returns nil for an error that carries no envelope, and an adapter is
+// under no obligation to produce one — it is ordinary Go code that can return
+// anything. Dereferencing that nil crashed the reconciler goroutine, and a
+// panic in a goroutine takes the whole process with it: one adapter returning a
+// plain error would stop Pando, including for every app that was fine.
+func reason(err error) string {
+	if err == nil {
+		return ""
+	}
+	if e := errs.As(err); e != nil {
+		return e.Message
+	}
+	return err.Error()
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var digits []byte
+	for n > 0 {
+		digits = append([]byte{byte('0' + n%10)}, digits...)
+		n /= 10
+	}
+	return string(digits)
+}
