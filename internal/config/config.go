@@ -40,6 +40,11 @@ type Reconciler struct {
 	// FailureWindow is measured from the last failure, so a slow crash loop
 	// still reaches the threshold rather than resetting forever.
 	FailureWindow time.Duration `mapstructure:"failure_window"`
+
+	// GCInterval is how often garbage collection runs. Zero means the shipped
+	// hour. Short intervals are wasteful rather than dangerous — nothing the
+	// collector does is urgent — so unlike the backoff this gets no warning.
+	GCInterval time.Duration `mapstructure:"gc_interval"`
 }
 
 // BackoffSchedule parses Backoff, returning nil when it is unset.
@@ -151,6 +156,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("reconciler.backoff", "")
 	v.SetDefault("reconciler.failure_threshold", 0)
 	v.SetDefault("reconciler.failure_window", time.Duration(0))
+	v.SetDefault("reconciler.gc_interval", time.Duration(0))
 
 	// Every key is bound explicitly, and that is not belt-and-braces.
 	//

@@ -431,6 +431,57 @@ func isForeignKeyViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.SQLState() == "23503"
 }
 
+// AwaitingTeardown returns archived apps whose bundle is still standing.
+//
+// The leak this closes: nothing ever called Destroy, so a deleted app's
+// containers and its private network stayed up. Docker's default pool holds
+// about thirty networks and Pando takes one per app, so an install that adds
+// and removes apps eventually cannot start one.
+//
+// Returns the routing adapter ref too, because the route outlives the app the
+// same way — a Traefik file per deleted app, accumulating.
+func (a *Apps) AwaitingTeardown(ctx context.Context, limit int) ([]TeardownTarget, error) {
+	rows, err := a.db.Query(ctx, `
+		SELECT a.id, coalesce(r.body->'runtime'->>'adapter_ref', ''),
+		       coalesce(r.body->'routing'->>'adapter_ref', '')
+		FROM apps a
+		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
+		WHERE a.deleted_at IS NOT NULL AND a.bundle_destroyed_at IS NULL
+		ORDER BY a.deleted_at
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not find apps waiting to be torn down.", err)
+	}
+	defer rows.Close()
+
+	out := make([]TeardownTarget, 0)
+	for rows.Next() {
+		var t TeardownTarget
+		if err := rows.Scan(&t.AppID, &t.RuntimeRef, &t.RoutingRef); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not find apps waiting to be torn down.", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// TeardownTarget is a deleted app whose bundle still exists.
+type TeardownTarget struct {
+	AppID      string
+	RuntimeRef string
+	RoutingRef string
+}
+
+// MarkBundleDestroyed records that the runtime confirmed the bundle is gone.
+func (a *Apps) MarkBundleDestroyed(ctx context.Context, appID string) error {
+	_, err := a.db.Exec(ctx,
+		`UPDATE apps SET bundle_destroyed_at = now() WHERE id = $1`, appID)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not record that the app's bundle was removed.", err)
+	}
+	return nil
+}
+
 // SetSource replaces an app's source.
 //
 // For `pando deploy ./`, which turns an app into one fed by uploads. Recorded

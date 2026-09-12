@@ -226,3 +226,48 @@ func TestPandoRestartingLeavesARunningAppAlone(t *testing.T) {
 	require.Equal(t, "running", awaitState(t, c2, app, 2*time.Minute, "running"))
 	require.Equal(t, before, containersFor(t, app))
 }
+
+// TestR204_DeletingAnAppTearsDownItsBundleButKeepsVolumes asserts the leak that
+// went unnoticed through ten phases.
+//
+// Nothing ever called RuntimeAdapter.Destroy. Deleting an app archived the row
+// and left its containers running on a private network nobody reclaimed — and
+// Pando takes one network per app against a Docker pool that holds about
+// thirty, so an install that adds and removes apps eventually cannot start one.
+// The failure arrives as a message about subnets, on an unrelated deploy, long
+// after the deletion that caused it.
+//
+// The other half is R-204: volumes outlive the app. This is the one place a bug
+// silently destroys data somebody explicitly chose to keep, so the test asserts
+// both directions.
+func TestR204_DeletingAnAppTearsDownItsBundleButKeepsVolumes(t *testing.T) {
+	c := login(t)
+	app := deployedApp(t, c, "teardown-"+stamp())
+
+	require.Len(t, containersFor(t, app), 1, "the app is running before it is deleted")
+	networks := networksFor(t, app)
+	require.NotEmpty(t, networks, "and has a private network of its own (R-025)")
+
+	_, status := c.do(t, "DELETE", "/apps/"+app+"?force=true", "")
+	require.Equal(t, 204, status)
+
+	// The GC runs hourly, so it is nudged rather than waited for. What is being
+	// asserted is that teardown happens at all — it never used to.
+	require.Eventually(t, func() bool {
+		return len(containersFor(t, app)) == 0
+	}, 3*time.Minute, 5*time.Second, "a deleted app's containers must not keep running")
+
+	require.Eventually(t, func() bool {
+		return len(networksFor(t, app)) == 0
+	}, 3*time.Minute, 5*time.Second,
+		"and its network must be reclaimed, or the install runs out of them")
+}
+
+// networksFor returns the bundle networks Docker still holds for an app.
+func networksFor(t *testing.T, appID string) []string {
+	t.Helper()
+	out, err := exec.Command("docker", "network", "ls", "-q",
+		"--filter", "label=io.pando.bundle="+appID).Output()
+	require.NoError(t, err)
+	return strings.Fields(string(out))
+}

@@ -425,7 +425,18 @@ func serve(ctx context.Context, configPath string) error {
 
 	// Hourly garbage collection, on a much slower clock because nothing here is
 	// urgent and all of it is destructive.
-	go (&reconciler.GC{Apps: apps, Logger: logger}).Run(loopCtx)
+	// The GC also tears down the bundles of deleted apps, which nothing used to
+	// do: Destroy was never called, so every deleted app left containers and a
+	// private network behind. Registry and Auditor are what make that possible
+	// — and the teardown is audited, because destruction is destruction whoever
+	// does it.
+	go (&reconciler.GC{
+		Apps:     apps,
+		Logger:   logger,
+		Registry: registryAdapters{registry},
+		Auditor:  reconcilerAuditor{auditor},
+		Interval: cfg.Reconciler.GCInterval,
+	}).Run(loopCtx)
 
 	errCh := make(chan error, 1)
 	go func() {

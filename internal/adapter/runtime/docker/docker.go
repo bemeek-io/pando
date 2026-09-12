@@ -419,8 +419,58 @@ func (a *Adapter) Destroy(ctx context.Context, ref api.BundleRef, opts api.Destr
 		}
 	}
 
-	_ = a.cli.NetworkRemove(ctx, bundleNetworkName(ref.BundleID))
+	// Pando is attached to every bundle network — that is how the proxy reaches
+	// an app at all (R-023) — and Docker refuses to remove a network that still
+	// has an endpoint on it. So the detach is not tidiness, it is the reason
+	// the removal can succeed.
+	//
+	// This error used to be discarded, which is why nobody noticed: containers
+	// went away, the network stayed, and the address pool drained one /16 per
+	// deleted app until deploys started failing with a message about subnets.
+	if err := a.detachProxy(ctx, bundleNetworkName(ref.BundleID)); err != nil {
+		return err
+	}
+	if err := a.cli.NetworkRemove(ctx, bundleNetworkName(ref.BundleID)); err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return nil
+		}
+		return errs.Wrap(errs.AdapterFailed,
+			"Could not remove the app's private network, so it is still using an address range.", err)
+	}
 	return nil
+}
+
+// detachProxy takes Pando's container off a bundle network.
+//
+// The mirror of attachProxy, and only ever called on a network being destroyed.
+// Detaching from a *live* app's network would cut the proxy off from an app
+// that is still running, and force-detaching a busy container has been observed
+// to disturb its outbound routing for minutes afterwards — so this is not
+// forced, and a failure is reported rather than retried harder.
+func (a *Adapter) detachProxy(ctx context.Context, networkName string) error {
+	container := a.config.ProxyContainer
+	if container == "" {
+		host, err := os.Hostname()
+		if err != nil {
+			//nolint:nilerr // Not knowing our own hostname means Pando is not
+			// running as a container, so nothing of ours is attached to this
+			// network and there is nothing to disconnect. Same reasoning as
+			// attachProxy, which declines to attach for the same reason.
+			return nil
+		}
+		container = host
+	}
+
+	err := a.cli.NetworkDisconnect(ctx, networkName, container, false)
+	switch {
+	case err == nil, cerrdefs.IsNotFound(err):
+		return nil
+	case strings.Contains(err.Error(), "is not connected"):
+		return nil
+	default:
+		return errs.Wrap(errs.AdapterFailed,
+			"Could not disconnect Pando from the app's network.", err)
+	}
 }
 
 func (a *Adapter) CreateVolume(ctx context.Context, req api.VolumeRequest) (api.VolumeHandle, error) {
