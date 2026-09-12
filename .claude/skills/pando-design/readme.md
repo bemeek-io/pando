@@ -232,14 +232,27 @@ icons entirely.
 
 ## Assets
 
-`assets/` **does not exist, deliberately.** No logo file, illustration, photograph, icon
-sprite or font binary was supplied with the brief.
+`assets/logo/` holds the real logo artwork, supplied 2026-09-12. Nothing else was
+supplied with the brief — no illustration, photograph, icon sprite or font binary.
 
-- **Logo.** The spec describes the mark in words (three nested contours with a red summit
-  dot; "pando" in lowercase Newsreader 500, -0.02em, minimum 16px tall, clear space equal
-  to the height of the "p" bowl). `components/brand/Logo.jsx` builds it from those rules
-  and the tokens. **If Pando has real logo files, they should replace it** — this is a
-  spec-faithful construction, not the official artwork.
+- **Logo — supplied, and it is not what the spec described.** The official mark is
+  **"pando." with the full stop in marker red**: a wordmark, no contour ring, no summit
+  dot. The spec's written description (three nested contours with a red summit dot) was a
+  different mark, and `components/brand/Logo.jsx` has been rebuilt from the artwork.
+
+  Its colours are already tokens — the exports hard-code `#1A1C1B`/`#ECE8DE` for the
+  wordmark and `#B23A2C`/`#E0654F` for the full stop, which are exactly `--ink` and
+  `--marker` in the two themes — so the component draws from tokens and follows the theme
+  rather than needing a light file and a dark file. The exported SVGs carry **live**
+  Newsreader text, not outlines, so they depend on the same font the component does.
+
+  The icon is "p." in `--paper` on an `--ink` tile at radius 112 on a 512 grid.
+  `wordmark={false}` renders it.
+
+  **One consequence for the contour system:** the spec listed the logo mark as one of the
+  five places the contour figure appears. It is no longer one of them. The other four —
+  hero, docs home header, empty states, 404 — are unchanged, and `ContourMap` is
+  untouched.
 - **Fonts.** Newsreader, Public Sans and IBM Plex Mono are all free on Google Fonts and
   are loaded from the Google CDN in `tokens/fonts.css` using the exact family/axis URL
   from the spec. No binaries were shipped. **⚠️ If you need self-hosted fonts, send the

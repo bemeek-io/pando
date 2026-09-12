@@ -95,5 +95,20 @@ Two things the brand spec describes but did not ship, both flagged upstream:
   them.
 - **Fonts** are loaded from Google Fonts. Self-hosting means supplying licensed
   `.woff2` files and turning `tokens/fonts.css` into local `@font-face` rules.
-- **The logo** in `components/brand/Logo.jsx` is built from the spec's written
-  description, not from official artwork. If real logo files exist, they replace it.
+- **The logo** — **resolved 2026-09-12.** Real artwork was supplied and is in
+  `assets/logo/`: `pando-wordmark-{light,dark}.{svg,png}`,
+  `pando-icon-{ink,paper,night}.{svg,png}` and two favicon PNGs.
+  `components/brand/Logo.jsx` is rebuilt from it.
+
+  The official mark turned out to be **different from the spec's description**: "pando."
+  with a marker-red full stop, rather than three nested contours with a summit dot. See
+  `readme.md` § Assets.
+
+  **This edit does not flow upstream.** The design project is the source of truth and this
+  directory is a copy of it, so the same change belongs there — `Logo.jsx`, the new
+  `assets/logo/`, and the readme's assets section — or the next re-sync will overwrite the
+  real logo with the constructed one.
+
+  C2PA provenance metadata was stripped from the SVGs on the way in: roughly 8 KB per file
+  of signing metadata about how each was produced, for artwork whose content is one rect
+  and one text element.

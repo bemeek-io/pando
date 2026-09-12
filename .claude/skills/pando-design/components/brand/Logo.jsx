@@ -1,24 +1,83 @@
 import React from 'react';
 
-/** Nested contour rings with a red summit dot, plus the lowercase wordmark. */
+/**
+ * The Pando logo: "pando." with the full stop in marker red.
+ *
+ * This is the real artwork, replacing the contour-and-summit construction that
+ * stood here before. PROVENANCE.md anticipated it — "the logo in Logo.jsx is
+ * built from the spec's written description, not from official artwork; if real
+ * logo files exist, they replace it" — and they now do, in assets/logo/.
+ *
+ * Drawn from tokens rather than loading the SVG, for two reasons. The exports
+ * hard-code #1A1C1B and #B23A2C, which are exactly `--ink` and `--marker`, so
+ * rendering from tokens follows the theme automatically instead of needing a
+ * light file and a dark file. And the SVGs carry live text in Newsreader, so
+ * they depend on the same font this does and gain nothing by being files.
+ *
+ * The wordmark is the lockup. `wordmark={false}` gives the icon — the ink tile
+ * with "p." in it — for a favicon, an avatar or dense chrome.
+ */
 export function Logo({ size = 24, wordmark = true, style, ...rest }) {
-  const small = size < 24;
-  const rings = small ? 2 : 3;
-  const sw = small ? 1.25 : 1.5;
-  const box = size;
-  const c = box / 2;
+  if (!wordmark) return <LogoMark size={size} style={style} {...rest} />;
+
+  // 128px type on a 160px-tall export: the wordmark's cap height is 0.8 of the
+  // nominal size, and `size` names the mark's height as it does elsewhere.
+  const fontSize = Math.round(size * 1.25);
+
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: size * 0.34, ...style }} {...rest}>
-      <svg width={box} height={box} viewBox={`0 0 ${box} ${box}`} aria-hidden="true" style={{ display: 'block', flex: '0 0 auto' }}>
-        {Array.from({ length: rings }).map((_, i) => {
-          const r = (box / 2 - sw) * (1 - i / (rings + 0.4));
-          return <ellipse key={i} cx={c} cy={c} rx={r * 1.04} ry={r * 0.9} fill="none" stroke={i === 0 ? 'var(--contour)' : 'var(--contour-line)'} strokeWidth={i === 0 ? sw : Math.max(1, sw - 0.25)} />;
-        })}
-        <circle cx={c} cy={c} r={Math.max(1.4, box * 0.075)} fill="var(--marker)" />
-      </svg>
-      {wordmark && (
-        <span style={{ font: `500 ${Math.round(size * 1.15)}px/1 var(--font-display)`, fontOpticalSizing: 'auto', letterSpacing: 'var(--tracking-wordmark)', color: 'var(--ink)' }}>pando</span>
-      )}
+    <span
+      aria-label="Pando"
+      role="img"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'baseline',
+        font: `500 ${fontSize}px/1 var(--font-display)`,
+        fontOpticalSizing: 'auto',
+        letterSpacing: 'var(--tracking-wordmark)',
+        color: 'var(--ink)',
+        ...style,
+      }}
+      {...rest}
+    >
+      pando
+      {/* The one piece of marker red in the chrome, and the whole mark's
+          character. Never tinted, never dropped. */}
+      <span style={{ color: 'var(--marker)' }}>.</span>
     </span>
+  );
+}
+
+/**
+ * The icon: "p." in paper on an ink tile.
+ *
+ * Proportions from the export — a 512px tile at radius 112, the glyph centred
+ * at 366 on the baseline with the same letter-spacing as the wordmark. Kept as
+ * a viewBox so one component serves 16px chrome and a 512px app icon.
+ */
+function LogoMark({ size = 24, style, ...rest }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 512 512"
+      role="img"
+      aria-label="Pando"
+      style={{ display: 'block', flex: '0 0 auto', ...style }}
+      {...rest}
+    >
+      <rect width="512" height="512" rx="112" fill="var(--ink)" />
+      <text
+        x="256"
+        y="366"
+        textAnchor="middle"
+        fontFamily="var(--font-display)"
+        fontWeight="600"
+        fontSize="352"
+        letterSpacing="-7"
+        fill="var(--paper)"
+      >
+        p<tspan fill="var(--marker)">.</tspan>
+      </text>
+    </svg>
   );
 }
