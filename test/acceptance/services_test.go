@@ -86,16 +86,24 @@ func TestR134_AProvisionedServiceIsNotReachableFromOutside(t *testing.T) {
 
 	// Nothing is published. A provisioned service reachable from the host is
 	// reachable from anywhere the host is, which is the whole of R-134 undone.
-	ports := docker(t, "ps", "--filter", "label=pando.app="+app, "--format", "{{.Names}} {{.Ports}}")
+	//
+	// The service is found first and the count asserted, because "no row
+	// published a port" is also true of no rows — and a filter on the wrong
+	// label produces exactly that, passing while asserting nothing.
+	ports := docker(t, "ps", "--filter", "label=io.pando.bundle="+app, "--format", "{{.Names}}\t{{.Ports}}")
+
+	services := 0
 	for _, line := range strings.Split(strings.TrimSpace(ports), "\n") {
 		if !strings.Contains(line, "svc-") {
 			continue
 		}
+		services++
 		require.NotContains(t, line, "->",
 			"a provisioned service published a port to the host: %s", line)
 		require.NotContains(t, line, "0.0.0.0",
 			"a provisioned service published a port to the host: %s", line)
 	}
+	require.Equal(t, 1, services, "the provisioned Redis is running:\n%s", ports)
 }
 
 // TestR135_ProvisionedDataIsRecordedAsTheAppsStorage asserts R-135.
@@ -209,6 +217,8 @@ func TestR131_ProvisioningWhatPandoDoesNotProvisionIsRefused(t *testing.T) {
 		"runtime": {"adapter_ref": "rt_docker", "isolation_floor": 10},
 		"deploy": {"strategy": "recreate"}
 	}`)
+	// Pinned, because /plan plans what the app is set to run, not a draft.
+	c.pinSpec(t, app, 1)
 
 	body, status := c.postRaw(t, fmt.Sprintf("/apps/%s/plan", app), `{"spec_revision": 1}`)
 	require.GreaterOrEqual(t, status, 400, body)
@@ -233,20 +243,27 @@ func inApp(t *testing.T, appID, workload string, command ...string) string {
 }
 
 // containerFor finds one workload's container, waiting for it to be running.
+//
+// Filtered on the runtime adapter's own labels — `io.pando.bundle` and
+// `io.pando.workload`, the ones Observe uses to find a bundle. A filter on a
+// label nothing sets matches nothing, and a loop over nothing passes without
+// asserting anything, which is how a test ends up green about a feature that
+// does not work.
 func containerFor(t *testing.T, appID, workload string) string {
 	t.Helper()
 
 	deadline := time.Now().Add(90 * time.Second)
 	for {
-		out := docker(t, "ps", "--filter", "label=pando.app="+appID,
+		out := docker(t, "ps", "--filter", "label=io.pando.bundle="+appID,
+			"--filter", "label=io.pando.workload="+workload,
 			"--filter", "status=running", "--format", "{{.Names}}")
-		for _, name := range strings.Split(strings.TrimSpace(out), "\n") {
-			if name != "" && strings.Contains(name, workload) {
-				return name
-			}
+		if name := strings.TrimSpace(out); name != "" {
+			return strings.Split(name, "\n")[0]
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("no running container for %s/%s; saw:\n%s", appID, workload, out)
+			t.Fatalf("no running container for %s/%s; saw:\n%s", appID, workload,
+				docker(t, "ps", "-a", "--filter", "label=io.pando.bundle="+appID,
+					"--format", "{{.Names}} {{.Status}}"))
 		}
 		time.Sleep(2 * time.Second)
 	}

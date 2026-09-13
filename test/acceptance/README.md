@@ -51,7 +51,17 @@ Both sides need it: the server runs the schedule and the test sizes its deadline
 same variables, so it cannot pass for the wrong reason. `PANDO_PORT` belongs on the test
 side too — one test recreates the server's container mid-run, and `docker compose up` falls
 back to 8080 without it, which moves the server off the port the rest of the suite is
-talking to. Pando warns at startup when the
+talking to.
+
+## Run the suite on a fresh stack
+
+`docker compose down -v && docker compose up -d`, every time. The suite signs in with the
+first-run administrator password, which Pando prints once, to the log of the container that
+printed it. Two things in the run destroy that: `TestR046` changes the password, and the
+bundle-teardown test recreates the server's container, which starts a new log. So a second
+`go test` against a stack the suite has already run on cannot sign in, and fails on every
+test with "could not find the first-run password in the server log" — which reads like a
+broken stack rather than a used one. Pando warns at startup when the
 backoff is faster than the default, because an install retrying a broken app every second
 forever is a real way to melt a host — leave these unset in production, where the shipped
 numbers *are* the requirement.
