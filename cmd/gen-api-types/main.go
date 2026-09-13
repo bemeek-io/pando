@@ -58,6 +58,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Relative to the working directory, which is `console/` — npm runs this
+	// as the console's own `types` script. Run from anywhere else it used to
+	// create a second src/api/types.gen.ts wherever you were standing, and one
+	// of those was committed at the repository root and went stale there,
+	// looking for all the world like a source file.
+	if _, err := os.Stat("package.json"); err != nil {
+		fmt.Fprintln(os.Stderr,
+			"Run this from the console directory, where the types belong: cd console && npm run types")
+		os.Exit(1)
+	}
+
 	path := filepath.Join("src", "api", "types.gen.ts")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		fmt.Fprintln(os.Stderr, err)

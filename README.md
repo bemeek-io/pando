@@ -104,4 +104,8 @@ marketplace**, **not a disaster-recovery product** with RPO/RTO guarantees, **no
 
 ## License
 
-AGPL, dual-licensed with commercial exceptions available. AGPL → MIT is reversible; MIT → AGPL is not.
+**AGPL-3.0**, dual-licensed — a commercial licence is available for embedding Pando in a proprietary
+product or offering it as a hosted service without publishing modifications. See
+[`LICENSING.md`](LICENSING.md), and [`LICENSE`](LICENSE) for the full text.
+
+AGPL → MIT is reversible; MIT → AGPL is not.
