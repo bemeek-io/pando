@@ -27,8 +27,14 @@ test-integration: ## Run integration tests (real Postgres + Docker, via testcont
 	$(GO) test -race -count=1 -timeout=15m -tags=integration ./...
 
 .PHONY: vet
-vet: ## go vet
+vet: ## go vet, including the integration-tagged tests
 	$(GO) vet $(PKG)
+	# Behind a build tag, so `go vet ./...` never sees them and they rot in
+	# silence: two of them had been referencing a renamed constant and an old
+	# function signature for long enough that nobody could say when it started.
+	# Vet compiles them without needing Docker or Postgres, which is the whole
+	# cost of never letting that happen again.
+	$(GO) vet -tags integration $(PKG)
 
 # `go install` puts binaries in GOPATH/bin, which is not on PATH by default — so
 # following the install line printed below leaves the next `make lint` still

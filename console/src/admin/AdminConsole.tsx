@@ -252,9 +252,12 @@ function AppScreen({
   // on the setup tab afterwards hides the thing they came for — the deploy
   // button is on Overview. Only from 'detection', so a reviewed app whose
   // owner deliberately opened Configuration stays where they put themselves.
+  //
+  // `reviewed` alone in the dependency list, on purpose: this fires on the
+  // transition, not on every change of tab. Including routeTab would move
+  // somebody off Configuration the moment they opened it.
   useEffect(() => {
     if (reviewed && routeTab === 'detection') onTab('overview');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewed]);
 
   if (app.isPending) return null;

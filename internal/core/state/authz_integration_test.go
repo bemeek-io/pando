@@ -424,7 +424,7 @@ func TestR046_FirstRunCreatesOneAdminAndIsIdempotent(t *testing.T) {
 
 	grants := state.NewGrants(db)
 
-	first, err := bootstrap.Run(ctx, users, grants, db, auditor)
+	first, err := bootstrap.Run(ctx, users, grants, db, auditor, secret.Value{})
 	require.NoError(t, err)
 	require.True(t, first.Created)
 	require.NotEmpty(t, first.Password.Reveal())
@@ -436,7 +436,7 @@ func TestR046_FirstRunCreatesOneAdminAndIsIdempotent(t *testing.T) {
 		`SELECT password_hash FROM users WHERE id = $1`, first.User.ID).Scan(&storedHash))
 	require.NotContains(t, storedHash, first.Password.Reveal())
 
-	again, err := bootstrap.Run(ctx, users, grants, db, auditor)
+	again, err := bootstrap.Run(ctx, users, grants, db, auditor, secret.Value{})
 	require.NoError(t, err)
 	require.False(t, again.Created, "first run must not repeat")
 

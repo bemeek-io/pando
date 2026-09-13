@@ -325,7 +325,7 @@ func TestR150_RepeatedFailureReachesFailedAndStops(t *testing.T) {
 	// Backoff would otherwise spread ten failures over minutes.
 	h.rec.Clock = &steppingClock{now: time.Now().UTC()}
 
-	for range reconciler.FailureThreshold {
+	for range reconciler.DefaultFailureThreshold {
 		h.rec.Tick(context.Background())
 		h.rec.Clock.(*steppingClock).advance(10 * time.Minute)
 	}
@@ -352,7 +352,7 @@ func TestAnUnreachableAdapterDoesNotMoveAnAppTowardFailed(t *testing.T) {
 	h.runtime.observeErr = errAdapterDown
 	h.rec.Clock = &steppingClock{now: time.Now().UTC()}
 
-	for range reconciler.FailureThreshold * 2 {
+	for range reconciler.DefaultFailureThreshold * 2 {
 		h.rec.Tick(context.Background())
 		h.rec.Clock.(*steppingClock).advance(10 * time.Minute)
 	}
@@ -503,7 +503,7 @@ func TestR150_ACrashLoopingAppReachesFailed(t *testing.T) {
 	h.runtime.setObserved(crashed)
 	// Apply succeeds every time. The container is created; it just dies again.
 
-	for range reconciler.FailureThreshold {
+	for range reconciler.DefaultFailureThreshold {
 		h.rec.Tick(context.Background())
 		h.rec.Clock.(*steppingClock).advance(6 * time.Minute)
 	}
@@ -549,7 +549,7 @@ func TestAPermanentlyUnhealthyAppReachesFailed(t *testing.T) {
 		{Name: "web", Present: true, Running: true, Healthy: &sick},
 	}})
 
-	for range reconciler.FailureThreshold {
+	for range reconciler.DefaultFailureThreshold {
 		h.rec.Tick(context.Background())
 		h.rec.Clock.(*steppingClock).advance(6 * time.Minute)
 	}

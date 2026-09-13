@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "types": "go run ../cmd/gen-api-types",
     "lint": "eslint src",
+    "precheck": "node scripts/vendor-design.mjs && npm run types",
     "check": "npm run lint && tsc --noEmit"
   },
   "dependencies": {
