@@ -308,6 +308,13 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/policy", s.handleGetPolicy)
 		r.Put("/policy", s.handlePutPolicy)
 
+		// What this policy would block, before it is saved (design 05 §3).
+		// Behind the write verb rather than install.view: the body is a policy
+		// someone is composing, and answering "which apps does this break"
+		// for anyone who can read policy hands them a probe for the whole
+		// install's shape.
+		r.Post("/policy/preview", s.handlePreviewPolicy)
+
 		// The audit log (R-227). Its own verb: it records what everyone did,
 		// including inside apps they own.
 		r.Get("/audit", s.handleListAudit)

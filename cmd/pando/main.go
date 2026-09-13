@@ -241,7 +241,7 @@ func serve(ctx context.Context, configPath string) error {
 
 	deployments := state.NewDeployments(db)
 	logStore := deploy.NewLogStore()
-	appPlanner := planner.New(registry, hostPolicy, allocations)
+	appPlanner := planner.New(registry, hostPolicy, allocations).WithInventory(apps)
 
 	// Every route points here (R-023). The proxy is phase 5; until it exists
 	// this is the address routing adapters are told to use, and it is already

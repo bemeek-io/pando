@@ -72,11 +72,12 @@ see `.claude/skills/pando-design/PROVENANCE.md` for how to pull it.
       set at bootstrap, surfaced on `GET /me`, and **nothing could clear it**, because no
       password-change endpoint existed. Both halves are here: `POST /me/password` and the two screens
       in `console/src/auth/`
-- [ ] The **policy preview** design 05 §3 promises: "the console lists violating apps when a policy is
-      saved, before it is saved". Saving works and O-10's behaviour is correct — running apps are
-      untouched, the next deploy fails at plan time — but the administrator saves without seeing who
-      it will affect. Needs the planner run against every app's pinned spec, which is the expensive
-      part and why it is not here
+- [x] The **policy preview** design 05 §3 promises. `POST /policy:preview` runs each live app's
+      pinned spec through the policy-derived plan checks against a policy that is not saved yet, and
+      the screen lists what each app's next deploy will say — in the deploy's own words, so the
+      administrator and the developer read the same sentence. Asked for rather than automatic: it is
+      the expensive check, and running it on every keystroke makes a form that stutters, which
+      teaches people to ignore the panel it is stuttering to fill
 - [x] Detection review screen (R-102, R-103, R-105)
 - [x] Warnings, rendered inline where they apply (R-201, R-168, R-028) — carrying no red at all,
       which is what makes them distinct from an error in a palette that has no amber

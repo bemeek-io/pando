@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/planner"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/errs"
 	"github.com/bemeek-io/pando/internal/id"
@@ -516,6 +517,45 @@ func (a *Apps) WithStorage(ctx context.Context) ([]AppWithStorage, error) {
 		var app AppWithStorage
 		if err := rows.Scan(&app.AppID, &app.Spec, &app.Retain); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list apps with storage.", err)
+		}
+		out = append(out, app)
+	}
+	return out, rows.Err()
+}
+
+// LiveApps lists every app a candidate policy could block, for design 05 §3's
+// preview.
+//
+// Pinned revision, not newest: a preview answers "what would break", and what
+// would break is what the app's next deploy would actually try to do. Draft and
+// archived apps are excluded — a draft has never deployed and an archived one
+// is not going to.
+//
+// The anonymous grant comes along because a policy that forbids it (R-076) has
+// no spec to detect it in, and an app that anyone on the internet can reach
+// under a policy that says they may not is precisely the case an admin needs
+// named before they save.
+func (a *Apps) LiveApps(ctx context.Context) ([]planner.InventoryApp, error) {
+	rows, err := a.db.Query(ctx, `
+		SELECT a.id, a.name, r.body,
+		       EXISTS (SELECT 1 FROM grants g
+		               WHERE g.app_id = a.id AND g.plane = 'data'
+		                 AND g.principal_kind = 'anonymous')
+		FROM apps a
+		JOIN spec_revisions r ON r.id = a.pinned_spec_id
+		WHERE a.deleted_at IS NULL
+		  AND a.state NOT IN ('draft', 'proposed', 'archived')
+		ORDER BY a.name`)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not list this installation's apps.", err)
+	}
+	defer rows.Close()
+
+	out := make([]planner.InventoryApp, 0)
+	for rows.Next() {
+		var app planner.InventoryApp
+		if err := rows.Scan(&app.AppID, &app.Name, &app.Spec, &app.AnonymousGrant); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not list this installation's apps.", err)
 		}
 		out = append(out, app)
 	}

@@ -93,6 +93,14 @@ interface PolicyDoc {
   min_runtime_isolation?: string;
 }
 
+interface Violation {
+  app_id: string;
+  app_name: string;
+  code: string;
+  message: string;
+  remedy?: string;
+}
+
 export function Policy({ canEdit }: { canEdit: boolean }) {
   const queries = useQueryClient();
   const [draft, setDraft] = useState<PolicyDoc | null>(null);
@@ -106,12 +114,31 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
     mutationFn: (doc: PolicyDoc) => api.put<PolicyDoc>('/policy', doc),
     onSuccess: () => {
       setDraft(null);
+      setPreview(null);
       void queries.invalidateQueries({ queryKey: ['policy'] });
     },
   });
 
+  // What this policy would block, before it is saved (design 05 §3).
+  //
+  // Asked for, not automatic. Running every app's pinned spec through the
+  // planner is not free, and doing it on every keystroke would make a form that
+  // stutters — which teaches people to ignore the panel it is stuttering to
+  // fill.
+  const [preview, setPreview] = useState<Violation[] | null>(null);
+  const check = useMutation({
+    mutationFn: (doc: PolicyDoc) =>
+      api.post<{ violations: Violation[] }>('/policy/preview', doc),
+    onSuccess: (result) => setPreview(result.violations ?? []),
+  });
+
   const current = draft ?? policy.data ?? {};
-  const edit = (patch: Partial<PolicyDoc>) => setDraft({ ...current, ...patch });
+  const edit = (patch: Partial<PolicyDoc>) => {
+    // A stale answer is worse than no answer: it says "nothing breaks" about a
+    // policy that is no longer the one on screen.
+    setPreview(null);
+    setDraft({ ...current, ...patch });
+  };
 
   if (policy.isPending) return <Screen heading="Policy"><Quiet>Loading.</Quiet></Screen>;
   if (policy.isError)
@@ -127,8 +154,15 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
       action={
         canEdit && draft ? (
           <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-            <Button variant="ghost" onClick={() => setDraft(null)}>
+            <Button variant="ghost" onClick={() => { setDraft(null); setPreview(null); }}>
               Discard
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={check.isPending}
+              onClick={() => check.mutate(current)}
+            >
+              {check.isPending ? 'Checking' : 'Check what this affects'}
             </Button>
             <Button variant="primary" disabled={save.isPending} onClick={() => save.mutate(current)}>
               {save.isPending ? 'Saving' : 'Save policy'}
@@ -148,6 +182,46 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
       {save.isError && (
         <div style={{ marginTop: 'var(--space-4)' }}>
           <Banner tone="failed">{messageOf(save.error)}</Banner>
+        </div>
+      )}
+
+      {check.isError && (
+        <div style={{ marginTop: 'var(--space-4)' }}>
+          <Banner tone="failed">{messageOf(check.error)}</Banner>
+        </div>
+      )}
+
+      {/* O-10 says a violating app keeps running and fails its next deploy.
+          This is the half of that which makes it liveable: an administrator
+          tightening a rule is entitled to know it blocks four apps before they
+          save, because finding out one deploy at a time is how a policy gets
+          rolled back in anger. */}
+      {preview !== null && (
+        <div style={{ marginTop: 'var(--space-4)' }}>
+          {preview.length === 0 ? (
+            <Banner tone="running">
+              Nothing on this installation breaks under these rules.
+            </Banner>
+          ) : (
+            <>
+              <Banner tone="building">
+                {preview.length === 1
+                  ? 'One app keeps running and is refused at its next deploy.'
+                  : `${preview.length} apps keep running and are refused at their next deploy.`}
+              </Banner>
+              <div style={{ marginTop: 'var(--space-4)' }}>
+                <Table
+                  dense
+                  columns={[
+                    { key: 'app_name', header: 'App', width: 'minmax(0,1fr)' },
+                    { key: 'message', header: 'What its next deploy will say', width: 'minmax(0,2fr)' },
+                    { key: 'code', header: 'Code', width: '28ch', mono: true, muted: true },
+                  ]}
+                  rows={preview}
+                />
+              </div>
+            </>
+          )}
         </div>
       )}
 

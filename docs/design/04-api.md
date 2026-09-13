@@ -233,6 +233,7 @@ POST /api/v1/adapters                     install.adapters.manage
 GET  /api/v1/capacity                     aggregated from adapters (R-243); install.view
 GET  /api/v1/policy                       install.view
 PUT  /api/v1/policy                       R-274; see O-10; install.policy.manage
+POST /api/v1/policy:preview               what this policy would block, unsaved; install.policy.manage
 GET  /api/v1/audit                        filterable; install.audit.read
 GET  /api/v1/roles                        install-scoped roles (R-082); install.view
 GET  /api/v1/backups
@@ -251,6 +252,19 @@ you work under is not the same privilege as changing them — the same split as 
 **[D]** `PUT /policy` rejects a `disabled_verbs` entry that is not in the catalog. Policy can only
 deny (R-272), so a typo denies nothing and looks exactly like a rule that works, which is the worst
 failure mode a security control has.
+
+**[D]** `POST /policy:preview` takes the **same body** as `PUT` and saves nothing, returning the apps
+whose next deploy the policy would block, each with the error code and message that deploy will
+actually fail with. Design 05 §3 requires this: O-10 resolved policy application to "report now, block
+on next deploy", and an admin tightening a policy is entitled to know it will block four apps before
+they save. Finding out one deploy at a time is how a policy gets rolled back in anger.
+
+**[P]** Preview is behind `install.policy.manage`, not `install.view`. The body is a policy someone is
+composing, and answering "which apps does this break" for anyone who can read policy hands them a
+probe for the install's shape — one arbitrary query at a time, without writing anything. An empty
+list returns 200: "nothing breaks" is the answer an admin most wants, and it must not be
+indistinguishable from a failure. Preview is not audited (R-229): it reads, changes nothing, and a log
+with an entry per keystroke of a form is a log nobody reads.
 
 **[D]** `GET /audit` pages on a **cursor** (`before=<id>`), not an offset. The log is append-only with
 monotonic IDs; with an offset, events arriving between requests shift every later page. `action`
@@ -335,7 +349,7 @@ pando app show <app>
 pando deploy <app|path>
 pando plan <app>
 pando logs <app> [-f]
-pando exec <app> [workload] -- <cmd>
+pando exec <app> [--workload <name>] [-- <cmd>...]
 pando secret set <app> <key>
 pando slot set <app> <key> --provision|--bind=<target>|--literal
 pando grant add <app> --user=<u> --plane=data

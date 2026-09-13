@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -411,27 +412,62 @@ func (c *Client) prepareUploadedApp(cmd *cobra.Command, appID string) error {
 }
 
 func execCmd(client func() (*Client, error)) *cobra.Command {
-	return &cobra.Command{
-		Use:   "exec <app> [workload] -- <command>...",
+	var workload string
+
+	cmd := &cobra.Command{
+		Use:   "exec <app> [-- <command>...]",
 		Short: "Run a command inside a running app",
 		Long: "Opens a terminal inside a running workload.\n\n" +
 			"This is the most privileged thing you can do to an app: what runs here can read\n" +
 			"the app's database directly and read its injected environment, including secrets.\n" +
 			"The command is recorded in the audit log; what happens inside the session is not.",
-		Args: cobra.MinimumNArgs(2),
+		Args: cobra.MinimumNArgs(1),
+
+		// The command after -- is the container's, not cobra's. Without this,
+		// `pando exec notes -- ls -la` loses -la to flag parsing.
+		DisableFlagsInUseLine: true,
+
+		// A non-zero exit inside the container is the command's answer, not a
+		// usage problem, so cobra must not print the help text over it.
+		SilenceUsage: true,
+
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := client()
+			c, err := client()
 			if err != nil {
 				return err
 			}
-			// The endpoint is a websocket (design 04 §2.4, and RFC 6455 is why
-			// it is a GET). Wiring a terminal here needs raw mode, a resize
-			// channel and signal handling — it is a real piece of work rather
-			// than a wrapper, and it is not done.
-			return fmt.Errorf("pando exec is not implemented yet — use the Terminal tab in the web console.\n" +
-				"The endpoint exists and the console uses it; only this client is missing")
+
+			command := args[1:]
+			if at := cmd.ArgsLenAtDash(); at >= 0 {
+				command = args[at:]
+			}
+
+			in, ok := cmd.InOrStdin().(*os.File)
+			if !ok {
+				in = os.Stdin
+			}
+
+			err = c.Exec(cmd.Context(), ExecOptions{
+				AppID: args[0], Workload: workload, Command: command,
+				In: in, Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr(),
+			})
+
+			// A command that exited non-zero inside the container is reported
+			// the way ssh reports it: this process takes the same status and
+			// prints nothing. Anything else and `pando exec app -- test -f x`
+			// cannot be used in a script.
+			var exit *exitError
+			if errors.As(err, &exit) {
+				cmd.SilenceErrors = true
+				os.Exit(exit.ExitCode())
+			}
+			return err
 		},
 	}
+
+	cmd.Flags().StringVar(&workload, "workload", "",
+		"which part of the app to open a terminal in (default: the one its URL points at)")
+	return cmd
 }
 
 func slotCmd(client func() (*Client, error)) *cobra.Command {

@@ -22,8 +22,9 @@
 - [x] Notify adapter exercised by the console-only v1 implementation (R-231)
 - [x] O-12 resolved as designed: host policy now sees the principal, so agent exclusions are a policy
       scoped to token principals rather than a list the MCP server keeps
-- [ ] `pando exec`. The endpoint exists and the console uses it; the CLI side needs raw mode, a
-      resize channel and signal handling, and says so rather than pretending
+- [x] `pando exec`. Raw mode restored on every exit path including a panic, SIGWINCH resize sent as
+      the control frame the protocol defines, and the container's exit status carried out through the
+      close reason so `pando exec app -- false` behaves like `false` in a script
 
 ## Requirements in scope
 
@@ -34,10 +35,10 @@ R-231, R-232, R-251, R-260–R-262.
 Every capability in the API is reachable from the CLI and (excepting the exclusions below) from MCP,
 and Traefik routes an app end to end **without any change to the routing interface**.
 
-**Met, with one gap.** Traefik was run for real — `docker compose --profile traefik up` — and a
+**Met.** Traefik was run for real — `docker compose --profile traefik up` — and a
 request to an app's hostname on Traefik's port is served by the app, an anonymous one is redirected
 to login, and Pando's own console still answers on its own hostname. `RoutingAdapter` and its types
-are untouched, which is the only real evidence that the abstraction held. The gap is `pando exec`.
+are untouched, which is the only real evidence that the abstraction held.
 
 Running it found three bugs that reading it would not have:
 

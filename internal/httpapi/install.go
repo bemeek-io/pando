@@ -263,10 +263,8 @@ func (s *Server) handleGetPolicy(w http.ResponseWriter, r *http.Request) {
 // O-10: saving does not touch running apps. A policy that a running app now
 // violates leaves that app running and fails its **next** deploy at plan time,
 // because stopping someone's app on a schedule, for a rule they did not write,
-// is destruction of something they may have wanted. Design 05 §3 also promises
-// the console lists violating apps *before* the save; that preview is not built
-// and is flagged in the phase file — its absence makes the save less informed,
-// not less correct.
+// is destruction of something they may have wanted. POST /policy:preview
+// answers what this save would block, beforehand (design 05 §3).
 func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireInstall(w, r, authz.InstallPolicyManage)
 	if !ok {
@@ -310,6 +308,51 @@ func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 		Detail:        map[string]any{"disabled_verbs": doc.DisabledVerbs},
 	})
 	JSON(w, http.StatusOK, doc)
+}
+
+// handlePreviewPolicy reports which apps a policy would block, without saving
+// it (design 05 §3).
+//
+// The same body as PUT, so the console previews exactly what it is about to
+// send rather than something assembled a second way. An empty list is a real
+// answer and returns 200: "nothing breaks" is the thing an admin most wants to
+// be told, and it should not be indistinguishable from an error.
+func (s *Server) handlePreviewPolicy(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireInstall(w, r, authz.InstallPolicyManage); !ok {
+		return
+	}
+	if s.Planner == nil {
+		Error(w, r, errs.New(errs.Internal, "Pando cannot check this policy against the installation's apps."))
+		return
+	}
+
+	var doc corepolicy.Document
+	if err := json.NewDecoder(r.Body).Decode(&doc); err != nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "The policy could not be read."))
+		return
+	}
+
+	// The same verb check PUT makes, and for the same reason (R-272): a typo
+	// denies nothing and looks exactly like a rule that works. Catching it in
+	// the preview means an admin sees it before they save rather than after.
+	for _, v := range doc.DisabledVerbs {
+		if !authz.IsVerb(authz.Verb(v)) {
+			Error(w, r, errs.Newf(errs.ValidInvalid,
+				"%q is not a permission Pando has, so disabling it would have no effect.", v).
+				WithRemedy("Use one of the verbs from GET /roles, for example app.exec."))
+			return
+		}
+	}
+
+	violations, err := s.Planner.PreviewPolicy(r.Context(), doc)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	// Not audited. A preview reads and changes nothing, and an audit log with
+	// an entry every keystroke of a form is a log nobody reads (R-229).
+	JSON(w, http.StatusOK, map[string]any{"violations": violations})
 }
 
 // handleListAudit reads the audit log (R-227, R-229).

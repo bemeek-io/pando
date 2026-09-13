@@ -50,6 +50,17 @@ type Planner struct {
 	registry    *api.Registry
 	policy      *policy.Evaluator
 	allocations Allocations
+
+	// inventory is every live app, used only to preview a policy before it is
+	// saved (design 05 §3). Optional: a planner without it plans exactly the
+	// same and refuses to preview.
+	inventory Inventory
+}
+
+// WithInventory enables policy preview.
+func (p *Planner) WithInventory(inv Inventory) *Planner {
+	p.inventory = inv
+	return p
 }
 
 func New(registry *api.Registry, pol *policy.Evaluator, allocations Allocations) *Planner {
