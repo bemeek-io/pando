@@ -1,6 +1,7 @@
 package buildkit
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -72,6 +73,24 @@ func synthesize(req api.BuildRequest, contextDir string) (generated, error) {
 		return generated{Dir: dir, Name: name, Cleanup: func() { _ = os.RemoveAll(dir) }}, nil
 
 	case spec.BuildBuildpack:
+		// Files the spec already carries are replayed, not regenerated. That is
+		// what makes the build reproducible and what makes an edited plan
+		// actually take effect — regenerating would overwrite it every time.
+		if len(req.GeneratedFiles) > 0 {
+			if err := writeInto(contextDir, req.GeneratedFiles); err != nil {
+				return generated{}, err
+			}
+			name := req.Dockerfile
+			if name == "" {
+				name = filepath.Join(".nixpacks", "Dockerfile")
+			}
+			return generated{
+				Dir:     filepath.Dir(filepath.Join(contextDir, name)),
+				Name:    filepath.Base(name),
+				Cleanup: func() {},
+			}, nil
+		}
+
 		name, err := buildpackDockerfile(req, contextDir)
 		if err != nil {
 			return generated{}, err
@@ -136,6 +155,75 @@ func buildpackDockerfile(_ api.BuildRequest, contextDir string) (string, error) 
 	}
 
 	return filepath.Join(".nixpacks", "Dockerfile"), nil
+}
+
+// writeInto materializes generated build inputs in the checkout.
+//
+// Into the checkout because they have to be in the build context: the plan's
+// Dockerfile references them with COPY. The checkout is a throwaway clone, so
+// nothing anybody keeps is written to.
+//
+// Every path is re-checked here even though spec validation already rejected
+// one that climbs out. A spec is exportable and importable, and an imported one
+// is untrusted input (design 01 §5) — this is the last point before content
+// from it reaches a filesystem, and the cost of checking twice is nothing.
+func writeInto(contextDir string, files map[string]string) error {
+	for name, content := range files {
+		clean := path.Clean("/" + filepath.ToSlash(name))
+		rel := strings.TrimPrefix(clean, "/")
+		if rel == "" || rel == "." || rel != filepath.ToSlash(name) {
+			return errs.Newf(errs.ValidInvalid,
+				"A generated build file is written to %q, which is not a path inside the app's source.", name)
+		}
+
+		full := filepath.Join(contextDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return errs.Wrap(errs.BuildFailed, "Could not prepare the build.", err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			return errs.Wrap(errs.BuildFailed, "Could not prepare the build.", err)
+		}
+	}
+	return nil
+}
+
+// Plan makes a build plan without building anything, for detection.
+//
+// The same generator the build path uses, so what somebody reviews is what runs
+// (R-102). It writes into a copy of nothing: the source view's directory is the
+// detection checkout, which is discarded when detection finishes.
+func (a *Adapter) Plan(_ context.Context, src api.SourceView) (map[string]string, string, error) {
+	dir, ok := src.(interface{ Root() string })
+	if !ok {
+		return nil, "", errs.New(errs.BuildFailed, "Planning needs the source on disk.")
+	}
+	root := dir.Root()
+
+	name, err := buildpackDockerfile(api.BuildRequest{}, root)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Everything the generator wrote, read back as content. The spec carries
+	// the plan itself rather than a pointer to a directory that will not exist
+	// next time.
+	files := map[string]string{}
+	planDir := filepath.Join(root, ".nixpacks")
+	entries, err := os.ReadDir(planDir)
+	if err != nil {
+		return nil, "", errs.Wrap(errs.BuildFailed, "Could not read the build plan.", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		body, readErr := os.ReadFile(filepath.Join(planDir, e.Name()))
+		if readErr != nil {
+			return nil, "", errs.Wrap(errs.BuildFailed, "Could not read the build plan.", readErr)
+		}
+		files[path.Join(".nixpacks", e.Name())] = string(body)
+	}
+	return files, name, nil
 }
 
 // trim bounds a subprocess's output so one runaway generator cannot put a

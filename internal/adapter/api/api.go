@@ -625,6 +625,13 @@ type BuildRequest struct {
 	Context    string
 	Args       map[string]string
 
+	// GeneratedFiles are build inputs the spec carries, keyed by path relative
+	// to the context. Written into the checkout before the build.
+	//
+	// Present means "use these" — the builder does not plan again. That is what
+	// makes a reviewed plan the one that runs, and an edited one take effect.
+	GeneratedFiles map[string]string
+
 	// StaticDir is the directory to serve, for the static strategy.
 	//
 	// What "serving" means is the builder's business, not core's. Core says

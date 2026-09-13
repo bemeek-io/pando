@@ -1,6 +1,8 @@
 package spec
 
 import (
+	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/bemeek-io/pando/internal/errs"
@@ -34,6 +36,7 @@ func Validate(s *AppSpec) error {
 	validateDependencies(s, add)
 	validateSlots(s, add)
 	validateRouting(s, add)
+	validateBuild(s, add)
 
 	switch len(problems) {
 	case 0:
@@ -53,6 +56,24 @@ func Validate(s *AppSpec) error {
 		}
 		return errs.Newf(errs.ValidInvalid, "This spec has %d problems.", len(problems)).
 			WithDetail("problems", details)
+	}
+}
+
+// validateBuild keeps generated build inputs inside the build context.
+//
+// A generated file is written into the checkout before the build, so a path
+// that climbs out of it writes wherever it likes on the machine running the
+// build. The paths are Pando's own today, and that is exactly the assumption
+// worth not depending on: a spec is editable, exportable and importable, and an
+// imported one is untrusted input like any other (design 01 §5).
+func validateBuild(s *AppSpec, add func(*errs.Error)) {
+	for name := range s.Build.GeneratedFiles {
+		clean := path.Clean("/" + filepath.ToSlash(name))
+		if strings.TrimPrefix(clean, "/") != filepath.ToSlash(name) || name == "" {
+			add(errs.Newf(errs.ValidInvalid,
+				"A generated build file is written to %q, which is not a path inside the app's source.", name).
+				WithRemedy("Generated build files are relative paths without a leading slash or any \"..\" segment."))
+		}
 	}
 }
 

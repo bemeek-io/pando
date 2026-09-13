@@ -335,7 +335,28 @@ func (d StaticDetector) Bid(_ context.Context, src api.SourceView) (Candidate, e
 // This is the case R-103 is really about: an app written by someone who never
 // thought about deployment. The bid is deliberately modest and always carries
 // questions, because a language is not a deployment.
-type BuildpackDetector struct{}
+type BuildpackDetector struct {
+	// Planner turns a repository with no deployment instructions into build
+	// inputs. Supplied by the builder adapter, because what those inputs are is
+	// the builder's vocabulary and core does not learn it (R-251): core asks
+	// "how would you build this", stores whatever comes back, and interprets
+	// none of it.
+	//
+	// Nil means detection still recognizes the language and asks its questions;
+	// the plan simply is not part of the proposal, and the builder makes one at
+	// build time instead. That is the behaviour every install had before the
+	// plan was reviewable.
+	Planner BuildPlanner
+}
+
+// BuildPlanner produces the files a buildpack build needs.
+//
+// Planning reads the repository and decides; it runs nothing from it and builds
+// nothing, so it is not a build and R-024's "never on the host" does not bite.
+// What it returns is opaque to core.
+type BuildPlanner interface {
+	Plan(ctx context.Context, src api.SourceView) (files map[string]string, dockerfile string, err error)
+}
 
 func (BuildpackDetector) Name() string { return "buildpack" }
 
@@ -357,7 +378,7 @@ var languages = []languageSignal{
 	{"pom.xml", "Java", "java -jar", 8080},
 }
 
-func (d BuildpackDetector) Bid(_ context.Context, src api.SourceView) (Candidate, error) {
+func (d BuildpackDetector) Bid(ctx context.Context, src api.SourceView) (Candidate, error) {
 	var signal *languageSignal
 	for i := range languages {
 		if info, err := src.Stat(languages[i].file); err == nil && !info.IsDir {
@@ -382,6 +403,18 @@ func (d BuildpackDetector) Bid(_ context.Context, src api.SourceView) (Candidate
 				Ports: []spec.Port{{Number: signal.port, Protocol: "http", Source: spec.PortFramework}},
 			}},
 		},
+	}
+
+	// The plan, so the proposal shows how this app would be built rather than
+	// only that it would be. A planner that fails leaves the bid standing: a
+	// language Pando recognizes is still the right reading of the repository,
+	// and the builder will try again at build time with a real error to show.
+	if d.Planner != nil {
+		if files, dockerfile, err := d.Planner.Plan(ctx, src); err == nil && len(files) > 0 {
+			c.Draft.Build.GeneratedFiles = files
+			c.Draft.Build.Dockerfile = dockerfile
+			c.Evidence = append(c.Evidence, "build plan generated, and editable before it runs")
+		}
 	}
 
 	c.Questions = append(c.Questions, Question{

@@ -164,6 +164,7 @@ export interface Build {
   target?: string;
   compose_file?: string;
   static_dir?: string;
+  generated_files?: (Record<string, string> | null);
   args?: (KV[] | null);
   isolation_floor: number;
   timeout_seconds: number;

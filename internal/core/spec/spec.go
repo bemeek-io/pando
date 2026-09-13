@@ -141,6 +141,25 @@ type Build struct {
 	ComposeFile string `json:"compose_file,omitempty"`
 	StaticDir   string `json:"static_dir,omitempty"`
 
+	// GeneratedFiles are build inputs Pando produced rather than found, keyed
+	// by path relative to the build context. Written into the checkout before
+	// the build and never into anybody's repository.
+	//
+	// Opaque to core, which stores and replays them and interprets nothing:
+	// only the builder that produced them knows what they mean (R-251). Today
+	// that is a nixpacks plan — a Dockerfile and the files it references.
+	//
+	// They live in the spec because R-020 makes the state store the sole record
+	// of how an app runs, and a plan regenerated at each build is not a record:
+	// the same commit would build differently after the planner was upgraded.
+	// Storing them pins the build to what somebody reviewed, and makes it
+	// something they can edit without putting deployment files in their repo —
+	// which is the other half of R-020.
+	//
+	// Append-only like the rest of the spec (R-152), so an edit is a revision
+	// that can be diffed and rolled back.
+	GeneratedFiles map[string]string `json:"generated_files,omitempty"`
+
 	// Args are build arguments and are stored in the clear. Anything sensitive
 	// is a slot — this is why there is no secret-bearing build arg.
 	Args []KV `json:"args,omitempty"`

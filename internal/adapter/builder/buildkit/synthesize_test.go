@@ -146,3 +146,50 @@ func TestABuildpackPlanThatFailsSaysWhy(t *testing.T) {
 	require.Error(t, err)
 	require.NotEmpty(t, errs.As(err).Remedy, "R-105 promises a way forward")
 }
+
+// TestR020_AnEditedPlanIsTheOneThatRuns asserts the point of storing the plan.
+//
+// A plan regenerated at every build is not a record of how the app runs: the
+// same commit builds differently once the generator is upgraded, and an edit
+// made in the console is overwritten before it reaches the build. Files the
+// spec carries are replayed, not regenerated.
+func TestR020_AnEditedPlanIsTheOneThatRuns(t *testing.T) {
+	root := t.TempDir()
+	edited := "FROM alpine:3.21\nCOPY . /app\nCMD [\"/app/out\"]\n"
+
+	gen, err := synthesize(api.BuildRequest{
+		Strategy:   spec.BuildBuildpack,
+		Dockerfile: filepath.Join(".nixpacks", "Dockerfile"),
+		GeneratedFiles: map[string]string{
+			filepath.Join(".nixpacks", "Dockerfile"): edited,
+			filepath.Join(".nixpacks", "build.sh"):   "#!/bin/sh\n",
+		},
+	}, root)
+	require.NoError(t, err)
+	defer gen.Cleanup()
+
+	body, err := os.ReadFile(filepath.Join(gen.Dir, gen.Name))
+	require.NoError(t, err)
+	require.Equal(t, edited, string(body), "the stored plan is what gets built, not a fresh one")
+
+	// The files it references are materialized too, or the COPY fails.
+	_, err = os.Stat(filepath.Join(root, ".nixpacks", "build.sh"))
+	require.NoError(t, err)
+}
+
+// A generated path that climbs out of the build context is refused.
+//
+// A spec is exportable and importable, and an imported one is untrusted input
+// (design 01 §5). This is the last point before its content reaches a
+// filesystem.
+func TestAGeneratedFileCannotEscapeTheCheckout(t *testing.T) {
+	root := t.TempDir()
+
+	_, err := synthesize(api.BuildRequest{
+		Strategy:       spec.BuildBuildpack,
+		GeneratedFiles: map[string]string{"../../../tmp/pwned": "x"},
+	}, root)
+
+	require.Error(t, err)
+	require.NoFileExists(t, filepath.Join(filepath.Dir(root), "pwned"))
+}

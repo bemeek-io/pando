@@ -119,6 +119,30 @@ func versionCmd() *cobra.Command {
 	}
 }
 
+// buildPlanner returns the configured builder if it can make a build plan.
+//
+// A capability discovered by type assertion, which R-254 forbids for anything
+// the planner decides on — and this is not that. Whether a build plan can be
+// shown before it runs changes nothing about whether the app can be built: the
+// builder plans at build time regardless. It changes only whether detection has
+// something to show, which is why a missing planner degrades to the behaviour
+// every install had before and not to a plan-time refusal.
+func buildPlanner(registry *adapterapi.Registry) detect.BuildPlanner {
+	ref, ok := registry.Default(adapterapi.CategoryBuilder)
+	if !ok {
+		return nil
+	}
+	builder, ok := registry.Builder(ref)
+	if !ok {
+		return nil
+	}
+	planner, ok := builder.(detect.BuildPlanner)
+	if !ok {
+		return nil
+	}
+	return planner
+}
+
 func setup(configPath string) (*config.Config, *zap.Logger, error) {
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -302,7 +326,12 @@ func serve(ctx context.Context, configPath string) error {
 				detect.DockerfileDetector{},
 				detect.ComposeDetector{},
 				detect.StaticDetector{},
-				detect.BuildpackDetector{},
+				// The planner comes from the builder: core asks "how would you
+				// build this" and stores the answer without interpreting it
+				// (R-251). Nil on an install with no builder configured, where
+				// detection still recognizes the language and asks its
+				// questions — it just cannot show the plan.
+				detect.BuildpackDetector{Planner: buildPlanner(registry)},
 				detect.MonorepoDetector{},
 			),
 			Runtime: runtimeForTrial(registry),

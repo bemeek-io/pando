@@ -12,6 +12,7 @@ import { Banner, Button, Dialog, Input, Select, StatusIndicator, Table } from '@
 import { api } from '@api/client';
 import { Quiet, messageOf } from '../install/Accounts';
 import { Environment } from './Environment';
+import { BuildPlan } from './BuildPlan';
 
 interface Slot {
   key: string;
@@ -31,6 +32,7 @@ export function Resources({ appID }: { appID: string }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-7)' }}>
       <Slots appID={appID} />
       <Environment appID={appID} />
+      <BuildPlan appID={appID} />
       <Volumes appID={appID} />
     </div>
   );

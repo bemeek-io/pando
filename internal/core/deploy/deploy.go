@@ -388,7 +388,11 @@ func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Ch
 		Dockerfile: s.Build.Dockerfile,
 		Context:    s.Build.Context,
 		StaticDir:  s.Build.StaticDir,
-		Args:       args,
+
+		// The reviewed plan, replayed. Without this the builder plans again at
+		// build time and an edit made in the console never reaches the build.
+		GeneratedFiles: s.Build.GeneratedFiles,
+		Args:           args,
 
 		IsolationFloor: s.Build.IsolationFloor,
 		Timeout:        time.Duration(s.Build.TimeoutSeconds) * time.Second,
