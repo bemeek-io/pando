@@ -102,7 +102,14 @@ func (a *Adapter) Capabilities(context.Context) (api.BuilderCapabilities, error)
 		// Reported honestly so a policy floor above this excludes it (R-114).
 		IsolationClass: spec.IsolationContainer,
 
-		Strategies: []api.BuildStrategy{spec.BuildDockerfile, spec.BuildStatic, spec.BuildBuildpack},
+		// Compose is here because a compose app's pieces are Dockerfile builds:
+		// core runs one per service that builds, each with that service's own
+		// context and file. This builder never sees a compose file and never
+		// needs to — nothing here runs `docker compose build`, which would want
+		// a runtime socket and is forbidden outright (R-112).
+		Strategies: []api.BuildStrategy{
+			spec.BuildDockerfile, spec.BuildStatic, spec.BuildBuildpack, spec.BuildCompose,
+		},
 
 		SupportsCache: true,
 

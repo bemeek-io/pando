@@ -236,53 +236,21 @@ func (c *composeImport) build() spec.Build {
 	// The service that builds. A compose file whose services all carry an
 	// `image:` needs no builder at all.
 	var building string
-	var others []string
 	for _, name := range c.names() {
-		if c.file.Services[name].Build == nil {
-			continue
-		}
-		if building == "" {
+		if c.file.Services[name].Build != nil && building == "" {
 			building = name
-			continue
 		}
-		others = append(others, name)
-	}
-
-	// More than one buildable service is a shape a single Build block cannot
-	// describe. The first is taken and the rest are named, rather than blocking
-	// an app outright — but it is said out loud, because a service that is
-	// silently not built is one that runs an image somebody forgot they had.
-	if len(others) > 0 {
-		c.warnings = append(c.warnings, spec.Warning{
-			Code: spec.WarnComposeConstructRewritten,
-			Message: fmt.Sprintf(
-				"%s builds more than one service. Pando builds %q from source; %s will need an image of their own.",
-				c.source, building, strings.Join(quoteAll(others), " and ")),
-		})
 	}
 
 	if building == "" {
+		// Nothing to build: every service names an image that already exists.
 		return spec.Build{Strategy: spec.BuildPrebuilt, ComposeFile: c.source}
 	}
 
-	context, dockerfile, target := buildFields(c.file.Services[building].Build)
-	return spec.Build{
-		Strategy: spec.BuildDockerfile,
-		// Kept for provenance: this spec came from a compose file, and a person
-		// reading it later should be able to see that without guessing.
-		ComposeFile: c.source,
-		Context:     context,
-		Dockerfile:  dockerfile,
-		Target:      target,
-	}
-}
-
-func quoteAll(names []string) []string {
-	out := make([]string, 0, len(names))
-	for _, n := range names {
-		out = append(out, strconv.Quote(n))
-	}
-	return out
+	// A compose app is built as a compose app. Which services build, and from
+	// where, is recorded per workload — see Workload.Build — because a file with
+	// two buildable services needs two images and one Build block cannot say so.
+	return spec.Build{Strategy: spec.BuildCompose, ComposeFile: c.source}
 }
 
 // buildFields reads compose's two spellings of `build:`.
@@ -341,6 +309,14 @@ func (c *composeImport) workload(name string, only bool) spec.Workload {
 		// with several, the detector asks rather than picking.
 		Primary: only,
 		Exposed: only,
+	}
+
+	// A service that builds says so here rather than at the app level, so a
+	// compose file with two of them produces two images instead of one and a
+	// warning.
+	if s.Build != nil {
+		context, dockerfile, target := buildFields(s.Build)
+		w.Build = &spec.WorkloadBuild{Context: context, Dockerfile: dockerfile, Target: target}
 	}
 
 	// Pando names containers itself, because two apps importing compose files

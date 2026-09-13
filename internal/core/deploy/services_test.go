@@ -49,7 +49,7 @@ func provisionedPostgres() provisioned {
 // a connection string in an environment variable, which is the whole promise.
 func TestR131_AProvisionedSlotReachesTheWorkloadAsAValue(t *testing.T) {
 	s := specWithProvisionedSlot()
-	plan, err := bundlePlanFor(s, "app:latest", nil, provisionedPostgres(), true)
+	plan, err := bundlePlanFor(s, "app:latest", nil, nil, provisionedPostgres(), true)
 	require.NoError(t, err)
 
 	require.Equal(t, "postgres://app:pw@svc-01hq9:5432/app", plan.Workloads[0].Env["DATABASE_URL"].Reveal())
@@ -60,7 +60,7 @@ func TestR131_AProvisionedSlotReachesTheWorkloadAsAValue(t *testing.T) {
 // the failure mode R-132 exists to prevent, and it should not come back in by
 // the side door.
 func TestAnUnprovisionedSlotStopsTheDeploy(t *testing.T) {
-	_, err := bundlePlanFor(specWithProvisionedSlot(), "app:latest", nil, provisioned{}, true)
+	_, err := bundlePlanFor(specWithProvisionedSlot(), "app:latest", nil, nil, provisioned{}, true)
 	require.Error(t, err)
 }
 
@@ -70,7 +70,7 @@ func TestAnUnprovisionedSlotStopsTheDeploy(t *testing.T) {
 // backed up, offered at delete and reclaimed afterwards by code that knows
 // nothing about services.
 func TestR135_ProvisionedStorageIsAnOrdinaryAppVolume(t *testing.T) {
-	plan, err := bundlePlanFor(specWithProvisionedSlot(), "app:latest", nil, provisionedPostgres(), true)
+	plan, err := bundlePlanFor(specWithProvisionedSlot(), "app:latest", nil, nil, provisionedPostgres(), true)
 	require.NoError(t, err)
 
 	require.Len(t, plan.Volumes, 1)
@@ -84,7 +84,7 @@ func TestR135_ProvisionedStorageIsAnOrdinaryAppVolume(t *testing.T) {
 // app's limits.
 func TestR222_AProvisionedServiceIsCappedLikeAnyOtherWorkload(t *testing.T) {
 	s := specWithProvisionedSlot()
-	plan, err := bundlePlanFor(s, "app:latest", nil, provisionedPostgres(), true)
+	plan, err := bundlePlanFor(s, "app:latest", nil, nil, provisionedPostgres(), true)
 	require.NoError(t, err)
 
 	var service api.WorkloadPlan
@@ -105,7 +105,7 @@ func TestR222_AProvisionedServiceIsCappedLikeAnyOtherWorkload(t *testing.T) {
 // check. What covers the rest of the race is the restart policy.
 func TestTheAppStartsAfterTheServiceItDependsOn(t *testing.T) {
 	s := specWithProvisionedSlot()
-	plan, err := bundlePlanFor(s, "app:latest", nil, provisionedPostgres(), true)
+	plan, err := bundlePlanFor(s, "app:latest", nil, nil, provisionedPostgres(), true)
 	require.NoError(t, err)
 
 	require.Equal(t, []string{"svc-01hq9"}, plan.Workloads[0].DependsOn)
@@ -117,7 +117,7 @@ func TestAWorkloadThatNeedsNoServiceWaitsForNothing(t *testing.T) {
 	s := specWithProvisionedSlot()
 	s.Workloads = append(s.Workloads, spec.Workload{Name: "worker"})
 
-	plan, err := bundlePlanFor(s, "app:latest", nil, provisionedPostgres(), true)
+	plan, err := bundlePlanFor(s, "app:latest", nil, nil, provisionedPostgres(), true)
 	require.NoError(t, err)
 	require.Empty(t, plan.Workloads[1].DependsOn)
 }
@@ -134,7 +134,7 @@ func TestR148_AProvisionedServiceIsPartOfWhatShouldBeRunning(t *testing.T) {
 	s := specWithProvisionedSlot()
 	svcs := provisionedPostgres()
 
-	plan, err := bundlePlanFor(s, "app:latest", nil, svcs, true)
+	plan, err := bundlePlanFor(s, "app:latest", nil, nil, svcs, true)
 	require.NoError(t, err)
 
 	names := map[string]bool{}
@@ -150,10 +150,65 @@ func TestR148_AProvisionedServiceIsPartOfWhatShouldBeRunning(t *testing.T) {
 // seconds for every app; reading a connection string that often would make the
 // cheap path the expensive one.
 func TestTheComparedShapeCarriesNoEnvironment(t *testing.T) {
-	plan, err := bundlePlanFor(specWithProvisionedSlot(), "app:latest", nil, provisionedPostgres(), false)
+	plan, err := bundlePlanFor(specWithProvisionedSlot(), "app:latest", nil, nil, provisionedPostgres(), false)
 	require.NoError(t, err)
 
 	for _, w := range plan.Workloads {
 		require.Empty(t, w.Env, "%s carries environment into a shape comparison", w.Name)
 	}
+}
+
+// TestR096_AComposeAppGetsOneImagePerServiceThatBuilds asserts what importing a
+// compose file has to mean.
+//
+// A compose file with a frontend and a worker is two images. The spec used to
+// have one Build block for the whole app, so the importer discarded the build
+// instructions entirely and every compose app that needed building was refused
+// at plan time. Each service now carries its own, and the plan gives each
+// workload the image built for it.
+func TestR096_AComposeAppGetsOneImagePerServiceThatBuilds(t *testing.T) {
+	s := &spec.AppSpec{
+		SchemaVersion: spec.SchemaVersion,
+		AppID:         "app_01HQ8",
+		Build:         spec.Build{Strategy: spec.BuildCompose, ComposeFile: "compose.yaml"},
+		Workloads: []spec.Workload{
+			{Name: "web", Primary: true, Exposed: true, Build: &spec.WorkloadBuild{Context: "./web"}},
+			{Name: "worker", Build: &spec.WorkloadBuild{Context: "./worker"}},
+			{Name: "cache", Image: "redis:7-alpine"},
+		},
+	}
+
+	built := map[string]string{"web": "sha256:web", "worker": "sha256:worker"}
+
+	plan, err := bundlePlanFor(s, "", built, nil, provisioned{}, true)
+	require.NoError(t, err)
+
+	images := map[string]string{}
+	for _, w := range plan.Workloads {
+		images[w.Name] = w.Image
+	}
+
+	require.Equal(t, "sha256:web", images["web"])
+	require.Equal(t, "sha256:worker", images["worker"],
+		"the second buildable service gets its own image, not the first one's")
+
+	// A service that named an image keeps it. Building something to replace it
+	// would ignore what the compose file said.
+	require.Equal(t, "redis:7-alpine", images["cache"])
+}
+
+// A compose app has no app-wide image, so nothing falls back to one.
+func TestAComposeWorkloadWithNoBuildAndNoImageIsRefused(t *testing.T) {
+	s := &spec.AppSpec{
+		SchemaVersion: spec.SchemaVersion,
+		AppID:         "app_01HQ8",
+		Build:         spec.Build{Strategy: spec.BuildCompose},
+		Workloads: []spec.Workload{
+			{Name: "web", Primary: true, Exposed: true, Build: &spec.WorkloadBuild{Context: "."}},
+			{Name: "orphan"},
+		},
+	}
+
+	err := spec.Validate(s)
+	require.Error(t, err, "a workload with nothing to run is caught before it deploys")
 }

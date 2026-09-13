@@ -179,11 +179,13 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 
 	// Step 9: build. A failure here leaves the running app alone (R-146).
 	image := appSpec.Source.Image
+	var perWorkload map[string]string
 	if needsBuild(appSpec) {
 		if err := r.deploys.SetStatus(ctx, dep.ID, state.DeployBuilding); err != nil {
 			return fail("build", err)
 		}
-		built, err := r.build(ctx, appSpec, checkout, sink)
+		built, images, err := r.buildAll(ctx, appSpec, checkout, sink)
+		perWorkload = images
 		if err != nil {
 			// The reason goes into the log the user is watching, not only into
 			// the server's own log. A build that fails without saying why is
@@ -223,7 +225,7 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 		return fail("apply", err)
 	}
 
-	bundle, err := r.bundlePlan(appSpec, image, secrets, svcs)
+	bundle, err := r.bundlePlan(appSpec, image, perWorkload, secrets, svcs)
 	if err != nil {
 		return fail("apply", err)
 	}
@@ -338,7 +340,45 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 // The image streams from one adapter to the other through a pipe: it is never
 // held in memory or staged on disk, and neither adapter learns anything about
 // the other.
-func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Checkout, sink io.Writer) (string, error) {
+// buildAll produces every image this app needs.
+//
+// One for most apps. A compose app can need several: each service either names
+// an image that already exists or says how to build one, so a file with a
+// frontend and a worker is two builds and two images. That is what importing a
+// compose file means, and the reason the importer used to throw the build
+// instructions away is that there was nowhere to put more than one.
+//
+// Returns the app-wide image, if there is one, and the per-workload images
+// keyed by workload name.
+func (r *Runner) buildAll(ctx context.Context, s *spec.AppSpec, checkout *source.Checkout, sink io.Writer) (string, map[string]string, error) {
+	if s.Build.Strategy != spec.BuildCompose {
+		image, err := r.build(ctx, s, checkout, sink, nil, s.AppID)
+		return image, nil, err
+	}
+
+	images := map[string]string{}
+	for _, w := range s.Workloads {
+		if w.Build == nil {
+			// Names an image already. Nothing to build, and building something
+			// to replace it would ignore what the compose file said.
+			continue
+		}
+		fmt.Fprintf(sink, "=> Building %s\n", w.Name)
+
+		// The cache is namespaced per workload within the app. Per app is
+		// R-117's requirement — one app must not read another's layers — and
+		// two services in one app sharing a namespace would thrash each other's
+		// cache and collide on the built image's name.
+		image, err := r.build(ctx, s, checkout, sink, w.Build, s.AppID+"/"+w.Name)
+		if err != nil {
+			return "", nil, err
+		}
+		images[w.Name] = image
+	}
+	return "", images, nil
+}
+
+func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Checkout, sink io.Writer, wb *spec.WorkloadBuild, cacheNamespace string) (string, error) {
 	builder, ok := r.registry.Builder(s.Build.AdapterRef)
 	if !ok {
 		return "", errs.Newf(errs.PlanAdapterNotConfigured,
@@ -381,12 +421,20 @@ func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Ch
 		_, _ = io.Copy(io.Discard, pr)
 	}()
 
-	fmt.Fprintf(sink, "=> Building\n")
+	// One service of a compose app is an ordinary Dockerfile build: its own
+	// context and its own file, from the same checkout.
+	strategy, dockerfile, context := s.Build.Strategy, s.Build.Dockerfile, s.Build.Context
+	if wb != nil {
+		strategy, dockerfile, context = spec.BuildDockerfile, wb.Dockerfile, wb.Context
+	} else {
+		fmt.Fprintf(sink, "=> Building\n")
+	}
+
 	result, buildErr := builder.Build(ctx, api.BuildRequest{
 		Source:     checkout.View(s.Source.Subdir),
-		Strategy:   s.Build.Strategy,
-		Dockerfile: s.Build.Dockerfile,
-		Context:    s.Build.Context,
+		Strategy:   strategy,
+		Dockerfile: dockerfile,
+		Context:    context,
 		StaticDir:  s.Build.StaticDir,
 
 		// The reviewed plan, replayed. Without this the builder plans again at
@@ -401,7 +449,7 @@ func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Ch
 
 		// R-117: per-app cache namespace, so one app's build cannot read
 		// layers produced by another's.
-		CacheNamespace: s.AppID,
+		CacheNamespace: cacheNamespace,
 
 		LogSink:   sink,
 		ImageSink: pw,
@@ -429,14 +477,14 @@ func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Ch
 // mounts, volumes — and must never be a reason to decrypt a secret, so this
 // stops short of environment and R-193's fingerprint covers the rest.
 func BundlePlanShape(s *spec.AppSpec, image string) (api.BundlePlan, error) {
-	return bundlePlanFor(s, image, nil, provisioned{}, false)
+	return bundlePlanFor(s, image, nil, nil, provisioned{}, false)
 }
 
-func (r *Runner) bundlePlan(s *spec.AppSpec, image string, secrets map[string]secret.Value, svcs provisioned) (api.BundlePlan, error) {
-	return bundlePlanFor(s, image, secrets, svcs, true)
+func (r *Runner) bundlePlan(s *spec.AppSpec, image string, perWorkload map[string]string, secrets map[string]secret.Value, svcs provisioned) (api.BundlePlan, error) {
+	return bundlePlanFor(s, image, perWorkload, secrets, svcs, true)
 }
 
-func bundlePlanFor(s *spec.AppSpec, image string, secrets map[string]secret.Value, svcs provisioned, withEnv bool) (api.BundlePlan, error) {
+func bundlePlanFor(s *spec.AppSpec, image string, perWorkload map[string]string, secrets map[string]secret.Value, svcs provisioned, withEnv bool) (api.BundlePlan, error) {
 	plan := api.BundlePlan{
 		BundleID: s.AppID,
 		Network: api.NetworkPlan{
@@ -469,8 +517,12 @@ func bundlePlanFor(s *spec.AppSpec, image string, secrets map[string]secret.Valu
 			Name: w.Name,
 			// R-222: every workload is capped, so a chatty app cannot fill a
 			// disk shared with twenty others.
-			LogBytes:   s.Retention.LogBytes,
-			Image:      firstNonEmpty(w.Image, image),
+			LogBytes: s.Retention.LogBytes,
+			// This workload's own build first, then the image the compose file
+			// named, then the app's single built image. A compose app has no
+			// app-wide image, so the order only ever resolves one of the first
+			// two for it.
+			Image:      firstNonEmpty(perWorkload[w.Name], w.Image, image),
 			Command:    w.Command,
 			Entrypoint: w.Entrypoint,
 			WorkingDir: w.WorkingDir,

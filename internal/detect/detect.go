@@ -58,6 +58,16 @@ type Candidate struct {
 	// at plan time with a message about the builder.
 	Draft Draft `json:"draft,omitempty"`
 
+	// Spec is this candidate's draft, assembled and completed with the
+	// install's defaults — the thing accepting it would actually pin.
+	//
+	// Every candidate carries one, not just the winner, because any of them can
+	// be adopted by answering the tie-break. Completing only the winner meant an
+	// adopted runner-up arrived with no builder, no routing and no port, and
+	// the deploy failed on "0 is not a usable port number" with nothing
+	// pointing at why.
+	Spec *spec.AppSpec `json:"spec,omitempty"`
+
 	// Blocked is set when a detector recognizes the repository and cannot
 	// proceed with it — a compose file using a construct that cannot cross the
 	// boundary (R-099) is the case this exists for.
@@ -72,13 +82,18 @@ type Candidate struct {
 }
 
 // Draft is the part of a spec a detector can fill in.
+// Tagged because this crosses the API now. It used to be `json:"-"` on the
+// candidate and never left the process, so Go's field names were nobody's
+// problem; serializing it without tags put `Build` and `Workloads` into a
+// payload where every other object is snake_case, and into the console's
+// generated types alongside them.
 type Draft struct {
-	Workloads []spec.Workload
-	Volumes   []spec.Volume
-	Slots     []spec.Slot
-	Build     spec.Build
-	Health    spec.Health
-	Warnings  []spec.Warning
+	Workloads []spec.Workload `json:"workloads,omitempty"`
+	Volumes   []spec.Volume   `json:"volumes,omitempty"`
+	Slots     []spec.Slot     `json:"slots,omitempty"`
+	Build     spec.Build      `json:"build"`
+	Health    spec.Health     `json:"health,omitempty"`
+	Warnings  []spec.Warning  `json:"warnings,omitempty"`
 }
 
 // Question is something detection could not work out.

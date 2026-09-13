@@ -67,6 +67,27 @@ func Validate(s *AppSpec) error {
 // worth not depending on: a spec is editable, exportable and importable, and an
 // imported one is untrusted input like any other (design 01 §5).
 func validateBuild(s *AppSpec, add func(*errs.Error)) {
+	// A compose app builds per workload, so at least one of them has to say
+	// how. Without this, a compose spec with no buildable service and no images
+	// deploys workloads that have nothing to run, and the first sign is a
+	// container that exits immediately.
+	if s.Build.Strategy == BuildCompose {
+		var buildable, imaged int
+		for _, w := range s.Workloads {
+			if w.Build != nil {
+				buildable++
+			}
+			if w.Image != "" {
+				imaged++
+			}
+		}
+		if buildable+imaged < len(s.Workloads) {
+			add(errs.New(errs.ValidInvalid,
+				"Every part of a compose app needs either an image or instructions for building one.").
+				WithRemedy("Give each service in the compose file an `image:` or a `build:`."))
+		}
+	}
+
 	for name := range s.Build.GeneratedFiles {
 		clean := path.Clean("/" + filepath.ToSlash(name))
 		if strings.TrimPrefix(clean, "/") != filepath.ToSlash(name) || name == "" {

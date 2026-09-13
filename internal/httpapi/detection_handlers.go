@@ -257,6 +257,17 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 	draft := proposal.WithAnswers(d.Answers)
 	draft.AppID = app.ID
 
+	// The install's defaults, applied to whatever draft this turned out to be.
+	//
+	// Detection applies them to the winning draft only. Answering the tie-break
+	// adopts a *different* candidate's draft, which never went through that —
+	// so accepting one produced a spec with no builder, no isolation floor and
+	// no timeout, and the next deploy failed on a builder named "". Found by
+	// deploying it, not by a test.
+	if s.Defaults != nil {
+		s.Defaults.Defaults(r.Context()).Apply(&draft, app.Slug)
+	}
+
 	// What a person decided outlives a re-detection (R-022).
 	//
 	// A proposal describes the repository, not the app: every slot arrives

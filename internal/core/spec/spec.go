@@ -196,6 +196,28 @@ type Workload struct {
 	Primary bool `json:"primary"`
 
 	Resources *ResourceLimits `json:"resources,omitempty"`
+
+	// Build is how this workload's image is produced, when it is built rather
+	// than pulled. Nil means Image names something that already exists.
+	//
+	// Per workload because that is how a compose file describes an app: each
+	// service either names an image or says how to build one, and a file with
+	// two buildable services needs two images. The app-level Build block cannot
+	// say that — it is one build — which is why importing a compose file used
+	// to discard the build instructions entirely.
+	Build *WorkloadBuild `json:"build,omitempty"`
+}
+
+// WorkloadBuild is how one workload's image is built.
+//
+// Deliberately smaller than the app-level Build: isolation, timeout and egress
+// are properties of the build *environment*, which is the installation's
+// business and the same for every workload in an app. What differs per service
+// is only where its source is and which file describes it.
+type WorkloadBuild struct {
+	Context    string `json:"context,omitempty"`
+	Dockerfile string `json:"dockerfile,omitempty"`
+	Target     string `json:"target,omitempty"`
 }
 
 // EnvEntry is one environment variable. Exactly one of Value, SlotRef, or

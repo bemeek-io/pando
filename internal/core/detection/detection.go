@@ -144,6 +144,19 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 	// deploy time (R-102: the user sees the reasoning, not a verdict).
 	r.applyDefaults(ctx, &proposal.DraftSpec, slug)
 
+	// And to every other reading of the repository, because answering the
+	// tie-break adopts one of them. A candidate completed only at accept time
+	// is one whose review showed blanks.
+	for i := range proposal.RunnersUp {
+		if len(proposal.RunnersUp[i].Draft.Workloads) == 0 {
+			continue
+		}
+		candidate := detect.Assemble(appID, src, proposal.RunnersUp[i].Draft)
+		candidate.Source.Commit = checkout.Commit
+		r.applyDefaults(ctx, &candidate, slug)
+		proposal.RunnersUp[i].Spec = &candidate
+	}
+
 	// R-120: Ref is what the user asked for, Commit is what runs. Recorded on
 	// the proposal so that accepting it pins a revision against a specific
 	// commit rather than against a branch that has since moved.

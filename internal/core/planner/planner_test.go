@@ -582,7 +582,10 @@ func TestR024_SourceThatMustBeBuiltNeedsABuilder(t *testing.T) {
 // adapter's source.
 func TestR105_AnUnsupportedBuildMethodNamesWhatIsAvailable(t *testing.T) {
 	s := plannableSpec()
-	s.Build.Strategy = spec.BuildCompose
+	// Static rather than compose: a compose spec needs every workload to carry
+	// an image or a build, so an invalid one is refused before it reaches the
+	// capability check. This asserts the capability message, not validation.
+	s.Build.Strategy = spec.BuildStatic
 
 	// A builder that does what the shipped one does, and no more. The fixture
 	// above declares compose as well, which no real builder implements — so
@@ -601,7 +604,7 @@ func TestR105_AnUnsupportedBuildMethodNamesWhatIsAvailable(t *testing.T) {
 	require.Equal(t, errs.PlanCapabilityUnsupported, errs.CodeOf(err))
 
 	e := errs.As(err)
-	require.Contains(t, e.Message, "compose", "it names the method that was asked for")
+	require.Contains(t, e.Message, "static", "it names the method that was asked for")
 	require.Contains(t, e.Message, "dockerfile", "and the one this installation can do")
 	require.Contains(t, e.Remedy, "dockerfile")
 

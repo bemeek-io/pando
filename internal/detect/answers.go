@@ -102,6 +102,14 @@ func (p Proposal) chosen(answers map[string]string) spec.AppSpec {
 		if len(c.Draft.Workloads) == 0 {
 			return p.DraftSpec
 		}
+
+		// The completed spec, which detection filled with the install's
+		// defaults, its routing and its port. Assembling the raw draft here
+		// instead produces a spec with none of that, and the failure lands at
+		// deploy time as a complaint about a port number.
+		if c.Spec != nil {
+			return *c.Spec
+		}
 		return Assemble(p.DraftSpec.AppID, p.DraftSpec.Source, c.Draft)
 	}
 
