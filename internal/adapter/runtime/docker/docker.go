@@ -499,6 +499,55 @@ func (a *Adapter) ReclaimNetworks(ctx context.Context) (int, error) {
 	return reclaimed, nil
 }
 
+// RejoinNetworks puts this Pando container back on the network of every app
+// that is still running (R-023, R-025).
+//
+// The set of networks Pando's container belongs to *is* the set of apps its
+// proxy can reach, and that membership belongs to a container, not to an
+// install. Replacing the Pando container — an upgrade, a `compose up --build`,
+// any recreate — therefore starts one that is on none of them, while every app
+// container carries on running perfectly. The apps are up; nothing can reach
+// them; the reconciler sees a converged world and does nothing, because from
+// its side the world *is* converged. Every app answers 502 until something
+// happens to redeploy it.
+//
+// ensureNetwork already re-attaches, but only on the way through a deploy,
+// which is the one thing that is not going to happen to an app that is already
+// running the spec it is pinned to. So the attachment has to be restored at the
+// moment it was lost: startup.
+//
+// Ordered after ReclaimNetworks deliberately. Reclaim removes the networks of
+// apps that no longer exist, and it recognises them by their being empty —
+// joining first would put an endpoint on every one of them and make each look
+// busy, turning a reclaim into a leak.
+func (a *Adapter) RejoinNetworks(ctx context.Context) (int, error) {
+	networks, err := a.cli.NetworkList(ctx, network.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("label", labelManaged+"=true")),
+	})
+	if err != nil {
+		return 0, errs.Wrap(errs.AdapterUnavailable, "Could not list the app networks.", err)
+	}
+
+	joined := 0
+	for _, n := range networks {
+		// NetworkList does not populate Containers, so an inspect is the only
+		// way to tell a network with workloads on it from an empty one left by
+		// a stopped app. An empty one is not worth an endpoint: the app's next
+		// deploy attaches us, and until then there is nothing to reach.
+		full, err := a.cli.NetworkInspect(ctx, n.ID, network.InspectOptions{})
+		if err != nil || len(full.Containers) == 0 {
+			continue
+		}
+		if err := a.attachProxy(ctx, n.ID); err != nil {
+			// One unreachable app is not a reason to leave the rest
+			// unreachable, and the app's own next deploy will try again.
+			continue
+		}
+		joined++
+	}
+	return joined, nil
+}
+
 func (a *Adapter) CreateVolume(ctx context.Context, req api.VolumeRequest) (api.VolumeHandle, error) {
 	name := volumeName(req.BundleID, req.VolumeID)
 	_, err := a.cli.VolumeCreate(ctx, volume.CreateOptions{

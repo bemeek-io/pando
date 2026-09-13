@@ -504,6 +504,23 @@ func serve(ctx context.Context, configPath string) error {
 				logger.Info("reclaimed app networks left by deleted apps", zap.Int("count", n))
 			}
 		}
+
+		// Then rejoin what is left, which is the other half of the same
+		// problem: this process is running in a *new* container, and the
+		// networks of every already-running app were joined by the old one.
+		// Nothing redeploys those apps, so without this they stay up and
+		// unreachable — a Pando upgrade would 502 every app on the install
+		// until each was deployed again by hand. After reclaim, never before:
+		// reclaim recognises a dead app's network by its being empty.
+		if rejoiner, ok := rt.(interface {
+			RejoinNetworks(context.Context) (int, error)
+		}); ok {
+			if n, err := rejoiner.RejoinNetworks(ctx); err != nil {
+				logger.Warn("could not rejoin app networks", zap.Error(err))
+			} else if n > 0 {
+				logger.Info("rejoined the networks of running apps", zap.Int("count", n))
+			}
+		}
 	}
 
 	// The GC also tears down the bundles of deleted apps, which nothing used to

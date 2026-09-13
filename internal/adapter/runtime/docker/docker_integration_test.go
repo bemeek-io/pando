@@ -4,6 +4,7 @@ package docker_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os/exec"
 	"strings"
@@ -276,4 +277,86 @@ func execCommand(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// TestR023_ProxyRejoinsRunningAppsNetworksAfterItIsReplaced asserts R-023.
+//
+// Every app sits on its own private network and publishes nothing (R-025,
+// R-026), so the proxy can reach an app only by being on that network — which
+// makes network membership the mechanism behind "the proxy is never routed
+// around" rather than a detail of it. Membership belongs to a container, and
+// Pando's container is replaced on every upgrade, so the new one starts on
+// none of the networks the old one joined while every app carries on running.
+// Nothing redeploys a running app, so nothing re-attaches: the install comes
+// back up with every app healthy and every app 502.
+func TestR023_ProxyRejoinsRunningAppsNetworksAfterItIsReplaced(t *testing.T) {
+	ctx := context.Background()
+
+	// A stand-in for Pando's own container: something long-lived that can be
+	// joined to an app network and taken off it again.
+	proxy := "test-proxy-" + time.Now().Format("150405")
+	run := exec.Command("docker", "run", "-d", "--name", proxy, "alpine:3.20", "sleep", "3600")
+	require.NoError(t, run.Run())
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", proxy).Run() })
+
+	a := dockeradapter.New()
+	require.NoError(t, a.Configure(ctx, json.RawMessage(`{"proxy_container":"`+proxy+`"}`)))
+	if err := a.HealthCheck(ctx); err != nil {
+		t.Skipf("docker unavailable: %v", err)
+	}
+
+	id := "test-rejoin-" + time.Now().Format("150405")
+	cleanup(t, a, id)
+	_, err := a.Apply(ctx, bundle(id, nil))
+	require.NoError(t, err)
+
+	networkName := "pando-" + id
+	require.Contains(t, dockerInspect(t, proxy, "{{json .NetworkSettings.Networks}}"), networkName,
+		"a deploy puts the proxy on the app's network")
+
+	// Replace the proxy container. Disconnecting is what a recreate amounts to
+	// from the network's point of view, and it is the part that matters: the
+	// app container is untouched and still running.
+	require.NoError(t, exec.Command("docker", "network", "disconnect", networkName, proxy).Run())
+	require.NotContains(t, dockerInspect(t, proxy, "{{json .NetworkSettings.Networks}}"), networkName)
+
+	joined, err := a.RejoinNetworks(ctx)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, joined, 1)
+	require.Contains(t, dockerInspect(t, proxy, "{{json .NetworkSettings.Networks}}"), networkName,
+		"startup must put it back, because no deploy is coming")
+}
+
+// TestR023_RejoiningLeavesTheNetworksOfStoppedAppsAlone asserts the ordering
+// that keeps R-023's fix from undoing network reclamation: an empty network
+// belongs to an app that is not running, an endpoint on it would make it look
+// busy to the reclaimer, and there is nothing on it to reach anyway.
+func TestR023_RejoiningLeavesTheNetworksOfStoppedAppsAlone(t *testing.T) {
+	ctx := context.Background()
+
+	proxy := "test-proxy-empty-" + time.Now().Format("150405")
+	require.NoError(t, exec.Command("docker", "run", "-d", "--name", proxy, "alpine:3.20", "sleep", "3600").Run())
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", proxy).Run() })
+
+	a := dockeradapter.New()
+	require.NoError(t, a.Configure(ctx, json.RawMessage(`{"proxy_container":"`+proxy+`"}`)))
+	if err := a.HealthCheck(ctx); err != nil {
+		t.Skipf("docker unavailable: %v", err)
+	}
+
+	id := "test-rejoin-empty-" + time.Now().Format("150405")
+	cleanup(t, a, id)
+	_, err := a.Apply(ctx, bundle(id, nil))
+	require.NoError(t, err)
+
+	networkName := "pando-" + id
+	// Take the app's containers away but keep its network, which is what a
+	// stopped app looks like.
+	require.NoError(t, a.Destroy(ctx, api.BundleRef{BundleID: id}, api.DestroyOptions{KeepVolumes: true}))
+	_ = exec.Command("docker", "network", "disconnect", networkName, proxy).Run()
+
+	_, err = a.RejoinNetworks(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, dockerInspect(t, proxy, "{{json .NetworkSettings.Networks}}"), networkName,
+		"an empty network gets no endpoint, so the reclaimer can still see it is empty")
 }
