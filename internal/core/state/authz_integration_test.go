@@ -223,10 +223,47 @@ func TestR080_InstallGrantsAreNeverReturnedByAnAppLookup(t *testing.T) {
 
 	// And it is revocable like any other grant. Administration is not a column
 	// on the user.
+	//
+	// A second administrator first, because revoking the last account that can
+	// manage accounts is refused — an installation nobody can administer is
+	// unrecoverable through the API, and that guard is doing its job here
+	// rather than being worked around. What this asserts is that the grant is
+	// an ordinary row, which needs somebody else holding one.
+	bob := seedUser(t, db, "bob")
+	_, err = grants.GrantInstall(ctx, "user", bob.ID, authz.RoleAdministrator, "system")
+	require.NoError(t, err)
+
 	require.NoError(t, grants.RevokeInstall(ctx, "user", alice.ID))
 	verbs, err = store.InstallVerbsFor(ctx, p)
 	require.NoError(t, err)
 	require.Empty(t, verbs)
+}
+
+// TestR265_TheLastAdministratorCannotBeRevoked asserts R-265.
+//
+// An installation with nobody who can manage accounts cannot be repaired
+// through the API — the only way back is `pando admin` against the database,
+// which requires shell access to the host. The refusal is at the store, below
+// every surface, so the console, the CLI and the API all inherit it.
+func TestR265_TheLastAdministratorCannotBeRevoked(t *testing.T) {
+	ctx := context.Background()
+	db := connected(t)
+	alice := seedUser(t, db, "alice")
+
+	grants := state.NewGrants(db)
+	_, err := grants.GrantInstall(ctx, "user", alice.ID, authz.RoleAdministrator, "system")
+	require.NoError(t, err)
+
+	err = grants.RevokeInstall(ctx, "user", alice.ID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "only account that can manage accounts")
+
+	// Still administering, rather than half-revoked.
+	verbs, err := state.NewAuthzStore(db).InstallVerbsFor(ctx, authz.Principal{
+		Kind: authz.KindUser, ID: alice.ID, UserID: alice.ID, Status: "active",
+	})
+	require.NoError(t, err)
+	require.Contains(t, verbs, string(authz.InstallUsersManage))
 }
 
 // TestR073_TwoPlanesAreTwoIndependentlyRevocableRows asserts R-073.

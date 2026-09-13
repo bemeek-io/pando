@@ -18,26 +18,33 @@ and serves it behind a proxy that handles sign-in and access control.**
 
 ---
 
-## What you get
+## What is Pando?
 
-Pando runs on one machine you control — a VPS, a home server, a laptop — and hosts web applications
-on it.
+Pando is a deployment platform you run on one machine you control — a VPS, a home server, a laptop.
+It takes the place of a hosting provider for web applications: you give it a git repository, and it
+handles building the app, running it, giving it an address, and controlling who can reach it.
 
-- **Deploy from a repository URL.** Pando clones it, works out how the app should be built and run,
+It is aimed at people who deploy a handful of applications rather than hundreds: side projects,
+internal tools, small products. The work of setting up builds, networking and access happens once
+when you install Pando, rather than once per application.
+
+What it does:
+
+- **Deploys from a repository URL.** Pando clones it, works out how the app should be built and run,
   and shows you what it worked out before building anything.
-- **Five ways to build**, picked automatically: a Dockerfile, a compose file, an image you already
+- **Builds five ways**, picked automatically: a Dockerfile, a compose file, an image you already
   publish, a static site, or a buildpack for apps with none of those. Compose files are imported as
   written, including multiple services, healthchecks, volumes and startup order.
-- **Sign-in in front of every app.** Apps are private by default. Share one with specific people or
-  groups, or make it public. Your app receives a signed token describing who is visiting, so it does
-  not need its own login.
-- **Databases on request.** Postgres, MySQL and Redis can be created per app, with credentials
-  generated, injected as environment variables, and kept stable across redeploys.
-- **Secrets, environment variables, volumes and resource limits**, editable per app.
-- **Logs, a terminal into a running container, and one-click rollback** to any previous
+- **Puts sign-in in front of every app.** Apps are private by default. Share one with specific people
+  or groups, or make it public. Your app receives a signed token describing who is visiting, so it
+  does not need its own login.
+- **Creates databases on request.** Postgres, MySQL and Redis can be provisioned per app, with
+  credentials generated, injected as environment variables, and kept stable across redeploys.
+- **Manages secrets, environment variables, volumes and resource limits** per app.
+- **Gives you logs, a terminal into a running container, and one-click rollback** to any previous
   configuration.
-- **Backups** of app storage, including an automatic one before an app is deleted.
-- **An audit log** of everything anyone did, which cannot be edited or deleted.
+- **Backs up app storage**, including automatically before an app is deleted.
+- **Records an audit log** of everything anyone did, which cannot be edited or deleted.
 
 ## Install
 

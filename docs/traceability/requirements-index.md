@@ -9,10 +9,10 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 
 | | Count | Of total |
 |---|---:|---:|
-| Requirements | 207 | — |
-| Specified in a design doc | 147 | 71% |
-| Assigned to a phase | 112 | 54% |
-| Covered by a named test | 73 | 35% |
+| Requirements | 210 | — |
+| Specified in a design doc | 156 | 74% |
+| Assigned to a phase | 125 | 59% |
+| Covered by a named test | 88 | 41% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -23,28 +23,28 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | ID | Tag | Requirement | Section | Design | Phase | Tests |
 |---|---|---|---|---|---|---|
 | **R-001** | D | Pando hosts your apps without you having to set up deployment pipelines, tunnels, or DNS more… | 1. What Pando Is | — | — | — |
-| **R-002** | D | The defining economic property: setup cost is paid once, at the host. | 1. What Pando Is | 00 | — | — |
+| **R-002** | D | The defining economic property: setup cost is paid once, at the host. | 1. What Pando Is | 00 | 08 | — |
 | **R-003** | D | Pando serves two audiences with one product and no tiers: | 1. What Pando Is | — | — | — |
 | **R-004** | D | There are no SKUs, editions, or paywalled features. | 1. What Pando Is | — | — | — |
 | **R-005** | D | The enterprise deployer may be non-technical. | 1. What Pando Is | 03, 08 | 06, 08 | — |
-| **R-010** | D | Pando is not a scheduler. | 2. Non-Goals | 01, 02 | — | — |
+| **R-010** | D | Pando is not a scheduler. | 2. Non-Goals | 01, 02, 03 | 08 | — |
 | **R-011** | D | Pando does not test. | 2. Non-Goals | — | — | — |
 | **R-012** | D | Pando is not a marketplace. | 2. Non-Goals | — | — | — |
 | **R-013** | D | Pando is not a disaster-recovery product. | 2. Non-Goals | — | — | — |
 | **R-014** | D | No multi-AZ or multi-region. | 2. Non-Goals | — | — | — |
 | **R-015** | D | One Pando install serves one organization. | 2. Non-Goals | 02 | — | — |
 | **R-016** | D | Pando is not a source host, not an APM product, and not a database-as-a-service. | 2. Non-Goals | — | — | — |
-| **R-020** | D | Nothing lives in the repo. | 3. Core Invariants | 01, 02, 03, 07 | 02, 06 | `TestR020_SpecCarriesNoSecretValues` |
+| **R-020** | D | Nothing lives in the repo. | 3. Core Invariants | 01, 02, 03, 07 | 02, 06, 10 | `TestR020_AComposeBuildIsResolvedIntoTheSpec`, `TestR020_AnEditedPlanIsTheOneThatRuns`, `TestR020_SpecCarriesNoSecretValues` |
 | **R-021** | D | Pando fills declared slots; it never invents topology. | 3. Core Invariants | 01 | 06 | `TestR021_SlotsComeFromWhatTheRepoDeclares` |
-| **R-022** | D | Detection never re-runs implicitly. | 3. Core Invariants | 01, 04 | — | — |
-| **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 05, 06 | 05 | `TestR023_ARouteWithNoUpstreamIsRefused`, `TestR023_RoutingPointsAtPandoNotTheWorkload`, `TestR023_TraefikPointsAtPandoNeverAtTheWorkload` |
+| **R-022** | D | Detection never re-runs implicitly. | 3. Core Invariants | 01, 04 | — | `TestR022_ReDetectingKeepsHowADependencyIsFilled`, `TestR022_ReDetectingKeepsStorageSomebodyAdded`, `TestR022_ReDetectingKeepsWhatAPersonDecided` |
+| **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 05, 06 | 05 | `TestR023_APortListenerIsTheSameEnforcementPoint`, `TestR023_ARouteWithNoUpstreamIsRefused`, `TestR023_ProxyRejoinsRunningAppsNetworksAfterItIsReplaced`, `TestR023_RejoiningLeavesTheNetworksOfStoppedAppsAlone`, `TestR023_RoutingPointsAtPandoNotTheWorkload`, `TestR023_TraefikPointsAtPandoNeverAtTheWorkload` |
 | **R-024** | D | Builds never execute on the host. | 3. Core Invariants | 00, 04, 05, 07 | 03 | `TestR024_NoAdapterMeetsPolicyBlocksDeploy`, `TestR024_SourceThatMustBeBuiltNeedsABuilder` |
 | **R-025** | D | Apps are isolated from each other. | 3. Core Invariants | 06 | — | `TestR025_EachBundleGetsItsOwnNetwork` |
-| **R-026** | D | Non-exposed workloads are unreachable from outside their bundle. | 3. Core Invariants | 01, 03, 05, 06 | 02, 05 | `TestR026_NoPortsArePublishedToTheHost` |
+| **R-026** | D | Non-exposed workloads are unreachable from outside their bundle. | 3. Core Invariants | 01, 03, 05, 06 | 02, 05, 10 | `TestR026_NoPortsArePublishedToTheHost` |
 | **R-027** | D | Authorization decisions, the audit log, the state store, and the identity assertion path live… | 3. Core Invariants | 00, 02, 03, 06 | 00, 08 | `TestR027_AnOwningRoleCanUndoTheRevoke`, `TestR027_ApplicationRoleDoesNotOwnTheSchema`, `TestR027_AuditLogIsNotRewritable`, `TestR027_AuditRemainsImmutableAcrossRestarts` |
 | **R-028** | D | Pando observes and reports; it does not remediate the app. | 3. Core Invariants | 03, 05, 08 | 08 | — |
 | **R-029** | D | Control plane and data plane are separate grants (§6), with one exception: owning an app… | 3. Core Invariants | 06 | — | `TestR029_AnOperatorIsDeniedUseThroughTheProxy`, `TestR029_AnOperatorWithNoDataGrantIsDenied`, `TestR029_ControlPlaneRoleDoesNotGrantDataPlaneUse`, `TestR029_OwnerRoleAloneDoesNotGrantUse` |
-| **R-030** | D | The following are first-class objects in Pando's state: | 4. Object Model | — | — | `TestR030_AnAppsStorageIsRecordedWhenItDeploys` |
+| **R-030** | D | The following are first-class objects in Pando's state: | 4. Object Model | — | 08 | `TestR030_AnAppsStorageIsRecordedWhenItDeploys` |
 | **R-031** | P | An app has exactly one owner of record at any time, plus any number of additional grants. | 4. Object Model | 02 | — | — |
 | **R-040** | D | Identity is an adapter category like any other. | 5.1 Adapter model | — | — | — |
 | **R-041** | D V1 | Local users — username and password, stored by Pando. | 5.1 Adapter model | — | — | — |
@@ -52,9 +52,9 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-043** | D LATER | Additional identity adapters: GitHub OAuth, generic OIDC, SAML. | 5.1 Adapter model | — | — | — |
 | **R-044** | D | Identity adapters perform authentication only. | 5.1 Adapter model | 03 | 01 | `TestR044_AuthenticateReturnsASubjectWithNoPermissions` |
 | **R-045** | P | Multiple identity adapters may be configured simultaneously. | 5.1 Adapter model | — | — | — |
-| **R-046** | P | First run creates a single administrative local user. | 5.2 Bootstrap | 04 | 08 | `TestR046_FirstRunCreatesOneAdminAndIsIdempotent`, `TestR046_TheGeneratedPasswordCanActuallyBeChanged` |
+| **R-046** | P | First run creates a single administrative local user. | 5.2 Bootstrap | 04 | 08 | `TestR046_ASuppliedPasswordStillMustBeChanged`, `TestR046_AnOperatorCanSupplyTheFirstPassword`, `TestR046_FirstRunCreatesOneAdminAndIsIdempotent`, `TestR046_FirstRunGeneratesAPasswordAndShowsItOnce`, `TestR046_TheAdminPasswordComesFromTheEnvironment`, `TestR046_TheGeneratedPasswordCanActuallyBeChanged` |
 | **R-047** | D | Each identity adapter declares its own session policy and revocation mechanism, documented in… | 5.3 Sessions and revocation | 02, 03 | 01 | `TestR047_AdapterDeclaresItsOwnSessionPolicy` |
-| **R-048** | D LATER | SCIM support is the enterprise revocation and provisioning path. | 5.3 Sessions and revocation | 02, 03, 06 | 01 | `TestR048_SuspensionEndsEverySessionImmediately` |
+| **R-048** | D LATER | SCIM support is the enterprise revocation and provisioning path. | 5.3 Sessions and revocation | 02, 03, 04, 06 | 01 | `TestR048_SuspensionEndsEverySessionImmediately` |
 | **R-049** | D | Suspended is not deleted. | 5.3 Sessions and revocation | 02, 04, 06, 07 | 01 | `TestR049_SuspendedAdministratorHoldsNothing`, `TestR049_SuspendedIsNotDeletedButBothDeny` |
 | **R-050** | P | For adapters that cannot push revocation, Pando falls back to expiry at next token refresh. | 5.3 Sessions and revocation | — | — | — |
 | **R-051** | D | Pando always forwards a signed identity assertion to the upstream app on every proxied request. | 5.4 Identity assertion to apps | 06 | 05 | — |
@@ -76,53 +76,53 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-073** | D | At app creation the creator receives both grants, recorded as two separate records. | 6.1 Two planes | 02, 07 | 01, 02 | `TestR073_AppCreationWritesTwoGrants`, `TestR073_TwoPlanesAreTwoIndependentlyRevocableRows` |
 | **R-074** | D | Grants may be issued to: a user, a group, or anonymous. | 6.2 Subjects | 02 | — | — |
 | **R-075** | D | Anonymous is a real ACL subject, not a bypass. | 6.2 Subjects | 02, 04, 06, 07 | 05 | `TestR075_AnonymousGrantAllowsUnauthenticatedUse`, `TestR075_AnonymousGrantIsARowAndCannotBeDuplicated` |
-| **R-076** | D | Any app owner may grant to anonymous by default. | 6.2 Subjects | 00, 04, 08 | 08 | — |
-| **R-077** | P | The console must never present this as the bare word "public." It states the consequence:… | 6.2 Subjects | 04, 08 | 08 | — |
-| **R-078** | D | Groups may be Pando-native or pushed from an IdP (R-048). | 6.3 Groups | 03 | — | — |
+| **R-076** | D | Any app owner may grant to anonymous by default. | 6.2 Subjects | 00, 04, 08 | 08 | `TestR076_ForbiddingAnonymousGrantsNamesTheAppsAnyoneCanReach` |
+| **R-077** | P | The console must never present this as the bare word "public" alone. | 6.2 Subjects | 04, 08 | 08 | — |
+| **R-078** | D | Groups may be Pando-native or pushed from an IdP (R-048). | 6.3 Groups | 03 | 08 | — |
 | **R-079** | D | Group membership is evaluated live at request time, not expanded to a member list at grant time. | 6.3 Groups | 02, 06, 07 | 01, 05 | `TestR079_GroupMembershipIsResolvedFromThePrincipal`, `TestR079_GroupMembershipIsResolvedLive`, `TestR079_RemovingAGroupRevokesAccess` |
-| **R-080** | D | Control-plane permissions are individual verbs, in two scopes. | 6.4 Verbs and roles | 02, 06 | — | `TestR080_AnOrdinaryUserCannotSuspendTheAdministrator`, `TestR080_AnonymousHoldsNothingInstallWide`, `TestR080_BackupsRequireTheirOwnVerb`, `TestR080_DeniedInstallChecksAreAudited`, `TestR080_GrantScopeIsEnforcedByTheDatabase`, `TestR080_InstallEndpointsRequireInstallVerbs`, `TestR080_InstallGrantsAreNeverReturnedByAnAppLookup`, `TestR080_InstallVerbRequiresAnInstallGrant`, `TestR080_ScopesCannotBeCheckedAgainstEachOther`, `TestR080_UserEndpointsAreSelfOrVerb` |
+| **R-080** | D | Control-plane permissions are individual verbs, in two scopes. | 6.4 Verbs and roles | 02, 06 | 08 | `TestR080_AnOrdinaryUserCannotSuspendTheAdministrator`, `TestR080_AnonymousHoldsNothingInstallWide`, `TestR080_BackupsRequireTheirOwnVerb`, `TestR080_DeniedInstallChecksAreAudited`, `TestR080_GrantScopeIsEnforcedByTheDatabase`, `TestR080_InstallEndpointsRequireInstallVerbs`, `TestR080_InstallGrantsAreNeverReturnedByAnAppLookup`, `TestR080_InstallVerbRequiresAnInstallGrant`, `TestR080_ScopesCannotBeCheckedAgainstEachOther`, `TestR080_UserEndpointsAreSelfOrVerb` |
 | **R-081** | D | Four immutable built-in roles ship out of the box. | 6.4 Verbs and roles | 02, 06 | 01 | `TestR081_AdministratorHoldsNoAppVerb`, `TestR081_AdministratorIsImmutableToo`, `TestR081_AnAdministratorCanHandOver`, `TestR081_BuiltInRoleVerbSets`, `TestR081_BuiltInRolesAreImmutable`, `TestR081_SeededVerbSetsMatchTheRequirement`, `TestR081_TheLastAdministratorCannotBeRemoved` |
 | **R-082** | D | Custom roles may be composed from the verb list and assigned to users or groups. | 6.4 Verbs and roles | 02, 04, 06 | 01, 08 | `TestR082_NoVerbImplicationGraph` |
-| **R-083** | D | `app.secrets.write` is deliberately separable from `app.secrets.read` — rotating a credential… | 6.4 Verbs and roles | 04 | — | — |
+| **R-083** | D | `app.secrets.write` is deliberately separable from `app.secrets.read` — rotating a credential… | 6.4 Verbs and roles | 04 | 08 | — |
 | **R-084** | D | `app.exec` is its own verb, not bundled into app-admin. | 6.4 Verbs and roles | 03 | — | — |
 | **R-085** | D | Host policy may disable exec install-wide. | 6.4 Verbs and roles | 00, 03, 04, 06 | — | `TestR085_HostPolicyCanDisableExecInstallWide` |
-| **R-086** | D | Exec is the highest-privilege action in the system. | 6.4 Verbs and roles | 03, 04 | 08 | `TestR086_AnAbandonedSessionIsStillRecorded`, `TestR086_ExecOpensATerminalInTheRunningWorkload`, `TestR086_ExecRecordsTheCommandAndNotTheStream` |
-| **R-087** | D | Pando does not claim to defend against its own host operator. | 6.4 Verbs and roles | 06 | 01, 05 | — |
+| **R-086** | D | Exec is the highest-privilege action in the system. | 6.4 Verbs and roles | 03, 04 | 08 | `TestR086_AnAbandonedSessionIsStillRecorded`, `TestR086_ExecCarriesTheTerminalBothWays`, `TestR086_ExecOpensATerminalInTheRunningWorkload`, `TestR086_ExecRecordsTheCommandAndNotTheStream` |
+| **R-087** | D | Pando does not claim to defend against its own host operator. | 6.4 Verbs and roles | 04, 06 | 01, 05 | — |
 | **R-090** | D | The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting… | 7.1 Input | — | — | — |
 | **R-091** | D LATER | Private repos are in scope, supporting the credential mechanisms GitHub offers (PAT, GitHub… | 7.1 Input | 01 | — | — |
 | **R-092** | D | Source allowlist. | 7.1 Input | 00, 04, 05, 07 | 06 | `TestR092_BlockedSourceFailsBeforeAnythingElse` |
 | **R-093** | D | Detection is a detector auction. | 7.2 Detection | 03, 07 | 06 | `TestR093_RunnersUpAreReturned` |
 | **R-094** | D | Confidence ladder, highest first: | 7.2 Detection | 07 | 06 | — |
-| **R-095** | P | For tier 4, wrap an existing buildpack implementation (Paketo, nixpacks) rather than… | 7.2 Detection | — | — | — |
-| **R-096** | D | A compose file is a complete answer, not a hint. | 7.2 Detection | 01 | — | `TestR096_AComposeFileIsImportedNotInterpreted` |
+| **R-095** | P | For tier 4, wrap an existing buildpack implementation (Paketo, nixpacks) rather than | 7.2 Detection | 03 | — | `TestR095_ABuildpackPlanComesFromNixpacks` |
+| **R-096** | D | A compose file is a complete answer, not a hint. | 7.2 Detection | 01 | — | `TestR096_AComposeAppGetsOneImagePerServiceThatBuilds`, `TestR096_AComposeFileIsImportedNotInterpreted` |
 | **R-097** | D | A trial run in throwaway isolation is part of detection. | 7.2 Detection | 01, 03, 07 | 06 | `TestR097_ATrialRunObservesTheBoundPort`, `TestR097_AWatchedPortAnswersTheQuestionInsteadOfAPerson`, `TestR097_ObservedPortsAreMarkedObservedNotFramework` |
 | **R-098** | D | The user reviews the proposal, then it pins. | 7.2 Detection | — | — | — |
 | **R-099** | D | Compose constructs incompatible with the boundary are rejected or rewritten, with the reason… | 7.2 Detection | 00, 01 | 06 | `TestR099_APublishedHostPortIsRewrittenNotHonored`, `TestR099_ARejectedComposeFileDoesNotSilentlyBecomeABuildpackGuess`, `TestR099_ConstructsThatBreakTheBoundaryAreRejectedWithReasons` |
 | **R-100** | D | A user may promote a compose-declared service to a Pando-managed one — e.g. | 7.2 Detection | 01 | 02 | — |
-| **R-101** | D | There is always a bottom escape hatch: supply an image reference and a command, skipping… | 7.2 Detection | 01 | 02, 06 | — |
-| **R-102** | D | Ask, never guess. | 7.3 When detection cannot decide | 03, 04, 08 | 08 | `TestR102_ACloseCallBecomesAQuestion` |
+| **R-101** | D | There is always a bottom escape hatch: supply an image reference and a command, skipping… | 7.2 Detection | 01 | 02, 06, 08 | — |
+| **R-102** | D | Ask, never guess. | 7.3 When detection cannot decide | 03, 04, 08 | 08 | `TestR102_ACloseCallBecomesAQuestion`, `TestR102_AnsweringTheTieBreakAdoptsThatReading` |
 | **R-103** | D | The number of questions is the product metric. | 7.3 When detection cannot decide | 01, 08 | 06, 08 | — |
 | **R-104** | D | Questions are blockers; everything else is configuration. | 7.3 When detection cannot decide | 03, 08 | 08 | — |
-| **R-105** | D | Every question must be self-contained and pasteable. | 7.3 When detection cannot decide | 00, 03, 04, 07, 08 | 00, 03, 06, 08, 10 | `TestR105_EveryQuestionAnyDetectorProducesIsSelfContained`, `TestR105_ValidatorCatchesTheRealFailureModes`, `TestR105_ValidatorRejectsTheDesignsCounterExample` |
+| **R-105** | D | Every question must be self-contained and pasteable. | 7.3 When detection cannot decide | 00, 03, 04, 07, 08 | 00, 03, 06, 08, 10 | `TestR105_AnUnsupportedBuildMethodNamesWhatIsAvailable`, `TestR105_EveryQuestionAnyDetectorProducesIsSelfContained`, `TestR105_ValidatorCatchesTheRealFailureModes`, `TestR105_ValidatorRejectsTheDesignsCounterExample` |
 | **R-106** | D | AI assistance is optional supporting functionality, never required. | 7.3 When detection cannot decide | — | — | — |
 | **R-107** | D | The correct failure: a repo needs Postgres and never mentions it anywhere — no compose… | 7.3 When detection cannot decide | 01 | 06 | `TestR107_ACrashDoesNotInventASlotTheRepoNeverDeclared`, `TestR107_ACrashingTrialReturnsItsLog` |
-| **R-110** | D | Builds never run on the host (R-024). | 8. Build | — | — | — |
+| **R-110** | D | Builds never run on the host (R-024). | 8. Build | — | — | `TestR110_AStaticSiteNeedsNoDockerfileInTheRepository` |
 | **R-111** | D V1 | The default local builder is rootless BuildKit in its own container. | 8. Build | 00, 03 | 04 | — |
 | **R-112** | D | The build path never exposes a container runtime socket to build code. | 8. Build | 03, 05, 07 | 04 | `TestR112_BuildContainerCannotReachDocker`, `TestR112_BuildContainerHasNoRuntimeSocket` |
 | **R-113** | D | Build code has no access to Pando's state store, no access to any other app's secrets, and no… | 8. Build | — | — | — |
-| **R-114** | D | Build isolation class is declared and enforced independently of runtime isolation class. | 8. Build | 00, 01, 03, 05, 07 | 03 | `TestR114_BuildIsolationFloorIsIndependent` |
+| **R-114** | D | Build isolation class is declared and enforced independently of runtime isolation class. | 8. Build | 00, 01, 03, 05, 07 | 03 | `TestR114_BuildIsolationFloorIsIndependent`, `TestR114_RaisingTheIsolationFloorNamesTheAppsThatCannotMeetIt` |
 | **R-115** | P | Isolation classes, weakest to strongest: `container` (shared kernel), `sandboxed`… | 8. Build | — | — | — |
 | **R-116** | P | Where a runtime adapter can provision an isolated environment per app (e.g. | 8. Build | 03 | — | — |
 | **R-117** | P | Build filesystem is discarded after the build. | 8. Build | 03, 07 | 04 | — |
 | **R-118** | P | Build egress defaults to open, on the grounds that build output is reviewed before it runs. | 8. Build | 01, 03, 07 | 04 | — |
 | **R-119** | P | Build timeout: 30 minutes, per-app override. | 8. Build | 01 | 04 | — |
 | **R-120** | P | Deploy pins a commit SHA. | 8. Build | 01, 07 | 02, 04 | `TestR120_DeployPinsACommit` |
-| **R-130** | D | An environment variable in `.env.example` is a hole with a type. | 9. Slots and Services | — | — | — |
-| **R-131** | D | A slot is resolved exactly three ways, chosen by the user: | 9. Slots and Services | 03, 04, 07 | 02, 06 | — |
+| **R-130** | D | An environment variable in `.env.example` is a hole with a type. | 9. Slots and Services | 03 | — | — |
+| **R-131** | D | A slot is resolved exactly three ways, chosen by the user: | 9. Slots and Services | 03, 04, 07 | 02, 06 | `TestR131_AProvisionedSlotReachesTheWorkloadAsAValue`, `TestR131_AnUnprovisionableTypeIsRefused`, `TestR131_ProvisionFillsASlotWithSomethingRunnable`, `TestR131_ProvisioningStandsUpADatabaseTheAppCanReach`, `TestR131_ProvisioningWhatPandoDoesNotProvisionIsRefused`, `TestR131_ProvisioningWithNoProvisionerIsRefusedAtPlanTime`, `TestR131_RedeployingKeepsTheDatabaseTheAppAlreadyHas`, `TestR131_RedeployingReusesTheCredentialsTheDataWasCreatedWith` |
 | **R-132** | D | Resolution is never silent. | 9. Slots and Services | 00, 01, 04, 05, 07 | 02, 03, 06 | `TestR132_EveryUnfilledSlotIsNamed`, `TestR132_SlotUnfilledCarriesRemedyAndDetails`, `TestR132_UnfilledRequiredSlotBlocksDeploy` |
 | **R-133** | O-4 | Distinguishing required from optional slots is unresolved. | 9. Slots and Services | — | — | — |
-| **R-134** | P | Provisioned services live inside the bundle and are not addressable from outside it. | 9. Slots and Services | 02, 03, 07 | — | — |
-| **R-135** | P | A provisioned service's data follows the app's volume rules (§12), including the… | 9. Slots and Services | — | — | — |
+| **R-134** | P | Provisioned services live inside the bundle and are not addressable from outside it. | 9. Slots and Services | 02, 03, 07 | 09 | `TestR134_AProvisionedServiceIsNotAddressableFromOutside`, `TestR134_AProvisionedServiceIsNotReachableFromOutside` |
+| **R-135** | P | A provisioned service's data follows the app's volume rules (§12), including the… | 9. Slots and Services | 03 | 09 | `TestR135_ProvisionedDataIsRecordedAsTheAppsStorage`, `TestR135_ProvisionedStorageIsAnOrdinaryAppVolume`, `TestR135_TheDataIsInTheAppsOwnStorage` |
 | **R-140** | P | App states: `draft` → `proposed` → `running` \| `degraded` \| `stopped` \| `failed` \|… | 10.1 States | 05 | 04, 07 | — |
 | **R-141** | D | Manual deploy is the default. | 10.2 Deploy triggers | 01, 05 | 07 | — |
 | **R-142** | P | Trigger delivery is by polling by default, since inbound connectivity cannot be assumed. | 10.2 Deploy triggers | — | — | — |
@@ -131,59 +131,62 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-145** | D | Start-then-swap is available as an explicit opt-in. | 10.3 Deploy strategy | 03, 05, 07, 08 | 04, 08 | — |
 | **R-146** | D | Build failure: nothing is replaced. | 10.4 Failure handling | 05, 07 | 04, 07 | `TestR146_AFailedBuildLeavesTheRunningAppAlone` |
 | **R-147** | D | Automatic rollback is disabled by default, available as opt-in. | 10.4 Failure handling | 01, 05, 07, 08 | 08 | — |
-| **R-148** | D | Reconcile when possible; report when not. | 10.4 Failure handling | 03, 05 | — | `TestR148_AKilledContainerIsRestored`, `TestR148_EverythingReconcilableIsACreationOrAStart`, `TestR148_UnreconcilableDriftIsReportedAndNothingIsApplied` |
+| **R-148** | D | Reconcile when possible; report when not. | 10.4 Failure handling | 03, 05 | 09 | `TestR148_AKilledContainerIsRestored`, `TestR148_AKilledProvisionedServiceIsRestored`, `TestR148_AProvisionedServiceIsPartOfWhatShouldBeRunning`, `TestR148_EverythingReconcilableIsACreationOrAStart`, `TestR148_UnreconcilableDriftIsReportedAndNothingIsApplied` |
 | **R-149** | P | Restart backoff: immediate, then 5s, 15s, 60s, capped at 5 minutes. | 10.4 Failure handling | 00, 05 | 07 | — |
 | **R-150** | P | Ten failures within 30 minutes marks the app `failed`. | 10.4 Failure handling | 05 | 07 | `TestR150_ACrashLoopingAppReachesFailed`, `TestR150_RepeatedFailureReachesFailedAndStops` |
 | **R-151** | D | A `failed` app stays failed until a human intervenes. | 10.4 Failure handling | 05 | 07 | `TestR151_ACrashLoopingAppReachesFailedAndStaysThere`, `TestR151_AFailedAppIsNeverTouched` |
-| **R-152** | P | Revision history retains the last 10 pinned specs for rollback. | 10.4 Failure handling | 01, 02, 04 | 02, 07 | `TestR152_PinningMarksARevisionEverPinned`, `TestR152_PruningNeverRemovesARevisionThatWasEverPinned`, `TestR152_RevisionsAreNumberedMonotonically`, `TestR152_SpecRevisionsCannotBeEdited` |
+| **R-152** | P | Revision history retains the last 10 pinned specs for rollback. | 10.4 Failure handling | 01, 02, 04 | 02, 07, 10 | `TestR152_PinningMarksARevisionEverPinned`, `TestR152_PruningNeverRemovesARevisionThatWasEverPinned`, `TestR152_RevisionsAreNumberedMonotonically`, `TestR152_SpecRevisionsCannotBeEdited` |
 | **R-153** | D | One app, one place (R-010). | 10.5 Scale | — | — | — |
 | **R-160** | D | Routing is an adapter category. | 11. Networking and Routing | — | — | — |
-| **R-161** | D | Each routing adapter advertises which addressing modes it supports: subdomain, path prefix,… | 11. Networking and Routing | — | — | — |
+| **R-161** | D | Each routing adapter advertises which addressing modes it supports: subdomain, path prefix,… | 11. Networking and Routing | — | — | `TestR161_APortModeAppIsServedAtTheRootOfItsPort`, `TestR161_AnAppsAddressFollowsItsRoutingMode` |
 | **R-162** | D | Each routing adapter declares a default mode (e.g. | 11. Networking and Routing | 03 | 03 | `TestR162_CapabilitiesAreHonestAboutTLS` |
 | **R-163** | D | Deviating from the default requires `app.routing.override`. | 11. Networking and Routing | 01 | — | — |
 | **R-164** | D | Proxy mode is a supported topology: one hostname, one certificate, one thing to open on the… | 11. Networking and Routing | 03 | — | — |
 | **R-165** | D | In the non-proxy topology, apps have their own hostnames; users bookmark URLs and carry a… | 11. Networking and Routing | 03 | — | — |
-| **R-166** | D | Subdomain is preferred where a wildcard is available. | 11. Networking and Routing | — | — | — |
+| **R-166** | D | Subdomain is preferred where a wildcard is available. | 11. Networking and Routing | 03 | — | — |
 | **R-167** | D | Under path routing, Pando strips the prefix before forwarding and sends `X-Forwarded-Prefix`. | 11. Networking and Routing | 03, 06, 07 | 05 | `TestR167_PathModeStripsThePrefix`, `TestR167_PathPrefixIsStrippedAndDeclared`, `TestR167_ThePathPrefixIsNotStrippedAtTheEdge` |
-| **R-168** | D | Where Pando can detect a likely path-routing incompatibility, it shows a dismissible warning,… | 11. Networking and Routing | 01, 07, 08 | 06, 08 | `TestR168_NothingToCheckIsNotAWarning`, `TestR168_RelativeAssetsAreFine`, `TestR168_RootAbsoluteAssetsRaiseADismissibleWarning` |
-| **R-169** | O-5 | TLS issuance (built-in ACME, wildcard requirement, self-signed local) is a per-adapter concern… | 11. Networking and Routing | — | — | — |
+| **R-168** | D | Where Pando can detect a likely path-routing incompatibility, it shows a dismissible warning,… | 11. Networking and Routing | 01, 07, 08 | 06, 08 | `TestR168_NothingToCheckIsNotAWarning`, `TestR168_RelativeAssetsAreFine`, `TestR168_RootAbsoluteAssetsRaiseADismissibleWarning`, `TestR168_ThePathRoutingWarningReachesEveryCandidate` |
+| **R-169** | D | TLS issuance is a per-adapter concern: a routing adapter that can issue certificates declares… | 11. Networking and Routing | 03 | — | — |
 | **R-170** | P | The proxy must support websockets, server-sent events, streaming responses, and large uploads. | 11. Networking and Routing | 06, 07 | 05 | `TestR170_SSEIsNotBuffered` |
-| **R-171** | D | An app with its own login page is stacked behind Pando's auth by default; the user sees two… | 11. Networking and Routing | 08 | — | — |
+| **R-171** | D | An app with its own login page is stacked behind Pando's auth by default; the user sees two… | 11. Networking and Routing | 08 | — | `TestR171_TheAppKeepsItsOwnLoginPath` |
+| **R-172** | D | Signing in works on an app's own hostname. | 11. Networking and Routing | 06 | 10 | `TestR172_SigningInWorksOnAPortModeAppsOwnListener`, `TestR172_SigningInWorksOnAnAppsOwnHostname` |
+| **R-173** | D | Pando's own credentials never reach an app. | 11. Networking and Routing | 06 | 10 | `TestR173_PandosOwnCookiesNeverReachAnApp` |
+| **R-174** | D | The edge is Pando's to run, not the operator's. | 11. Networking and Routing | 03 | 10 | — |
 | **R-180** | D | Apps are isolated from each other (R-025). | 12. Egress and Isolation | — | — | — |
 | **R-181** | D | Egress defaults to allow-all. | 12. Egress and Isolation | — | — | — |
 | **R-182** | D | There is an install-wide allowlist. | 12. Egress and Isolation | 01, 06 | 02, 03 | — |
 | **R-183** | D | Because app lists replace rather than narrow, the install-wide allowlist is a default, not a… | 12. Egress and Isolation | 06 | — | — |
 | **R-184** | P | Defining an app-level allowlist is gated by a verb, so an admin can restrict it. | 12. Egress and Isolation | 06 | 01 | — |
-| **R-190** | D V1 | Local secret storage: encrypted at rest with a key on the same disk. | 13. Secrets | 02, 03 | 03, 04 | — |
-| **R-191** | D | The threat model must be stated, not implied: this protects a leaked backup file or copied… | 13. Secrets | 02 | — | — |
+| **R-190** | D V1 | Local secret storage: encrypted at rest with a key on the same disk. | 13. Secrets | 02, 03 | 03, 04, 08 | — |
+| **R-191** | D | The threat model must be stated, not implied: this protects a leaked backup file or copied… | 13. Secrets | 02 | 08 | — |
 | **R-192** | D | Environment variables are the default injection mechanism, since slot detection keys on them… | 13. Secrets | — | — | — |
-| **R-193** | D | On the env path, rotation implies a restart. | 13. Secrets | 02, 05, 08 | 07 | `TestR193_AChangedEnvironmentFingerprintIsDrift`, `TestR193_ChangedEnvironmentCausesRecreate` |
+| **R-193** | D | On the env path, rotation implies a restart. | 13. Secrets | 02, 03, 05, 08 | 07 | `TestR193_AChangedEnvironmentFingerprintIsDrift`, `TestR193_ChangedEnvironmentCausesRecreate` |
 | **R-194** | P | Secret values are redacted in logs, in spec exports, and in the audit log. | 13. Secrets | 00, 02 | 00, 04 | `TestR194_CredentialsDoNotAppearInErrors`, `TestR194_ErrorStringsDoNotLeak`, `TestR194_RevealIsTheOnlyWayOut`, `TestR194_RoundTrippingARedactedPayloadDoesNotSetTheSecret`, `TestR194_SecretInDetailsDoesNotSerialize`, `TestR194_UnmarshalAcceptsARealSecret`, `TestR194_ValueNeverReachesALogLine`, `TestR194_ValueNeverRendersThroughAnyFormattingVerb`, `TestR194_ValueNeverRendersWhenNested` |
 | **R-200** | D | Persistence declared in a compose file is imported and honored. | 14. Persistence and Volumes | — | — | — |
 | **R-201** | D | Where no volume is declared, Pando shows a warning at setup rather than inferring one: | 14. Persistence and Volumes | 01, 04, 07, 08 | 02, 06, 08 | `TestR201_NoDeclaredVolumeWarnsEvenWithNothingObserved` |
 | **R-202** | P | The trial run improves this warning: where Pando observed the app writing to a directory… | 14. Persistence and Volumes | 01, 03, 07 | 06 | `TestR202_ATrialRunObservesWritesOutsideDeclaredStorage`, `TestR202_TheWarningNamesTheDirectoryTheAppActuallyWrote` |
 | **R-203** | D | Rationale for treating this specially: an undeclared Postgres fails loudly on first boot. | 14. Persistence and Volumes | 05 | 07 | `TestR203_AVolumeThatHeldDataIsReportedNeverRecreated` |
-| **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 04, 05 | 02, 09 | `TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes`, `TestR204_DeletingAnAppKeepsAFinalBackup`, `TestR204_DeletingAnAppTearsDownItsBundleButKeepsVolumes`, `TestR204_DestroyKeepsVolumesByDefault` |
+| **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 03, 04, 05 | 02, 09 | `TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes`, `TestR204_DeletingAnAppKeepsAFinalBackup`, `TestR204_DeletingAnAppTearsDownItsBundleButKeepsVolumes`, `TestR204_DestroyKeepsVolumesByDefault` |
 | **R-205** | D | Non-interactive delete (CLI, API, MCP) backs up by default. | 14. Persistence and Volumes | 04 | 02, 09 | — |
-| **R-206** | D | Restore is in-place only. | 14. Persistence and Volumes | 01, 02 | 09 | — |
-| **R-210** | D | Per-app rolling backups of app data. | 15. Backup and Disaster Recovery | — | — | — |
-| **R-211** | P | Default: daily, 7 retained. | 15. Backup and Disaster Recovery | 01, 03, 05 | 07, 09 | — |
-| **R-212** | D | Full-host DR bundle. | 15. Backup and Disaster Recovery | 01, 07 | 09 | `TestR212_ADRBundleContainsWhatItPromises`, `TestR212_AVolumeRoundTripsThroughSnapshotAndRestore`, `TestR212_AnEmptyVolumeSnapshotsCleanly`, `TestR212_RestoreReplacesRatherThanMerges`, `TestR212_RestoreReturnsTheInstallToItsBackedUpState` |
-| **R-213** | D | The DR bundle is encrypted under a separate passphrase or key supplied at backup time, never… | 15. Backup and Disaster Recovery | 01, 02, 07 | 09 | `TestR213_ADowngradedHeaderIsRejected`, `TestR213_AShortPassphraseIsRefused`, `TestR213_AnEncryptedBundleVerifiesAfterDecryption`, `TestR213_BundleRoundTripsAtEveryChunkBoundary`, `TestR213_ReorderedChunksAreRejected`, `TestR213_TheWrongPassphraseRevealsNothing` |
+| **R-206** | D | Restore is in-place only. | 14. Persistence and Volumes | 01, 02, 04 | 09 | `TestR206_ABackupRestoresOnlyToItsOwnApp`, `TestR206_AnAppIsRestoredFromItsOwnBackup` |
+| **R-210** | D | Per-app rolling backups of app data. | 15. Backup and Disaster Recovery | 04 | — | — |
+| **R-211** | P | Default: daily, 7 retained. | 15. Backup and Disaster Recovery | 01, 03, 05 | 07, 09 | `TestR211_AnAppsRetentionIsCarriedOnItsBackups` |
+| **R-212** | D | Full-host DR bundle. | 15. Backup and Disaster Recovery | 01, 03, 07 | 09 | `TestR212_ADRBundleContainsWhatItPromises`, `TestR212_AVolumeRoundTripsThroughSnapshotAndRestore`, `TestR212_AnEmptyVolumeSnapshotsCleanly`, `TestR212_RestoreReplacesRatherThanMerges`, `TestR212_RestoreReturnsTheInstallToItsBackedUpState` |
+| **R-213** | D | The DR bundle is encrypted under a separate passphrase or key supplied at backup time, never… | 15. Backup and Disaster Recovery | 01, 02, 04, 07 | 09 | `TestR213_ADowngradedHeaderIsRejected`, `TestR213_AShortPassphraseIsRefused`, `TestR213_AnEncryptedBundleVerifiesAfterDecryption`, `TestR213_BundleRoundTripsAtEveryChunkBoundary`, `TestR213_ReorderedChunksAreRejected`, `TestR213_TheWrongPassphraseRevealsNothing` |
 | **R-214** | D | Consequence, accepted: DR restore is deliberately interactive. | 15. Backup and Disaster Recovery | 07 | 09 | `TestR214_AWrongPassphraseRevealsNothing` |
 | **R-215** | D | Restore verifies before applying. | 15. Backup and Disaster Recovery | 02, 04, 07 | 09 | `TestR215_ABundleWithNoManifestIsRejected`, `TestR215_ATamperedBundleIsRejected`, `TestR215_ATamperedBundleIsRejectedWithTheTargetUntouched`, `TestR215_ATruncatedBundleIsRejected`, `TestR215_AWholeBundleVerifies`, `TestR215_AWrongPassphraseLeavesTheInstallUntouched`, `TestR215_AnAlteredEntryIsRejectedByChecksum`, `TestR215_RestoreRefusesWithoutConfirmation`, `TestR215_TrailingBytesAreRejected`, `TestR215_VerifyReadsAndWritesNothingElse` |
-| **R-216** | P | Verification should also be invocable against a bundle without committing it, so a backup can… | 15. Backup and Disaster Recovery | 03, 04 | 09 | — |
-| **R-217** | D | Backup destination is an adapter category (R-252). | 15. Backup and Disaster Recovery | 02 | 09 | — |
+| **R-216** | P | Verification should also be invocable against a bundle without committing it, so a backup can… | 15. Backup and Disaster Recovery | 03, 04 | 09 | `TestR216_ABackupIsVerifiableBeforeItIsNeeded` |
+| **R-217** | D | Backup destination is an adapter category (R-252). | 15. Backup and Disaster Recovery | 02 | 09 | `TestR217_TheBackupDestinationIsAnAdapter` |
 | **R-220** | D | Pando runs health listeners — health endpoints, uptime checks — so you know when an app goes… | 16.1 Health | — | — | — |
 | **R-221** | P | Health signal sources, in order: compose healthcheck if declared, HTTP endpoint if configured,… | 16.1 Health | 01, 03, 05, 07 | 04, 07 | — |
-| **R-222** | D | Log retention is bounded by size, not time, so a chatty app cannot fill a disk shared with… | 16.2 Logs | 02 | — | `TestR222_ADeployedWorkloadHasItsLogsCapped`, `TestR222_ARuntimeThatCannotCapLogsIsRefusedWhenABudgetExists` |
-| **R-223** | P | Default cap: 100 MB per app, oldest discarded first. | 16.2 Logs | 01, 05 | 07 | — |
+| **R-222** | D | Log retention is bounded by size, not time, so a chatty app cannot fill a disk shared with… | 16.2 Logs | 02 | 07 | `TestR222_ADeployedWorkloadHasItsLogsCapped`, `TestR222_AProvisionedServiceIsCappedLikeAnyOtherWorkload`, `TestR222_ARuntimeThatCannotCapLogsIsRefusedWhenABudgetExists` |
+| **R-223** | P | Default cap: 100 MB per app, oldest discarded first. | 16.2 Logs | 01, 05 | — | — |
 | **R-224** | D | Retention must respect total host disk, in aggregate across all apps. | 16.2 Logs | 02, 05 | 07, 09 | `TestR224_NoBudgetMeansNoAggregateCheck`, `TestR224_TheAggregateLogBudgetIsEnforcedAtPlanTime` |
 | **R-225** | D | Log masking is out of scope for now. | 16.2 Logs | — | — | — |
 | **R-226** | D | The audit log is in core and cannot be written or rewritten by an adapter (R-027). | 16.3 Audit | — | — | — |
 | **R-227** | P | Auditable events: every spec mutation, every grant change, every deploy, every secret write,… | 16.3 Audit | — | — | `TestR227_TheAuditLogIsReadableBehindItsOwnVerb`, `TestR227_TheRestoreIsRecordedInTheInstallItProduced` |
 | **R-228** | P | Exec sessions are audited as a distinct event type — principal, app, workload, start and end. | 16.3 Audit | 03 | — | — |
-| **R-229** | P | Actions taken by a delegated token are recorded under the owning user, annotated with the token. | 16.3 Audit | 02 | 01, 10 | — |
+| **R-229** | P | Actions taken by a delegated token are recorded under the owning user, annotated with the token. | 16.3 Audit | 02, 04 | 01, 10 | — |
 | **R-230** | D | Notification is an adapter category. | 16.4 Notifications | — | — | — |
 | **R-231** | D V1 | Default is console-only. | 16.4 Notifications | 03, 08 | 10 | — |
 | **R-232** | D LATER | Built-in adapters for SMTP and SendGrid. | 16.4 Notifications | 03, 08 | 10 | — |
@@ -250,26 +253,20 @@ Check each against the categories above before treating it as a gap.
 - **R-045** (5.1 Adapter model) — Multiple identity adapters may be configured simultaneously.
 - **R-050** (5.3 Sessions and revocation) — For adapters that cannot push revocation, Pando falls back to expiry at next token refresh.
 - **R-090** (7.1 Input) — The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting…
-- **R-095** (7.2 Detection) — For tier 4, wrap an existing buildpack implementation (Paketo, nixpacks) rather than…
 - **R-106** (7.3 When detection cannot decide) — AI assistance is optional supporting functionality, never required.
 - **R-110** (8. Build) — Builds never run on the host (R-024).
 - **R-113** (8. Build) — Build code has no access to Pando's state store, no access to any other app's secrets, and no…
 - **R-115** (8. Build) — Isolation classes, weakest to strongest: `container` (shared kernel), `sandboxed`…
-- **R-130** (9. Slots and Services) — An environment variable in `.env.example` is a hole with a type.
 - **R-133** (9. Slots and Services) — Distinguishing required from optional slots is unresolved.
-- **R-135** (9. Slots and Services) — A provisioned service's data follows the app's volume rules (§12), including the…
 - **R-142** (10.2 Deploy triggers) — Trigger delivery is by polling by default, since inbound connectivity cannot be assumed.
 - **R-143** (10.2 Deploy triggers) — Watch for new tags on an upstream image, for apps deployed from a published image rather than…
 - **R-153** (10.5 Scale) — One app, one place (R-010).
 - **R-160** (11. Networking and Routing) — Routing is an adapter category.
 - **R-161** (11. Networking and Routing) — Each routing adapter advertises which addressing modes it supports: subdomain, path prefix,…
-- **R-166** (11. Networking and Routing) — Subdomain is preferred where a wildcard is available.
-- **R-169** (11. Networking and Routing) — TLS issuance (built-in ACME, wildcard requirement, self-signed local) is a per-adapter concern…
 - **R-180** (12. Egress and Isolation) — Apps are isolated from each other (R-025).
 - **R-181** (12. Egress and Isolation) — Egress defaults to allow-all.
 - **R-192** (13. Secrets) — Environment variables are the default injection mechanism, since slot detection keys on them…
 - **R-200** (14. Persistence and Volumes) — Persistence declared in a compose file is imported and honored.
-- **R-210** (15. Backup and Disaster Recovery) — Per-app rolling backups of app data.
 - **R-220** (16.1 Health) — Pando runs health listeners — health endpoints, uptime checks — so you know when an app goes…
 - **R-225** (16.2 Logs) — Log masking is out of scope for now.
 - **R-226** (16.3 Audit) — The audit log is in core and cannot be written or rewritten by an adapter (R-027).
