@@ -17,7 +17,7 @@ values, raw `px` values and non-brand fonts.
 Design 08 §1.2 predates it and says "Radix primitives, own layer on top". **That is superseded**: the
 components exist, they have no npm dependencies and no CSS-in-JS, and building a second layer beside
 them is how an install ends up with two design systems and neither maintained. Use Radix only for
-behaviour the system does not implement — focus trapping, a combobox — and style it from the tokens.
+behavior the system does not implement — focus trapping, a combobox — and style it from the tokens.
 
 Three things the system settles that this phase would otherwise re-decide:
 

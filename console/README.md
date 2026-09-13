@@ -43,7 +43,7 @@ Import components from its `index.js`, never from a component's own file.
 | Client state | Zustand, sparingly |
 | Forms | React Hook Form + Zod |
 | Styling | Tailwind |
-| Components | **`pando-design`** — Radix only for behaviour it lacks, styled from its tokens |
+| Components | **`pando-design`** — Radix only for behavior it lacks, styled from its tokens |
 | API types | **Generated from the OpenAPI spec — never hand-written** |
 | Streaming | Native `EventSource` for logs, `WebSocket` for exec |
 | Terminal | xterm.js |

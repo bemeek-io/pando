@@ -165,7 +165,7 @@ func (c *Client) pump(ctx context.Context, cancel context.CancelFunc, conn *webs
 	// blocks until a key is pressed, and the session has to keep rendering
 	// output while nobody is typing.
 	//
-	// Not waited on. os.Stdin's Read cannot be cancelled, so this goroutine
+	// Not waited on. os.Stdin's Read cannot be canceled, so this goroutine
 	// outlives the session by design — the process is about to exit, and the
 	// alternative is hanging until the user presses a key.
 	go func() {

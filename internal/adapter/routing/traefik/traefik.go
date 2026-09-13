@@ -51,7 +51,7 @@ type Config struct {
 
 	// CertResolver is Traefik's ACME resolver name, if the edge has one
 	// configured. Empty means Pando asks for no certificate and Traefik serves
-	// whatever it already has — which is the honest behaviour when issuance is
+	// whatever it already has — which is the honest behavior when issuance is
 	// the edge's business (O-5).
 	CertResolver string `json:"cert_resolver,omitempty"`
 

@@ -65,14 +65,14 @@ func TestR131_ProvisionFillsASlotWithSomethingRunnable(t *testing.T) {
 //
 // Specifically: no MYSQL_PWD. It looks like the tidy way to keep a password off
 // the health check's command line, and it breaks the image's entrypoint
-// outright — initialisation connects as root with no password, MYSQL_PWD
+// outright — initialization connects as root with no password, MYSQL_PWD
 // overrides that, and the container exits 1 on "Access denied" before the
 // database is created. Every first deploy, silently, until someone reads the
 // container log.
 func TestNoEnvironmentThatBreaksTheImagesOwnStartup(t *testing.T) {
 	res := provision(t, configured(t), spec.SlotMySQL, secret.Value{})
 	_, set := res.Workloads[0].Env["MYSQL_PWD"]
-	require.False(t, set, "MYSQL_PWD breaks the mysql image's initialisation")
+	require.False(t, set, "MYSQL_PWD breaks the mysql image's initialization")
 
 	// And the health check carries no credential, because it does not need one:
 	// mysqladmin ping exits 0 when the server answers at all, which is what
@@ -136,7 +136,7 @@ func TestR135_TheDataIsInTheAppsOwnStorage(t *testing.T) {
 	require.Error(t, err)
 }
 
-// Pando recognises S3 and SMTP slots and deliberately does not stand them up:
+// Pando recognizes S3 and SMTP slots and deliberately does not stand them up:
 // running that infrastructure is what R-010 says Pando is not.
 func TestUnsupportedTypesAreRefusedRatherThanApproximated(t *testing.T) {
 	supported := map[spec.SlotType]bool{}

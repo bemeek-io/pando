@@ -178,7 +178,7 @@ function Session({
     if (!element) return;
 
     // The terminal surface is identical in both themes (brand spec), so it
-    // reads its colours from the terminal tokens rather than the page's.
+    // reads its colors from the terminal tokens rather than the page's.
     const styles = getComputedStyle(document.documentElement);
     const terminal = new Xterm({
       fontFamily: styles.getPropertyValue('--font-mono').trim() || 'monospace',

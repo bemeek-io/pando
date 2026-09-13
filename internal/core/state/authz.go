@@ -496,7 +496,7 @@ func (g *Grants) ListForApp(ctx context.Context, appID string) ([]GrantRow, erro
 	// The name comes from the same query, for both principal kinds a grant can
 	// name. A user's display name falls back to the username it signs in with,
 	// because a local account created without one would otherwise render blank
-	// — worse than an identifier, since there is nothing to recognise at all.
+	// — worse than an identifier, since there is nothing to recognize at all.
 	rows, err := g.db.Query(ctx, `
 		SELECT g.id, g.app_id, g.plane, g.principal_kind,
 		       coalesce(g.principal_id, ''), coalesce(g.role_id, ''),

@@ -108,7 +108,7 @@ func normalizeDesignPath(raw string) string {
 	}
 
 	// Parameter names differ between the document and the router — {id} versus
-	// {appID} — and the name is not what is being asserted. Normalised to a
+	// {appID} — and the name is not what is being asserted. Normalized to a
 	// placeholder on both sides so the comparison is about shape.
 	return regexp.MustCompile(`\{[^}]+\}`).ReplaceAllString(path, "{}")
 }

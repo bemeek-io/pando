@@ -31,7 +31,7 @@ can reach someone who is not already looking at Pando; the interface for it is a
 | Client state | Zustand, sparingly |
 | Forms | React Hook Form + Zod |
 | Styling | Tailwind |
-| Components | **The `pando-design` system** (`.claude/skills/pando-design/`). Radix only for behaviour it does not implement, styled from its tokens. |
+| Components | **The `pando-design` system** (`.claude/skills/pando-design/`). Radix only for behavior it does not implement, styled from its tokens. |
 | API types | Generated from the OpenAPI spec — never hand-written |
 | Streaming | Native `EventSource` for logs, `WebSocket` for exec |
 | Terminal | xterm.js |
@@ -68,7 +68,7 @@ that matter.
 **Sharing** — R-076, R-077.
 The anonymous grant never stands on the bare word "public." **[P] R-077 overridden in the heading:**
 the action is called *Make it public*, because that is what it is called everywhere else and a
-heading nobody recognises is unclear in its own way. What the requirement protects is kept — the
+heading nobody recognizes is unclear in its own way. What the requirement protects is kept — the
 consequence, *anyone on the internet can open this, without signing in*, sits directly beneath the
 heading and again in the confirmation, so the word never does the work alone. The confirmation step
 stays. When host policy forbids it (R-076), the option is visible but disabled with an explanation of who to ask — not hidden, because a hidden option produces a support ticket instead of understanding.

@@ -888,7 +888,7 @@ services:
 //
 // The auction asks which of two close readings is right, and answering used to
 // overwrite the winning draft's strategy *name* while keeping its workloads —
-// so choosing "compose" produced the Dockerfile detector's spec labelled
+// so choosing "compose" produced the Dockerfile detector's spec labeled
 // `strategy: compose`, which no builder implements. The app was then refused at
 // plan time with a message about the builder, nowhere near the cause.
 func TestR102_AnsweringTheTieBreakAdoptsThatReading(t *testing.T) {

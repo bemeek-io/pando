@@ -52,7 +52,7 @@ on 127.0.0.1, which nothing outside the app can reach"* — a dev-server default
 one of the most common real deployment failures, and one that otherwise presents
 as a healthy container whose every request times out with nothing in any log.
 
-**A cancelled observation must not overwrite a successful one.** Ports are
+**A canceled observation must not overwrite a successful one.** Ports are
 polled while the container runs, so a healthy app costs ~2s instead of the whole
 timeout. But the poll used the trial's own deadline context, so the last check
 before expiry returned empty and erased what an earlier check had seen. The test

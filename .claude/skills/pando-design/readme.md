@@ -71,7 +71,7 @@ terminals, navigation, banners and empty states. These exist because the product
 them and the spec's rules extend cleanly to them — each is noted in its `.d.ts`:
 
 - `IconButton` — the spec requires a copy button on every code block, and icon-only
-  row actions; ghost styling, 4px radius, same press behaviour as `Button`.
+  row actions; ghost styling, 4px radius, same press behavior as `Button`.
 - `Tabs` — sections within one screen (Overview / Deploys / Variables / Settings),
   marked with a 1px ink underline, which is the same structural logic as every other rule.
 - `Toast` — past-tense confirmation of something that already happened, following the
@@ -245,7 +245,7 @@ none by design.
   dot. The spec's written description (three nested contours with a red summit dot) was a
   different mark, and `components/brand/Logo.jsx` has been rebuilt from the artwork.
 
-  Its colours are already tokens — the exports hard-code `#1A1C1B`/`#ECE8DE` for the
+  Its colors are already tokens — the exports hard-code `#1A1C1B`/`#ECE8DE` for the
   wordmark and `#B23A2C`/`#E0654F` for the full stop, which are exactly `--ink` and
   `--marker` in the two themes — so the component draws from tokens and follows the theme
   rather than needing a light file and a dark file. The exported SVGs carry **live**

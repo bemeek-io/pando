@@ -116,7 +116,7 @@ type AuditEvent struct {
 	Detail map[string]any
 }
 
-// Run ticks until the context is cancelled.
+// Run ticks until the context is canceled.
 func (r *Reconciler) Run(ctx context.Context) {
 	ticker := time.NewTicker(Interval)
 	defer ticker.Stop()
@@ -180,7 +180,7 @@ func (r *Reconciler) Tick(ctx context.Context) {
 // error would have done exactly that.
 //
 // The app is left alone. The next tick tries again, which is the right
-// behaviour for something that might be transient, and the log line is what
+// behavior for something that might be transient, and the log line is what
 // makes it visible if it is not.
 func (r *Reconciler) recoverPanic(app state.Reconcilable) {
 	if v := recover(); v != nil {
@@ -277,7 +277,7 @@ func (r *Reconciler) desired(ctx context.Context, app state.Reconcilable, s *spe
 
 	// A provisioned database is part of what should be running (R-131).
 	//
-	// Left out, it is neither restored when it is killed nor recognised when it
+	// Left out, it is neither restored when it is killed nor recognized when it
 	// is running — the app is told every fifteen seconds that its own database
 	// is a workload the spec does not declare.
 	//

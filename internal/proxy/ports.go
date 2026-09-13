@@ -53,7 +53,7 @@ type PortListeners struct {
 	serving map[int]*http.Server
 }
 
-// Run reconciles listeners until ctx is cancelled, then closes all of them.
+// Run reconciles listeners until ctx is canceled, then closes all of them.
 func (l *PortListeners) Run(ctx context.Context) {
 	interval := l.Interval
 	if interval <= 0 {

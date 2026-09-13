@@ -43,7 +43,7 @@ type RefResolver interface {
 	Resolve(ctx context.Context, src spec.Source) (string, error)
 }
 
-// Run polls until the context is cancelled.
+// Run polls until the context is canceled.
 func (a *AutoDeploy) Run(ctx context.Context) {
 	ticker := time.NewTicker(BranchPollInterval)
 	defer ticker.Stop()

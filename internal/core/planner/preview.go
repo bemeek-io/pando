@@ -48,7 +48,7 @@ type PolicyViolation struct {
 //
 // O-10 resolved this to "report now, block on next deploy": saving a policy
 // touches no running app, and each violating app fails at step 2 the next time
-// it deploys. That is the right behaviour and a bad experience on its own — an
+// it deploys. That is the right behavior and a bad experience on its own — an
 // admin tightening a policy is entitled to know it will block four apps before
 // they save, because finding out one deploy at a time is how a policy gets
 // rolled back in anger.

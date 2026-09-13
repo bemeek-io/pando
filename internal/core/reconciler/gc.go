@@ -61,7 +61,7 @@ type GC struct {
 // also serving live traffic.
 const TeardownBatch = 20
 
-// Run collects until the context is cancelled.
+// Run collects until the context is canceled.
 func (g *GC) Run(ctx context.Context) {
 	interval := g.Interval
 	if interval <= 0 {

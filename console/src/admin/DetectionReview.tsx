@@ -192,7 +192,7 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
         title="Replace this app's configuration?"
         // Says what actually happens. It used to say the opposite — that
         // settings were not carried over — which was true until accepting
-        // started merging them, and a dialog describing the old behaviour is
+        // started merging them, and a dialog describing the old behavior is
         // worse than no dialog: somebody reads it and does not press the
         // button they needed.
         description="Pando will use what it just found for the build and the workloads. Environment variables you set, how each dependency is filled, and storage you added are kept."

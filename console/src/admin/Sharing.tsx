@@ -5,7 +5,7 @@
 // **The anonymous grant never stands on the bare word "public."** R-077 [P],
 // and the override is in the heading only: the action is called "Make it
 // public", because that is what it is called everywhere else and a heading
-// nobody recognises is its own kind of unclear. What the requirement is
+// nobody recognizes is its own kind of unclear. What the requirement is
 // actually protecting is kept — the consequence, *anyone on the internet can
 // open this, without signing in*, sits directly under the heading and in the
 // confirmation, so the word is never doing the work alone. "Public" is a word
@@ -162,7 +162,7 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
 
         {/* R-077 [P], overridden in the heading and kept here. The requirement
             forbids presenting this as the *bare* word "public" — a toggle
-            labelled "Public" and nothing else, which people skim past without
+            labeled "Public" and nothing else, which people skim past without
             registering what it does. "Make it public" is what the action is
             called everywhere else in the world, and the consequence directly
             beneath it is what the requirement is actually protecting. The

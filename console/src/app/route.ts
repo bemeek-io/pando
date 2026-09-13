@@ -39,7 +39,7 @@ const SECTIONS: Section[] = [
   'audit',
 ];
 
-/** Reads a route out of a path. Anything unrecognised is the launcher. */
+/** Reads a route out of a path. Anything unrecognized is the launcher. */
 export function parse(pathname: string): Route {
   const parts = pathname.split('/').filter(Boolean);
 

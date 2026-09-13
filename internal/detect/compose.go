@@ -26,7 +26,7 @@ import (
 //
 //	rejected  — PLAN_COMPOSE_CONSTRUCT_REJECTED, naming the service and the
 //	            construct. There is nothing to rewrite it to.
-//	rewritten — imported with different mechanism and the same behaviour, and
+//	rewritten — imported with different mechanism and the same behavior, and
 //	            a WARN_COMPOSE_CONSTRUCT_REWRITTEN saying exactly what changed.
 //
 // The split is not about severity. It is about whether the app still does what

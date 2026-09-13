@@ -50,7 +50,7 @@ export function Logo({ size = 24, wordmark = true, style, ...rest }) {
 /**
  * The icon: "p." in paper on an ink tile.
  *
- * Proportions from the export — a 512px tile at radius 112, the glyph centred
+ * Proportions from the export — a 512px tile at radius 112, the glyph centered
  * at 366 on the baseline with the same letter-spacing as the wordmark. Kept as
  * a viewBox so one component serves 16px chrome and a 512px app icon.
  */

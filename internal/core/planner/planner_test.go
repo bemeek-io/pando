@@ -245,7 +245,7 @@ func TestR131_ProvisioningWithNoProvisionerIsRefusedAtPlanTime(t *testing.T) {
 }
 
 // TestR131_AnUnprovisionableTypeIsRefused asserts that Pando says so rather
-// than pretending: S3 and SMTP are slot types Pando recognises and deliberately
+// than pretending: S3 and SMTP are slot types Pando recognizes and deliberately
 // does not stand up (R-010).
 func TestR131_AnUnprovisionableTypeIsRefused(t *testing.T) {
 	s := plannableSpec()

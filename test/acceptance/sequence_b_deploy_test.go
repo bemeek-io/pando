@@ -60,7 +60,7 @@ func TestR112_BuildContainerHasNoRuntimeSocket(t *testing.T) {
 }
 
 // TestR112_BuildContainerCannotReachDocker asserts the same property
-// behaviourally: not just that no socket is mounted, but that nothing inside
+// behaviorally: not just that no socket is mounted, but that nothing inside
 // the build container can talk to a runtime.
 func TestR112_BuildContainerCannotReachDocker(t *testing.T) {
 	requireStack(t)

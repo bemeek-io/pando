@@ -11,7 +11,7 @@ Copyright (c) 2017 IBM Corp. (https://github.com/IBM/plex),
 with Reserved Font Name "IBM Plex".
 
 The OFL is reproduced in full below. Documents created with these fonts are not
-affected by it: the licence covers the font software, not what it sets.
+affected by it: the license covers the font software, not what it sets.
 
 --------------------------------------------------------------------------------
 

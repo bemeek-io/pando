@@ -25,6 +25,15 @@ services:
       # Compose starts both services at once. Pando also retries on its own rather
       # than trusting this healthcheck — see phase 0.
       PANDO_DATABASE_URL: postgres://pando:${POSTGRES_PASSWORD:-pando}@postgres:5432/pando?sslmode=disable
+
+      # The initial admin password, read on first run only.
+      #
+      # Listed here because Compose passes through nothing it is not told to:
+      # the documented `PANDO_ADMIN_PASSWORD=... docker compose up -d` set a
+      # variable in the operator's shell that never reached the container, and
+      # the first run generated a password and printed it to the log as though
+      # nothing had been asked for.
+      PANDO_ADMIN_PASSWORD: ${PANDO_ADMIN_PASSWORD:-}
       PANDO_BUILDKIT_ADDRESS: tcp://buildkit:1234
       # Where per-app subdomains are carved from. localtest.me resolves every
       # subdomain to 127.0.0.1, so a laptop can exercise subdomain routing

@@ -38,7 +38,7 @@ func previewer(t *testing.T, inv staticInventory) *planner.Planner {
 // TestO10_APolicyNamesTheAppsItWouldBlockBeforeItIsSaved asserts design 05 §3.
 //
 // O-10 resolved policy application to "report now, block on next deploy". That
-// is the right behaviour and an unusable experience on its own: an admin
+// is the right behavior and an unusable experience on its own: an admin
 // tightening a source allowlist is entitled to know it blocks four apps before
 // they save it, not one deploy at a time.
 func TestO10_APolicyNamesTheAppsItWouldBlockBeforeItIsSaved(t *testing.T) {

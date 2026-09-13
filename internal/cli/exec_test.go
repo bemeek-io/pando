@@ -197,7 +197,7 @@ func TestALargeBurstOfOutputDoesNotKillTheSession(t *testing.T) {
 	require.Len(t, out.String(), len(big))
 }
 
-// A cancelled context ends the session rather than hanging.
+// A canceled context ends the session rather than hanging.
 func TestCancellingEndsTheSession(t *testing.T) {
 	c := execServer(t, func(ctx context.Context, _ *websocket.Conn, _ *http.Request) {
 		<-ctx.Done()
@@ -216,6 +216,6 @@ func TestCancellingEndsTheSession(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("the session did not end when its context was cancelled")
+		t.Fatal("the session did not end when its context was canceled")
 	}
 }

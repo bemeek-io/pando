@@ -53,7 +53,7 @@ type Candidate struct {
 	// other candidate's draft — impossible if the losing drafts were discarded
 	// when the proposal was stored. They were, so the answer could do nothing
 	// but stamp the chosen strategy's *name* onto the winner's draft: choosing
-	// "compose" produced the Dockerfile detector's spec labelled
+	// "compose" produced the Dockerfile detector's spec labeled
 	// `strategy: compose`, which no builder implements, and the app was refused
 	// at plan time with a message about the builder.
 	Draft Draft `json:"draft,omitempty"`

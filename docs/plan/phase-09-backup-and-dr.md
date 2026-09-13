@@ -104,7 +104,7 @@ capability that exists in the service layer and is not reached by the surface th
 - **`MYSQL_PWD` broke every first MySQL deploy.** Added so the health check could authenticate
   without a password on the command line, on the reasoning that unauthenticated `mysqladmin ping`
   exits non-zero. Both halves were wrong: ping exits 0 whenever the server answers, and MYSQL_PWD
-  overrides the entrypoint's own no-password root connection during initialisation, so the container
+  overrides the entrypoint's own no-password root connection during initialization, so the container
   exits 1 before the database is created.
 
 And one test that passed while asserting nothing: the R-134 port check filtered on a label nothing

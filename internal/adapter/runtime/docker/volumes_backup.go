@@ -179,7 +179,7 @@ func (a *Adapter) streamHelper(ctx context.Context, id string, stdout io.Writer,
 
 // removeQuietly deletes the helper container.
 //
-// The context has cancellation stripped, not replaced: a cancelled backup must
+// The context has cancellation stripped, not replaced: a canceled backup must
 // still clean up its helper, but the request's values and deadline-free
 // lifetime are worth keeping so the removal is traceable to the backup that
 // created it. Failures are ignored — a leaked helper is untidy, and reporting

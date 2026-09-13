@@ -344,7 +344,7 @@ type BuildpackDetector struct {
 	//
 	// Nil means detection still recognizes the language and asks its questions;
 	// the plan simply is not part of the proposal, and the builder makes one at
-	// build time instead. That is the behaviour every install had before the
+	// build time instead. That is the behavior every install had before the
 	// plan was reviewable.
 	Planner BuildPlanner
 }

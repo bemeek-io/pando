@@ -596,7 +596,7 @@ leaving in a code comment: the bytes behind a tag can change, and the BusyBox on
 four places once there is a way to update them — a pinned digest with no update path is an image that
 never gets a security fix, which is the failure this trades against.
 
-**[P]** `s3` and `smtp` are slot types Pando recognises (R-130) and deliberately does not provision:
+**[P]** `s3` and `smtp` are slot types Pando recognizes (R-130) and deliberately does not provision:
 standing up MinIO or an SMTP server is running infrastructure, which R-010 says Pando is not. The
 planner refuses a `provisioned` resolution for them by name, at plan time.
 

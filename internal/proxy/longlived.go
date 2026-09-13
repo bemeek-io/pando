@@ -57,7 +57,7 @@ func (w *reauthorizing) watch(conn net.Conn) {
 	defer ticker.Stop()
 
 	// Detached from the request context: the request is over the moment the
-	// connection is hijacked, and a cancelled context would end the loop
+	// connection is hijacked, and a canceled context would end the loop
 	// immediately, which is the opposite of what this is for.
 	ctx := context.WithoutCancel(w.ctx)
 

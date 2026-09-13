@@ -148,7 +148,7 @@ and two favicon PNGs. `components/brand/Logo.jsx` is rebuilt from them.
 
 The official mark is **different from the spec's written description**: "pando." with
 a marker-red full stop, rather than three nested contours with a summit dot. Its
-colours are already tokens — the exports hard-code `#1A1C1B`/`#ECE8DE` and
+colors are already tokens — the exports hard-code `#1A1C1B`/`#ECE8DE` and
 `#B23A2C`/`#E0654F`, which are exactly `--ink` and `--marker` in the two themes — so
 the component draws from tokens and follows the theme instead of needing two files.
 The exported SVGs carry live Newsreader text rather than outlines. See `readme.md`

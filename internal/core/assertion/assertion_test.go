@@ -28,7 +28,7 @@ func TestMintAndVerify(t *testing.T) {
 }
 
 // R-055: the lifetime is one constant. A test that hard-coded 120 would pass
-// while the constant and the behaviour drifted apart.
+// while the constant and the behavior drifted apart.
 func TestR055_LifetimeComesFromTheConstant(t *testing.T) {
 	fake := clock.NewFake(time.Time{})
 	m, err := assertion.NewMinter("https://pando.test", fake)

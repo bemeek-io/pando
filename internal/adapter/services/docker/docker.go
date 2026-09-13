@@ -102,7 +102,7 @@ func (a *Adapter) Capabilities() api.ServicesCapabilities {
 
 // Supports lists the slot types this adapter can fill.
 //
-// Deliberately three. S3 and SMTP are slot types Pando recognises (R-130) and
+// Deliberately three. S3 and SMTP are slot types Pando recognizes (R-130) and
 // deliberately does not provision: standing up MinIO or an SMTP server is
 // running infrastructure, which is what R-010 says Pando is not. Those slots
 // are bound or literal, and the planner says so by name.
@@ -241,11 +241,11 @@ func healthFor(t spec.SlotType) *api.HealthPlan {
 		// is visible in the host's process list and re-run every few seconds
 		// forever, and putting it in MYSQL_PWD instead breaks the image's
 		// entrypoint outright — it connects as root with no password during
-		// initialisation, MYSQL_PWD overrides that, and the container exits 1
+		// initialization, MYSQL_PWD overrides that, and the container exits 1
 		// on "Access denied" before the database is ever created.
 		return &api.HealthPlan{
 			Command: []string{"mysqladmin", "ping", "-h", "127.0.0.1"},
-			// Longer than the others: MySQL's first start initialises the data
+			// Longer than the others: MySQL's first start initializes the data
 			// directory and can take a minute on a small host.
 			IntervalSeconds: 5, TimeoutSeconds: 5, Retries: 24,
 		}

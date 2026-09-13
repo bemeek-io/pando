@@ -97,7 +97,7 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = conn.CloseNow() }()
 
 	// Detached from the request context: an exec session outlives the handler's
-	// notion of a request, and cancelling on the first idle period would drop
+	// notion of a request, and canceling on the first idle period would drop
 	// the terminal mid-command.
 	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
 	defer cancel()

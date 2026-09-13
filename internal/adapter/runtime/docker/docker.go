@@ -517,7 +517,7 @@ func (a *Adapter) ReclaimNetworks(ctx context.Context) (int, error) {
 // moment it was lost: startup.
 //
 // Ordered after ReclaimNetworks deliberately. Reclaim removes the networks of
-// apps that no longer exist, and it recognises them by their being empty —
+// apps that no longer exist, and it recognizes them by their being empty —
 // joining first would put an endpoint on every one of them and make each look
 // busy, turning a reclaim into a leak.
 func (a *Adapter) RejoinNetworks(ctx context.Context) (int, error) {

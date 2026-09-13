@@ -1,7 +1,7 @@
 // Brand adherence, enforced.
 //
 // The design system ships `_adherence.oxlintrc.json`: rules that catch a raw hex
-// colour, a raw px value, a font that is not one of the three, an import that
+// color, a raw px value, a font that is not one of the three, an import that
 // reaches past the barrel, and a wrong prop on any of the 24 components. The
 // phase asks for those to fail the build "the way the adapter import rule does
 // for R-027".

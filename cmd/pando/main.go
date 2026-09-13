@@ -125,7 +125,7 @@ func versionCmd() *cobra.Command {
 // the planner decides on — and this is not that. Whether a build plan can be
 // shown before it runs changes nothing about whether the app can be built: the
 // builder plans at build time regardless. It changes only whether detection has
-// something to show, which is why a missing planner degrades to the behaviour
+// something to show, which is why a missing planner degrades to the behavior
 // every install had before and not to a plan-time refusal.
 func buildPlanner(registry *adapterapi.Registry) detect.BuildPlanner {
 	ref, ok := registry.Default(adapterapi.CategoryBuilder)
@@ -529,7 +529,7 @@ func serve(ctx context.Context, configPath string) error {
 		// Nothing redeploys those apps, so without this they stay up and
 		// unreachable — a Pando upgrade would 502 every app on the install
 		// until each was deployed again by hand. After reclaim, never before:
-		// reclaim recognises a dead app's network by its being empty.
+		// reclaim recognizes a dead app's network by its being empty.
 		if rejoiner, ok := rt.(interface {
 			RejoinNetworks(context.Context) (int, error)
 		}); ok {

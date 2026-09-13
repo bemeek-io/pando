@@ -29,7 +29,7 @@ const trialImage = "busybox:1.37"
 // a question they cannot answer — and this is the mechanism that avoids having
 // to ask it.
 //
-// Everything created here is labelled with the trial ID and removed at the end,
+// Everything created here is labeled with the trial ID and removed at the end,
 // including on the failure paths. A trial that leaks a container leaks a
 // running copy of a stranger's app.
 func (a *Adapter) Trial(ctx context.Context, req api.TrialRequest) (api.TrialResult, error) {
@@ -59,7 +59,7 @@ func (a *Adapter) Trial(ctx context.Context, req api.TrialRequest) (api.TrialRes
 		return api.TrialResult{}, err
 	}
 	defer func() {
-		// WithoutCancel so that a cancelled or timed-out trial still cleans up.
+		// WithoutCancel so that a canceled or timed-out trial still cleans up.
 		// The context that bounds the observation must not also decide whether
 		// the container is removed.
 		_ = a.removeContainer(context.WithoutCancel(ctx), id)
@@ -179,7 +179,7 @@ func (a *Adapter) watch(ctx context.Context, id string, timeout time.Duration) a
 			result.Started = true
 
 			// Only a successful observation is allowed to replace an earlier
-			// one. A check that could not run — the sidecar cancelled as the
+			// one. A check that could not run — the sidecar canceled as the
 			// deadline approached — returns nothing, and letting that overwrite
 			// what a previous tick saw would erase the answer at random.
 			routable, loopback, observed := a.observePorts(deadline, id)
@@ -265,7 +265,7 @@ func (a *Adapter) observePorts(ctx context.Context, targetID string) (routable, 
 
 	// Read the sidecar's output with a context of its own. By this point the
 	// trial's deadline may have passed, and the observation is already made —
-	// losing it to a cancelled log read would throw away the answer.
+	// losing it to a canceled log read would throw away the answer.
 	read, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 

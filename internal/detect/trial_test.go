@@ -279,7 +279,7 @@ func TestAnAppThatNeverStartedSaysThatRatherThanBlamingThePort(t *testing.T) {
 // blank under its path prefix, and the one thing Pando knew about why had been
 // dropped at the moment the user made a choice it had offered them.
 func TestR168_ThePathRoutingWarningReachesEveryCandidate(t *testing.T) {
-	// A repository two detectors both recognise, with a frontend that loads its
+	// A repository two detectors both recognize, with a frontend that loads its
 	// assets from the root.
 	source := memSource{
 		"index.html":         `<html><head><script src="/assets/app.js"></script></head></html>`,
