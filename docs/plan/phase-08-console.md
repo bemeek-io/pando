@@ -78,6 +78,18 @@ see `.claude/skills/pando-design/PROVENANCE.md` for how to pull it.
       administrator and the developer read the same sentence. Asked for rather than automatic: it is
       the expensive check, and running it on every keystroke makes a form that stutters, which
       teaches people to ignore the panel it is stuttering to fill
+- [x] **Dependencies and storage** on the app — R-030 makes Slot and Volume first-class objects and
+      both had a full API and no screen. A slot names how it is filled in words rather than showing
+      the stored value (R-083 keeps a pasted database URL off a screen `app.view` can read), and
+      says plainly which kinds Pando will stand up and which it will not (R-010). Adding storage
+      leads with R-201's warning, because an app that loses its data at the next deploy is what the
+      endpoint exists to prevent
+- [x] **Groups and roles** (R-078, R-082) — two sections, not one screen with two tabs pretending
+      they are the same idea. A group is *who*; a role is *what*. A group synced from an identity
+      provider is shown with its source and is not editable here, because the provider owns
+      membership and an edit would be overwritten at the next sign-in. A custom role offers only its
+      chosen scope's verbs: the server refuses a mixed-scope role (R-080), and offering a choice
+      that will be refused is worse than not offering it
 - [x] Detection review screen (R-102, R-103, R-105)
 - [x] Warnings, rendered inline where they apply (R-201, R-168, R-028) — carrying no red at all,
       which is what makes them distinct from an error in a palette that has no amber
@@ -116,8 +128,7 @@ and `authz.denied` from that session.
 `GET /apps` for app administration, and the verb list from `GET /me` for install administration.
 Verified against the shipped binary: an account with no grants sees no Admin entry, an empty `verbs`
 list, and a 403 naming the missing verb on each of the six endpoints — including
-`PATCH /users/{admin}`, which returned 204 before this phase and locked the install out. What is not
-built is the install-level screens those verbs would open; the verbs and their endpoints are.
+`PATCH /users/{admin}`, which returned 204 before this phase and locked the install out.
 
 Exec is verified the same way: a live shell inside a running nginx container from the Terminal tab,
 with the R-086 warning stated before anything opens. Six acceptance tests cover the ordering that

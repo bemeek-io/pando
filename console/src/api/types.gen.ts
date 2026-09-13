@@ -140,6 +140,7 @@ export interface Source {
   subdir?: string;
   image?: string;
   digest?: string;
+  upload_id?: string;
   credential_ref?: string;
 }
 

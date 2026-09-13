@@ -20,15 +20,17 @@ import { api } from '@api/client';
 import type { App } from '@api/types.gen';
 import { InstallVerb, useInstallVerb } from '../app/principal';
 import { Accounts } from '../install/Accounts';
+import { Identity } from '../install/Identity';
 import { Backups } from '../install/Backups';
 import { Audit, Installation, Policy } from '../install/Installation';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { DetectionReview } from './DetectionReview';
 import { Sharing } from './Sharing';
 import { AppOverview } from './AppOverview';
+import { Resources } from './Resources';
 import { Terminal } from './Terminal';
 
-type Section = 'apps' | 'accounts' | 'installation' | 'policy' | 'backups' | 'audit';
+type Section = 'apps' | 'accounts' | 'identity' | 'installation' | 'policy' | 'backups' | 'audit';
 
 export function AdminConsole({ onLeave }: { onLeave: () => void }) {
   const [selected, setSelected] = useState<App | null>(null);
@@ -57,6 +59,11 @@ export function AdminConsole({ onLeave }: { onLeave: () => void }) {
   // install.users.manage. Either is a reason to see the screen, and the screen
   // itself is read-only without the second.
   if (canView || canManageUsers) items.push({ value: 'accounts', label: 'Accounts' });
+  // Groups and roles are the same verb pair as accounts, and a separate screen:
+  // who someone is and what a role can do are different questions, and one
+  // screen answering both is how an authorization model turns into a list of
+  // people with special powers (R-078).
+  if (canView || canManageUsers) items.push({ value: 'identity', label: 'Groups and roles' });
   if (canView) items.push({ value: 'installation', label: 'Installation' });
   if (canView || canManagePolicy) items.push({ value: 'policy', label: 'Policy' });
   if (canManageBackups) items.push({ value: 'backups', label: 'Backups' });
@@ -81,6 +88,7 @@ export function AdminConsole({ onLeave }: { onLeave: () => void }) {
 
       <main style={{ flex: 1, minWidth: 0 }}>
         {section === 'accounts' && <Accounts />}
+        {section === 'identity' && <Identity canEdit={canManageUsers} />}
         {section === 'installation' && <Installation />}
         {section === 'policy' && <Policy canEdit={canManagePolicy} />}
         {section === 'backups' && <Backups />}
@@ -147,6 +155,7 @@ function AppScreen({ app, onBack }: { app: App; onBack: () => void }) {
     ? [
         { value: 'overview', label: 'Overview' },
         { value: 'sharing', label: 'Sharing' },
+        { value: 'resources', label: 'Dependencies and storage' },
         { value: 'terminal', label: 'Terminal' },
         { value: 'detection', label: 'Configuration' },
       ]
@@ -179,6 +188,7 @@ function AppScreen({ app, onBack }: { app: App; onBack: () => void }) {
         {tab === 'detection' && <DetectionReview appID={app.id} />}
         {tab === 'sharing' && <Sharing appID={app.id} appName={app.name} />}
         {tab === 'overview' && <AppOverview app={app} />}
+        {tab === 'resources' && <Resources appID={app.id} />}
         {tab === 'terminal' && <Terminal appID={app.id} />}
       </div>
     </div>
