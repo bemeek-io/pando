@@ -2,10 +2,15 @@
 //
 // Two rules, both about wording rather than mechanics:
 //
-// **The anonymous grant is never labelled "public."** Design 08 §1.3: it reads
-// *anyone on the internet, without signing in*, with a confirmation step.
-// "Public" is a word people skim past; the sentence is not. R-075 makes it a
-// real grant row rather than a flag, and this is the interface to that row.
+// **The anonymous grant never stands on the bare word "public."** R-077 [P],
+// and the override is in the heading only: the action is called "Make it
+// public", because that is what it is called everywhere else and a heading
+// nobody recognises is its own kind of unclear. What the requirement is
+// actually protecting is kept — the consequence, *anyone on the internet can
+// open this, without signing in*, sits directly under the heading and in the
+// confirmation, so the word is never doing the work alone. "Public" is a word
+// people skim past; the sentence is not. R-075 makes it a real grant row
+// rather than a flag, and this is the interface to that row.
 //
 // **When host policy forbids it, the option is visible but disabled, with an
 // explanation of who to ask** — not hidden. A hidden option produces a support
@@ -37,7 +42,10 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
   const queries = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState('viewer');
+  // The least access, not the second-least. Sharing an app most often means
+  // "you can use this"; anything more is a deliberate choice, and a default
+  // that quietly hands over the app's settings is the wrong way round.
+  const [role, setRole] = useState('use');
 
   const grants = useQuery({
     queryKey: ['apps', appID, 'grants'],
@@ -69,20 +77,20 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
         <Table
           columns={[
             { key: 'who', header: 'Who', width: 'minmax(0,2fr)', render: who },
-            { key: 'plane', header: 'Access', width: '16ch', render: access },
+            { key: 'access', header: 'Access', width: 'minmax(0,1fr)', render: access },
             {
               key: 'actions',
               header: '',
               width: '12ch',
               align: 'right',
-              render: (row: GrantRow) => (
-                <Button variant="ghost" onClick={() => revoke.mutate(row.id)}>
+              render: (row: Access) => (
+                <Button variant="ghost" onClick={() => row.grantIDs.forEach((id) => revoke.mutate(id))}>
                   Remove
                 </Button>
               ),
             },
           ]}
-          rows={rows}
+          rows={byPrincipal(rows)}
         />
       </section>
 
@@ -150,9 +158,15 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
           borderTop: 'var(--border-width) solid var(--rule)',
         }}
       >
-        <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Open it up to everyone</h4>
+        <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Make it public</h4>
 
-        {/* Never "public". The sentence says exactly what happens. */}
+        {/* R-077 [P], overridden in the heading and kept here. The requirement
+            forbids presenting this as the *bare* word "public" — a toggle
+            labelled "Public" and nothing else, which people skim past without
+            registering what it does. "Make it public" is what the action is
+            called everywhere else in the world, and the consequence directly
+            beneath it is what the requirement is actually protecting. The
+            confirmation step stays too. */}
         <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink)', margin: 0 }}>
           Anyone on the internet can open {appName}, without signing in.
         </p>
@@ -172,7 +186,7 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
             onClick={() => revoke.mutate(anonymous.id)}
             style={{ alignSelf: 'flex-start' }}
           >
-            Stop sharing with everyone
+            Make it private again
           </Button>
         ) : (
           <Button
@@ -180,14 +194,14 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
             onClick={() => setConfirming(true)}
             style={{ alignSelf: 'flex-start' }}
           >
-            Open it up to everyone
+            Make it public
           </Button>
         )}
       </section>
 
       <Dialog
         open={confirming}
-        title="Open this app to everyone?"
+        title="Make this app public?"
         description={`Anyone who has the link will be able to open ${appName} without signing in. You can undo this at any time.`}
         onClose={() => setConfirming(false)}
         footer={
@@ -202,7 +216,7 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
                 setConfirming(false);
               }}
             >
-              Open it up
+              Make it public
             </Button>
           </>
         }
@@ -211,26 +225,76 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
   );
 }
 
-function who(row: GrantRow): React.ReactNode {
-  if (row.principal_kind === 'anonymous') {
-    return <span>Anyone on the internet, without signing in</span>;
-  }
-  // The name the server resolved, falling back to the identifier only when
-  // there is genuinely nothing else — a principal deleted since the grant was
-  // made. Showing `usr_01M2DW05…` to somebody deciding who may open their app
-  // asks them to recognise a ULID, which nobody can do.
-  return <span>{row.principal_name || row.principal_id}</span>;
+/** One person, and everything they can do with this app. */
+interface Access {
+  key: string;
+  principalKind: string;
+  name: string;
+  canOpen: boolean;
+  roles: string[];
+  grantIDs: string[];
 }
 
-function access(row: GrantRow): React.ReactNode {
-  // Two planes, and the difference matters to the person reading it: a data
-  // grant opens the app, a control grant administers it (R-070, R-071).
-  if (row.plane === 'data') return <span>Can open it</span>;
+/**
+ * One row per person, not one per grant.
+ *
+ * Owning an app is two grants — control to administer it, data to open it —
+ * and the table listed both, so the owner appeared twice with no indication
+ * that the two lines were the same person. R-070/071 keeps the planes separate
+ * in the model, which is right; it does not follow that somebody reading a list
+ * of who has access should be shown the model.
+ */
+function byPrincipal(rows: GrantRow[]): Access[] {
+  const out = new Map<string, Access>();
 
-  // The role's name, not its identifier. `role_owner` in a table somebody reads
-  // to decide who may administer their app is the same mistake as showing them
-  // a ULID for the person.
-  return <Tag>{sentence(row.role_name || row.role_id || 'control')}</Tag>;
+  for (const row of rows) {
+    // Anonymous is not a person and has its own section below, where the
+    // consequence is spelled out rather than listed in a table.
+    if (row.principal_kind === 'anonymous') continue;
+
+    const key = `${row.principal_kind}:${row.principal_id ?? ''}`;
+    const entry = out.get(key) ?? {
+      key,
+      principalKind: row.principal_kind,
+      // The name the server resolved, falling back to the identifier only when
+      // there is nothing else — a principal deleted since the grant was made.
+      name: row.principal_name || row.principal_id || '',
+      canOpen: false,
+      roles: [],
+      grantIDs: [],
+    };
+
+    entry.grantIDs.push(row.id);
+    if (row.plane === 'data') {
+      entry.canOpen = true;
+    } else {
+      entry.roles.push(sentence(row.role_name || row.role_id || 'control'));
+    }
+    out.set(key, entry);
+  }
+
+  return [...out.values()];
+}
+
+function who(row: Access): React.ReactNode {
+  return <span>{row.name}</span>;
+}
+
+function access(row: Access): React.ReactNode {
+  // Everything this person can do, in one cell. "Can open it" is the data
+  // plane; the roles are control (R-070, R-071). Someone who owns the app has
+  // both, and that now reads as one person with two capabilities rather than
+  // as two people who happen to share a name.
+  const parts = [...row.roles, ...(row.canOpen ? ['Can open it'] : [])];
+  return (
+    <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
+      {row.roles.map((r) => (
+        <Tag key={r}>{r}</Tag>
+      ))}
+      {row.canOpen && <span>Can open it</span>}
+      {parts.length === 0 && <span>No access</span>}
+    </div>
+  );
 }
 
 /** Role names are stored lowercase; the design system sets everything in

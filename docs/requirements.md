@@ -199,7 +199,9 @@ These are load-bearing. Violating any of them is a design failure, not a tradeof
 
 **R-076 [D]** Any app owner may grant to anonymous by default. Host policy may restrict this to admins.
 
-**R-077 [P]** The console must never present this as the bare word "public." It states the consequence: *anyone on the internet, without signing in.*
+**R-077 [P]** The console must never present this as the bare word "public" **alone**. Naming the
+action *Make it public* is fine and is what people look for; what may not happen is the word standing
+by itself. The consequence is always stated with it: *anyone on the internet, without signing in.*
 
 ### 6.3 Groups
 

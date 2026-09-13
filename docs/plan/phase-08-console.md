@@ -97,6 +97,17 @@ see `.claude/skills/pando-design/PROVENANCE.md` for how to pull it.
       correct, rather than asked for. R-101's escape hatch — an image, skipping detection — is second
       in the list and never the default, because the product is the first option working. Adding
       opens the app, since detection is already running and the next thing to do is look at it
+- [x] **Environment variables** (R-102, R-103). Detection asks rather than guesses, which implies the
+      answer can be corrected — and there was no way to add a variable it missed without the API. A
+      plain value goes in the spec, which is exportable; a secret goes through the secrets adapter and
+      the spec carries only a reference (R-190, R-191), so pasting a key into the wrong box cannot put
+      it in every export of the app forever. The form asks which and defaults to the safe one
+- [x] **Edits can actually ship.** Every spec edit the console made — a slot, a volume, a deploy
+      setting — wrote a revision and left the pinned one alone, correctly (pinning is what the
+      reconciler converges to, and a dropdown must not restart an app). Nothing then offered to deploy
+      that revision, so every one of those edits was inert: saved, and then a deploy shipped the old
+      spec without saying so. Overview says when the configuration has moved ahead of what is running,
+      and Deploy ships it
 - [x] Detection review screen (R-102, R-103, R-105)
 - [x] **Detection failure** shown, with the reason and a way back. The server records why precisely so
       somebody returning later can find out; nothing read it, so a failed detection left the screen

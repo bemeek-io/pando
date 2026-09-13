@@ -13,6 +13,12 @@ import type { App, Deployment } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { InlineWarning } from '../ui/InlineWarning';
 
+interface SpecRevision {
+  id: string;
+  revision: number;
+  body?: { warnings?: Array<{ code: string; message: string }> };
+}
+
 export function AppOverview({ app }: { app: App }) {
   const queries = useQueryClient();
 
@@ -22,23 +28,53 @@ export function AppOverview({ app }: { app: App }) {
     refetchInterval: app.state === 'deploying' ? 3_000 : false,
   });
 
-  const spec = useQuery({
-    queryKey: ['apps', app.id, 'spec', app.pinned_spec_id],
-    queryFn: () => api.get<{ body: { warnings?: Array<{ code: string; message: string }> } }>(
-      `/apps/${app.id}/specs/1`,
-    ),
+  // Every revision, so this screen can tell the pinned one from the newest.
+  //
+  // It used to fetch `/specs/1` — revision 1, hard-coded — so an app edited
+  // even once showed the warnings of a spec it no longer ran.
+  const specs = useQuery({
+    queryKey: ['apps', app.id, 'specs'],
+    queryFn: () =>
+      api.get<{ revisions: SpecRevision[] | null; pinned_spec_id: string }>(`/apps/${app.id}/specs`),
     enabled: Boolean(app.pinned_spec_id),
   });
 
+  const revisions = (specs.data?.revisions ?? []).slice().sort((a, b) => b.revision - a.revision);
+  const newest = revisions[0];
+  const pinned = revisions.find((r) => r.id === app.pinned_spec_id);
+
+  // The list carries no bodies, so the warnings need the revision itself. This
+  // is what `/specs/1` was reaching for before — correct for an app that had
+  // never been edited, and wrong for every one that had.
+  const pinnedSpec = useQuery({
+    queryKey: ['apps', app.id, 'spec', pinned?.revision],
+    queryFn: () => api.get<SpecRevision>(`/apps/${app.id}/specs/${pinned?.revision}`),
+    enabled: Boolean(pinned),
+  });
+
+  // Editing anything — a slot, a volume, an environment variable, a deploy
+  // setting — writes a new revision and leaves the pinned one alone, because
+  // pinning is what the reconciler converges to and a dropdown should not
+  // restart an app (R-152).
+  //
+  // Nothing then offered to deploy that revision, so every edit the console
+  // could make was inert: the change was saved, and a deploy shipped the old
+  // spec without saying so.
+  const unshipped = Boolean(newest && pinned && newest.revision > pinned.revision);
+
   const deploy = useMutation({
-    mutationFn: () => api.post(`/apps/${app.id}/deployments`, {}),
+    // The newest revision when there is an unshipped one, so Deploy ships what
+    // the screen is showing. An empty body deploys the pinned spec, which is
+    // right only when they are the same.
+    mutationFn: () =>
+      api.post(`/apps/${app.id}/deployments`, unshipped ? { spec_revision: newest?.revision } : {}),
     // ['apps'] so the list's status follows the app through building to
     // running, rather than only this screen.
     onSuccess: () => queries.invalidateQueries({ queryKey: ['apps'] }),
   });
 
   const latest = (deployments.data?.deployments ?? [])[0];
-  const warnings = spec.data?.body?.warnings ?? [];
+  const warnings = pinnedSpec.data?.body?.warnings ?? [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
@@ -53,6 +89,12 @@ export function AppOverview({ app }: { app: App }) {
       {app.state === 'deploying' && (
         <Banner tone="building">
           Deploying. The app keeps serving its last good version until this finishes.
+        </Banner>
+      )}
+
+      {unshipped && app.state !== 'deploying' && (
+        <Banner tone="info">
+          The configuration has changed since this app was last deployed. Deploy to apply it.
         </Banner>
       )}
 

@@ -66,7 +66,12 @@ merely looks unusual. Warnings that fire on correct behavior are how users learn
 that matter.
 
 **Sharing** — R-076, R-077.
-The anonymous grant is never labeled "public." It reads *anyone on the internet, without signing in*, with a confirmation step. When host policy forbids it (R-076), the option is visible but disabled with an explanation of who to ask — not hidden, because a hidden option produces a support ticket instead of understanding.
+The anonymous grant never stands on the bare word "public." **[P] R-077 overridden in the heading:**
+the action is called *Make it public*, because that is what it is called everywhere else and a
+heading nobody recognises is unclear in its own way. What the requirement protects is kept — the
+consequence, *anyone on the internet can open this, without signing in*, sits directly beneath the
+heading and again in the confirmation, so the word never does the work alone. The confirmation step
+stays. When host policy forbids it (R-076), the option is visible but disabled with an explanation of who to ask — not hidden, because a hidden option produces a support ticket instead of understanding.
 
 **Deploy settings** — R-145, R-147.
 Start-then-swap shows its constraint in body text at the point of enabling, not a tooltip: *two copies of your app run at the same time during a deploy. Do not enable this if your app writes to a local file or runs migrations on startup.* Auto-rollback likewise explains why it is off by default.

@@ -241,7 +241,7 @@ function AppScreen({ appID, onBack }: { appID: string; onBack: () => void }) {
     ? [
         { value: 'overview', label: 'Overview' },
         { value: 'sharing', label: 'Sharing' },
-        { value: 'resources', label: 'Dependencies and storage' },
+        { value: 'resources', label: 'Settings' },
         { value: 'terminal', label: 'Terminal' },
         { value: 'detection', label: 'Configuration' },
       ]
