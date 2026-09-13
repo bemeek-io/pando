@@ -28,7 +28,14 @@ import { InlineWarning } from '../ui/InlineWarning';
 
 interface DetectionResponse {
   status: string;
-  detection: Proposal;
+  detection: Proposal & {
+    // Set only when detection failed outright — a repository that could not be
+    // cloned, a trial run that could not start. Distinct from `blocked`, which
+    // is a proposal that succeeded and found an app Pando cannot run: one is
+    // "Pando never got to look", the other is "Pando looked and the answer is
+    // no". They read differently and lead to different next steps.
+    error?: { message?: string; remedy?: string };
+  };
   answers: Record<string, string> | null;
   commit: string;
 }
@@ -56,12 +63,38 @@ export function DetectionReview({ appID }: { appID: string }) {
     onSuccess: () => queries.invalidateQueries({ queryKey: ['apps', appID] }),
   });
 
+  // R-022: re-detection is explicit, never automatic. Offered here because a
+  // failure is exactly when somebody has just fixed the thing that caused it —
+  // made the repository reachable, corrected the address — and wants Pando to
+  // look again.
+  const rerun = useMutation({
+    mutationFn: () => api.post(`/apps/${appID}/detection/rerun`),
+    onSuccess: () => queries.invalidateQueries({ queryKey: ['apps', appID, 'detection'] }),
+  });
+
   if (detection.isPending) return <Quiet>Reading the repository.</Quiet>;
   if (detection.isError) return <Failure error={detection.error} />;
 
   const { status, detection: proposal, answers } = detection.data;
 
   if (status === 'running') return <Quiet>Reading the repository.</Quiet>;
+
+  // A failure left the screen saying "Reading the repository." for ever.
+  //
+  // The server records the reason precisely so somebody coming back later can
+  // find out what happened, and nothing read it: the status was neither
+  // 'running' nor 'blocked', so this fell through to rendering a proposal that
+  // does not exist. An app stuck on a progress message is worse than an error,
+  // because there is nothing to act on and no reason to stop waiting.
+  if (status === 'failed') {
+    return (
+      <DetectionFailed
+        error={detection.data.detection.error}
+        onRetry={() => rerun.mutate()}
+        retrying={rerun.isPending}
+      />
+    );
+  }
 
   if (status === 'blocked') {
     return <Blocked proposal={proposal} />;
@@ -340,6 +373,41 @@ function Blocked({ proposal }: { proposal: Proposal }) {
         </p>
       )}
       {proposal.trial_log && <CodeBlock title="What Pando saw" lines={proposal.trial_log} />}
+    </div>
+  );
+}
+
+function DetectionFailed({
+  error,
+  onRetry,
+  retrying,
+}: {
+  error?: { message?: string; remedy?: string };
+  onRetry: () => void;
+  retrying: boolean;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxWidth: '68ch' }}>
+      <div>
+        <h4 style={{ font: 'var(--type-h4)', margin: 0, color: 'var(--marker-deep)' }}>
+          Pando couldn&rsquo;t read this app
+        </h4>
+        {/* The server's sentence, as written. It is held to the R-105 standard
+            and paraphrasing it here would undo that in the UI layer. */}
+        <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink)', margin: 'var(--space-2) 0 0' }}>
+          {error?.message ?? 'Something went wrong while reading the repository.'}
+        </p>
+      </div>
+      {error?.remedy && (
+        <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
+          {error.remedy}
+        </p>
+      )}
+      <div>
+        <Button variant="secondary" disabled={retrying} onClick={onRetry}>
+          {retrying ? 'Looking again' : 'Try again'}
+        </Button>
+      </div>
     </div>
   );
 }

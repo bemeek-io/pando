@@ -90,7 +90,18 @@ see `.claude/skills/pando-design/PROVENANCE.md` for how to pull it.
       membership and an edit would be overwritten at the next sign-in. A custom role offers only its
       chosen scope's verbs: the server refuses a mixed-scope role (R-080), and offering a choice
       that will be refused is worse than not offering it
+- [x] **Adding an app** (R-002, R-005, R-101). The console could administer apps and not make one —
+      the only ways in were `pando app add` or a POST by hand, and a person who may not know what a
+      port is will not be running curl. One input: design 08's principle is "the default path shows
+      almost nothing", so the name is derived from the source and shown as a field somebody may
+      correct, rather than asked for. R-101's escape hatch — an image, skipping detection — is second
+      in the list and never the default, because the product is the first option working. Adding
+      opens the app, since detection is already running and the next thing to do is look at it
 - [x] Detection review screen (R-102, R-103, R-105)
+- [x] **Detection failure** shown, with the reason and a way back. The server records why precisely so
+      somebody returning later can find out; nothing read it, so a failed detection left the screen
+      saying "Reading the repository." for ever. An app stuck on a progress message is worse than an
+      error: there is nothing to act on and no reason to stop waiting
 - [x] Warnings, rendered inline where they apply (R-201, R-168, R-028) — carrying no red at all,
       which is what makes them distinct from an error in a palette that has no amber
 - [x] Sharing screen (R-076, R-077)

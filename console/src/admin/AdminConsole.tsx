@@ -13,7 +13,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Button, Logo, SidebarNav, StatusIndicator, Table, Tabs, Tooltip } from '@design';
+import { Badge, Button, EmptyState, Logo, SidebarNav, StatusIndicator, Table, Tabs, Tooltip } from '@design';
 import type { SidebarItem } from '@design';
 
 import { api } from '@api/client';
@@ -28,6 +28,7 @@ import { DetectionReview } from './DetectionReview';
 import { Sharing } from './Sharing';
 import { AppOverview } from './AppOverview';
 import { Resources } from './Resources';
+import { AddApp } from './AddApp';
 import { Terminal } from './Terminal';
 
 type Section = 'apps' | 'accounts' | 'identity' | 'installation' | 'policy' | 'backups' | 'audit';
@@ -97,22 +98,62 @@ export function AdminConsole({ onLeave }: { onLeave: () => void }) {
           (selected ? (
             <AppScreen app={selected} onBack={() => setSelected(null)} />
           ) : (
-            <AppsList rows={rows} onOpen={setSelected} />
+            // Adding an app opens it. Detection is already running by the time
+            // the request returns, and the next thing to do is look at what it
+            // found — landing back on a list with a new row saying "draft"
+            // leaves the person to work that out.
+            <AppsList rows={rows} onOpen={setSelected} onAdded={setSelected} />
           ))}
       </main>
     </div>
   );
 }
 
-function AppsList({ rows, onOpen }: { rows: App[]; onOpen: (app: App) => void }) {
+function AppsList({
+  rows,
+  onOpen,
+  onAdded,
+}: {
+  rows: App[];
+  onOpen: (app: App) => void;
+  onAdded: (app: App) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+
   return (
     <div style={{ maxWidth: 'var(--console-max)' }}>
-      <header style={{ padding: 'var(--space-6) var(--console-padding) var(--space-4)' }}>
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 'var(--space-4)',
+          padding: 'var(--space-6) var(--console-padding) var(--space-4)',
+        }}
+      >
         <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>Apps</h3>
+        <Button variant="primary" onClick={() => setAdding(true)}>
+          Add app
+        </Button>
       </header>
       <div style={{ padding: '0 var(--console-padding) var(--space-7)' }}>
         <Table
           onRowClick={onOpen}
+          // A fresh install has no apps, and the list was a set of column
+          // headers over nothing. R-002 is about the tenth app; the first one
+          // is what makes the install anything at all.
+          empty={
+            <EmptyState
+              heading="Add your first app"
+              action={
+                <Button variant="primary" onClick={() => setAdding(true)}>
+                  Add app
+                </Button>
+              }
+            >
+              Point Pando at a repository and it works out how to build and run it.
+            </EmptyState>
+          }
           columns={[
             { key: 'name', header: 'Name', width: 'minmax(0,1.4fr)' },
             {
@@ -141,6 +182,16 @@ function AppsList({ rows, onOpen }: { rows: App[]; onOpen: (app: App) => void })
           rows={rows}
         />
       </div>
+
+      {adding && (
+        <AddApp
+          onClose={() => setAdding(false)}
+          onAdded={(app) => {
+            setAdding(false);
+            onAdded(app);
+          }}
+        />
+      )}
     </div>
   );
 }
