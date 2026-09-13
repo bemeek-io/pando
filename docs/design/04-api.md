@@ -305,6 +305,16 @@ changing your own password is not administration, and changing somebody else's i
 different action with different consequences, which does not exist yet and must not arrive by
 relaxing this route.
 
+**[P] The first password can be supplied, as `PANDO_ADMIN_PASSWORD`.** R-046 says the initial
+credential is *generated*, and that is still the default — but it is shown once, in a log line, and a
+server container recreated before anybody reads it leaves an administrator nobody can sign in as. The
+digest is argon2id, so there is no recovering it; before `pando admin reset-password` existed there
+was no way back at all. Supplying one changes nothing else: the account must still change it at first
+sign-in, because an environment variable is not a safer place than a log line — it is in the Compose
+file, in `docker inspect`, and inherited by every child process. It buys a way in, not a credential.
+Set on an install that already has accounts it is ignored, and says so: an operator who set it and
+cannot sign in with it should not have to guess why.
+
 **[P] Ten characters, and that is the only rule.** No composition classes: a class requirement pushes
 people toward `Passw0rd!`, which has less real entropy than three words and is the password the rule
 reliably produces. Ten rather than a DR bundle's sixteen (§07) because the threats differ — a password
@@ -382,6 +392,28 @@ pando rollback <app> [--to=<rev>]
 pando export <app>
 pando backup create|verify|restore
 pando policy show|set
+
+pando admin reset-password [user]          server-side; needs the host, not a token
 ```
 
 **[D]** `pando deploy ./` must work from a local path, since R-262's agent workflow depends on it — a generated app cannot drop a config file, but an agent can invoke a command.
+
+**[D]** Everything above `pando admin` is a client of this API and nothing else. `internal/cli` imports
+no core package, so a command that needed something the API cannot do fails to compile rather than
+quietly growing a shortcut (R-261).
+
+**[D]** `pando admin` is the exception, and lives in `cmd/pando` beside `serve` and `migrate` rather
+than in `internal/cli`. Its commands run against the database directly because they exist for the case
+where **there is no account to authenticate as** — there is no request they could make. Keeping them
+out of the client package is what stops that exception spreading.
+
+**[P] Host shell access is the authorization for `pando admin`, and that is a boundary rather than the
+absence of one.** Whoever can run it can already read the configuration naming the database and change
+the row by hand; the command exists so that doing it correctly — a real argon2id digest, sessions
+ended, an audit event written — is easier than doing it by hand. Every `pando admin` action writes to
+the audit log as `system` with the reason it ran outside any session, and a failure to record it fails
+the command: a credential reset that leaves no trace is a backdoor.
+
+**[P] `reset-password` ends every session the account has.** A reset that leaves a live cookie working
+has taken nothing back (R-048), and the case it exists for is the one where somebody else may be
+holding it.

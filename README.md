@@ -16,10 +16,44 @@ host configuration, not from a different edition.
 
 ## Status
 
-**Design complete, implementation not started.** This repository is a scaffold: the directory
-structure, the tooling, and the documents that specify the system. There is no working binary yet.
+**All eleven phases are built.** One binary serves the API, the console, the proxy and the CLI; the
+four end-to-end sequences in [design 07](docs/design/07-sequences.md) run against a real Compose stack
+with real Docker and real Postgres.
 
-Nothing is blocking — [phase 0](docs/plan/phase-00-skeleton.md) can start.
+Two open questions remain and neither is a decision: **O-4** needs a measurement (slot detection
+against a corpus with crashing apps in it) and **O-5** is per-adapter by design (TLS issuance). See
+[`docs/plan/open-decisions.md`](docs/plan/open-decisions.md).
+
+## Running it
+
+```bash
+docker compose up -d
+```
+
+Pando and Postgres start together. The console is on `http://localhost:8080`.
+
+**Signing in the first time.** First run creates one account, `admin`, and prints its password once:
+
+```bash
+docker compose logs pando | grep '"first run"'
+```
+
+You are made to change it at first sign-in, so the printed one is a way in rather than a credential.
+
+That line lives in the log of the container that printed it, so a `down`/`up` or a `--force-recreate`
+loses it — the account already exists, and nothing is printed again. Two ways around that:
+
+```bash
+# Choose it up front. Only read on first run, and still changed at first sign-in.
+PANDO_ADMIN_PASSWORD=... docker compose up -d
+
+# Or set a new one later, from the host. Ends every session that account has.
+docker compose exec pando pando admin reset-password
+```
+
+`pando admin` runs against the database rather than the API, because it exists for the case where
+nobody can sign in. Host shell access is the authorization — whoever can run it can already read the
+database credentials — and every use writes to the audit log.
 
 ## Where things are
 
@@ -50,6 +84,10 @@ make requirements-index      # regenerate the traceability index
 ```
 
 `make lint` enforces the adapter import boundary (R-027) as a depguard rule, not a convention.
+
+The end-to-end suite needs a running stack and a fresh one — see
+[`test/acceptance/README.md`](test/acceptance/README.md), which also explains why the retry backoff is
+worth compressing while you iterate.
 
 ## What Pando is not
 
