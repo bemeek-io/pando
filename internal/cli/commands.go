@@ -415,7 +415,7 @@ func execCmd(client func() (*Client, error)) *cobra.Command {
 	var workload string
 
 	cmd := &cobra.Command{
-		Use:   "exec <app> [-- <command>...]",
+		Use:   "exec <app> [--workload <name>] [-- <command>...]",
 		Short: "Run a command inside a running app",
 		Long: "Opens a terminal inside a running workload.\n\n" +
 			"This is the most privileged thing you can do to an app: what runs here can read\n" +

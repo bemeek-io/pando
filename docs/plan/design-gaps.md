@@ -108,10 +108,16 @@ outliving a Pando restart is correct — but it is surprising, and worth knowing
 
 ## Still open, tracked elsewhere
 
-Three questions remain, none blocking: **O-4** (slot detection — has a `[P]` answer awaiting
-measurement), **O-5** (TLS issuance — genuinely per-adapter), and **O-6** (which backup destinations
-ship — provider-shaped; the design half, that a destination is *not* an adapter category, is settled in
-design 03 §8.1). See [`open-decisions.md`](open-decisions.md).
+Two questions remain, neither blocking and neither a decision: **O-4** (slot detection — has a `[P]`
+answer awaiting measurement against a corpus with crashing apps in it) and **O-5** (TLS issuance —
+genuinely per-adapter, each routing adapter answering it for itself). See
+[`open-decisions.md`](open-decisions.md).
+
+**O-6 is resolved, by reversing design 03 §8.1.** That section had settled that a backup destination
+is *not* an adapter category. It is one — the eighth — and `local` ships in v1. The reversal is worth
+recording rather than quietly editing: R-252 says a provider-shaped thing is an adapter, and a
+destination is as provider-shaped as a runtime. The original reasoning was that there would only ever
+be one, which is the argument that produces a hard-coded path and then a second destination.
 
 ## How to keep this file honest
 
