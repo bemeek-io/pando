@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # The default branch, whatever it is currently called. A filter naming only
+    # "main" on a repository whose default branch is not main means CI never
+    # runs and the badge never turns green — which looks like a broken build.
+    branches: [main, implementation]
   pull_request:
 
 jobs:
