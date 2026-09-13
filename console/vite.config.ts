@@ -30,7 +30,14 @@ export default defineConfig({
 
   build: {
     outDir: resolve(__dirname, '../internal/console/dist'),
-    emptyOutDir: true,
+
+    // scripts/clean-dist.mjs does the emptying, in prebuild. Vite's own
+    // emptyOutDir takes everything, and one file in there is committed:
+    // dist/README.md, which is what `//go:embed all:dist` matches on a fresh
+    // clone where no console has been built. Letting Vite delete it meant the
+    // next `git add -A` staged its removal and the repository went back to not
+    // compiling.
+    emptyOutDir: false,
 
     // No source maps in the shipped binary: they would double its size and the
     // console is not debugged in production.

@@ -5,7 +5,7 @@
   "scripts": {
     "predev": "node scripts/vendor-design.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/vendor-design.mjs && npm run types",
+    "prebuild": "node scripts/clean-dist.mjs && node scripts/vendor-design.mjs && npm run types",
     "build": "tsc --noEmit && vite build",
     "types": "go run ../cmd/gen-api-types",
     "lint": "eslint src",
