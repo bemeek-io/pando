@@ -172,11 +172,6 @@ func (a *Adapter) Provision(_ context.Context, req api.ProvisionRequest) (api.Pr
 			"MYSQL_USER":          secret.New("app"),
 			"MYSQL_PASSWORD":      secret.New(password),
 			"MYSQL_ROOT_PASSWORD": secret.New(password),
-			// Read by mysqladmin in the health check, so the password is not on
-			// a command line. A container's argv is visible in the host's
-			// process list, and a health check runs it every few seconds
-			// forever.
-			"MYSQL_PWD": secret.New(password),
 		}
 		path = "/var/lib/mysql"
 		dsn = (&url.URL{
@@ -239,13 +234,17 @@ func healthFor(t spec.SlotType) *api.HealthPlan {
 			IntervalSeconds: 5, TimeoutSeconds: 5, Retries: 12,
 		}
 	case spec.SlotMySQL:
-		// -u root with MYSQL_PWD in the environment. Without credentials
-		// mysqladmin exits non-zero on "access denied", so the credential-free
-		// version of this check reports a healthy server as permanently
-		// unhealthy — and a workload that is always unhealthy makes the app
-		// that depends on it permanently degraded.
+		// No credentials, deliberately. `mysqladmin ping` exits 0 when the
+		// server answers at all, including with "access denied" — which is what
+		// ping means and is the whole liveness signal. Measured, because the
+		// obvious-looking alternative is worse in two ways: a password on argv
+		// is visible in the host's process list and re-run every few seconds
+		// forever, and putting it in MYSQL_PWD instead breaks the image's
+		// entrypoint outright — it connects as root with no password during
+		// initialisation, MYSQL_PWD overrides that, and the container exits 1
+		// on "Access denied" before the database is ever created.
 		return &api.HealthPlan{
-			Command: []string{"mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root"},
+			Command: []string{"mysqladmin", "ping", "-h", "127.0.0.1"},
 			// Longer than the others: MySQL's first start initialises the data
 			// directory and can take a minute on a small host.
 			IntervalSeconds: 5, TimeoutSeconds: 5, Retries: 24,

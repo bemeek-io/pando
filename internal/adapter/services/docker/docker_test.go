@@ -61,6 +61,27 @@ func TestR131_ProvisionFillsASlotWithSomethingRunnable(t *testing.T) {
 	}
 }
 
+// The environment handed to a service is only what its image expects.
+//
+// Specifically: no MYSQL_PWD. It looks like the tidy way to keep a password off
+// the health check's command line, and it breaks the image's entrypoint
+// outright — initialisation connects as root with no password, MYSQL_PWD
+// overrides that, and the container exits 1 on "Access denied" before the
+// database is created. Every first deploy, silently, until someone reads the
+// container log.
+func TestNoEnvironmentThatBreaksTheImagesOwnStartup(t *testing.T) {
+	res := provision(t, configured(t), spec.SlotMySQL, secret.Value{})
+	_, set := res.Workloads[0].Env["MYSQL_PWD"]
+	require.False(t, set, "MYSQL_PWD breaks the mysql image's initialisation")
+
+	// And the health check carries no credential, because it does not need one:
+	// mysqladmin ping exits 0 when the server answers at all, which is what
+	// ping means.
+	for _, arg := range res.Workloads[0].Health.Command {
+		require.NotContains(t, arg, "-p", "a password on argv is in the host's process list")
+	}
+}
+
 // TestR134_AProvisionedServiceIsNotAddressableFromOutside asserts R-134.
 func TestR134_AProvisionedServiceIsNotAddressableFromOutside(t *testing.T) {
 	res := provision(t, configured(t), spec.SlotPostgres, secret.Value{})
