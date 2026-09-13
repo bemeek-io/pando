@@ -571,3 +571,41 @@ func TestR024_SourceThatMustBeBuiltNeedsABuilder(t *testing.T) {
 	_, err = p.Check(context.Background(), s)
 	require.NoError(t, err)
 }
+
+// TestR105_AnUnsupportedBuildMethodNamesWhatIsAvailable asserts R-105 on the
+// refusal a real app actually hit.
+//
+// It used to read: `"bld_buildkit" cannot build this app the way it is set up.
+// Choose a different build method, or a different builder.` That names the
+// builder when the problem is the build method, and offers a choice without
+// saying what the choices are — so the only way forward was to read the
+// adapter's source.
+func TestR105_AnUnsupportedBuildMethodNamesWhatIsAvailable(t *testing.T) {
+	s := plannableSpec()
+	s.Build.Strategy = spec.BuildCompose
+
+	// A builder that does what the shipped one does, and no more. The fixture
+	// above declares compose as well, which no real builder implements — so
+	// this path had no unit coverage at all until an app hit it.
+	p := planner.New(
+		registry(t, capableRuntime(), capableRouting(), &fakeBuilder{caps: api.BuilderCapabilities{
+			IsolationClass: spec.IsolationContainer,
+			Strategies:     []api.BuildStrategy{spec.BuildDockerfile},
+		}}),
+		policy.Static(policy.Default()),
+		fixedAllocations{},
+	)
+
+	_, err := p.Check(context.Background(), s)
+	require.Error(t, err)
+	require.Equal(t, errs.PlanCapabilityUnsupported, errs.CodeOf(err))
+
+	e := errs.As(err)
+	require.Contains(t, e.Message, "compose", "it names the method that was asked for")
+	require.Contains(t, e.Message, "dockerfile", "and the one this installation can do")
+	require.Contains(t, e.Remedy, "dockerfile")
+
+	supported, ok := e.Details["supported"].([]string)
+	require.True(t, ok)
+	require.Equal(t, []string{"dockerfile"}, supported)
+}

@@ -13,6 +13,7 @@ package planner
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/policy"
@@ -329,11 +330,27 @@ func (p *Planner) checkIsolation(ctx context.Context, s *spec.AppSpec, runtimeCa
 				WithRemedy("Use a builder that provides stronger isolation, or ask an administrator about the installation's requirements.")
 		}
 		if !caps.Supports(s.Build.Strategy) {
+			// Names the method and what this installation can actually do.
+			//
+			// It used to say only that the builder "cannot build this app the
+			// way it is set up", which points at the builder when the problem
+			// is the spec's build method, and offers "choose a different build
+			// method" without saying which ones exist. Somebody reading it has
+			// no way to act on it — the R-105 standard is a message that can be
+			// acted on, or pasted into an assistant, without further context.
+			supported := make([]string, 0, len(caps.Strategies))
+			for _, st := range caps.Strategies {
+				supported = append(supported, string(st))
+			}
 			return errs.Newf(errs.PlanCapabilityUnsupported,
-				"%q cannot build this app the way it is set up.", s.Build.AdapterRef).
+				"This app is set to build with %q, and %q cannot do that. It builds: %s.",
+				s.Build.Strategy, s.Build.AdapterRef, strings.Join(supported, ", ")).
 				WithDetail("adapter_ref", s.Build.AdapterRef).
 				WithDetail("requested", string(s.Build.Strategy)).
-				WithRemedy("Choose a different build method, or a different builder.")
+				WithDetail("supported", supported).
+				WithRemedy(fmt.Sprintf(
+					"Change this app's build method to one of: %s. Detection will work it out again if you re-run it from the app's configuration.",
+					strings.Join(supported, ", ")))
 		}
 	}
 	return nil
