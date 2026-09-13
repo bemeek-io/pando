@@ -94,6 +94,7 @@ export interface Candidate {
   evidence?: (string[] | null);
   questions?: (Question[] | null);
   draft?: Draft;
+  spec?: AppSpec;
 }
 
 export interface Question {
@@ -148,12 +149,12 @@ export interface Source {
 }
 
 export interface Draft {
-  Workloads: (Workload[] | null);
-  Volumes: (Volume[] | null);
-  Slots: (Slot[] | null);
-  Build: Build;
-  Health: Health;
-  Warnings: (Warning[] | null);
+  workloads?: (Workload[] | null);
+  volumes?: (Volume[] | null);
+  slots?: (Slot[] | null);
+  build: Build;
+  health?: Health;
+  warnings?: (Warning[] | null);
 }
 
 export interface Build {
@@ -186,6 +187,7 @@ export interface Workload {
   exposed: boolean;
   primary: boolean;
   resources?: ResourceLimits;
+  build?: WorkloadBuild;
 }
 
 export interface Volume {
@@ -294,6 +296,12 @@ export interface Healthcheck {
 export interface ResourceLimits {
   cpu_millis?: number;
   memory_bytes?: number;
+}
+
+export interface WorkloadBuild {
+  context?: string;
+  dockerfile?: string;
+  target?: string;
 }
 
 export interface Resolution {

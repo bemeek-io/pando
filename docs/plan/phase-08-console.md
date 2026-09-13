@@ -108,6 +108,10 @@ see `.claude/skills/pando-design/PROVENANCE.md` for how to pull it.
       that revision, so every one of those edits was inert: saved, and then a deploy shipped the old
       spec without saying so. Overview says when the configuration has moved ahead of what is running,
       and Deploy ships it
+- [x] **Choosing which part of the app to open a terminal in.** The exec endpoint has always taken a
+      workload and the CLI has always had `--workload`; the console sent neither, so a compose app
+      with several services could only ever be reached at the one its URL points at. Shown only when
+      there is more than one, because a picker over a single choice is furniture
 - [x] Detection review screen (R-102, R-103, R-105)
 - [x] **Detection failure** shown, with the reason and a way back. The server records why precisely so
       somebody returning later can find out; nothing read it, so a failed detection left the screen

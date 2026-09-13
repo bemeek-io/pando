@@ -12,19 +12,97 @@
 // ends up in the audit log.
 
 import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal as Xterm } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 
-import { Button, Card } from '@design';
+import { Button, Card, Select } from '@design';
 
-export function Terminal({ appID, workload }: { appID: string; workload?: string }) {
+import { api } from '@api/client';
+import type { AppSpec } from '@api/types.gen';
+
+export function Terminal({ appID }: { appID: string }) {
   const [open, setOpen] = useState(false);
+  const [workload, setWorkload] = useState<string>('');
+
+  // Which parts this app has. A compose file describes several services, and
+  // the exec endpoint has always taken a workload — the console just never
+  // asked, so there was no way to reach anything but the one the app's URL
+  // points at.
+  const names = useWorkloads(appID);
+
+  // Default to the primary, which is the one somebody means by "this app"
+  // (R-026), and only once the list has arrived.
+  const chosen = workload || names.primary;
 
   if (!open) {
-    return <Warning onOpen={() => setOpen(true)} />;
+    return (
+      <Warning
+        names={names.all}
+        chosen={chosen}
+        onChoose={setWorkload}
+        onOpen={() => setOpen(true)}
+      />
+    );
   }
-  return <Session appID={appID} workload={workload} onClose={() => setOpen(false)} />;
+  return (
+    <Session
+      // Keyed on the workload: choosing another part must tear the old session
+      // down, not leave its socket open behind a new one.
+      key={chosen}
+      appID={appID} workload={chosen} names={names.all} onChoose={(w) => {
+      // Changing the target closes this session and opens one in the other
+      // part. Session keys on the workload, so React rebuilds it.
+      setWorkload(w);
+    }} onClose={() => setOpen(false)} />
+  );
+}
+
+/** The app's workload names, and which one is primary. */
+function useWorkloads(appID: string): { all: string[]; primary: string } {
+  const specs = useQuery({
+    queryKey: ['apps', appID, 'specs'],
+    queryFn: () => api.get<{ revisions: Array<{ id: string; revision: number }> | null; pinned_spec_id: string }>(
+      `/apps/${appID}/specs`,
+    ),
+  });
+
+  const pinned = (specs.data?.revisions ?? []).find((r) => r.id === specs.data?.pinned_spec_id);
+
+  const full = useQuery({
+    queryKey: ['apps', appID, 'spec', pinned?.revision],
+    queryFn: () => api.get<{ body: AppSpec }>(`/apps/${appID}/specs/${pinned?.revision}`),
+    enabled: Boolean(pinned),
+  });
+
+  const workloads = full.data?.body?.workloads ?? [];
+  return {
+    all: workloads.map((w) => w.name),
+    primary: (workloads.find((w) => w.primary) ?? workloads[0])?.name ?? '',
+  };
+}
+
+/** Shown whenever the app has more than one part to choose between. */
+function WorkloadPicker({
+  names,
+  chosen,
+  onChoose,
+}: {
+  names: string[];
+  chosen: string;
+  onChoose: (w: string) => void;
+}) {
+  if (names.length < 2) return null;
+  return (
+    <Select
+      label="Which part of the app"
+      value={chosen}
+      options={names.map((n) => ({ value: n, label: n }))}
+      onChange={(e) => onChoose(e.target.value)}
+      style={{ maxWidth: '32ch' }}
+    />
+  );
 }
 
 /**
@@ -33,7 +111,17 @@ export function Terminal({ appID, workload }: { appID: string; workload?: string
  * Not a tooltip and not a dialog to dismiss: R-086 asks for this to be stated
  * plainly, and a dialog is a thing people click past.
  */
-function Warning({ onOpen }: { onOpen: () => void }) {
+function Warning({
+  names,
+  chosen,
+  onChoose,
+  onOpen,
+}: {
+  names: string[];
+  chosen: string;
+  onChoose: (w: string) => void;
+  onOpen: () => void;
+}) {
   return (
     <Card padding="md" style={{ maxWidth: 'var(--console-max)' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
@@ -50,6 +138,8 @@ function Warning({ onOpen }: { onOpen: () => void }) {
           type or what comes back.
         </p>
 
+        <WorkloadPicker names={names} chosen={chosen} onChoose={onChoose} />
+
         <Button variant="primary" onClick={onOpen} style={{ alignSelf: 'flex-start' }}>
           Open terminal
         </Button>
@@ -61,10 +151,14 @@ function Warning({ onOpen }: { onOpen: () => void }) {
 function Session({
   appID,
   workload,
+  names,
+  onChoose,
   onClose,
 }: {
   appID: string;
   workload?: string;
+  names: string[];
+  onChoose: (w: string) => void;
   onClose: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -157,7 +251,10 @@ function Session({
           gap: 'var(--space-3)',
         }}
       >
-        <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>{status}</span>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'var(--space-4)' }}>
+          <WorkloadPicker names={names} chosen={workload ?? ''} onChoose={onChoose} />
+          <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>{status}</span>
+        </div>
         <Button variant="ghost" onClick={onClose}>
           Close terminal
         </Button>
@@ -169,8 +266,19 @@ function Session({
           background: 'var(--terminal)',
           borderRadius: 'var(--radius-md)',
           padding: 'var(--space-3)',
-          height: 'var(--space-10)',
-          minHeight: 'var(--space-10)',
+
+          // xterm builds its own element inside this one, with its own
+          // background and square corners. Without clipping, it overhangs the
+          // rounded box by however much the row height fails to divide the
+          // available space — a dark strip with sharp corners under a rounded
+          // terminal.
+          overflow: 'hidden',
+
+          // Sized in lines, because that is what a terminal is measured in.
+          // This was `var(--space-10)` — a spacing token used as a height, and
+          // 128px is about eight lines, which is too few to read a stack trace
+          // in.
+          height: '26em',
         }}
       />
     </div>
