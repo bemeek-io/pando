@@ -1,6 +1,8 @@
 package reconciler
 
 import (
+	"context"
+
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/deploy"
 	"github.com/bemeek-io/pando/internal/core/spec"
@@ -21,6 +23,15 @@ func PlanShape(s *spec.AppSpec, image string) api.BundlePlan {
 		return api.BundlePlan{}
 	}
 	return plan
+}
+
+// ServiceShapes adds an app's provisioned services to what should be running.
+//
+// An interface rather than the Runner so a Reconciler can be built without a
+// deploy Runner, which the unit tests do. Nil means an install with no
+// provisioner, where every app's shape is already complete.
+type ServiceShapes interface {
+	ServiceShapes(ctx context.Context, s *spec.AppSpec) (api.BundlePlan, error)
 }
 
 // EnvHash is the fingerprint of the environment an app should be running with.

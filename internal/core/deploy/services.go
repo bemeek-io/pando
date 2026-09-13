@@ -119,6 +119,63 @@ func (r *Runner) provision(ctx context.Context, s *spec.AppSpec, sink io.Writer)
 	return out, nil
 }
 
+// ServiceShapes is what an app's provisioned services should look like, for the
+// reconciler's drift comparison.
+//
+// Without it the reconciler's idea of "what should be running" contains the
+// app's workloads and not the database standing next to them, and two things go
+// wrong on every tick: a provisioned service that was killed is never restored,
+// because nothing wants it (R-148), and the one that is running is reported as
+// a workload the spec does not declare — an app told every fifteen seconds that
+// its own database is a stranger.
+//
+// Reads nothing sensitive and writes nothing. Provision is called without the
+// stored connection string, which changes only the generated password, and
+// environment is dropped here anyway: the reconciler's comparison is shape, and
+// it must never be a reason to decrypt a secret (R-193). A slot with no
+// recorded instance is skipped rather than provisioned — this runs every
+// fifteen seconds for every app and is not where a database gets created.
+func (r *Runner) ServiceShapes(ctx context.Context, s *spec.AppSpec) (api.BundlePlan, error) {
+	var shape api.BundlePlan
+	if r.services == nil {
+		return shape, nil
+	}
+
+	for _, slot := range s.Slots {
+		if slot.Resolution == nil || slot.Resolution.Mode != spec.ResolutionProvisioned {
+			continue
+		}
+
+		existing, found, err := r.services.Get(ctx, s.AppID, slot.Key)
+		if err != nil {
+			return api.BundlePlan{}, err
+		}
+		if !found {
+			continue
+		}
+
+		adapter, _, ok := r.registry.ServicesFor(slot.Type)
+		if !ok {
+			continue
+		}
+
+		res, err := adapter.Provision(ctx, api.ProvisionRequest{
+			AppID: s.AppID, BundleID: s.AppID, SlotKey: slot.Key,
+			Type: slot.Type, ServiceID: existing.ID,
+		})
+		if err != nil {
+			return api.BundlePlan{}, err
+		}
+
+		for _, w := range res.Workloads {
+			w.Env = nil
+			shape.Workloads = append(shape.Workloads, w)
+		}
+		shape.Volumes = append(shape.Volumes, res.Volumes...)
+	}
+	return shape, nil
+}
+
 // dependsOn is every provisioned workload an app workload should start after.
 //
 // Start order, not readiness — Docker's depends_on does not wait for a health

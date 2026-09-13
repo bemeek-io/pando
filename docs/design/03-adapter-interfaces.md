@@ -493,6 +493,14 @@ volume rules, which it can only do if it is in a Pando volume. The volumes are t
 after Apply, carried in the DR bundle, offered at delete, reclaimed once backed up. None of that
 machinery knows services exist.
 
+**[D] `Provision` must be pure and cheap.** It is called on every deploy, and again on every
+reconcile — the reconciler's "what should be running" has to contain the provisioned service, or a
+killed database is never restored (R-148) and the running one is reported every fifteen seconds as a
+workload the spec does not declare. An implementation that talked to a provider here would be talking
+to it four times a minute per app. The interface is shaped so it does not have to: `Provision` returns
+plans, and the runtime adapter creates things. The reconciler drops `Env` from what comes back, so
+building the comparison is never a reason to decrypt a secret (R-193).
+
 **[P]** `ProvisionRequest.ServiceID` and `ExistingSecret` — added in phase 9 because **Provision runs on
 every deploy**, not only the first: the workloads it returns *are* the service, so a redeploy that
 skipped it would produce a bundle with no database in it and the runtime would converge to that.

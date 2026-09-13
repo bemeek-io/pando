@@ -69,12 +69,17 @@ type Reconciler struct {
 	Apps       *state.Apps
 	Reconciles *state.Reconciles
 	Secrets    *state.Secrets
-	Volumes    *state.Volumes
-	Registry   Registry
-	Auditor    Auditor
-	Notifier   Notifier
-	Logger     *zap.Logger
-	Clock      clock.Clock
+
+	// Services adds provisioned services to what should be running (R-131).
+	// Nil on an install with no provisioner, where every app's shape is already
+	// complete.
+	Services ServiceShapes
+	Volumes  *state.Volumes
+	Registry Registry
+	Auditor  Auditor
+	Notifier Notifier
+	Logger   *zap.Logger
+	Clock    clock.Clock
 
 	// Backoff, FailureThreshold and FailureWindow override R-149 and R-150's
 	// defaults. Zero values mean the defaults, so a caller that does not care
@@ -269,6 +274,24 @@ func (r *Reconciler) reconcileOne(ctx context.Context, app state.Reconcilable) {
 // that runs every fifteen seconds for every app never decrypts anything.
 func (r *Reconciler) desired(ctx context.Context, app state.Reconcilable, s *spec.AppSpec, observed api.ObservedBundle) (api.BundlePlan, Inputs, error) {
 	want := PlanShape(s, app.ImageRef)
+
+	// A provisioned database is part of what should be running (R-131).
+	//
+	// Left out, it is neither restored when it is killed nor recognised when it
+	// is running — the app is told every fifteen seconds that its own database
+	// is a workload the spec does not declare.
+	//
+	// A failure here is not a reason to reconcile against half a bundle: an
+	// incomplete "want" makes the service look like a stranger, and acting on
+	// that is worse than waiting for the next tick.
+	if r.Services != nil {
+		services, err := r.Services.ServiceShapes(ctx, s)
+		if err != nil {
+			return api.BundlePlan{}, Inputs{}, err
+		}
+		want.Workloads = append(want.Workloads, services.Workloads...)
+		want.Volumes = append(want.Volumes, services.Volumes...)
+	}
 
 	versions, err := r.Secrets.Versions(ctx, app.ID)
 	if err != nil {

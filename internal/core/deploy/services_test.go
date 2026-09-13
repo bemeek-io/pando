@@ -121,3 +121,39 @@ func TestAWorkloadThatNeedsNoServiceWaitsForNothing(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, plan.Workloads[1].DependsOn)
 }
+
+// TestR148_AProvisionedServiceIsPartOfWhatShouldBeRunning asserts R-148 for a
+// provisioned service.
+//
+// The reconciler's "want" is compared against what is running, every fifteen
+// seconds. Leave the service out of it and two things go wrong at once: a
+// killed database is never restored, because nothing wants it, and the running
+// one is reported as a workload the spec does not declare — an app told
+// repeatedly that its own database is a stranger.
+func TestR148_AProvisionedServiceIsPartOfWhatShouldBeRunning(t *testing.T) {
+	s := specWithProvisionedSlot()
+	svcs := provisionedPostgres()
+
+	plan, err := bundlePlanFor(s, "app:latest", nil, svcs, true)
+	require.NoError(t, err)
+
+	names := map[string]bool{}
+	for _, w := range plan.Workloads {
+		names[w.Name] = true
+	}
+	require.True(t, names["svc-01hq9"], "the service is in the bundle the reconciler compares against")
+	require.True(t, names["web"])
+}
+
+// And the shape carries no environment, because building it must never be a
+// reason to decrypt a secret (R-193). The comparison runs every fifteen
+// seconds for every app; reading a connection string that often would make the
+// cheap path the expensive one.
+func TestTheComparedShapeCarriesNoEnvironment(t *testing.T) {
+	plan, err := bundlePlanFor(specWithProvisionedSlot(), "app:latest", nil, provisionedPostgres(), false)
+	require.NoError(t, err)
+
+	for _, w := range plan.Workloads {
+		require.Empty(t, w.Env, "%s carries environment into a shape comparison", w.Name)
+	}
+}

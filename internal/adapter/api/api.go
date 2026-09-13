@@ -707,6 +707,15 @@ type StoredRef struct {
 // --- services --------------------------------------------------------------
 
 // ServicesAdapter fills provisioned slots (R-131).
+//
+// Provision must be pure and cheap. It is called on every deploy — the
+// workloads it returns *are* the service, so a deploy that skipped it would
+// produce a bundle with no database in it — and again on every reconcile, to
+// work out what should be running. An implementation that talks to a provider
+// here would be talking to it every fifteen seconds for every app.
+//
+// The interface is shaped for that: Provision returns plans, and the runtime
+// adapter is what creates anything.
 type ServicesAdapter interface {
 	Adapter
 	Capabilities() ServicesCapabilities

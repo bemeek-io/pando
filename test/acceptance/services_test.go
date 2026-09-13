@@ -275,3 +275,68 @@ func docker(t *testing.T, args ...string) string {
 	require.NoError(t, err, "docker %v: %s", args, out)
 	return string(out)
 }
+
+// TestR148_AKilledProvisionedServiceIsRestored asserts R-148 reaches the
+// database Pando stood up, not only the app's own workloads.
+//
+// The reconciler compares what should be running against what is. A
+// provisioned service missing from "what should be running" is never restored
+// when it is killed — and, worse, the one that *is* running is reported every
+// tick as a workload the spec does not declare, because the spec genuinely does
+// not declare it. Both follow from the same omission and neither is visible
+// until something kills a container.
+func TestR148_AKilledProvisionedServiceIsRestored(t *testing.T) {
+	requireStack(t)
+	c := login(t)
+
+	app := c.createApp(t, "kill-db-"+stamp())
+	c.putSpec(t, app, `{
+		"schema_version": 1,
+		"source": {"type": "image", "image": "redis:7-alpine"},
+		"build": {"strategy": "prebuilt"},
+		"workloads": [{"name": "web", "primary": true, "exposed": true,
+			"command": ["sleep", "3600"],
+			"env": [{"key": "REDIS_URL", "slot_ref": "REDIS_URL"}]}],
+		"slots": [{"key": "REDIS_URL", "type": "redis", "required": true,
+			"resolution": {"mode": "provisioned"}}],
+		"routing": {"adapter_ref": "rte_loopback", "mode": "port", "port": 9136},
+		"runtime": {"adapter_ref": "rt_docker", "isolation_floor": 10},
+		"deploy": {"strategy": "recreate"}
+	}`)
+	c.pinSpec(t, app, 1)
+
+	dep := c.deploy(t, app, 1)
+	require.Equal(t, "succeeded",
+		c.awaitDeployment(t, app, dep["id"].(string), 4*time.Minute)["status"],
+		"deploy log:\n%s", c.deploymentLogs(t, app, dep["id"].(string)))
+
+	before := serviceContainer(t, app)
+	require.NotEmpty(t, before, "the provisioned Redis is running")
+
+	// Reach in and break it, exactly as a person would.
+	require.NoError(t, exec.Command("docker", "rm", "-f", before).Run())
+
+	var after string
+	require.Eventually(t, func() bool {
+		after = serviceContainer(t, app)
+		return after != ""
+	}, 3*time.Minute, 2*time.Second,
+		"the reconciler never brought the provisioned service back")
+
+	require.NotEqual(t, before, after, "it is a new container, not the old one resurrected")
+}
+
+// serviceContainer is the running provisioned service in an app's bundle, if
+// there is one.
+func serviceContainer(t *testing.T, appID string) string {
+	t.Helper()
+
+	out := docker(t, "ps", "--filter", "label=io.pando.bundle="+appID,
+		"--filter", "status=running", "--format", "{{.Names}}")
+	for _, name := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.Contains(name, "svc-") {
+			return name
+		}
+	}
+	return ""
+}

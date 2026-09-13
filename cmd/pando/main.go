@@ -407,6 +407,7 @@ func serve(ctx context.Context, configPath string) error {
 		Reconciles:    reconciles,
 		Secrets:       secrets,
 		Volumes:       volumes,
+		Services:      deployer,
 		Registry:      registryAdapters{registry},
 		Auditor:       reconcilerAuditor{auditor},
 		Logger:        logger,
