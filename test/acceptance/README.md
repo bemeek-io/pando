@@ -53,6 +53,19 @@ backoff is faster than the default, because an install retrying a broken app eve
 forever is a real way to melt a host — leave these unset in production, where the shipped
 numbers *are* the requirement.
 
+### If a run reports `ok` suspiciously fast, count the tests
+
+`requireStack` skips when the stack was never up, so `go test ./...` without Compose is quiet
+rather than noisy. It **fails** if the stack was up earlier in the run and has gone away,
+because that means something took the server down — and a skip there turns a broken server
+into a green suite. One run skipped 35 of 54 tests and reported `ok`; the only way to notice
+was to compare the tests that ran against the tests that exist:
+
+```
+go test -tags=integration -v ./test/acceptance/ 2>&1 | grep -c '^--- PASS'
+grep -rhoE '^func Test[A-Za-z0-9_]+' test/acceptance/*_test.go | sort -u | wc -l
+```
+
 Run everything with `make test-integration`. They use `testcontainers-go` against real Postgres and real Docker,
 and are behind an `integration` build tag so `make test` stays fast.
 

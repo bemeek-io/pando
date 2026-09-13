@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,16 +34,43 @@ func baseURL() string {
 	return "http://localhost:8099/api/v1"
 }
 
-// requireStack skips rather than fails when the stack is not up, so a developer
-// running the whole suite without Compose sees a skip instead of noise.
+// requireStack skips when the stack was never up, and FAILS when it was up and
+// has gone away.
+//
+// The distinction is the whole point. A developer running `go test ./...`
+// without Compose should see skips, not noise — that was the original intent
+// and it is right. But the same skip applied to a stack that disappeared
+// mid-run turns a broken server into a green suite: a run that skipped 35 of 54
+// tests reported `ok`, and the only way to notice was to count the tests that
+// ran against the tests that exist.
+//
+// That is the worst failure a test suite can have. It is not that it missed a
+// bug; it is that it said everything was fine while testing nothing.
+//
+// So the first check records whether the stack was ever reachable. After that,
+// unreachable means something took the server down — which is a finding, not a
+// reason to stay quiet.
 func requireStack(t *testing.T) {
 	t.Helper()
+
 	resp, err := http.Get(strings.TrimSuffix(baseURL(), "/api/v1") + "/healthz")
-	if err != nil {
-		t.Skipf("pando stack not running at %s: %v", baseURL(), err)
+	if err == nil {
+		_ = resp.Body.Close()
+		stackWasUp.Store(true)
+		return
 	}
-	_ = resp.Body.Close()
+
+	if stackWasUp.Load() {
+		t.Fatalf("the Pando stack at %s was reachable earlier in this run and is not now: %v\n"+
+			"Something in the suite took the server down. Do not read the rest of this run as a pass.",
+			baseURL(), err)
+	}
+	t.Skipf("pando stack not running at %s: %v", baseURL(), err)
 }
+
+// stackWasUp records that the stack answered at least once, so a later failure
+// to reach it can be told apart from never having had one.
+var stackWasUp atomic.Bool
 
 type client struct {
 	http   *http.Client
@@ -63,18 +92,11 @@ func login(t *testing.T) *client {
 	t.Helper()
 	requireStack(t)
 
-	password := os.Getenv("PANDO_TEST_PASSWORD")
-	if password == "" {
-		out, err := exec.Command("docker", "compose", "logs", "pando").CombinedOutput()
-		require.NoError(t, err)
-
-		matches := passwordPattern.FindStringSubmatch(string(out))
-		require.Len(t, matches, 2,
-			"could not find the first-run password in the server log.\n"+
-				"Either bring the stack up fresh — `docker compose down -v && docker compose up -d` —\n"+
-				"or set PANDO_TEST_PASSWORD if the admin password has been changed.")
-		password = matches[1]
-	}
+	password := adminPassword
+	require.NotEmpty(t, password,
+		"could not find the first-run password in the server log.\n"+
+			"Either bring the stack up fresh — `docker compose down -v && docker compose up -d` —\n"+
+			"or set PANDO_TEST_PASSWORD if the admin password has been changed.")
 
 	// Generous, because POST /deployments is not the quick call its 202 status
 	// suggests. It resolves the app's ref to a commit before returning, and
@@ -173,12 +195,95 @@ func (c *client) createApp(t *testing.T, name string) string {
 func cleanupBundle(t *testing.T, appID string) {
 	t.Helper()
 	t.Cleanup(func() {
+		// Delete the app through the API, the way a person would.
+		//
+		// Removing only the containers left the app row behind, still counted
+		// as running — and every app reserves CPU and memory, so a suite that
+		// creates twenty apps and deletes none eventually hits R-242's capacity
+		// check and fails with CAPACITY_WOULD_OVERSUBSCRIBE on a deploy that
+		// has nothing wrong with it.
+		//
+		// That only started biting when hand-written specs began getting the
+		// install's resource defaults. Before, every test app reserved nothing,
+		// so the capacity check had nothing to count and the accumulation was
+		// invisible.
+		//
+		// force=true because these are test apps: their data is not worth the
+		// backup R-204 would otherwise take.
+		deleteQuietly(appID)
+
 		out, _ := exec.Command("docker", "ps", "-aq",
 			"--filter", "label=io.pando.app="+appID).Output()
 		for _, id := range strings.Fields(string(out)) {
 			_ = exec.Command("docker", "rm", "-f", id).Run()
 		}
 	})
+}
+
+// cleanupClient is a signed-in client for teardown, built once per run.
+//
+// Deliberately free of testify and of *testing.T. Cleanup runs after the test
+// has finished, and anything that calls t.FailNow() there — which every
+// require.* does — panics and takes the whole test binary with it. That is not
+// hypothetical: the first version of this called login(t) and the run stopped
+// dead halfway through the suite, reporting twenty results out of forty-five
+// and a failure in whichever test happened to be last.
+//
+// So this returns nil on any problem and says nothing. Cleanup must never be
+// the thing that reports a failure: it runs after the assertion that matters
+// has already had its say.
+var (
+	cleanupOnce   sync.Once
+	cleanupCached *client
+)
+
+func cleanupClient() *client {
+	cleanupOnce.Do(func() {
+		password := adminPassword
+		if password == "" {
+			return
+		}
+
+		c := &client{http: &http.Client{Timeout: 30 * time.Second}}
+		resp, err := c.http.Post(baseURL()+"/sessions", "application/json",
+			strings.NewReader(fmt.Sprintf(`{"username":"admin","password":%q}`, password)))
+		if err != nil {
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			return
+		}
+		for _, ck := range resp.Cookies() {
+			if ck.Name == "pando_session" {
+				c.cookie = ck.Value
+			}
+		}
+		if c.cookie != "" {
+			cleanupCached = c
+		}
+	})
+	return cleanupCached
+}
+
+// deleteQuietly removes an app without asserting anything.
+func deleteQuietly(appID string) {
+	c := cleanupClient()
+	if c == nil {
+		return
+	}
+	req, err := http.NewRequest(http.MethodDelete,
+		baseURL()+"/apps/"+appID+"?force=true", nil)
+	if err != nil {
+		return
+	}
+	req.AddCookie(&http.Cookie{Name: "pando_session", Value: c.cookie})
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 }
 
 // TestMain reclaims what previous runs left behind.
@@ -192,7 +297,34 @@ func cleanupBundle(t *testing.T, appID string) {
 // networks belongs to a previous stack and is already gone.
 func TestMain(m *testing.M) {
 	pruneStaleBundles()
+	captureAdminPassword()
 	os.Exit(m.Run())
+}
+
+// adminPassword is the first-run credential, read once before any test runs.
+var adminPassword string
+
+// captureAdminPassword reads the password out of the server log at suite start.
+//
+// Once, and early, because the log is a fragile place to keep it: the line
+// lives only as long as the container that printed it, and several tests
+// recreate that container on purpose — teardown needs a fresh Pando to reclaim
+// a deleted app's network. A test that recreated the server used to break
+// sign-in for every test after it, which presents as a cascade of failures
+// nowhere near the cause.
+//
+// PANDO_TEST_PASSWORD still wins, for a stack whose password has been changed.
+func captureAdminPassword() {
+	if adminPassword = os.Getenv("PANDO_TEST_PASSWORD"); adminPassword != "" {
+		return
+	}
+	out, err := exec.Command("docker", "compose", "logs", "pando").CombinedOutput()
+	if err != nil {
+		return
+	}
+	if matches := passwordPattern.FindStringSubmatch(string(out)); len(matches) == 2 {
+		adminPassword = matches[1]
+	}
 }
 
 func pruneStaleBundles() {
@@ -205,8 +337,27 @@ func pruneStaleBundles() {
 	for _, network := range strings.Fields(string(out)) {
 		attached, _ := exec.Command("docker", "network", "inspect", network,
 			"--format", "{{range .Containers}}{{.Name}} {{end}}").Output()
-		for _, name := range strings.Fields(string(attached)) {
-			_ = exec.Command("docker", "network", "disconnect", "-f", network, name).Run()
+
+		// Only networks nothing is attached to.
+		//
+		// This used to force-disconnect whatever it found and then remove the
+		// network — and what it found was the *running* Pando, which is joined
+		// to every bundle network because that is how the proxy reaches an app.
+		// The comment above cleanupBundle warns about precisely this, and this
+		// function did it anyway, at the start of every run.
+		//
+		// The cost was not subtle once it bit: Pando kept serving inside its
+		// container and stopped being reachable from the host, so the rest of
+		// the suite failed as if the product were broken. It took a restart to
+		// recover and a while to believe.
+		//
+		// Skipping an attached network loses nothing now. The GC tears down a
+		// deleted app's bundle and reclaims its network (R-204), so the only
+		// networks reaching here are orphans from a stack that has since been
+		// recreated — and those have nothing attached, because the Pando that
+		// was attached is gone.
+		if len(strings.Fields(string(attached))) > 0 {
+			continue
 		}
 		_ = exec.Command("docker", "network", "rm", network).Run()
 	}

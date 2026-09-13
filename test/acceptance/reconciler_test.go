@@ -4,6 +4,7 @@ package acceptance_test
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
@@ -257,10 +258,54 @@ func TestR204_DeletingAnAppTearsDownItsBundleButKeepsVolumes(t *testing.T) {
 		return len(containersFor(t, app)) == 0
 	}, 3*time.Minute, 5*time.Second, "a deleted app's containers must not keep running")
 
+	// The network is reclaimed when Pando's container is next *recreated* —
+	// not when it restarts, and not while it serves.
+	//
+	// Pando is joined to every bundle network because that is how the proxy
+	// reaches an app (R-023), so removing one means disconnecting the running
+	// container — and on Docker Desktop that drops its published ports.
+	// Measured: healthz 200, disconnect, 000, and still 000 until the container
+	// was recreated, all while Pando served happily inside it. A janitor that
+	// can take the server off the network is worse than the leak it reclaims.
+	//
+	// A restart is not enough because a restarted container keeps its network
+	// memberships. A recreated one does not exist yet, so the network it held
+	// has no endpoints and Docker removes it with nothing to disconnect.
+	//
+	// The honest cost, stated in the phase file too: networks belonging to apps
+	// deleted since the last recreate are held until the next one. The
+	// containers — which hold the memory and CPU — are gone immediately, which
+	// is the half that matters while the install is running.
+	recreatePando(t)
+
 	require.Eventually(t, func() bool {
 		return len(networksFor(t, app)) == 0
-	}, 3*time.Minute, 5*time.Second,
-		"and its network must be reclaimed, or the install runs out of them")
+	}, 2*time.Minute, 5*time.Second,
+		"a deleted app's network must be reclaimed when Pando is recreated")
+
+	// And the server is still reachable afterwards, which is the property the
+	// whole design above exists to preserve.
+	resp, err := http.Get(strings.TrimSuffix(baseURL(), "/api/v1") + "/healthz")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// recreatePando replaces the server's container and waits for it to answer.
+func recreatePando(t *testing.T) {
+	t.Helper()
+
+	out, err := exec.Command("docker", "compose", "up", "-d", "--force-recreate", "pando").CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	require.Eventually(t, func() bool {
+		resp, err := http.Get(strings.TrimSuffix(baseURL(), "/api/v1") + "/healthz")
+		if err != nil {
+			return false
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, 2*time.Minute, 2*time.Second, "Pando did not come back after being recreated")
 }
 
 // networksFor returns the bundle networks Docker still holds for an app.

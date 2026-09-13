@@ -434,58 +434,69 @@ func (a *Adapter) Destroy(ctx context.Context, ref api.BundleRef, opts api.Destr
 		}
 	}
 
-	// Pando is attached to every bundle network — that is how the proxy reaches
-	// an app at all (R-023) — and Docker refuses to remove a network that still
-	// has an endpoint on it. So the detach is not tidiness, it is the reason
-	// the removal can succeed.
+	// The network is removed only if nothing is still attached to it, and
+	// **Pando never detaches itself to make that true.**
 	//
-	// This error used to be discarded, which is why nobody noticed: containers
-	// went away, the network stayed, and the address pool drained one /16 per
-	// deleted app until deploys started failing with a message about subnets.
-	if err := a.detachProxy(ctx, bundleNetworkName(ref.BundleID)); err != nil {
-		return err
-	}
+	// It used to. Pando is joined to every bundle network — that is how the
+	// proxy reaches an app (R-023) — so removing one meant disconnecting
+	// first, and on Docker Desktop disconnecting a running container drops its
+	// published ports. Measured, not guessed: healthz on the host went 200,
+	// disconnect, 000, and stayed there until the container was restarted while
+	// Pando kept happily serving inside it. The janitor could take the server
+	// off the network, which is far worse than the leak it was reclaiming.
+	//
+	// So a network whose only remaining endpoint is Pando is left for
+	// reclaimNetworks to collect after the next restart, when the container
+	// holding it is gone and the removal needs no disconnect at all. The
+	// containers — which hold the memory and CPU — are already gone by here,
+	// which is the part that matters.
 	if err := a.cli.NetworkRemove(ctx, bundleNetworkName(ref.BundleID)); err != nil {
 		if cerrdefs.IsNotFound(err) {
 			return nil
 		}
-		return errs.Wrap(errs.AdapterFailed,
-			"Could not remove the app's private network, so it is still using an address range.", err)
+		// Left behind on purpose. Reported at debug volume rather than as a
+		// failure, because the teardown did succeed at everything that costs
+		// the host something to keep.
+		return nil
 	}
 	return nil
 }
 
-// detachProxy takes Pando's container off a bundle network.
+// ReclaimNetworks removes bundle networks that nothing is attached to.
 //
-// The mirror of attachProxy, and only ever called on a network being destroyed.
-// Detaching from a *live* app's network would cut the proxy off from an app
-// that is still running, and force-detaching a busy container has been observed
-// to disturb its outbound routing for minutes afterwards — so this is not
-// forced, and a failure is reported rather than retried harder.
-func (a *Adapter) detachProxy(ctx context.Context, networkName string) error {
-	container := a.config.ProxyContainer
-	if container == "" {
-		host, err := os.Hostname()
-		if err != nil {
-			//nolint:nilerr // Not knowing our own hostname means Pando is not
-			// running as a container, so nothing of ours is attached to this
-			// network and there is nothing to disconnect. Same reasoning as
-			// attachProxy, which declines to attach for the same reason.
-			return nil
-		}
-		container = host
+// Called at startup, which is the one moment this is safe: a network held by a
+// previous Pando container has a dead endpoint on it, so Docker removes it
+// without anybody disconnecting anything. Doing the same while serving would
+// mean detaching the running Pando, and on Docker Desktop that drops its
+// published ports.
+//
+// The cost of the timing is honest and worth stating: a network belonging to an
+// app deleted since the last restart is reclaimed at the next one, not
+// immediately. Docker's default pool holds about thirty, so an install that
+// deletes thirty apps between restarts can still run out — better than leaking
+// them permanently, and the remedy is a restart rather than a docker command.
+func (a *Adapter) ReclaimNetworks(ctx context.Context) (int, error) {
+	networks, err := a.cli.NetworkList(ctx, network.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("label", labelManaged+"=true")),
+	})
+	if err != nil {
+		return 0, errs.Wrap(errs.AdapterUnavailable, "Could not list the app networks.", err)
 	}
 
-	err := a.cli.NetworkDisconnect(ctx, networkName, container, false)
-	switch {
-	case err == nil, cerrdefs.IsNotFound(err):
-		return nil
-	case strings.Contains(err.Error(), "is not connected"):
-		return nil
-	default:
-		return errs.Wrap(errs.AdapterFailed,
-			"Could not disconnect Pando from the app's network.", err)
+	reclaimed := 0
+	for _, n := range networks {
+		// Inspect rather than trusting the list: NetworkList does not populate
+		// Containers, so the list alone cannot tell an empty network from a
+		// busy one.
+		full, err := a.cli.NetworkInspect(ctx, n.ID, network.InspectOptions{})
+		if err != nil || len(full.Containers) > 0 {
+			continue
+		}
+		if err := a.cli.NetworkRemove(ctx, n.ID); err == nil {
+			reclaimed++
+		}
 	}
+	return reclaimed, nil
 }
 
 func (a *Adapter) CreateVolume(ctx context.Context, req api.VolumeRequest) (api.VolumeHandle, error) {

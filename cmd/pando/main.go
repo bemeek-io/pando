@@ -434,6 +434,26 @@ func serve(ctx context.Context, configPath string) error {
 
 	// Hourly garbage collection, on a much slower clock because nothing here is
 	// urgent and all of it is destructive.
+	// Reclaim the networks of apps deleted since the last run.
+	//
+	// At startup and only at startup. A bundle network still held by the
+	// *previous* Pando container has a dead endpoint on it, so Docker removes
+	// it with nothing to disconnect — whereas doing this while serving would
+	// mean detaching the running container, and on Docker Desktop that drops
+	// its published ports. Measured, not assumed.
+	if ref, ok := registry.Default(adapterapi.CategoryRuntime); ok {
+		rt, _ := registry.Runtime(ref)
+		if reclaimer, ok := rt.(interface {
+			ReclaimNetworks(context.Context) (int, error)
+		}); ok {
+			if n, err := reclaimer.ReclaimNetworks(ctx); err != nil {
+				logger.Warn("could not reclaim app networks", zap.Error(err))
+			} else if n > 0 {
+				logger.Info("reclaimed app networks left by deleted apps", zap.Int("count", n))
+			}
+		}
+	}
+
 	// The GC also tears down the bundles of deleted apps, which nothing used to
 	// do: Destroy was never called, so every deleted app left containers and a
 	// private network behind. Registry and Auditor are what make that possible
