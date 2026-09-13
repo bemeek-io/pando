@@ -65,7 +65,12 @@ These are load-bearing. Violating any of them is a design failure, not a tradeof
 
 **R-021 [D]** **Pando fills declared slots; it never invents topology.** If the repo declares what it needs, Pando's job is to satisfy that declaration. If it doesn't declare, Pando does not go hunting through imports to guess.
 
-**R-022 [D]** **Detection never re-runs implicitly.** Re-detection is an explicit action that shows a diff against the pinned spec.
+**R-022 [D]** **Detection never re-runs implicitly.** Re-detection is an explicit action that shows a
+diff against the pinned spec. **Accepting the result carries a person's decisions forward**: the
+environment they set, how each dependency is filled, and storage they added. The build and the
+workload set come from the repository, because taking those from it is what re-detecting is. Which is
+which is not inferred — the spec records provenance on ports, volumes and environment entries for
+exactly this.
 
 **R-023 [D]** **Every request to every app passes through Pando's identity-aware proxy.** There is no bypass path — not for public apps, not for anonymous access, not as a performance optimization. Upstream enforcement (e.g. Cloudflare Access) is an optimization layered on top, never the only gate.
 

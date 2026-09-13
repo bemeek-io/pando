@@ -267,6 +267,7 @@ export interface EnvEntry {
   value?: string;
   slot_ref?: string;
   secret_ref?: string;
+  source?: string;
 }
 
 export interface Port {

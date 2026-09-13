@@ -221,9 +221,9 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 	}
 	if app.PinnedSpecID != "" && !req.Confirm {
 		Error(w, r, errs.New(errs.ValidInvalid,
-			"This app is already configured, and accepting again replaces that configuration with what detection found.").
+			"This app is already configured, and accepting again replaces how it is built and what it runs with what detection found.").
 			WithDetail("pinned_spec_id", app.PinnedSpecID).
-			WithRemedy("Anything set since — environment variables, dependencies, storage — is not carried over. Send confirm: true to replace it anyway."))
+			WithRemedy("Environment variables you set, how each dependency is filled, and storage you added are carried over. The build and the workloads come from the repository. Send confirm: true to go ahead."))
 		return
 	}
 
@@ -256,6 +256,20 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 
 	draft := proposal.WithAnswers(d.Answers)
 	draft.AppID = app.ID
+
+	// What a person decided outlives a re-detection (R-022).
+	//
+	// A proposal describes the repository, not the app: every slot arrives
+	// unfilled, and it carries none of the environment somebody typed. Pinning
+	// it as-is meant that re-detecting after adding a Dockerfile — the ordinary
+	// thing to do — unfilled the database slot and dropped the variables, while
+	// the app kept running on the old spec and said nothing. The next deploy
+	// was the first sign.
+	if app.PinnedSpecID != "" {
+		if rev, found, revErr := s.Apps.RevisionByID(r.Context(), app.PinnedSpecID); revErr == nil && found {
+			draft = *spec.Carry(rev.Body, &draft)
+		}
+	}
 
 	p := PrincipalFrom(r.Context())
 	rev, err := s.Apps.CreateRevision(r.Context(), app.ID, &draft, spec.OriginDetected, p.UserID)

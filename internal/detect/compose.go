@@ -490,7 +490,7 @@ func (c *composeImport) env(s composeService) []spec.EnvEntry {
 		sort.Strings(keys)
 		for _, k := range keys {
 			value := scalar(v[k])
-			entries = append(entries, spec.EnvEntry{Key: k, Value: &value})
+			entries = append(entries, spec.EnvEntry{Key: k, Value: &value, Source: spec.EnvFromCompose})
 		}
 	case []any:
 		for _, raw := range v {
@@ -499,7 +499,7 @@ func (c *composeImport) env(s composeService) []spec.EnvEntry {
 				continue
 			}
 			value := v
-			entries = append(entries, spec.EnvEntry{Key: strings.TrimSpace(k), Value: &value})
+			entries = append(entries, spec.EnvEntry{Key: strings.TrimSpace(k), Value: &value, Source: spec.EnvFromCompose})
 		}
 	}
 	return entries

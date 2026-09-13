@@ -72,9 +72,9 @@ export function Environment({ appID }: { appID: string }) {
         // is what keeps "an exported spec is safe to hand to someone" true
         // without a special case for this one field.
         await api.put(`/apps/${appID}/secrets/${encodeURIComponent(entry.key)}`, { value: entry.value });
-        env = { key: entry.key, secret_ref: entry.key };
+        env = { key: entry.key, secret_ref: entry.key, source: 'user' };
       } else {
-        env = { key: entry.key, value: entry.value };
+        env = { key: entry.key, value: entry.value, source: 'user' };
       }
 
       const body: AppSpec = {

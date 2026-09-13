@@ -206,7 +206,36 @@ type EnvEntry struct {
 	Value     *string `json:"value,omitempty"`
 	SlotRef   *string `json:"slot_ref,omitempty"`
 	SecretRef *string `json:"secret_ref,omitempty"`
+
+	// Source records where this entry came from, the way Port.Source and
+	// Volume.Declared already do.
+	//
+	// It decides what survives a re-detection. Detection proposes a whole spec,
+	// and accepting one used to replace the pinned spec entirely — so a
+	// variable somebody typed was gone the moment they re-detected after adding
+	// a Dockerfile, with the app still running and no sign anything had been
+	// dropped. Provenance is what lets the two be merged instead: an entry a
+	// person set outlives anything Pando worked out for itself.
+	Source EnvSource `json:"source,omitempty"`
 }
+
+// EnvSource records how an environment entry was determined.
+type EnvSource string
+
+const (
+	// EnvFromUser is set by a person, and survives re-detection.
+	EnvFromUser EnvSource = "user"
+
+	// EnvFromCompose was imported from a compose file, and is replaced when
+	// that file is read again — the file is the record, and somebody editing it
+	// expects the change to land.
+	EnvFromCompose EnvSource = "compose"
+
+	// EnvFromDetection was inferred. Empty means the same thing: every entry
+	// predating this field came from detection or an import, never from a
+	// person, because there was no way to add one by hand.
+	EnvFromDetection EnvSource = "detected"
+)
 
 // PortSource records how a port was determined.
 //
