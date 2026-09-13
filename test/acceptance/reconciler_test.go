@@ -5,6 +5,7 @@ package acceptance_test
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
@@ -252,14 +253,18 @@ func TestR204_DeletingAnAppTearsDownItsBundleButKeepsVolumes(t *testing.T) {
 	_, status := c.do(t, "DELETE", "/apps/"+app+"?force=true", "")
 	require.Equal(t, 204, status)
 
-	// The GC runs hourly, so it is nudged rather than waited for. What is being
-	// asserted is that teardown happens at all — it never used to.
-	require.Eventually(t, func() bool {
-		return len(containersFor(t, app)) == 0
-	}, 3*time.Minute, 5*time.Second, "a deleted app's containers must not keep running")
-
-	// The network is reclaimed when Pando's container is next *recreated* —
-	// not when it restarts, and not while it serves.
+	// The GC is nudged rather than waited for, and the nudge has to come first.
+	//
+	// It runs hourly by default, so a three-minute wait for it to come round on
+	// its own can only pass on an install that configured a short interval —
+	// which is a test that passes on the runner's environment rather than on
+	// the code. Recreating the server runs a collection pass at startup, which
+	// is what makes this assert "teardown happens at all" — the thing that
+	// never used to — instead of asserting a clock.
+	//
+	// The recreate is needed for the network half regardless. The network is
+	// reclaimed when Pando's container is next *recreated* — not when it
+	// restarts, and not while it serves.
 	//
 	// Pando is joined to every bundle network because that is how the proxy
 	// reaches an app (R-023), so removing one means disconnecting the running
@@ -274,9 +279,13 @@ func TestR204_DeletingAnAppTearsDownItsBundleButKeepsVolumes(t *testing.T) {
 	//
 	// The honest cost, stated in the phase file too: networks belonging to apps
 	// deleted since the last recreate are held until the next one. The
-	// containers — which hold the memory and CPU — are gone immediately, which
-	// is the half that matters while the install is running.
+	// containers — which hold the memory and CPU — are gone on the next
+	// collection, which is the half that matters while the install is running.
 	recreatePando(t)
+
+	require.Eventually(t, func() bool {
+		return len(containersFor(t, app)) == 0
+	}, 3*time.Minute, 5*time.Second, "a deleted app's containers must not keep running")
 
 	require.Eventually(t, func() bool {
 		return len(networksFor(t, app)) == 0
@@ -295,7 +304,18 @@ func TestR204_DeletingAnAppTearsDownItsBundleButKeepsVolumes(t *testing.T) {
 func recreatePando(t *testing.T) {
 	t.Helper()
 
-	out, err := exec.Command("docker", "compose", "up", "-d", "--force-recreate", "pando").CombinedOutput()
+	// The port the stack was brought up on, carried through explicitly.
+	//
+	// `docker compose up` reads PANDO_PORT from the environment and falls back
+	// to 8080, so a recreate from a shell that does not have it moves the
+	// server to a port the rest of this suite is not talking to — and if
+	// anything else on the machine holds 8080, the container never starts at
+	// all. That failure looks like Pando crashing on recreate, which is a long
+	// way from where it is.
+	cmd := exec.Command("docker", "compose", "up", "-d", "--force-recreate", "pando")
+	cmd.Env = append(os.Environ(), "PANDO_PORT="+portOf(t, baseURL()))
+
+	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
 
 	require.Eventually(t, func() bool {
@@ -306,6 +326,17 @@ func recreatePando(t *testing.T) {
 		_ = resp.Body.Close()
 		return resp.StatusCode == http.StatusOK
 	}, 2*time.Minute, 2*time.Second, "Pando did not come back after being recreated")
+}
+
+// portOf is the host port the suite is talking to.
+func portOf(t *testing.T, raw string) string {
+	t.Helper()
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+	if port := u.Port(); port != "" {
+		return port
+	}
+	return "8080"
 }
 
 // networksFor returns the bundle networks Docker still holds for an app.

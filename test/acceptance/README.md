@@ -48,7 +48,10 @@ go test -tags=integration ./test/acceptance/
 ```
 
 Both sides need it: the server runs the schedule and the test sizes its deadlines from the
-same variables, so it cannot pass for the wrong reason. Pando warns at startup when the
+same variables, so it cannot pass for the wrong reason. `PANDO_PORT` belongs on the test
+side too — one test recreates the server's container mid-run, and `docker compose up` falls
+back to 8080 without it, which moves the server off the port the rest of the suite is
+talking to. Pando warns at startup when the
 backoff is faster than the default, because an install retrying a broken app every second
 forever is a real way to melt a host — leave these unset in production, where the shipped
 numbers *are* the requirement.
