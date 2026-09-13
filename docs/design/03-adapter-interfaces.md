@@ -372,6 +372,29 @@ one Pando. What makes an install feel like one topology or the other is the rout
 adapter's default; `ModeSource` records whether the mode was inherited or deliberately chosen, so the
 console can later show which apps deviate and host policy can restrict overrides (R-274, O-10).
 
+### 4.2 Host ports in port mode
+
+**[D] Resolved (O-15): the lowest free port in a configured range, held as a durable allocation.**
+Default range `9000-9999`, one row per `(adapter_ref, port)`, exhaustion returning
+`CAPACITY_NO_FREE_PORT` and naming the setting to widen.
+
+A port is an **allocation**, not a derivation. The first version computed "the lowest number no pinned
+spec is using", which is a guess about an allocation rather than one, and it raced in the ordinary
+case rather than an exotic one: adding five apps at once runs five background detections, two compute
+the same answer before either writes anything down, and both are handed 9001 with nothing noticing.
+The unique constraint is what makes a collision impossible instead of unlikely.
+
+Lowest-free rather than random, so an app tends to keep its port across a rebuild and a bookmark keeps
+working. Reused rather than ever-increasing, so a deleted app's port comes back.
+
+**The revisit is closed by Traefik shipping.** O-15 was to be reconsidered at phase 10, on the
+question of whether lowest-free and `9000-9999` were right. Phase 10 shipped a routing adapter that
+does subdomain and path, so port mode is now the laptop default's path and not the only path —
+`loopback` supports neither of the R-166 topologies (§4.1 above, and the table in §10), which is why
+it needs a host port at all. An install that outgrows the range has a better answer available than a
+wider range, and R-005 rules out the obvious alternative for the laptop case: someone who may not know
+what a port is cannot pick a free one.
+
 ---
 
 ## 5. Identity

@@ -1,8 +1,9 @@
 # Open decisions
 
 Seventeen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
-design; O-15 through O-17 were found while implementing phases 6, 7 and 8. **Fourteen are resolved.
-Three remain, none blocking.**
+design; O-15 through O-17 were found while implementing phases 6, 7 and 8. **Fifteen are resolved.
+Two remain, neither blocking, and neither is a decision** — O-4 needs a measurement and O-5 is
+per-adapter by design.
 
 **These are not TODOs to resolve at your discretion.** An agent hitting an open one should raise it,
 state which options the docs already identify, and stop — not pick quietly and move on. Record any
@@ -14,7 +15,6 @@ resolution both here and in the requirements or design doc that owns it.
 |---|---|---|---|
 | **O-4** | Required vs optional slot detection — the forty-key `.env.example` problem | Has a `[P]` answer that needs measuring, not deciding | Phase 6 |
 | **O-5** | TLS issuance — ACME, wildcards, self-signed local | Genuinely per-adapter; each routing adapter answers it for itself | Per adapter |
-| **O-15** | How a host port is chosen in port-mode routing | Nothing in the requirements says. Has a `[P]` answer in code | Phase 6 (shipped), revisit at phase 10 |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything not typed to
 a known service, and let the trial run settle it — a slot whose absence crashes the trial run is
@@ -23,7 +23,8 @@ observation. It is open because it needs a false-block rate measured against the
 because nobody has decided.
 
 **O-15** was found by asking whether a detected app could actually deploy. It could not: the spec had
-no routing, and filling that in surfaced the question nobody had answered.
+no routing, and filling that in surfaced the question nobody had answered. **It is now resolved** —
+see design 03 §4.2; the rest of this section is why.
 
 R-166 prefers subdomain and falls back to path. The `loopback` adapter that ships as the laptop
 default supports **neither** — it is port mode only (design 03 §4.1). So on a default install every
@@ -43,9 +44,13 @@ allocation with its own table, and the unique constraint is what makes a collisi
 than unlikely.
 
 Lowest-free rather than random so an app tends to keep its port across a rebuild and a bookmark keeps
-working; reused rather than ever-increasing so a deleted app's port comes back. What needs deciding is
-whether lowest-free is the rule and whether `9000-9999` is the right range. Traefik (phase 10) does subdomain and path, so an install
-using it never reaches this path at all; that is the reason it is not blocking.
+working; reused rather than ever-increasing so a deleted app's port comes back.
+
+**The other half is answered by phase 10 shipping.** What remained was whether lowest-free is the rule
+and whether `9000-9999` is the right range, to be revisited once there was a second routing adapter to
+compare against. There is: Traefik does subdomain and path, so port mode is the laptop default's path
+rather than the only one, and an install that outgrows a thousand ports has a better answer available
+than a wider range. The `[P]` stands as the `[D]`.
 
 **O-16** was found implementing phase 7's garbage collection. R-222 bounds log retention by size,
 R-223 sets 100 MB per app, and R-224 says the aggregate must respect total host disk. The GC job was
@@ -89,6 +94,7 @@ shape). A routing adapter that issues certificates declares how; one that cannot
 | **O-11** | How Postgres is supplied | The install topology supplies it — Compose, with an external-database override | design 00 §1.1 |
 | **O-12** | MCP exclusion list hard or policy-controlled | Policy-controlled, default-closed, expressed as host policy — not a second mechanism | design 04 §3 |
 | **O-13** | Session revocation mid-websocket | Re-authorize on the assertion lifetime; close on failure | design 06 §4.2 |
+| **O-15** | How a host port is chosen in port-mode routing | Lowest free port in a configured range, held as a durable allocation; revisit closed by Traefik shipping | design 03 §4.2 |
 | **O-14** | DR restore bootstrap ordering | Largely dissolved by O-11; confirm sequencing in phase 9 | design 07 D |
 | **O-6** | Which backup destinations ship | Backup is an adapter category; destinations are adapters, and `local` ships in v1 | R-217, R-252, design 03 §8.1 |
 | **O-16** | How log retention is enforced | Per-app cap applied at workload creation; the aggregate enforced at plan time against the **sum of committed caps**, not measured usage | R-222–R-224, design 03 §2 |
