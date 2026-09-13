@@ -103,6 +103,10 @@ type Server struct {
 	Backups *state.Backups
 	Backup  *backup.Service
 
+	// Groups and Roles back the identity endpoints (R-078, R-082).
+	Groups *state.Groups
+	Roles  *state.Roles
+
 	// BundleSource supplies what goes into a backup. Held separately from
 	// Backups because one records what was taken and the other reads what is
 	// being taken — and the record has to outlive the thing (R-204).
@@ -256,10 +260,31 @@ func (s *Server) Routes() http.Handler {
 			// quietly becomes a promotion.
 			r.Put("/{userID}/role", s.handlePutUserRole)
 			r.Delete("/{userID}/role", s.handleDeleteUserRole)
+
+			// Deletion fires R-282's destruction rules. A separate route from
+			// PATCH status, because suspension is not deletion (R-049) and
+			// neither should be reachable by mistyping the other.
+			r.Delete("/{userID}", s.handleDeleteUser)
 		})
 
+		// Groups (R-078) and custom roles (R-082). Both decide what anyone can
+		// do here, so both are administration.
+		r.Route("/groups", func(r chi.Router) {
+			r.Get("/", s.handleListGroups)
+			r.Post("/", s.handleCreateGroup)
+			r.Put("/{groupID}/members", s.handleSetGroupMembers)
+			r.Delete("/{groupID}", s.handleDeleteGroup)
+		})
+
+		// The verb catalog, for composing a custom role.
+		r.Get("/verbs", s.handleListVerbs)
+
 		// The roles that can be granted across the installation (R-082).
-		r.Get("/roles", s.handleListRoles)
+		r.Route("/roles", func(r chi.Router) {
+			r.Get("/", s.handleListRoles)
+			r.Post("/", s.handleCreateRole)
+			r.Delete("/{roleID}", s.handleDeleteRole)
+		})
 
 		// Tokens: how the CLI and an agent authenticate (R-262). Self-service,
 		// because a token holds nothing its owner does not — it is a second
@@ -274,6 +299,7 @@ func (s *Server) Routes() http.Handler {
 		// returns live capabilities, not stored config, so the console can grey
 		// out choices that would fail at plan time.
 		r.Get("/adapters", s.handleListAdapters)
+		r.Post("/adapters", s.handleCreateAdapter)
 		r.Get("/capacity", s.handleCapacity)
 
 		// Host policy: read with install.view, written with
@@ -304,6 +330,21 @@ func (s *Server) Routes() http.Handler {
 				r.Get("/", s.handleGetApp)
 				r.Patch("/", s.handlePatchApp)
 				r.Delete("/", s.handleDeleteApp)
+
+				// Lifecycle. Start and stop set desired state and let the
+				// reconciler converge (design 05), so "stopped" survives a
+				// Pando restart. Restart is an act rather than a state and
+				// goes through the runtime.
+				r.Post("/start", s.handleStartApp)
+				r.Post("/stop", s.handleStopApp)
+				r.Post("/restart", s.handleRestartApp)
+
+				// Slots and volumes: first-class objects in R-030 that had no
+				// way to be reached.
+				r.Get("/slots", s.handleListSlots)
+				r.Put("/slots/{key}", s.handleSetSlot)
+				r.Get("/volumes", s.handleListVolumes)
+				r.Post("/volumes", s.handleCreateVolume)
 
 				r.Get("/export", s.handleExportSpec)
 
@@ -358,6 +399,10 @@ func (s *Server) Routes() http.Handler {
 					r.Get("/", s.handleListSecrets)
 					r.Put("/{key}", s.handlePutSecret)
 					r.Delete("/{key}", s.handleDeleteSecret)
+
+					// Its own verb (R-083): rotating a credential and reading
+					// it are different levels of trust.
+					r.Get("/{key}/value", s.handleReadSecretValue)
 				})
 
 				r.Route("/specs", func(r chi.Router) {

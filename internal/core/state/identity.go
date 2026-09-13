@@ -212,6 +212,25 @@ func (u *Users) SetPassword(ctx context.Context, userID, passwordHash string) er
 	return nil
 }
 
+// Delete soft-deletes a user, which is what fires R-282's destruction rules.
+//
+// Soft, because the audit log references this ID and R-054 makes users.id the
+// assertion subject apps key their own data on. A hard delete would orphan both
+// — the audit trail would name an ID nothing explains, and an app would be
+// holding rows for a person Pando can no longer describe.
+func (u *Users) Delete(ctx context.Context, userID string) error {
+	tag, err := u.db.Exec(ctx,
+		`UPDATE users SET deleted_at = now(), status = 'deleted', updated_at = now()
+		 WHERE id = $1 AND deleted_at IS NULL`, userID)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not delete the account.", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return errs.New(errs.NotFound, "There is no account with that ID.")
+	}
+	return nil
+}
+
 // EnsureLocalAdapter seeds the local identity adapter on a fresh install.
 func (u *Users) EnsureLocalAdapter(ctx context.Context) error {
 	_, err := u.db.Exec(ctx, `

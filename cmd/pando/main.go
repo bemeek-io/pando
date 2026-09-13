@@ -378,6 +378,8 @@ func serve(ctx context.Context, configPath string) error {
 			PolicyStore: policyStore,
 			AuditLog:    audit.NewReader(db.Pool),
 
+			Groups:       state.NewGroups(db),
+			Roles:        state.NewRoles(db),
 			Backups:      backups,
 			Backup:       backupService,
 			BundleSource: bundleSource,

@@ -1,0 +1,269 @@
+package state
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/bemeek-io/pando/internal/id"
+)
+
+// Groups are collections of users (R-078).
+//
+// Pando-native here. An IdP may also push groups (R-048), and when it does the
+// membership arrives the same way — which is why membership is a table rather
+// than a field, and why authorization reads it live (R-079) instead of
+// denormalizing it into grants.
+type Groups struct{ db *DB }
+
+func NewGroups(db *DB) *Groups { return &Groups{db: db} }
+
+// Group is a stored group.
+type Group struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Source    string    `json:"source,omitempty"`
+	Members   []string  `json:"members,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Create adds a Pando-native group.
+func (g *Groups) Create(ctx context.Context, name string) (Group, error) {
+	if name == "" {
+		return Group{}, errs.New(errs.ValidInvalid, "A group needs a name.")
+	}
+
+	group := Group{ID: id.New(id.Group), Name: name}
+	err := g.db.QueryRow(ctx,
+		`INSERT INTO groups (id, name) VALUES ($1, $2) RETURNING created_at`,
+		group.ID, name).Scan(&group.CreatedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return Group{}, errs.Newf(errs.ValidInvalid, "There is already a group called %q.", name)
+		}
+		return Group{}, errs.Wrap(errs.Internal, "Could not create the group.", err)
+	}
+	return group, nil
+}
+
+// List returns every group with its members.
+func (g *Groups) List(ctx context.Context) ([]Group, error) {
+	rows, err := g.db.Query(ctx, `
+		SELECT g.id, g.name, g.created_at,
+		       coalesce(array_agg(m.user_id) FILTER (WHERE m.user_id IS NOT NULL), '{}')
+		FROM groups g
+		LEFT JOIN group_members m ON m.group_id = g.id
+		GROUP BY g.id, g.name, g.created_at
+		ORDER BY g.name`)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the groups.", err)
+	}
+	defer rows.Close()
+
+	out := make([]Group, 0)
+	for rows.Next() {
+		var group Group
+		if err := rows.Scan(&group.ID, &group.Name, &group.CreatedAt, &group.Members); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the groups.", err)
+		}
+		out = append(out, group)
+	}
+	return out, rows.Err()
+}
+
+// ByID returns one group.
+func (g *Groups) ByID(ctx context.Context, groupID string) (Group, bool, error) {
+	var group Group
+	err := g.db.QueryRow(ctx, `
+		SELECT g.id, g.name, g.created_at,
+		       coalesce(array_agg(m.user_id) FILTER (WHERE m.user_id IS NOT NULL), '{}')
+		FROM groups g
+		LEFT JOIN group_members m ON m.group_id = g.id
+		WHERE g.id = $1
+		GROUP BY g.id, g.name, g.created_at`, groupID).
+		Scan(&group.ID, &group.Name, &group.CreatedAt, &group.Members)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Group{}, false, nil
+	}
+	if err != nil {
+		return Group{}, false, errs.Wrap(errs.Internal, "Could not read the group.", err)
+	}
+	return group, true, nil
+}
+
+// SetMembers replaces a group's membership.
+//
+// Replaces rather than merges, in one transaction. A merge cannot express
+// "remove this person", and removing someone from a group is the operation that
+// has to work — it is how access is revoked (R-079).
+func (g *Groups) SetMembers(ctx context.Context, groupID string, userIDs []string) error {
+	tx, err := g.db.Begin(ctx)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not change the group's members.", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `DELETE FROM group_members WHERE group_id = $1`, groupID); err != nil {
+		return errs.Wrap(errs.Internal, "Could not change the group's members.", err)
+	}
+	for _, userID := range userIDs {
+		if userID == "" {
+			continue
+		}
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)
+			 ON CONFLICT DO NOTHING`, groupID, userID); err != nil {
+			return errs.Wrap(errs.Internal, "Could not change the group's members.", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return errs.Wrap(errs.Internal, "Could not change the group's members.", err)
+	}
+	return nil
+}
+
+// Delete removes a group. Grants made to it go with it.
+func (g *Groups) Delete(ctx context.Context, groupID string) error {
+	// Grants to the group are removed first and explicitly. The schema does not
+	// cascade from groups to grants — grants reference a principal_id that is
+	// not a foreign key, because a principal may be a user, a group or a token.
+	// So this is the one place that link is maintained, and forgetting it would
+	// leave a grant naming a group that no longer exists: invisible, and
+	// matching nobody.
+	tx, err := g.db.Begin(ctx)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not delete the group.", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM grants WHERE principal_kind = 'group' AND principal_id = $1`, groupID); err != nil {
+		return errs.Wrap(errs.Internal, "Could not delete the group.", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM groups WHERE id = $1`, groupID); err != nil {
+		return errs.Wrap(errs.Internal, "Could not delete the group.", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return errs.Wrap(errs.Internal, "Could not delete the group.", err)
+	}
+	return nil
+}
+
+// Roles reads and writes custom roles (R-082).
+type Roles struct{ db *DB }
+
+func NewRoles(db *DB) *Roles { return &Roles{db: db} }
+
+// CreateCustom adds a custom role composed from the verb catalog.
+//
+// Custom roles are arbitrary subsets of the catalog, and validated against it:
+// a role naming a verb Pando does not have would grant nothing and look like it
+// granted something.
+func (r *Roles) CreateCustom(ctx context.Context, name, scope string, verbs []authz.Verb) (authz.Role, error) {
+	if name == "" {
+		return authz.Role{}, errs.New(errs.ValidInvalid, "A role needs a name.")
+	}
+	if len(verbs) == 0 {
+		return authz.Role{}, errs.New(errs.ValidInvalid, "A role needs at least one permission.").
+			WithRemedy("Choose from the list at GET /verbs.")
+	}
+
+	switch scope {
+	case "app", "install":
+	default:
+		return authz.Role{}, errs.New(errs.ValidInvalid,
+			"A role applies either to one app or across the installation.")
+	}
+
+	names := make([]string, 0, len(verbs))
+	for _, v := range verbs {
+		if !authz.IsVerb(v) {
+			return authz.Role{}, errs.Newf(errs.ValidInvalid,
+				"%q is not a permission Pando has.", v).
+				WithRemedy("Choose from the list at GET /verbs.")
+		}
+		// A role must not mix scopes. The two are checked by different
+		// functions against different grants, so a role holding both would be
+		// half-usable wherever it was granted (design 06 §2.1).
+		if authz.InstallScoped(v) != (scope == "install") {
+			return authz.Role{}, errs.Newf(errs.ValidInvalid,
+				"%q does not apply %s, so it cannot be part of a role that does.", v, scopeWord(scope)).
+				WithRemedy("Make two roles, or choose the other scope.")
+		}
+		names = append(names, string(v))
+	}
+
+	role := authz.Role{ID: id.New(id.Role), Name: name, Builtin: false, Verbs: verbs}
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO roles (id, name, builtin, scope, verbs) VALUES ($1, $2, false, $3, $4)`,
+		role.ID, name, scope, names)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return authz.Role{}, errs.Newf(errs.ValidInvalid, "There is already a role called %q.", name)
+		}
+		return authz.Role{}, errs.Wrap(errs.Internal, "Could not create the role.", err)
+	}
+	return role, nil
+}
+
+func scopeWord(scope string) string {
+	if scope == "install" {
+		return "across the installation"
+	}
+	return "to a single app"
+}
+
+// List returns every role, of either scope.
+func (r *Roles) List(ctx context.Context) ([]RoleRow, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT id, name, builtin, scope, verbs FROM roles ORDER BY scope, builtin DESC, name`)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the roles.", err)
+	}
+	defer rows.Close()
+
+	out := make([]RoleRow, 0)
+	for rows.Next() {
+		var row RoleRow
+		if err := rows.Scan(&row.ID, &row.Name, &row.Builtin, &row.Scope, &row.Verbs); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the roles.", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// RoleRow is a role as stored.
+type RoleRow struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Builtin bool     `json:"builtin"`
+	Scope   string   `json:"scope"`
+	Verbs   []string `json:"verbs"`
+}
+
+// DeleteCustom removes a custom role. Built-ins are protected by trigger
+// (R-081), so this reports that rather than surfacing a constraint name.
+func (r *Roles) DeleteCustom(ctx context.Context, roleID string) error {
+	var builtin bool
+	err := r.db.QueryRow(ctx, `SELECT builtin FROM roles WHERE id = $1`, roleID).Scan(&builtin)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errs.New(errs.NotFound, "There is no role with that ID.")
+	}
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not read the role.", err)
+	}
+	if builtin {
+		return errs.New(errs.ValidInvalid, "Pando's built-in roles cannot be deleted.").
+			WithRemedy("Make a custom role instead, and grant that.")
+	}
+
+	if _, err := r.db.Exec(ctx, `DELETE FROM roles WHERE id = $1`, roleID); err != nil {
+		return errs.Wrap(errs.Internal, "Could not delete the role.", err)
+	}
+	return nil
+}

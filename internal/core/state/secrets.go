@@ -2,6 +2,9 @@ package state
 
 import (
 	"context"
+	"errors"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/errs"
@@ -106,6 +109,31 @@ func (s *Secrets) Resolve(ctx context.Context, appID string) (map[secretKey]secr
 		out[secretKey(key)] = value
 	}
 	return out, rows.Err()
+}
+
+// Get returns one secret's value, for R-083's separable read.
+//
+// One key rather than reusing Resolve, which decrypts every secret an app has:
+// reading one value should not require decrypting the rest, and the audit event
+// this backs names a single key.
+func (s *Secrets) Get(ctx context.Context, appID, key string) (secret.Value, error) {
+	var ciphertext []byte
+	var externalRef *string
+	err := s.db.QueryRow(ctx,
+		`SELECT ciphertext, external_ref FROM secrets WHERE app_id = $1 AND key = $2`,
+		appID, key).Scan(&ciphertext, &externalRef)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return secret.Value{}, errs.Newf(errs.NotFound, "This app has no secret called %q.", key)
+	}
+	if err != nil {
+		return secret.Value{}, errs.Wrap(errs.Internal, "Could not read the secret.", err)
+	}
+
+	ref := api.StoredRef{AppID: appID, Key: key, Ciphertext: ciphertext}
+	if externalRef != nil {
+		ref.Handle = *externalRef
+	}
+	return s.adapter.Get(ctx, ref)
 }
 
 // Delete removes a secret.

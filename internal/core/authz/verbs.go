@@ -108,11 +108,16 @@ const (
 )
 
 // Role is a named set of verbs.
+//
+// Tagged because this type is serialized directly by the API, and every other
+// type on the wire is lower_snake_case. An untagged struct would put Go field
+// names into the API surface — where they would then be a compatibility
+// promise, and renaming a field would be a breaking change to a client.
 type Role struct {
-	ID      string
-	Name    string
-	Builtin bool
-	Verbs   []Verb
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Builtin bool   `json:"builtin"`
+	Verbs   []Verb `json:"verbs"`
 }
 
 // Has reports whether the role grants v.
