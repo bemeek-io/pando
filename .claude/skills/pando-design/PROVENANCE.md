@@ -18,6 +18,27 @@ The exceptions are the **logo, the icon set and the webfonts** — real assets r
 than a rendering of the brand, and authoritative in `assets/`. See § Assets below
 before a re-sync, which must not overwrite them.
 
+### Local divergence, pending upstream
+
+One fix has been made here and has **not** gone back to the design project. A
+re-sync will revert it, so push it first.
+
+- `components/feedback/Dialog.jsx` — the scrim was `position: absolute`, which
+  sizes to the initial containing block. It covered one viewport-height of the
+  document and scrolled away with the page: scroll down and the content below
+  was undarkened and still clickable, behind a dialog claiming
+  `aria-modal="true"`. Now `position: fixed`, with `overflowY: auto` so a dialog
+  taller than the viewport can reach its own footer, and Escape closes it.
+
+This is a correctness bug rather than a change to the visual language, which is
+why it was fixed here rather than waiting — but it is still a divergence, and the
+rule above is the rule.
+
+**Still missing, and not fixed here:** `Dialog` traps no focus. `aria-modal` says
+it does. Tab still walks the page behind it, which for somebody using a keyboard
+or a screen reader is the same bug this fixed, in a different sense. That one is a
+design-project change.
+
 ## What was imported
 
 Everything needed to build a Pando interface without network access:

@@ -1,11 +1,34 @@
 import React from 'react';
 
 export function Dialog({ open = false, title, description, footer, width = 460, onClose, style, children, ...rest }) {
+  // Escape closes it. A modal that can only be dismissed by finding the Cancel
+  // button is one people back out of with the browser's back button, which on a
+  // single-page app leaves the page somewhere they did not ask to be.
+  React.useEffect(() => {
+    if (!open || !onClose) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
     <div
       onClick={onClose}
-      style={{ position: 'absolute', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-6)', background: 'var(--scrim)' }}
+      style={{
+        // Fixed, not absolute. Absolute sizes to the initial containing block,
+        // so the scrim covered exactly one viewport-height of the document and
+        // scrolled away with the page: scroll down and the content below was
+        // undarkened and still clickable, behind a dialog claiming
+        // aria-modal="true". Fixed pins it to the viewport, which is what a
+        // modal means.
+        position: 'fixed', inset: 0, zIndex: 60,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        // A dialog taller than the viewport has to be reachable. Without this
+        // its footer — where the confirming button lives — is simply cut off.
+        overflowY: 'auto',
+        padding: 'var(--space-6)', background: 'var(--scrim)',
+      }}
     >
       <div
         role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}

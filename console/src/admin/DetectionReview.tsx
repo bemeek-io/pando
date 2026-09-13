@@ -162,7 +162,7 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
       >
         <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
           {reviewed
-            ? 'This app is already configured. Using this replaces those settings with what Pando found.'
+            ? 'This app is already configured. Using this takes the build and the workloads from the repository and keeps what you set yourself.'
             : 'Accepting saves this as the app’s configuration. It doesn’t deploy anything.'}
         </p>
         <Button
@@ -190,7 +190,12 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
       <Dialog
         open={replacing}
         title="Replace this app's configuration?"
-        description="Pando will use what it just found. Environment variables, dependencies and storage you set yourself are not carried over — the previous configuration is kept in the app's history."
+        // Says what actually happens. It used to say the opposite — that
+        // settings were not carried over — which was true until accepting
+        // started merging them, and a dialog describing the old behaviour is
+        // worse than no dialog: somebody reads it and does not press the
+        // button they needed.
+        description="Pando will use what it just found for the build and the workloads. Environment variables you set, how each dependency is filled, and storage you added are kept."
         onClose={() => setReplacing(false)}
         footer={
           <>
