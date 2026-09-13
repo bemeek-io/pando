@@ -7,6 +7,7 @@
 **Host your apps on a host you own — without setting up deployment more than once.**
 
 [![CI](https://github.com/bemeek-io/pando/actions/workflows/ci.yml/badge.svg)](https://github.com/bemeek-io/pando/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/bemeek-io/pando/branch/implementation/graph/badge.svg)](https://codecov.io/gh/bemeek-io/pando)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-B23A2C)](LICENSE)
 [![Go 1.27](https://img.shields.io/badge/go-1.27-B23A2C)](go.mod)
 [![One binary](https://img.shields.io/badge/ships%20as-one%20binary-1A1C1B)](#stack)
@@ -19,15 +20,6 @@ it behind an identity-aware proxy that every request goes through.
 <img src="docs/assets/console.png" alt="An app in the Pando console: its address, its repository, its deploy log, and two warnings about what its compose file asked for that Pando did not carry over" width="100%">
 
 ---
-
-## Status
-
-**Built and running.** All eleven phases are implemented, and the four end-to-end sequences in
-[design 07](docs/design/07-sequences.md) run against a real Compose stack with real Docker and real
-Postgres. One design question is still open — **O-4**, which needs a measurement rather than a
-decision (see [`docs/plan/open-decisions.md`](docs/plan/open-decisions.md)).
-
-It has not been run anywhere but its authors' machines. Treat it accordingly.
 
 ## Why
 
@@ -86,6 +78,84 @@ Apps get their own port on a default install — `http://localhost:9000` upward,
 page. Twenty ports are published; `PANDO_APP_PORT_START` and `PANDO_APP_PORT_END` widen the range,
 and they set both what Compose publishes and what Pando hands out, because an app given a port
 outside the published range has an address nothing can reach.
+
+## Four ways to use it
+
+The API is the product. The console, the CLI and the MCP server are all clients of it, and none has a
+capability the API lacks — if the CLI can do something the console cannot, that is a bug rather than a
+design.
+
+### Console
+
+At `http://localhost:8080`. Two front doors in one build: a page of tiles for people who just open
+apps, and an admin console for people who run them. Which one you get follows the verbs you hold, not
+a separate login.
+
+Apps, sharing, environment variables, secrets, host policy, accounts, groups, backups, the audit log,
+and a terminal into a running app.
+
+### CLI
+
+The same binary. `pando login` stores a token for the machine; everything after that acts as you and
+holds nothing you do not.
+
+```bash
+pando login https://pando.example.com
+
+pando app add https://github.com/you/notes    # clone, detect, propose
+pando app list
+pando app show notes
+pando deploy notes                            # or: pando deploy ./local-directory
+pando logs notes --follow
+pando exec notes -- sh
+
+pando slot set notes database --provision      # let Pando create the database
+pando secret set notes STRIPE_KEY
+pando grant add notes --user usr_01HQ8…        # let someone open it
+pando rollback notes                           # to the previous revision
+pando export notes                             # the whole spec, as JSON
+```
+
+Also `pando backup`, `pando policy`, `pando token`, and `pando admin reset-password` for the case
+where nobody can sign in. `pando <command> --help` for the rest.
+
+### MCP
+
+For coding agents. Runs over stdio on your own machine, using the token from `pando login`:
+
+```bash
+pando mcp
+```
+
+Tools: `pando_list_apps`, `pando_get_app`, `pando_create_app`, `pando_get_detection`,
+`pando_answer_detection`, `pando_accept_proposal`, `pando_plan`, `pando_deploy`, `pando_get_logs`,
+`pando_get_status`.
+
+An agent is a principal like any other. Nothing here bypasses authorization, every action lands in
+the audit log under the token's owner, and the most consequential actions — running commands inside
+apps, reading secret values, changing who has access — are refused to tokens by host policy by
+default and are not offered as tools at all.
+
+### HTTP API
+
+`/api/v1`, session cookie or bearer token. Errors carry a stable machine code, a message written to
+be acted on, and a remedy where there is one:
+
+```json
+{
+  "code": "PLAN_SLOT_UNFILLED",
+  "message": "This app needs a PostgreSQL database, and one hasn't been chosen yet.",
+  "remedy": "Choose how to fill the database slot: provision one inside this app, connect to an existing one, or paste a connection string.",
+  "details": { "slots": [{ "key": "database", "type": "postgres" }] },
+  "request_id": "req_01HQ8…"
+}
+```
+
+That is the standard every message is held to, in the API and in the console alike: self-contained,
+no undefined terms, and useful enough to paste into the assistant that wrote the app. "Which port?"
+fails it.
+
+See [`docs/design/04-api.md`](docs/design/04-api.md).
 
 ## What it does
 

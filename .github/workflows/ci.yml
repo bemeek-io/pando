@@ -35,10 +35,19 @@ jobs:
           version: v2.13.2
 
       - name: Test
-        run: go test -race -count=1 ./...
+        run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+
+      # Public repository, so no token is needed. Unit coverage only — the
+      # integration job runs separately against real Postgres and real Docker,
+      # and merging the two profiles would report a number neither job measured.
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.out
+          flags: unit
+          fail_ci_if_error: false
 
       # Design 00 §4: CI reports which requirements have a named acceptance test.
-      # Informational for now — it will read 0/207 until phase 0 lands.
       - name: Requirement coverage
         run: make requirements-coverage
 
