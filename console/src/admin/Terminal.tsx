@@ -83,7 +83,14 @@ function useWorkloads(appID: string): { all: string[]; primary: string } {
   };
 }
 
-/** Shown whenever the app has more than one part to choose between. */
+/**
+ * Which part of the app the terminal is in.
+ *
+ * Shown even when there is only one, because it answers a question as well as
+ * offering a choice: a terminal that drops you straight into a shell does not
+ * say *where*. On a single-service app the answer is obvious only to somebody
+ * who already knows the app has one service.
+ */
 function WorkloadPicker({
   names,
   chosen,
@@ -93,7 +100,9 @@ function WorkloadPicker({
   chosen: string;
   onChoose: (w: string) => void;
 }) {
-  if (names.length < 2) return null;
+  // Nothing to show before the spec has loaded, or for an app with no
+  // workloads at all — which is an app that has never been through review.
+  if (names.length === 0) return null;
   return (
     <Select
       label="Which part of the app"
