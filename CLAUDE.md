@@ -50,6 +50,7 @@ one of these harder to enforce, the change is wrong.
 | Secrets never reach a log line | R-194 | `secret.Value` renders `[redacted]` in every marshaler | design 00 §3.3 |
 | No container runtime socket in a build | R-112 | Integration test asserting build container mounts | design 07 B |
 | Inbound `X-Pando-*` headers are always stripped | R-053 | Unconditional strip in the proxy + forged-header test | design 06 §4, 07 C |
+| Outbound `pando_*` cookies never reach an app | R-173 | Namespace strip in the proxy + forwarded-cookie test | design 06 §4 |
 | Built-in roles are immutable | R-081 | DB trigger; new verbs added by migration only | design 02 §2.2 |
 | An install-scoped grant carries install verbs and no app, and vice versa | R-080 | Composite FK `grants (role_id, role_scope) → roles (id, scope)` + two CHECKs | design 02 §2.2, 06 §2.1 |
 | Spec revisions are append-only | R-152 | DB trigger rejecting `UPDATE`/`DELETE` | design 02 §2.3 |

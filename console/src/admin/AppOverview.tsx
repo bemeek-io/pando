@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banner, Button, Card, CodeBlock, StatusIndicator, Tag } from '@design';
 
-import { api, RequestFailed } from '@api/client';
+import { api, base, RequestFailed } from '@api/client';
 import type { App, Deployment } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { InlineWarning } from '../ui/InlineWarning';
@@ -176,7 +176,7 @@ function DeploymentLog({ appID, deployment }: { appID: string; deployment: Deplo
   useEffect(() => {
     // EventSource, not polling: the server already streams this and a deploy
     // log is watched while it happens.
-    const stream = new EventSource(`/api/v1/apps/${appID}/deployments/${deployment.id}/logs`);
+    const stream = new EventSource(`${base}/apps/${appID}/deployments/${deployment.id}/logs`);
 
     stream.onmessage = (event) => setLines((previous) => [...previous, event.data as string]);
     stream.addEventListener('end', () => stream.close());

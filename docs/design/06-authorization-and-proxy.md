@@ -182,9 +182,25 @@ The single enforcement point (R-023). One path for every request to every app �
 7.  Strip inbound X-Pando-* headers        ← critical, see below
 8.  Set assertion + convenience headers
 9.  Strip path prefix, set X-Forwarded-Prefix (R-167)
-10. Forward to the workload
-11. Stream response
+10. Strip every cookie in Pando's namespace (R-173)  ← a credential; see below
+11. Forward to the workload
+12. Stream response
 ```
+
+**Step 5, "redirect to login", goes to `/.pando/login` (R-172).** Not `/login`: on an app's own
+hostname every path belongs to the app, so the router hands `/login` to the proxy, which redirects to
+it again — an infinite loop, and subdomain routing unusable for any app that is not public. `/.pando`
+is the one path Pando answers on every hostname it serves; a slug cannot contain a dot, so no app can
+claim it. The console's assets are served from there too, because a sign-in page whose HTML asks for
+`/assets/app.js` on an app's hostname is asking the app for it.
+
+**Step 10 is the cookie half of step 7.** Headers are stripped because an app that trusts
+`X-Pando-User` is trusting the network boundary. Cookies are stripped because an app that *receives*
+`pando_session` has to trust nothing at all — it can replay the credential against Pando's own API as
+whoever visited it. Under path routing the browser sends it on every request, because the app shares
+Pando's origin. A namespace prefix rather than one cookie name, so the rule covers the cookie nobody
+has added yet. What an app is entitled to is the assertion from step 6: scoped to that app (R-054),
+signed, and short-lived.
 
 **[D] Step 7 is a security requirement, not hygiene.** Any inbound header in Pando's namespace must be stripped unconditionally before step 8. Without it, a client sets `X-Pando-User: admin@corp.com` and an app trusting the convenience headers (R-053) is trivially spoofed. This is the single most likely serious bug in the proxy, and it needs a test asserting that a request with forged headers arrives with them replaced.
 

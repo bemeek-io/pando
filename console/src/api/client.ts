@@ -36,7 +36,23 @@ export class RequestFailed extends Error {
   }
 }
 
-const base = '/api/v1';
+/**
+ * Where the API is, relative to wherever this page is being served.
+ *
+ * Normally `/api/v1`. But the sign-in page is also served from Pando's one
+ * reserved path, `/.pando/login`, so that somebody who lands on an app's own
+ * hostname or its own port has somewhere to sign in (R-172) — and on those
+ * listeners `/api/v1` belongs to the app, not to Pando. The whole router is
+ * mounted under the reserved prefix for exactly this reason, so the page asks
+ * for the API where the page itself came from.
+ */
+export const base = reservedPrefix() + '/api/v1';
+
+function reservedPrefix(): string {
+  const prefix = '/.pando';
+  const path = window.location.pathname;
+  return path === prefix || path.startsWith(prefix + '/') ? prefix : '';
+}
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(base + path, {

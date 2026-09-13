@@ -19,7 +19,7 @@ import '@xterm/xterm/css/xterm.css';
 
 import { Button, Card, Select } from '@design';
 
-import { api } from '@api/client';
+import { api, base } from '@api/client';
 import type { AppSpec } from '@api/types.gen';
 
 export function Terminal({ appID }: { appID: string }) {
@@ -199,7 +199,7 @@ function Session({
     const query = workload ? `?workload=${encodeURIComponent(workload)}` : '';
     const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(
-      `${scheme}//${window.location.host}/api/v1/apps/${appID}/exec${query}`,
+      `${scheme}//${window.location.host}${base}/apps/${appID}/exec${query}`,
     );
     socket.binaryType = 'arraybuffer';
 

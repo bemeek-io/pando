@@ -375,70 +375,71 @@ func serve(ctx context.Context, configPath string) error {
 		Auditor:       auditor,
 		Metrics:       proxy.NewCounters(),
 		Logger:        logger,
-		LoginPath:     "/login",
+		LoginPath:     httpapi.LoginPath,
 		Mode:          cfg.Server.RoutingMode,
 	}
 
-	srv := &http.Server{
-		Addr: cfg.Server.Addr,
-		Handler: (&httpapi.Server{
-			Logger:   logger,
-			DB:       db,
-			Identity: identity,
-			Users:    users,
-			Sessions: sessions,
-			Tokens:   tokens,
-			Apps:     apps,
-			Volumes:  volumes,
-			Auditor:  auditor,
-			Policy:   hostPolicy,
+	// Built once and used twice: as the front door, and as what a port-mode
+	// app's own listener falls back to for Pando's reserved path (R-172).
+	apiHandler := (&httpapi.Server{
+		Logger:   logger,
+		DB:       db,
+		Identity: identity,
+		Users:    users,
+		Sessions: sessions,
+		Tokens:   tokens,
+		Apps:     apps,
+		Volumes:  volumes,
+		Auditor:  auditor,
+		Policy:   hostPolicy,
 
-			Registry:    registry,
-			Adapters:    adapters,
-			Allocations: allocations,
-			Planner:     appPlanner,
-			Deployments: deployments,
-			Deployer:    deployer,
-			Logs:        logStore,
-			Secrets:     secrets,
-			Detections:  detections,
-			Detector:    detector,
-			Console:     consoleHandler(logger),
+		Registry:    registry,
+		Adapters:    adapters,
+		Allocations: allocations,
+		Planner:     appPlanner,
+		Deployments: deployments,
+		Deployer:    deployer,
+		Logs:        logStore,
+		Secrets:     secrets,
+		Detections:  detections,
+		Detector:    detector,
+		Console:     consoleHandler(logger),
 
-			// Policy is evaluated before grants, so it is wired into the
-			// authorizer rather than checked alongside it (R-272).
-			Authz:    authorizer,
-			Authent:  authenticator,
-			Minter:   minter,
-			AppProxy: appProxy,
+		// Policy is evaluated before grants, so it is wired into the
+		// authorizer rather than checked alongside it (R-272).
+		Authz:    authorizer,
+		Authent:  authenticator,
+		Minter:   minter,
+		AppProxy: appProxy,
 
-			// So the console does not answer on an app's own hostname. Without
-			// this the console's "/" route shadows every subdomain app's root.
-			AppHosts:   appResolver,
-			Grants:     grants,
-			HostPolicy: hostPolicy,
-			Verbs:      authzStore,
-			Defaults:   installDefaults,
+		// So the console does not answer on an app's own hostname. Without
+		// this the console's "/" route shadows every subdomain app's root.
+		AppHosts:   appResolver,
+		Grants:     grants,
+		HostPolicy: hostPolicy,
+		Verbs:      authzStore,
+		Defaults:   installDefaults,
 
-			// The policy *document* and the policy *evaluator* are different
-			// things and both are wired: one endpoint edits the document, every
-			// authorization check consults the evaluator, and the evaluator
-			// reads the document per evaluation rather than caching it (R-274).
-			PolicyStore: policyStore,
-			AuditLog:    audit.NewReader(db.Pool),
+		// The policy *document* and the policy *evaluator* are different
+		// things and both are wired: one endpoint edits the document, every
+		// authorization check consults the evaluator, and the evaluator
+		// reads the document per evaluation rather than caching it (R-274).
+		PolicyStore: policyStore,
+		AuditLog:    audit.NewReader(db.Pool),
 
-			Groups:       state.NewGroups(db),
-			Roles:        state.NewRoles(db),
-			Backups:      backups,
-			Backup:       backupService,
-			BundleSource: bundleSource,
+		Groups:       state.NewGroups(db),
+		Roles:        state.NewRoles(db),
+		Backups:      backups,
+		Backup:       backupService,
+		BundleSource: bundleSource,
 
-			// Retried deploys replay rather than repeat (R-262). An agent
-			// retries on a timeout, and a deploy that clones regularly outlasts
-			// a client's patience.
-			Idempotency: state.NewIdempotency(db),
-		}).Routes(),
-	}
+		// Retried deploys replay rather than repeat (R-262). An agent
+		// retries on a timeout, and a deploy that clones regularly outlasts
+		// a client's patience.
+		Idempotency: state.NewIdempotency(db),
+	}).Routes()
+
+	srv := &http.Server{Addr: cfg.Server.Addr, Handler: apiHandler}
 
 	// The reconciler. Apps that kept running while Pando was away are converged
 	// to, not restarted for tidiness — an app that was running and is still
@@ -493,8 +494,11 @@ func serve(ctx context.Context, configPath string) error {
 	// comes up blank, and Pando will not rewrite the page to hide that
 	// (R-167, R-028). Same proxy, same enforcement, one extra way in (R-023).
 	go (&proxy.PortListeners{
-		Ports:   state.NewPorts(db),
-		Handler: appProxy,
+		Ports: state.NewPorts(db),
+		// Not the bare proxy: a port listener is a front door of its own, and
+		// somebody arriving at it unauthenticated has to have somewhere to
+		// sign in (R-172). Everything else on that socket is the app's.
+		Handler: httpapi.ReservedOrApp(apiHandler, appProxy),
 		Logger:  logger,
 	}).Run(loopCtx)
 

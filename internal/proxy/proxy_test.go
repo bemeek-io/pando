@@ -772,3 +772,41 @@ func freePort(t *testing.T) int {
 	require.NoError(t, ln.Close())
 	return port
 }
+
+// TestR173_PandosOwnCookiesNeverReachAnApp asserts R-173.
+//
+// The header rule exists because an app that trusts X-Pando-User is trusting
+// the network boundary; the cookie rule exists because an app that *receives*
+// pando_session does not have to trust anything — it can replay the credential
+// against Pando's own API as the person who visited it. Under path routing the
+// browser sends it on every request, because the app shares Pando's origin.
+//
+// What an app is entitled to is the assertion: scoped to that app (R-054),
+// signed, and short-lived.
+func TestR173_PandosOwnCookiesNeverReachAnApp(t *testing.T) {
+	front, _, _, got := harness(t, activeUser("usr_alice"), func(s *store) {
+		s.owner[appID] = "usr_alice"
+	})
+
+	req, err := http.NewRequest(http.MethodGet, front.URL+"/", nil)
+	require.NoError(t, err)
+	req.AddCookie(&http.Cookie{Name: "pando_session", Value: "ses_01HQ8REALCREDENTIAL"})
+	req.AddCookie(&http.Cookie{Name: "pando_anything_later", Value: "also-a-credential"})
+	req.AddCookie(&http.Cookie{Name: "theme", Value: "dark"})
+	req.AddCookie(&http.Cookie{Name: "cart", Value: "two-items"})
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	forwarded := got.header.Get("Cookie")
+	require.NotContains(t, forwarded, "ses_01HQ8REALCREDENTIAL",
+		"the session cookie is a credential and no app may have it")
+	require.NotContains(t, forwarded, "pando_",
+		"nor any other cookie in Pando's namespace, including ones not invented yet")
+
+	// The app's own cookies are untouched: this is a filter, not a purge.
+	require.Contains(t, forwarded, "theme=dark")
+	require.Contains(t, forwarded, "cart=two-items")
+}

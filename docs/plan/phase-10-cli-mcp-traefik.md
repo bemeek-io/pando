@@ -76,3 +76,32 @@ others.
   and every action lands in the audit log under the token's owner (R-229).
 - No surface may have a capability the API lacks (R-261). If the CLI can do something MCP cannot,
   check whether logic leaked into a handler.
+
+## Not built: Pando runs its own edge (R-174)
+
+Traefik ships as a second Compose service behind a profile, so turning it on means editing the
+install topology and running `docker compose --profile traefik up`. R-174 says that is the wrong
+shape: the edge is a setting in Pando, and Pando creates, configures, reconciles and removes the
+container through a runtime adapter like anything else it runs. **The requirement is recorded and the
+work is not done.**
+
+What it needs, in the order the pieces depend on each other:
+
+1. **An install-scoped workload.** The runtime adapter creates bundles for apps, and an edge is not
+   an app: it publishes `:80` and `:443`, which R-026 forbids for a workload, and it is not in any
+   app's private network. That has to be a separate, narrow entry point on the adapter with its own
+   test, not a flag on `BundlePlan` — a flag is a loophole the app path can reach.
+2. **The dynamic-config volume.** The Traefik adapter writes one file per app into a directory both
+   containers mount. Today Compose supplies it; if Pando creates the container it has to name the
+   volume its own process already has mounted, which means asking the runtime adapter what it is
+   rather than core knowing (R-251).
+3. **Enabling without a restart.** `adapter_configs` already carries `enabled` and `is_default`, and
+   nothing exposes them: registration reads the table once at startup. Either an API that re-registers
+   live, or an honest "this takes effect on restart" — but not a setting that silently does nothing.
+4. **Existing apps keep their pinned specs** (R-020, R-152). Turning the edge on changes the *default*
+   routing mode for new apps; it does not move an app that is already running on a port, and the
+   console has to say so rather than implying the switch was retroactive.
+
+Two things that had to land first, and did (this phase's commits): signing in works on an app's own
+hostname (R-172) and Pando's cookies never reach an app (R-173). Subdomain is Traefik's default mode,
+and before those, enabling it would have put every non-public app into an infinite redirect loop.

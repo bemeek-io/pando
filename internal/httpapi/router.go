@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -441,6 +442,47 @@ func (s *Server) Routes() http.Handler {
 		}
 	}
 
+	// Pando's own everything, on every hostname including an app's own.
+	//
+	// An unauthenticated visit to a subdomain app used to redirect to "/login"
+	// on the app's own hostname, where consoleOrApp handed it straight back to
+	// the proxy, which redirected to "/login" again: an infinite loop with the
+	// query string growing on every hop. Subdomain routing was unusable for any
+	// app that was not public, which is the mode Traefik makes the default
+	// (R-172).
+	//
+	// A reserved prefix rather than "/login", because on an app's hostname
+	// every path belongs to the app: taking "/login" would shadow the login
+	// page of any app that has one, and R-171 says an app's own login is that
+	// app working correctly. A slug cannot contain a dot — slugPattern allows
+	// only [a-z0-9-] — so ".pando" is a path no app can ever claim.
+	//
+	// The whole router rather than the console alone, because a sign-in page
+	// needs somewhere to post to. It re-enters with the prefix removed, which
+	// terminates because the path is shorter every time. Nothing is exposed
+	// that the front door does not already expose to the same caller, with the
+	// same authentication and the same authorization.
+	r.Handle(ReservedPrefix, http.RedirectHandler(ReservedPrefix+"/", http.StatusMovedPermanently))
+	r.Handle(ReservedPrefix+"/*", http.StripPrefix(ReservedPrefix, http.HandlerFunc(
+		func(w http.ResponseWriter, req *http.Request) {
+			ctx := req.Context()
+
+			// A fresh routing context. Chi keeps its matching position in the
+			// request context, so re-entering with the old one resumes from
+			// where the match left off rather than matching the shortened path
+			// from the start — every reserved path would land on whatever the
+			// outer route had already chosen.
+			ctx = context.WithValue(ctx, chi.RouteCtxKey, chi.NewRouteContext())
+
+			// And a note that this request came in reserved, which is what
+			// tells consoleOrApp to serve the console even on a hostname that
+			// belongs to an app. That is the whole point of the prefix: it is
+			// Pando's everywhere, so the sign-in page exists everywhere.
+			ctx = context.WithValue(ctx, reservedKey{}, true)
+
+			r.ServeHTTP(w, req.WithContext(ctx))
+		})))
+
 	// Everything that is not one of Pando's own routes is a request to an app,
 	// and goes through the proxy (R-023). Mounting it as the fallback rather
 	// than on a prefix is what makes "there is no bypass" structural: a route
@@ -464,8 +506,19 @@ func (s *Server) Routes() http.Handler {
 // Resolved by asking whether the Host names an app, rather than by removing "/"
 // from the console's routes: the console does own "/" on Pando's own hostname,
 // and in path mode that is the only hostname there is.
+// reservedKey marks a request that arrived under ReservedPrefix.
+type reservedKey struct{}
+
 func (s *Server) consoleOrApp() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Reserved paths are Pando's on every hostname, including one that
+		// belongs to an app — otherwise there is nowhere to sign in to reach
+		// that app (R-172).
+		if reserved, _ := r.Context().Value(reservedKey{}).(bool); reserved {
+			s.Console.ServeHTTP(w, r)
+			return
+		}
+
 		if s.AppProxy != nil && s.AppHosts != nil {
 			host := r.Host
 			if h, _, err := net.SplitHostPort(host); err == nil {
@@ -480,11 +533,48 @@ func (s *Server) consoleOrApp() http.Handler {
 	})
 }
 
+// ReservedPrefix is the one path that is Pando's on every hostname.
+//
+// Its users are the sign-in page and the assets that page needs, reached from
+// an app's hostname where every other path is the app's. Leading dot so it
+// cannot collide with an app slug, which may not start with one.
+const ReservedPrefix = "/.pando"
+
+// LoginPath is where the proxy sends someone who needs to sign in.
+const LoginPath = ReservedPrefix + "/login"
+
+// ReservedOrApp serves Pando's reserved path, and everything else from app.
+//
+// For the listeners that are not the front door: a port-mode app has a socket
+// of its own whose every path belongs to that app (design 03 §4.2), so the
+// router — and with it the sign-in page — is not in front of it. Without this
+// the R-172 redirect lands back on the proxy and loops, which is the bug R-172
+// exists to fix, reintroduced one listener over.
+func ReservedOrApp(pando, app http.Handler) http.Handler {
+	if pando == nil {
+		return app
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == ReservedPrefix || strings.HasPrefix(r.URL.Path, ReservedPrefix+"/") {
+			pando.ServeHTTP(w, r)
+			return
+		}
+		app.ServeHTTP(w, r)
+	})
+}
+
 // consoleRoutes are the paths the console owns.
 //
 // Enumerated rather than a prefix wildcard, so that adding a console route is a
 // deliberate act that a reviewer sees. Every one of these is also a slug an app
 // cannot have, which is what keeps the two namespaces from colliding.
+//
+// The console's HTML asks for its assets at "/.pando/assets/…", which reaches
+// this list the same way everything reserved does: with the prefix stripped and
+// re-entered, so "/assets/*" has to be a route here or the sign-in page loads
+// without the script that draws it. That is how it broke once — the route was
+// removed on the reasoning that the reserved mount served assets itself, which
+// it had stopped doing.
 var consoleRoutes = []string{
 	"/",
 	"/index.html",

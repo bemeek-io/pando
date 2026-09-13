@@ -27,6 +27,14 @@ import (
 // security-critical piece of code in the system.
 const HeaderPrefix = "X-Pando-"
 
+// CookiePrefix is Pando's cookie namespace.
+//
+// Every cookie starting with this is removed from the request before it is
+// forwarded to an app (see stripCookies). A prefix rather than one name, for
+// the same reason HeaderPrefix is: the rule has to cover the cookie nobody has
+// added yet.
+const CookiePrefix = "pando_"
+
 // Convenience headers, sent alongside the assertion and documented as
 // UNVERIFIED (R-053). An app that trusts them is trusting the network boundary,
 // which is a legitimate choice a developer must know they are making.
@@ -78,6 +86,12 @@ type Proxy struct {
 	Logger        *zap.Logger
 
 	// LoginPath is where an unauthenticated caller is sent.
+	//
+	// It has to be a path Pando answers on *every* hostname, not only its own.
+	// On an app's own hostname the console does not serve "/login" — the proxy
+	// does, because every path there belongs to the app — so sending somebody
+	// to "/login" there redirected them to the page that had just redirected
+	// them, forever. See httpapi.LoginPath.
 	LoginPath string
 
 	// Mode is the install's default shape, for building URLs to show people
@@ -190,6 +204,19 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, target *url.URL,
 			// set — so there is no ordering in which a forged value survives.
 			stripInbound(pr.Out.Header)
 
+			// And Pando's own cookies, which are credentials.
+			//
+			// The session cookie was being forwarded verbatim: every app Pando
+			// hosts received `pando_session=ses_…` on every request, and could
+			// replay it against Pando's API as the person visiting it. Under
+			// path routing the browser sends it because the app shares Pando's
+			// origin; under subdomain routing it would be whatever the cookie's
+			// domain covers. Either way an app is not entitled to it — the
+			// assertion below is what an app is given, and it is scoped to that
+			// app (R-054), signed, and short-lived, which a session cookie is
+			// none of.
+			stripCookies(pr.Out)
+
 			// 8. Set the assertion and the convenience headers.
 			pr.Out.Header.Set(assertion.Header, token)
 			pr.Out.Header.Set(HeaderUser, subjectOf(principal))
@@ -264,6 +291,25 @@ func stripInbound(h http.Header) {
 	h.Del("X-Forwarded-Prefix")
 }
 
+// stripCookies removes Pando's own cookies from a request bound for an app.
+//
+// Rebuilt rather than edited: there is no "delete one cookie" on a header that
+// holds them all in one line, and a regexp over that line is how a cookie whose
+// value contains a semicolon survives the deletion.
+func stripCookies(r *http.Request) {
+	var kept []*http.Cookie
+	for _, c := range r.Cookies() {
+		if !strings.HasPrefix(c.Name, CookiePrefix) {
+			kept = append(kept, c)
+		}
+	}
+
+	r.Header.Del("Cookie")
+	for _, c := range kept {
+		r.AddCookie(c)
+	}
+}
+
 // resolve finds the app and, for a path-addressed one, the prefix to strip.
 //
 // Both addressing modes are tried, always, because design 03 §4.1 says neither
@@ -320,7 +366,7 @@ func (p *Proxy) resolve(r *http.Request) (state.App, *spec.AppSpec, string, bool
 func (p *Proxy) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 	loginPath := p.LoginPath
 	if loginPath == "" {
-		loginPath = "/login"
+		loginPath = "/.pando/login"
 	}
 	target := loginPath + "?next=" + url.QueryEscape(r.URL.RequestURI())
 	http.Redirect(w, r, target, http.StatusFound)

@@ -7,6 +7,18 @@ import { resolve } from 'node:path';
 export default defineConfig({
   plugins: [react()],
 
+  // Assets live under Pando's one reserved path, on every hostname.
+  //
+  // The console's HTML is served at "/", at "/admin/…" and — for someone
+  // signing in to reach an app on its own hostname — at "/.pando/login". Its
+  // assets have to resolve from all three. Relative URLs break on the deep
+  // admin routes; "/assets/…" breaks on an app's hostname, where the top of
+  // the domain is the app and not Pando, which is R-167's failure happening to
+  // our own console. An absolute path under the one prefix no app can claim
+  // works everywhere, and is why that prefix is reserved on every hostname
+  // rather than only on Pando's own (see httpapi.ReservedPrefix).
+  base: '/.pando/',
+
   resolve: {
     alias: {
       // The design system's barrel. Components are plain .jsx with sibling

@@ -449,6 +449,12 @@ itself, to a registry or a daemon, and the daemon is forbidden.
 
 **R-171 [D]** An app with its own login page is stacked behind Pando's auth by default; the user sees two logins. This is expected and not remediated (R-028), and it is **not warned about** — an app presenting its own login page is that app working correctly. Pando has no basis for treating a working app as a problem, and a warning here would train users to dismiss warnings that do matter.
 
+**R-172 [D]** **Signing in works on an app's own hostname.** Pando reserves one path — `/.pando` — that it answers on every hostname it serves, and the sign-in page lives there. An app keeps every other path including `/login`, which R-171 requires. Without this, subdomain routing has nowhere to sign in: the app's hostname is the app's, so a redirect to `/login` returns to the proxy and redirects again, forever.
+
+**R-173 [D]** **Pando's own credentials never reach an app.** Every cookie in Pando's namespace is removed from a request before it is forwarded, the same rule and for the same reason as the `X-Pando-*` headers in R-053. An app that receives the session cookie does not need to trust anything to impersonate its visitor — it can replay the credential against Pando's API. What an app is given is the assertion (R-054): scoped to that app, signed, and short-lived.
+
+**R-174 [D]** **The edge is Pando's to run, not the operator's.** Where an install wants a component in front of Pando — a reverse proxy terminating `:80` and `:443`, issuing certificates, and giving apps public hostnames — turning it on is a setting in Pando, and Pando creates, configures, reconciles and removes it through a runtime adapter like anything else it runs. Editing a Compose file and running a second service alongside Pando is the setup cost R-002 says is paid once at the host, charged again for every install that wants what R-166 prefers. The exception is Pando's own state store, which has to exist before Pando runs (design 00 §1.1).
+
 ---
 
 ## 12. Egress and Isolation
