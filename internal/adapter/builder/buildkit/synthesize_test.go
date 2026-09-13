@@ -2,6 +2,7 @@ package buildkit
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/bemeek-io/pando/internal/errs"
 )
 
 func repo(t *testing.T, dirs ...string) string {
@@ -30,14 +32,14 @@ func repo(t *testing.T, dirs ...string) string {
 func TestR110_AStaticSiteNeedsNoDockerfileInTheRepository(t *testing.T) {
 	root := repo(t, "dist")
 
-	dir, name, err := synthesize(api.BuildRequest{
+	gen, err := synthesize(api.BuildRequest{
 		Strategy: spec.BuildStatic, StaticDir: "dist",
 	}, root)
 	require.NoError(t, err)
-	defer func() { _ = os.RemoveAll(dir) }()
+	defer gen.Cleanup()
 
-	require.Equal(t, "Dockerfile", name)
-	body, err := os.ReadFile(filepath.Join(dir, name))
+	require.Equal(t, "Dockerfile", gen.Name)
+	body, err := os.ReadFile(filepath.Join(gen.Dir, gen.Name))
 	require.NoError(t, err)
 
 	content := string(body)
@@ -50,25 +52,25 @@ func TestR110_AStaticSiteNeedsNoDockerfileInTheRepository(t *testing.T) {
 
 	// Written outside the checkout: the app's own source is never modified by
 	// building it.
-	require.False(t, strings.HasPrefix(dir, root), "the Dockerfile is not written into the app's source")
+	require.False(t, strings.HasPrefix(gen.Dir, root), "the Dockerfile is not written into the app's source")
 }
 
 // The repository root is the default when no directory is named.
 func TestAStaticSiteWithNoDirectoryServesTheRoot(t *testing.T) {
 	root := repo(t)
 
-	dir, _, err := synthesize(api.BuildRequest{Strategy: spec.BuildStatic}, root)
+	gen, err := synthesize(api.BuildRequest{Strategy: spec.BuildStatic}, root)
 	require.NoError(t, err)
-	defer func() { _ = os.RemoveAll(dir) }()
+	defer gen.Cleanup()
 
-	body, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
+	body, err := os.ReadFile(filepath.Join(gen.Dir, "Dockerfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(body), "COPY ./ /usr/share/nginx/html/")
 }
 
 // A directory that is not there fails with the name in it, before a build runs.
 func TestAMissingStaticDirectoryIsRefusedByName(t *testing.T) {
-	_, _, err := synthesize(api.BuildRequest{
+	_, err := synthesize(api.BuildRequest{
 		Strategy: spec.BuildStatic, StaticDir: "public",
 	}, repo(t, "dist"))
 
@@ -83,12 +85,12 @@ func TestAMissingStaticDirectoryIsRefusedByName(t *testing.T) {
 func TestAStaticDirectoryCannotEscapeTheContext(t *testing.T) {
 	root := repo(t, "dist")
 
-	dir, _, err := synthesize(api.BuildRequest{
+	gen, err := synthesize(api.BuildRequest{
 		Strategy: spec.BuildStatic, StaticDir: "../../etc",
 	}, root)
 	if err == nil {
-		defer func() { _ = os.RemoveAll(dir) }()
-		body, readErr := os.ReadFile(filepath.Join(dir, "Dockerfile"))
+		defer gen.Cleanup()
+		body, readErr := os.ReadFile(filepath.Join(gen.Dir, "Dockerfile"))
 		require.NoError(t, readErr)
 		require.NotContains(t, string(body), "..", "a path outside the context never reaches the COPY")
 	}
@@ -97,7 +99,50 @@ func TestAStaticDirectoryCannotEscapeTheContext(t *testing.T) {
 // A strategy this builder does not implement is refused here rather than
 // producing an empty Dockerfile.
 func TestAnUnknownStrategyIsRefused(t *testing.T) {
-	_, _, err := synthesize(api.BuildRequest{Strategy: spec.BuildBuildpack}, repo(t))
+	_, err := synthesize(api.BuildRequest{Strategy: spec.BuildStrategy("nonsense")}, repo(t))
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "buildpack")
+	require.Contains(t, err.Error(), "nonsense")
+}
+
+// TestR095_ABuildpackPlanComesFromNixpacks asserts R-095: wrap an existing
+// implementation rather than reimplementing convention-matching.
+//
+// Skipped where nixpacks is not installed, which is every developer machine
+// that has not built the image — the binary ships in the Pando image, not in
+// the repository.
+func TestR095_ABuildpackPlanComesFromNixpacks(t *testing.T) {
+	if _, err := exec.LookPath(nixpacksBinary); err != nil {
+		t.Skip("nixpacks is not on PATH; it ships in the Pando image")
+	}
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"name":"s","version":"1.0.0","scripts":{"start":"node index.js"}}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "index.js"), []byte("console.log(1)\n"), 0o644))
+
+	gen, err := synthesize(api.BuildRequest{Strategy: spec.BuildBuildpack}, root)
+	require.NoError(t, err)
+	defer gen.Cleanup()
+
+	// The generated Dockerfile lives inside the checkout, because the one
+	// nixpacks writes does `COPY . /app/.` and `COPY .nixpacks/...` — the build
+	// context has to be the source with the generated directory inside it.
+	require.Equal(t, "Dockerfile", gen.Name)
+	require.Equal(t, filepath.Join(root, ".nixpacks"), gen.Dir)
+
+	body, err := os.ReadFile(filepath.Join(gen.Dir, gen.Name))
+	require.NoError(t, err)
+	require.Contains(t, string(body), "FROM ", "it is a Dockerfile BuildKit can build")
+}
+
+// A repository nixpacks cannot place fails with its own reason, before a build
+// is attempted.
+func TestABuildpackPlanThatFailsSaysWhy(t *testing.T) {
+	if _, err := exec.LookPath(nixpacksBinary); err != nil {
+		t.Skip("nixpacks is not on PATH; it ships in the Pando image")
+	}
+
+	_, err := synthesize(api.BuildRequest{Strategy: spec.BuildBuildpack}, t.TempDir())
+	require.Error(t, err)
+	require.NotEmpty(t, errs.As(err).Remedy, "R-105 promises a way forward")
 }

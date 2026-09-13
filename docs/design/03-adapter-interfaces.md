@@ -528,6 +528,21 @@ join and nothing publishes a port (R-134), and its data is an ordinary app volum
 through the adapter's config. Alpine variants because a hobbyist's host is the target and a 400MB
 Postgres image on a two-core VPS is a cost with nothing to show for it.
 
+**[P] The builder synthesizes a Dockerfile for strategies that have none.** `static` and `buildpack`
+both end as a Dockerfile build, written outside the repository where possible and handed to BuildKit
+as a separate filesystem from the context — so nothing is copied and the app's source is untouched.
+The Dockerfile is Docker's vocabulary, so this belongs in the adapter and not in core (R-251): core
+says "a directory of files to serve" or "a repository with no instructions", and a different builder
+may answer either differently.
+
+**[P] `buildpack` is nixpacks, invoked only to plan.** `nixpacks build --out` writes a Dockerfile and
+builds nothing, so R-112 is not in play and the install needs no extra service. The generated
+Dockerfile stays in the checkout because nixpacks' own output does `COPY . /app/.` alongside
+`COPY .nixpacks/…` — the build context must be the source with the generated directory inside it.
+Generation runs with no network and a minimal environment: it reads the repository and decides, and a
+planner that can reach the internet while reading untrusted source is a wider boundary than this
+needs. Paketo is the opt-in alternative and needs a registry in the install topology (R-095).
+
 **[P] Every image Pando supplies itself is pinned by tag, not digest** — these three and the runtime
 adapter's `busybox:stable` volume helper. This is a real weakness and worth naming rather than
 leaving in a code comment: the bytes behind a tag can change, and the BusyBox one is pulled at

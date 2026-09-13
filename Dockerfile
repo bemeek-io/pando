@@ -16,6 +16,28 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pando ./cmd/pando
 # newer than itself, and discovering that during a restore is discovering it at
 # the worst possible moment. Bump this with the postgres service in
 # docker-compose.yml, never separately.
+# nixpacks turns a repository with no deployment instructions into a
+# Dockerfile, which BuildKit then builds (R-095: wrap an existing
+# implementation rather than reimplementing convention-matching).
+#
+# Fetched here rather than at runtime so an install with no internet still
+# builds, and pinned so the same repository produces the same plan a year from
+# now. It only ever *generates* — `nixpacks build --out` writes a Dockerfile and
+# does not build, so no container runtime socket is involved anywhere (R-112).
+FROM alpine:3.21 AS nixpacks
+ARG NIXPACKS_VERSION=1.41.0
+ARG TARGETARCH
+RUN apk add --no-cache curl tar \
+    && case "$TARGETARCH" in \
+         arm64) arch=aarch64 ;; \
+         amd64) arch=x86_64  ;; \
+         *) echo "unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL -o /tmp/nixpacks.tgz \
+       "https://github.com/railwayapp/nixpacks/releases/download/v${NIXPACKS_VERSION}/nixpacks-v${NIXPACKS_VERSION}-${arch}-unknown-linux-musl.tar.gz" \
+    && tar xzf /tmp/nixpacks.tgz -C /usr/local/bin nixpacks \
+    && chmod +x /usr/local/bin/nixpacks
+
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata su-exec postgresql17-client \
     && adduser -D -u 10001 pando \
@@ -25,6 +47,7 @@ RUN apk add --no-cache ca-certificates tzdata su-exec postgresql17-client \
 WORKDIR /var/lib/pando
 
 COPY --from=build /out/pando /usr/local/bin/pando
+COPY --from=nixpacks /usr/local/bin/nixpacks /usr/local/bin/nixpacks
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # The entrypoint starts as root only long enough to join the runtime socket's

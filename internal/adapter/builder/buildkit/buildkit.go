@@ -102,7 +102,7 @@ func (a *Adapter) Capabilities(context.Context) (api.BuilderCapabilities, error)
 		// Reported honestly so a policy floor above this excludes it (R-114).
 		IsolationClass: spec.IsolationContainer,
 
-		Strategies: []api.BuildStrategy{spec.BuildDockerfile, spec.BuildStatic},
+		Strategies: []api.BuildStrategy{spec.BuildDockerfile, spec.BuildStatic, spec.BuildBuildpack},
 
 		SupportsCache: true,
 
@@ -159,12 +159,12 @@ func (a *Adapter) Build(ctx context.Context, req api.BuildRequest) (api.BuildRes
 	// separate filesystems. So nothing is copied and the app's source is never
 	// modified.
 	if req.Strategy != spec.BuildDockerfile {
-		generated, name, genErr := synthesize(req, contextDir)
+		gen, genErr := synthesize(req, contextDir)
 		if genErr != nil {
 			return api.BuildResult{}, genErr
 		}
-		defer func() { _ = os.RemoveAll(generated) }()
-		dockerfileDir, dockerfile = generated, name
+		defer gen.Cleanup()
+		dockerfileDir, dockerfile = gen.Dir, gen.Name
 	}
 
 	// R-119: a build that never finishes is a build that holds a slot forever.
