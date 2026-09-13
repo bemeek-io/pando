@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -97,6 +98,18 @@ func (r *resolver) ByHostname(_ context.Context, hostname string) (state.App, *s
 
 func (r *resolver) BySlug(_ context.Context, slug string) (state.App, *spec.AppSpec, bool, error) {
 	if r.app.ID == "" || r.app.Slug != slug {
+		return state.App{}, nil, false, nil
+	}
+	return r.app, r.spec, true, nil
+}
+
+// ByPort matches the same way the real query does: the mode as well as the
+// number, so a port recorded on an app that is not in port mode never answers.
+func (r *resolver) ByPort(_ context.Context, port int) (state.App, *spec.AppSpec, bool, error) {
+	if r.app.ID == "" || r.spec == nil {
+		return state.App{}, nil, false, nil
+	}
+	if r.spec.Routing.Mode != spec.RoutingPort || r.spec.Routing.Port != port {
 		return state.App{}, nil, false, nil
 	}
 	return r.app, r.spec, true, nil
@@ -625,4 +638,137 @@ func TestAnInstallCanMixAddressingModes(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.Equal(t, "/dashboard", string(body), "and its prefix is still stripped (R-167)")
+}
+
+// TestR161_APortModeAppIsServedAtTheRootOfItsPort asserts R-161's port mode.
+//
+// The whole value of the mode is that there is no prefix: the app is at "/" of
+// its own port, so an app whose HTML says "/assets/app.js" — which is every
+// frontend built with a default configuration — resolves it to its own asset
+// rather than to Pando. R-167 says Pando will not rewrite the page to make a
+// prefix work, so this is the answer for those apps, and it is only an answer
+// if the path arrives untouched.
+func TestR161_APortModeAppIsServedAtTheRootOfItsPort(t *testing.T) {
+	port := freePort(t)
+	got := &received{}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.record(r)
+	}))
+	defer upstream.Close()
+
+	s := newStore()
+	s.owner[appID] = "usr_alice"
+	minter, err := assertion.NewMinter("https://pando.test", nil)
+	require.NoError(t, err)
+
+	// Slug "notes" as well, so the test can tell "resolved by port" from
+	// "resolved by first path segment" — a proxy that fell through to the slug
+	// would strip "/assets" and pass this test for the wrong reason.
+	p := &proxy.Proxy{
+		Resolver: &resolver{
+			app: state.App{ID: appID, Slug: "notes", State: state.StateRunning},
+			spec: &spec.AppSpec{
+				Routing: spec.Routing{Mode: spec.RoutingPort, Port: port},
+				Workloads: []spec.Workload{{Name: "web", Primary: true,
+					Ports: []spec.Port{{Number: 80, Protocol: "http"}}}},
+			},
+		},
+		Authenticator: staticAuth{principal: activeUser("usr_alice")},
+		Authz:         authz.New(s, nil, nil),
+		Minter:        minter,
+		Upstreams:     fixedUpstream{addr: upstream.URL},
+		Logger:        zap.NewNop(),
+		Mode:          spec.RoutingPort,
+	}
+
+	listeners := &proxy.PortListeners{Ports: fixedPorts{port}, Handler: p}
+	ctx, stop := context.WithCancel(context.Background())
+	go listeners.Run(ctx)
+	defer stop()
+
+	// The listener is opened by the first sync, which Run does before it ticks.
+	require.Eventually(t, func() bool {
+		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/assets/app.js", port))
+		if err != nil {
+			return false
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, 5*time.Second, 25*time.Millisecond)
+
+	require.Equal(t, "/assets/app.js", got.path,
+		"a port-mode app sees the path it was asked for, with nothing stripped")
+	require.Empty(t, got.header.Get("X-Forwarded-Prefix"),
+		"and is told of no prefix, because there is none")
+}
+
+// TestR023_APortListenerIsTheSameEnforcementPoint asserts R-023 for the port
+// listeners: a second way in must not be a second decision.
+func TestR023_APortListenerIsTheSameEnforcementPoint(t *testing.T) {
+	port := freePort(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	// Nobody is granted anything: no owner, no data-plane grant.
+	s := newStore()
+	minter, err := assertion.NewMinter("https://pando.test", nil)
+	require.NoError(t, err)
+
+	p := &proxy.Proxy{
+		Resolver: &resolver{
+			app: state.App{ID: appID, Slug: "notes", State: state.StateRunning},
+			spec: &spec.AppSpec{
+				Routing: spec.Routing{Mode: spec.RoutingPort, Port: port},
+				Workloads: []spec.Workload{{Name: "web", Primary: true,
+					Ports: []spec.Port{{Number: 80, Protocol: "http"}}}},
+			},
+		},
+		Authenticator: staticAuth{principal: activeUser("usr_mallory")},
+		Authz:         authz.New(s, nil, nil),
+		Minter:        minter,
+		Upstreams:     fixedUpstream{addr: upstream.URL},
+		Logger:        zap.NewNop(),
+		Mode:          spec.RoutingPort,
+	}
+
+	listeners := &proxy.PortListeners{Ports: fixedPorts{port}, Handler: p}
+	ctx, stop := context.WithCancel(context.Background())
+	go listeners.Run(ctx)
+	defer stop()
+
+	var status int
+	require.Eventually(t, func() bool {
+		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
+		if err != nil {
+			return false
+		}
+		defer func() { _ = resp.Body.Close() }()
+		status = resp.StatusCode
+		return true
+	}, 5*time.Second, 25*time.Millisecond)
+
+	require.Equal(t, http.StatusForbidden, status,
+		"the data-plane check runs on a port listener exactly as it does on the front door")
+}
+
+// fixedPorts is a port allocator that always reports the same ports.
+type fixedPorts []int
+
+func (f fixedPorts) InUse(context.Context) ([]int, error) { return f, nil }
+
+// freePort asks the OS for a port nobody is using.
+//
+// Not a hard-coded number: these tests bind a real listener, and a developer
+// machine running Pando's own Compose stack has 9000-9019 published on it — so
+// a fixed 9010 passed alone and failed in a full run, which is the worst way
+// for a test to fail.
+func freePort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := ln.Addr().(*net.TCPAddr).Port
+	require.NoError(t, ln.Close())
+	return port
 }

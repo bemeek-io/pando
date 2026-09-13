@@ -484,6 +484,20 @@ func serve(ctx context.Context, configPath string) error {
 		Logger: logger,
 	}).Run(loopCtx)
 
+	// Port-mode apps answer at the root of their own port (design 03 §4.2).
+	//
+	// The allocation was already being made and shown to people; nothing
+	// listened on it, so every laptop install advertised an address that
+	// refused the connection and the apps were reachable only under the path
+	// prefix — where an app that writes "/assets/app.js" into its own HTML
+	// comes up blank, and Pando will not rewrite the page to hide that
+	// (R-167, R-028). Same proxy, same enforcement, one extra way in (R-023).
+	go (&proxy.PortListeners{
+		Ports:   state.NewPorts(db),
+		Handler: appProxy,
+		Logger:  logger,
+	}).Run(loopCtx)
+
 	// Hourly garbage collection, on a much slower clock because nothing here is
 	// urgent and all of it is destructive.
 	// Reclaim the networks of apps deleted since the last run.

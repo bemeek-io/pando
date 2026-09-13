@@ -32,6 +32,11 @@ docker compose up -d
 
 Pando and Postgres start together. The console is on `http://localhost:8080`.
 
+Apps get their own port on a default install — `http://localhost:9000` upward, shown on each app's
+page. Twenty are published; `PANDO_APP_PORT_START` and `PANDO_APP_PORT_END` widen the range, and they
+set both what Compose publishes and what Pando allocates, because an app given a port outside the
+published range has an address nothing can reach.
+
 **Signing in the first time.** First run creates one account, `admin`, and prints its password once:
 
 ```bash

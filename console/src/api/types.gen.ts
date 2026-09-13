@@ -19,6 +19,8 @@ export interface App {
   created_at: string;
   updated_at: string;
   deleted_at?: string;
+  routing: Routing;
+  address?: string;
 }
 
 export interface Revision {
@@ -148,6 +150,15 @@ export interface Source {
   credential_ref?: string;
 }
 
+export interface Routing {
+  adapter_ref: string;
+  mode: string;
+  mode_source: string;
+  hostname?: string;
+  path_prefix?: string;
+  port?: number;
+}
+
 export interface Draft {
   workloads?: (Workload[] | null);
   volumes?: (Volume[] | null);
@@ -203,15 +214,6 @@ export interface Slot {
   required: boolean;
   evidence?: (string[] | null);
   resolution?: Resolution;
-}
-
-export interface Routing {
-  adapter_ref: string;
-  mode: string;
-  mode_source: string;
-  hostname?: string;
-  path_prefix?: string;
-  port?: number;
 }
 
 export interface RuntimeRef {

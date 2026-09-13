@@ -99,3 +99,31 @@ func (p *Ports) Allocate(ctx context.Context, adapterRef, appID string, from, to
 		WithRemedy("Delete an app that is no longer needed, or widen the port range with " +
 			"PANDO_SERVER_PORT_RANGE_START and PANDO_SERVER_PORT_RANGE_END.")
 }
+
+// InUse lists every port currently allocated to an app.
+//
+// What the proxy opens listeners on (design 03 §4.2). Allocations rather than
+// running apps, deliberately: a port belongs to an app from the moment it is
+// allocated until the app is gone, and an app that is stopped or mid-deploy
+// should answer "this app isn't running right now" at its own address rather
+// than refuse the connection — the two are very different things to debug.
+func (p *Ports) InUse(ctx context.Context) ([]int, error) {
+	rows, err := p.db.Query(ctx,
+		`SELECT a.port FROM port_allocations a
+		 JOIN apps ON apps.id = a.app_id AND apps.deleted_at IS NULL
+		 ORDER BY a.port`)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the ports apps are using.", err)
+	}
+	defer rows.Close()
+
+	var ports []int
+	for rows.Next() {
+		var port int
+		if err := rows.Scan(&port); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the ports apps are using.", err)
+		}
+		ports = append(ports, port)
+	}
+	return ports, rows.Err()
+}

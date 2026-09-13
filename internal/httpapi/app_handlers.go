@@ -210,7 +210,19 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
-	JSON(w, http.StatusOK, map[string]any{"apps": apps})
+	JSON(w, http.StatusOK, map[string]any{"apps": withAddresses(r, apps)})
+}
+
+// withAddresses fills in where each app is reached.
+//
+// Here rather than in the state store because a port-mode address needs the
+// host the caller used, which only a request knows (R-261 — the API answers
+// "where is this app", and no client re-derives it).
+func withAddresses(r *http.Request, apps []state.App) []state.App {
+	for i := range apps {
+		apps[i].Address = spec.Address(r.Host, apps[i].Slug, apps[i].Routing)
+	}
+	return apps
 }
 
 // handleMyApps returns the launcher tiles (R-264).
@@ -228,7 +240,7 @@ func (s *Server) handleMyApps(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
-	JSON(w, http.StatusOK, map[string]any{"apps": apps})
+	JSON(w, http.StatusOK, map[string]any{"apps": withAddresses(r, apps)})
 }
 
 func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
@@ -236,6 +248,7 @@ func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	app.Address = spec.Address(r.Host, app.Slug, app.Routing)
 	JSON(w, http.StatusOK, app)
 }
 

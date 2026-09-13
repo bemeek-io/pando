@@ -44,6 +44,18 @@ type App struct {
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+
+	// Routing is the pinned spec's routing block, so a caller can say where
+	// the app is without fetching a whole spec revision to find out.
+	//
+	// Zero until an app has a pinned spec: before that it has no address at
+	// all, which is a different thing from having one nobody can reach.
+	Routing spec.Routing `json:"routing,omitzero"`
+
+	// Address is where to open this app, rendered for the request that asked.
+	// Filled in by the API layer, which is the only place that knows what host
+	// the caller reached Pando on. See spec.Address.
+	Address string `json:"address,omitempty"`
 }
 
 // Apps stores apps and their spec revisions.
@@ -119,12 +131,15 @@ func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 	var app App
 	var owner, pinned *string
 	var source []byte
+	var routing []byte
 	err := a.db.QueryRow(ctx, `
-		SELECT id, name, slug, owner_user_id, state, desired_state, pinned_spec_id,
-		       source, created_at, updated_at, deleted_at
-		FROM apps WHERE id = $1 AND deleted_at IS NULL`, appID).
+		SELECT a.id, a.name, a.slug, a.owner_user_id, a.state, a.desired_state, a.pinned_spec_id,
+		       a.source, a.created_at, a.updated_at, a.deleted_at, r.body->'routing'
+		FROM apps a
+		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
+		WHERE a.id = $1 AND a.deleted_at IS NULL`, appID).
 		Scan(&app.ID, &app.Name, &app.Slug, &owner, &app.State, &app.DesiredState, &pinned,
-			&source, &app.CreatedAt, &app.UpdatedAt, &app.DeletedAt)
+			&source, &app.CreatedAt, &app.UpdatedAt, &app.DeletedAt, &routing)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return App{}, false, nil
 	}
@@ -140,6 +155,9 @@ func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 	if len(source) > 0 {
 		_ = json.Unmarshal(source, &app.Source)
 	}
+	if len(routing) > 0 {
+		_ = json.Unmarshal(routing, &app.Routing)
+	}
 	return app, true, nil
 }
 
@@ -151,8 +169,9 @@ func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, error) {
 	rows, err := a.db.Query(ctx, `
 		SELECT DISTINCT a.id, a.name, a.slug, a.owner_user_id, a.state, a.desired_state,
-		       a.pinned_spec_id, a.created_at, a.updated_at
+		       a.pinned_spec_id, a.created_at, a.updated_at, r.body->'routing'
 		FROM apps a
+		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
 		JOIN grants g ON g.app_id = a.id AND g.plane = 'control'
 		WHERE a.deleted_at IS NULL
 		  AND (
@@ -172,9 +191,13 @@ func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, 
 	for rows.Next() {
 		var app App
 		var owner, pinned *string
+		var routing []byte
 		if err := rows.Scan(&app.ID, &app.Name, &app.Slug, &owner, &app.State, &app.DesiredState,
-			&pinned, &app.CreatedAt, &app.UpdatedAt); err != nil {
+			&pinned, &app.CreatedAt, &app.UpdatedAt, &routing); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list apps.", err)
+		}
+		if len(routing) > 0 {
+			_ = json.Unmarshal(routing, &app.Routing)
 		}
 		if owner != nil {
 			app.OwnerUserID = *owner
@@ -193,8 +216,9 @@ func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, 
 // endpoints: the launcher shows what you can open, not what you can manage.
 func (a *Apps) ListForUse(ctx context.Context, p authz.Principal) ([]App, error) {
 	rows, err := a.db.Query(ctx, `
-		SELECT DISTINCT a.id, a.name, a.slug, a.state
+		SELECT DISTINCT a.id, a.name, a.slug, a.state, r.body->'routing'
 		FROM apps a
+		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
 		LEFT JOIN grants g ON g.app_id = a.id AND g.plane = 'data'
 		WHERE a.deleted_at IS NULL
 		  AND (
@@ -215,8 +239,14 @@ func (a *Apps) ListForUse(ctx context.Context, p authz.Principal) ([]App, error)
 	var out []App
 	for rows.Next() {
 		var app App
-		if err := rows.Scan(&app.ID, &app.Name, &app.Slug, &app.State); err != nil {
+		var routing []byte
+		if err := rows.Scan(&app.ID, &app.Name, &app.Slug, &app.State, &routing); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list apps.", err)
+		}
+		if len(routing) > 0 {
+			// A routing block that will not parse is not a reason to refuse
+			// somebody their list of apps. They lose the address, not the app.
+			_ = json.Unmarshal(routing, &app.Routing)
 		}
 		out = append(out, app)
 	}
@@ -751,6 +781,12 @@ func (a *Apps) ByRouting(ctx context.Context, by, value string) (App, *spec.AppS
 		where = `r.body->'routing'->>'hostname' = $1`
 	case "slug":
 		where = `a.slug = $1`
+	case "port":
+		// The mode is part of the match, not just the number. A port-mode app's
+		// routing block is the only place a port means "this app's address";
+		// leaving the mode out would let a path-mode app whose routing happened
+		// to record a port answer on a listener that is not its own.
+		where = `r.body->'routing'->>'mode' = 'port' AND r.body->'routing'->>'port' = $1`
 	default:
 		return App{}, nil, false, errs.Newf(errs.Internal, "Unknown routing lookup %q.", by)
 	}

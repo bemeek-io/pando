@@ -42,6 +42,9 @@ type Resolver interface {
 	ByHostname(ctx context.Context, hostname string) (state.App, *spec.AppSpec, bool, error)
 	// BySlug resolves an app from the first path segment, for proxy mode.
 	BySlug(ctx context.Context, slug string) (state.App, *spec.AppSpec, bool, error)
+	// ByPort resolves an app from the port the request arrived on, for port
+	// mode (design 03 §4.2).
+	ByPort(ctx context.Context, port int) (state.App, *spec.AppSpec, bool, error)
 }
 
 // Authenticator resolves a request's credentials to a principal.
@@ -279,6 +282,17 @@ func stripInbound(h http.Header) {
 // answer was the Host.
 func (p *Proxy) resolve(r *http.Request) (state.App, *spec.AppSpec, string, bool, error) {
 	ctx := r.Context()
+
+	// Port mode first, and unconditionally: a request that arrived on an app's
+	// own port is that app's, whatever Host it carries and whatever its path
+	// begins with. The port is the address (design 03 §4.2), and an app served
+	// at the root of one gets no prefix — which is the point of the mode, and
+	// the only way an app that writes "/assets/app.js" into its own HTML can
+	// work at all (R-167).
+	if port, ok := localPort(ctx); ok {
+		app, s, found, err := p.Resolver.ByPort(ctx, port)
+		return app, s, "", found, err
+	}
 
 	host := r.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {

@@ -1,6 +1,10 @@
 package spec
 
-import "time"
+import (
+	"fmt"
+	"net"
+	"time"
+)
 
 // SchemaVersion is the current AppSpec wire version.
 //
@@ -555,4 +559,50 @@ func (s *AppSpec) Slot(key string) (Slot, bool) {
 		}
 	}
 	return Slot{}, false
+}
+
+// Address renders where an app is reached, for showing to a person.
+//
+// One implementation, because "where is this app" has one answer and three ways
+// to get it wrong. Both of the console's screens used to assemble "/" + slug,
+// which is the path-mode answer handed to every app whatever mode it was in —
+// so on a loopback install, where every app is port mode, both screens pointed
+// at an address that belonged to nobody. R-261: this is the API's answer, not a
+// rule each client re-derives.
+//
+// host is the authority the caller reached Pando on, including its port. Port
+// mode needs it because a port is not an address on its own, and the only host
+// this process can honestly name is the one the request came in on — anything
+// else is a guess about DNS, and Pando is not the only thing that might be in
+// front of it.
+func Address(host, slug string, r Routing) string {
+	switch r.Mode {
+	case RoutingSubdomain:
+		if r.Hostname == "" {
+			return ""
+		}
+		return "https://" + r.Hostname + "/"
+
+	case RoutingPort:
+		if r.Port == 0 {
+			return ""
+		}
+		name := host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			name = h
+		}
+		if name == "" {
+			return ""
+		}
+		return fmt.Sprintf("//%s:%d/", name, r.Port)
+
+	case RoutingPath:
+		return "/" + slug + "/"
+
+	default:
+		// An app with no pinned spec has no routing block and no address. An
+		// empty string says so; a path built from the slug would claim an
+		// address that answers for nothing.
+		return ""
+	}
 }

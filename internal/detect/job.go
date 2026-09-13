@@ -131,7 +131,20 @@ func (j *Job) Run(ctx context.Context, appID string, src spec.Source, view api.S
 
 	// Step 11 — warnings. Path routing is read from the source rather than the
 	// trial, so it is attached here regardless of whether a trial happened.
-	draft.Warnings = append(draft.Warnings, PathRoutingWarning(view, draft)...)
+	//
+	// To every candidate, not only the winner. Whether an app writes absolute
+	// addresses into its own HTML is a fact about the app, and has nothing to
+	// do with how it is built — but the warning used to be attached to the
+	// winning draft alone, so answering the build-strategy question with
+	// anything else (R-103: the user picks, Pando does not guess) adopted a
+	// draft that had never been told. The app then deployed clean, came up
+	// blank under its path prefix, and the one thing Pando knew about why was
+	// discarded at the moment the user made a choice it was offered.
+	pathRouting := PathRoutingWarning(view, draft)
+	draft.Warnings = append(draft.Warnings, pathRouting...)
+	for i := range proposal.RunnersUp {
+		proposal.RunnersUp[i].Draft.Warnings = append(proposal.RunnersUp[i].Draft.Warnings, pathRouting...)
+	}
 
 	// Step 12 — the status, recomputed. The trial may have answered the only
 	// outstanding question, which turns needs_answers into ready.

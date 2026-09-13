@@ -387,6 +387,24 @@ The unique constraint is what makes a collision impossible instead of unlikely.
 Lowest-free rather than random, so an app tends to keep its port across a rebuild and a bookmark keeps
 working. Reused rather than ever-increasing, so a deleted app's port comes back.
 
+**A port is only an address if something listens on it.** The allocation was written into every
+port-mode spec and shown to users for several phases before anything accepted a connection on it, so
+a loopback install advertised an address that refused the connection and the apps were in fact
+reachable only under Pando's path prefix. That is the worse half of the bug rather than the cosmetic
+one: under a prefix an app that writes `/assets/app.js` into its own HTML comes up blank, and R-167
+forbids rewriting the page to hide it — port mode is the answer to exactly that case. The proxy now
+opens one listener per allocated port (`internal/proxy/ports.go`), reconciled against the allocations
+rather than against running apps, so a stopped app answers "this app isn't running right now" at its
+own address instead of refusing the connection. Requests on those listeners take the same path as
+every other request: the port is one more way to resolve an app, not a second enforcement point
+(R-023).
+
+**[P] In a containerized install the published range and the allocation range are the same range.**
+`docker-compose.yml` sets both from one pair of variables, defaulting to `9000-9019` rather than the
+shipped `9000-9999`: Docker publishes a range by opening every port in it, and a thousand is minutes
+of startup and a process per port. They have to move together — an app allocated a port outside the
+published range gets an address nothing can reach, which is the bug above with extra steps.
+
 **The revisit is closed by Traefik shipping.** O-15 was to be reconsidered at phase 10, on the
 question of whether lowest-free and `9000-9999` were right. Phase 10 shipped a routing adapter that
 does subdomain and path, so port mode is now the laptop default's path and not the only path —

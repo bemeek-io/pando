@@ -203,3 +203,61 @@ func TestR020_SpecCarriesNoSecretValues(t *testing.T) {
 	require.Contains(t, string(encoded), "sec_01HQ8")
 	require.NotContains(t, string(encoded), "postgres://")
 }
+
+// TestR161_AnAppsAddressFollowsItsRoutingMode asserts R-161.
+//
+// Three modes, three shapes of address, and the bug this pins is what happens
+// when a caller assumes one of them: both console screens assembled "/" + slug
+// for every app, which is right only in path mode and wrong on every install
+// whose routing adapter does ports — the laptop default.
+func TestR161_AnAppsAddressFollowsItsRoutingMode(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		host    string
+		routing spec.Routing
+		want    string
+	}{
+		{
+			name:    "path mode is relative to the install",
+			host:    "pando.corp:8080",
+			routing: spec.Routing{Mode: spec.RoutingPath},
+			want:    "/notes/",
+		},
+		{
+			name:    "port mode keeps the host the caller used",
+			host:    "pando.corp:8080",
+			routing: spec.Routing{Mode: spec.RoutingPort, Port: 9010},
+			want:    "//pando.corp:9010/",
+		},
+		{
+			name:    "port mode on a bare host",
+			host:    "localhost",
+			routing: spec.Routing{Mode: spec.RoutingPort, Port: 9010},
+			want:    "//localhost:9010/",
+		},
+		{
+			name:    "subdomain mode is the app's own name",
+			host:    "pando.corp",
+			routing: spec.Routing{Mode: spec.RoutingSubdomain, Hostname: "notes.corp"},
+			want:    "https://notes.corp/",
+		},
+		{
+			// An app with no pinned spec has no routing block. Saying so beats
+			// handing back a path that answers for nothing.
+			name:    "no routing yet is no address",
+			host:    "pando.corp",
+			routing: spec.Routing{},
+			want:    "",
+		},
+		{
+			name:    "port mode with no port allocated yet",
+			host:    "pando.corp",
+			routing: spec.Routing{Mode: spec.RoutingPort},
+			want:    "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, spec.Address(tc.host, "notes", tc.routing))
+		})
+	}
+}

@@ -111,7 +111,17 @@ export function AppOverview({ app }: { app: App }) {
             <StatusIndicator status={statusSymbol(app.state)} label={statusLabel(app.state)} />
           </Row>
           <Row label="Address">
-            <a href={`/${app.slug}/`}>/{app.slug}/</a>
+            {/* From the server, not assembled here: where an app is reached
+                follows its routing mode, and the console does not decide
+                routing (R-261). The old "/" + slug was the path-mode answer
+                shown for every app in every mode. */}
+            {app.address ? (
+              <a href={app.address}>{app.address.replace(/^\/\//, '')}</a>
+            ) : (
+              <span style={{ color: 'var(--ink-secondary)' }}>
+                This app gets an address when it is first deployed.
+              </span>
+            )}
           </Row>
           {app.source?.url && (
             <Row label="Repository">

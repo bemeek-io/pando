@@ -50,9 +50,23 @@ services:
       PANDO_RECONCILER_FAILURE_WINDOW: ${PANDO_RECONCILER_FAILURE_WINDOW:-}
       PANDO_RECONCILER_FAILURE_THRESHOLD: ${PANDO_RECONCILER_FAILURE_THRESHOLD:-}
       PANDO_RECONCILER_GC_INTERVAL: ${PANDO_RECONCILER_GC_INTERVAL:-}
+      # Port-mode routing hands each app a host port and serves it at the root
+      # of that port (design 03 §4.2). The range published below and the range
+      # apps are allocated from have to be the same range, or apps past the end
+      # of the published one get an address nothing can reach — so both are set
+      # here, in one file, from one variable.
+      #
+      # Twenty rather than the shipped default of a thousand: Docker publishes a
+      # range by opening every port in it, and a thousand is minutes of startup
+      # and a process per port. Widen both together to host more than twenty
+      # apps at once on a loopback install, or move to a routing adapter that
+      # does subdomains, which needs no host ports at all (R-166).
+      PANDO_SERVER_PORT_RANGE_START: ${PANDO_APP_PORT_START:-9000}
+      PANDO_SERVER_PORT_RANGE_END: ${PANDO_APP_PORT_END:-9019}
     command: ["serve"]
     ports:
       - "${PANDO_PORT:-8080}:8080"
+      - "${PANDO_APP_PORT_START:-9000}-${PANDO_APP_PORT_END:-9019}:${PANDO_APP_PORT_START:-9000}-${PANDO_APP_PORT_END:-9019}"
     volumes:
       # The runtime adapter needs this. Builds do NOT get it (R-112) — the builder
       # runs rootless and containerized with no socket, which is asserted by an

@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -28,6 +29,11 @@ func (r *StateResolver) ByHostname(ctx context.Context, hostname string) (state.
 // BySlug resolves an app by its slug, for path mode.
 func (r *StateResolver) BySlug(ctx context.Context, slug string) (state.App, *spec.AppSpec, bool, error) {
 	return r.apps.ByRouting(ctx, "slug", slug)
+}
+
+// ByPort resolves an app by the host port it was given, for port mode.
+func (r *StateResolver) ByPort(ctx context.Context, port int) (state.App, *spec.AppSpec, bool, error) {
+	return r.apps.ByRouting(ctx, "port", strconv.Itoa(port))
 }
 
 // RuntimeUpstreams asks the runtime adapter where an app's primary workload is.

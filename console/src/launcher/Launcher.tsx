@@ -100,20 +100,37 @@ function Tiles({ apps }: { apps: App[] }) {
 }
 
 function Tile({ app }: { app: App }) {
-  // The tile is the whole link, which is what `interactive` is for. The app
-  // opens through Pando's proxy at its slug — the only route in (R-023).
+  // The tile is the whole link, which is what `interactive` is for. Every one
+  // of these addresses goes through Pando's proxy — there is no other way in
+  // (R-023) — but *which* address depends on how the app is routed, and the
+  // server is what knows. This used to be "/" + slug, the path-mode answer,
+  // handed out on installs where no app is in path mode: on a laptop every app
+  // is on its own port, and every tile here linked to a page that was not it.
+  //
+  // An app that has never been deployed has no address at all, and its tile is
+  // not a link. Falling back to a guess would put the same wrong address back,
+  // just for fewer apps — and the status underneath already says why there is
+  // nowhere to go yet.
+  const body = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+      <span style={{ font: 'var(--type-h4)', color: 'var(--ink)' }}>{app.name}</span>
+      <StatusIndicator status={statusSymbol(app.state)} label={statusLabel(app.state)} />
+    </div>
+  );
+
+  if (!app.address) {
+    return <Card padding="md">{body}</Card>;
+  }
+
   return (
     <Card
       as="a"
       interactive
       padding="md"
-      {...({ href: `/${app.slug}/` } as object)}
+      {...({ href: app.address } as object)}
       style={{ textDecoration: 'none' }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-        <span style={{ font: 'var(--type-h4)', color: 'var(--ink)' }}>{app.name}</span>
-        <StatusIndicator status={statusSymbol(app.state)} label={statusLabel(app.state)} />
-      </div>
+      {body}
     </Card>
   );
 }

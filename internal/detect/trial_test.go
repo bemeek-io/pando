@@ -268,3 +268,37 @@ func TestAnAppThatNeverStartedSaysThatRatherThanBlamingThePort(t *testing.T) {
 		}
 	}
 }
+
+// TestR168_ThePathRoutingWarningReachesEveryCandidate asserts R-168 survives
+// the user answering the build-strategy question.
+//
+// Whether an app writes absolute addresses into its own HTML is a fact about
+// the app, not about how it is built — but the warning was attached to the
+// winning draft alone, and R-103 offers the runners-up as answers. Choosing one
+// adopted a draft that had never been told, so the app deployed clean, came up
+// blank under its path prefix, and the one thing Pando knew about why had been
+// dropped at the moment the user made a choice it had offered them.
+func TestR168_ThePathRoutingWarningReachesEveryCandidate(t *testing.T) {
+	// A repository two detectors both recognise, with a frontend that loads its
+	// assets from the root.
+	source := memSource{
+		"index.html":         `<html><head><script src="/assets/app.js"></script></head></html>`,
+		"Dockerfile":         "FROM node:20\nCMD [\"node\", \"server.js\"]\n",
+		"docker-compose.yml": "services:\n  web:\n    build: .\n    ports:\n      - \"3001:3001\"\n",
+	}
+
+	job := &detect.Job{Auction: auction()}
+	proposal, err := job.Run(context.Background(), "app_1",
+		spec.Source{Type: "git", URL: "https://example.test/app"}, source)
+	require.NoError(t, err)
+
+	require.True(t, hasWarning(proposal.Winner.Draft.Warnings, spec.WarnPathRoutingIncompatible, "/assets/app.js"),
+		"the winner is warned")
+
+	require.NotEmpty(t, proposal.RunnersUp, "this repository has more than one answer")
+	for _, candidate := range proposal.RunnersUp {
+		require.True(t,
+			hasWarning(candidate.Draft.Warnings, spec.WarnPathRoutingIncompatible, "/assets/app.js"),
+			"and so is every candidate the user could choose instead, here %q", candidate.Detector)
+	}
+}
