@@ -217,13 +217,98 @@ func (c *composeImport) rejectIncompatible() error {
 			", or deploy without the compose file by supplying an image and a command instead.")
 }
 
+// build resolves how the app is built, from the compose file, into the spec.
+//
+// This used to emit `strategy: compose` with a pointer to the file, and two
+// things followed. No builder implements compose — BuildKit declares
+// `dockerfile` and nothing else — so every compose app that needed building was
+// refused at plan time with "bld_buildkit cannot build this app the way it is
+// set up", naming the builder rather than the cause. And it left the build
+// instructions in the repository to be re-read later, which R-020 forbids
+// outright: the spec is the sole record of how an app runs, and a `build:`
+// stanza that can change under the app between deploys is exactly what that
+// requirement exists to prevent.
+//
+// The importer has already parsed the file. Resolving the build into the spec
+// here is the same work it does for ports, volumes and environment, and it is
+// what makes the result deployable by the builder that exists.
+func (c *composeImport) build() spec.Build {
+	// The service that builds. A compose file whose services all carry an
+	// `image:` needs no builder at all.
+	var building string
+	var others []string
+	for _, name := range c.names() {
+		if c.file.Services[name].Build == nil {
+			continue
+		}
+		if building == "" {
+			building = name
+			continue
+		}
+		others = append(others, name)
+	}
+
+	// More than one buildable service is a shape a single Build block cannot
+	// describe. The first is taken and the rest are named, rather than blocking
+	// an app outright — but it is said out loud, because a service that is
+	// silently not built is one that runs an image somebody forgot they had.
+	if len(others) > 0 {
+		c.warnings = append(c.warnings, spec.Warning{
+			Code: spec.WarnComposeConstructRewritten,
+			Message: fmt.Sprintf(
+				"%s builds more than one service. Pando builds %q from source; %s will need an image of their own.",
+				c.source, building, strings.Join(quoteAll(others), " and ")),
+		})
+	}
+
+	if building == "" {
+		return spec.Build{Strategy: spec.BuildPrebuilt, ComposeFile: c.source}
+	}
+
+	context, dockerfile, target := buildFields(c.file.Services[building].Build)
+	return spec.Build{
+		Strategy: spec.BuildDockerfile,
+		// Kept for provenance: this spec came from a compose file, and a person
+		// reading it later should be able to see that without guessing.
+		ComposeFile: c.source,
+		Context:     context,
+		Dockerfile:  dockerfile,
+		Target:      target,
+	}
+}
+
+func quoteAll(names []string) []string {
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		out = append(out, strconv.Quote(n))
+	}
+	return out
+}
+
+// buildFields reads compose's two spellings of `build:`.
+//
+// A string is the context directory. A map carries context, dockerfile and
+// target separately. Anything else is treated as absent rather than guessed at.
+func buildFields(raw any) (context, dockerfile, target string) {
+	switch b := raw.(type) {
+	case string:
+		return b, "", ""
+	case map[string]any:
+		context, _ = b["context"].(string)
+		dockerfile, _ = b["dockerfile"].(string)
+		target, _ = b["target"].(string)
+		return context, dockerfile, target
+	}
+	return "", "", ""
+}
+
 // --- import -----------------------------------------------------------------
 
 func (c *composeImport) draft() Draft {
 	names := c.names()
 
 	d := Draft{
-		Build:    spec.Build{Strategy: spec.BuildCompose, ComposeFile: c.source},
+		Build:    c.build(),
 		Volumes:  c.volumes(),
 		Warnings: nil, // filled at the end, after every rewrite is known
 	}

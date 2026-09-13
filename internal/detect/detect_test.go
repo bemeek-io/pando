@@ -780,3 +780,99 @@ func TestAVariableWithNoDefaultIsNotSilentlyEmptied(t *testing.T) {
 	require.Equal(t, "/var/data", mounts[0].Path,
 		"an unresolvable source must not shift every other field along")
 }
+
+// A compose file that builds from source resolves to a build the builder can
+// actually do.
+//
+// It used to import as `strategy: compose` with a pointer to the file, and
+// nothing implements compose — BuildKit declares dockerfile and nothing else.
+// So every compose app needing a build was refused at plan time with
+// "bld_buildkit cannot build this app the way it is set up", which names the
+// builder and not the cause.
+//
+// It also left the build instructions in the repository to be read later, which
+// R-020 forbids: the spec is the sole record of how an app runs.
+func TestR020_AComposeBuildIsResolvedIntoTheSpec(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{"compose.yaml": composeBuilds})
+	require.NoError(t, err)
+
+	build := result.Winner.Draft.Build
+	require.Equal(t, spec.BuildDockerfile, build.Strategy,
+		"a compose service with build: is a Dockerfile build, and that is what the builder supports")
+	require.Equal(t, "./frontend", build.Context)
+	require.Equal(t, "Dockerfile.prod", build.Dockerfile)
+	require.Equal(t, "release", build.Target)
+
+	// Kept for provenance: somebody reading this spec later should be able to
+	// see where it came from without guessing.
+	require.Equal(t, "compose.yaml", build.ComposeFile)
+}
+
+// The short spelling — `build: ./dir` — is the context and nothing else.
+func TestAComposeBuildStringIsTheContext(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{"compose.yaml": composeBuildString})
+	require.NoError(t, err)
+
+	build := result.Winner.Draft.Build
+	require.Equal(t, spec.BuildDockerfile, build.Strategy)
+	require.Equal(t, ".", build.Context)
+	require.Empty(t, build.Dockerfile, "compose's own default applies; Pando does not invent a path")
+}
+
+// Every service carrying an image: needs no builder at all.
+func TestAComposeFileOfPrebuiltImagesNeedsNoBuilder(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{"compose.yaml": composeStack})
+	require.NoError(t, err)
+
+	require.Equal(t, spec.BuildPrebuilt, result.Winner.Draft.Build.Strategy,
+		"nothing here is built from source, so requiring a builder would refuse an app that needs none")
+}
+
+// More than one buildable service is said out loud rather than silently
+// half-done: a service that is quietly not built is one running an image
+// somebody forgot they had.
+func TestMoreThanOneBuildableServiceWarns(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{"compose.yaml": composeTwoBuilds})
+	require.NoError(t, err)
+
+	draft := result.Winner.Draft
+	require.Equal(t, spec.BuildDockerfile, draft.Build.Strategy)
+
+	var found bool
+	for _, w := range draft.Warnings {
+		if strings.Contains(w.Message, "builds more than one service") {
+			found = true
+			require.Contains(t, w.Message, "will need an image of their own")
+		}
+	}
+	require.True(t, found, "warnings: %+v", draft.Warnings)
+}
+
+const composeBuilds = `
+services:
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      target: release
+    ports:
+      - "3000:3000"
+`
+
+const composeBuildString = `
+services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+`
+
+const composeTwoBuilds = `
+services:
+  web:
+    build: ./web
+    ports:
+      - "3000:3000"
+  worker:
+    build: ./worker
+`
