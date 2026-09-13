@@ -17,6 +17,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/deploy"
 	"github.com/bemeek-io/pando/internal/core/planner"
 	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
+	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
 	"github.com/bemeek-io/pando/internal/log"
@@ -62,6 +63,13 @@ type Server struct {
 	// than returning an empty proposal — R-106's shape: with nothing
 	// configured, each step degrades to a question, not a dead end.
 	Detector Detector
+
+	// Defaults fills in what an author left out of a spec — the install's
+	// adapters, its routing shape, and the retention caps R-211 and R-223 set.
+	// Nil means a hand-written spec is taken exactly as written, which is how
+	// it behaved before and is wrong: an app with no log cap is an app that can
+	// fill the host.
+	Defaults SpecDefaults
 
 	// Policy is host policy. Nil until phase 3 configures it, in which case the
 	// source allowlist check (R-092) is skipped rather than assumed to pass —
@@ -132,6 +140,11 @@ type PolicyDocument interface {
 // AuditReader queries the audit log.
 type AuditReader interface {
 	List(ctx context.Context, q audit.Query) ([]audit.Record, error)
+}
+
+// SpecDefaults supplies the install's defaults for a spec.
+type SpecDefaults interface {
+	Defaults(ctx context.Context) spec.Defaults
 }
 
 // AppHosts answers whether a hostname belongs to an app.

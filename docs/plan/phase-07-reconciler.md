@@ -23,9 +23,14 @@ stays failed.
 - [x] Give-up threshold: 10 failures in 30 minutes [P] → `failed`, notify, audit, **stop** (R-150) — the window had to become an idle timeout or the threshold was arithmetically unreachable ([note](../design/notes-give-up-threshold-was-unreachable.md))
 - [x] Auto-deploy as a **separate scheduled job** (R-141): creates a spec revision and enqueues a
       deployment; skipped, not queued, if a deployment is in flight
-- [~] Hourly GC: spec revision pruning that skips ever-pinned revisions — **done**. Log trimming
-      (R-223, R-224) is **not**: Pando does not hold app logs and no mechanism exists to trim them,
-      recorded as O-16 rather than guessed at. Backup expiry arrives with backups in phase 9
+- [x] Hourly GC: spec revision pruning that skips ever-pinned revisions, and tearing down the
+      bundles of deleted apps — which nothing did until the phase-10 debt pass, so every deleted app
+      leaked a container and a /16 network
+- [x] Log retention (R-222–R-224), resolved as O-16 in the debt pass. Not trimming, which is what
+      this phase assumed: Pando does not hold app logs, so the cap is applied by the runtime when the
+      workload is created, and the aggregate is a plan-time bound on the sum of caps. The assumption
+      recorded here — that enforcement would mean trimming something Pando held — is what made it
+      look impossible
 
 ## Requirements in scope
 

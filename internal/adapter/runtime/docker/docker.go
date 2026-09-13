@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -130,6 +131,19 @@ func (a *Adapter) Capabilities(context.Context) (api.RuntimeCapabilities, error)
 		// between two live bundles, which is phase 5 work — claiming it here
 		// would turn a plan-time refusal into a mid-deploy failure (R-145).
 		SupportsStartThenSwap: false,
+
+		// R-222, and honestly. Docker caps a container's log at creation and
+		// cannot change it afterwards without recreating the container — which
+		// the reconciler may not do because an unrelated app turned chatty.
+		// It also cannot report how much log space an app is using, which is
+		// why R-224's aggregate is enforced against committed caps rather than
+		// measured bytes (O-16).
+		LogRetention: api.LogRetentionCapability{
+			SupportsSizeCap:          true,
+			CanChangeWithoutRecreate: false,
+			ReportsUsage:             false,
+			MinBytes:                 2 * minDockerLogBytes,
+		},
 
 		// A single daemon can load an image from a stream, which is how a build
 		// reaches the runtime without a registry.
@@ -285,6 +299,7 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 			NanoCPUs: int64(w.Resources.CPUMillis) * 1_000_000,
 			Memory:   w.Resources.MemoryBytes,
 		},
+		LogConfig: logConfig(w.LogBytes),
 	}
 
 	// No ports are published to the host. Workloads are reachable only inside
@@ -709,6 +724,45 @@ func (a *Adapter) attachProxy(ctx context.Context, networkID string) error {
 			"Could not connect Pando to the app's network, so traffic could not reach it.", err)
 	}
 }
+
+// logConfig caps a container's logs at creation (R-222, R-223).
+//
+// Set here and nowhere else, because Docker cannot change it on a running
+// container — that is what LogRetention.CanChangeWithoutRecreate says, and why
+// a changed cap takes effect on the next deploy rather than immediately.
+//
+// max-file is 2 rather than 1: Docker rotates to a second file before deleting
+// the first, so a cap of N with one file keeps somewhere between 0 and N bytes,
+// and with two keeps between N/2 and N. Half the cap is a floor worth having
+// when the logs are what somebody is reading to find out why a deploy failed.
+// The per-file size is therefore half the app's budget, so the total stays
+// under it.
+func logConfig(capBytes int64) container.LogConfig {
+	if capBytes <= 0 {
+		// No cap asked for. Left as the daemon's default rather than invented
+		// here: an adapter that silently imposed a limit nobody configured
+		// would lose logs for a reason nothing explains.
+		return container.LogConfig{}
+	}
+
+	perFile := capBytes / 2
+	if perFile < minDockerLogBytes {
+		perFile = minDockerLogBytes
+	}
+	return container.LogConfig{
+		Type: "json-file",
+		Config: map[string]string{
+			"max-size": strconv.FormatInt(perFile, 10) + "b",
+			"max-file": "2",
+		},
+	}
+}
+
+// minDockerLogBytes is the smallest per-file cap worth setting.
+//
+// Below about this, rotation happens so often that the log is useless for
+// reading a failure — which is the thing logs are for.
+const minDockerLogBytes = 1 << 20 // 1 MiB
 
 func (a *Adapter) ensureImage(ctx context.Context, ref string) error {
 	if ref == "" {

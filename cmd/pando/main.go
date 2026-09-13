@@ -256,6 +256,12 @@ func serve(ctx context.Context, configPath string) error {
 	// trial run (R-097), and a registry probe would supply R-094's top tier.
 	// Both are optional here, and missing either degrades to a question rather
 	// than to a failure.
+	// The install's defaults: its adapters, its routing shape, and the
+	// retention caps R-211 and R-223 set. Shared between detection and the
+	// spec endpoint, because a hand-written spec needs them just as much — and
+	// used to get none of them.
+	installDefaults := detection.NewInstallation(registry, cfg.Server.BaseDomain)
+
 	detections := state.NewDetections(db)
 	detector := &detection.Runner{
 		Apps:       apps,
@@ -266,7 +272,7 @@ func serve(ctx context.Context, configPath string) error {
 		// configuration, not a question. Without this a detected spec describes
 		// the app and says nothing about where it runs, which is a spec the
 		// planner refuses.
-		Install: detection.NewInstallation(registry, cfg.Server.BaseDomain),
+		Install: installDefaults,
 
 		Ports:          state.NewPorts(db),
 		PortRangeStart: cfg.Server.PortRangeStart,
@@ -363,6 +369,7 @@ func serve(ctx context.Context, configPath string) error {
 			Grants:     grants,
 			HostPolicy: hostPolicy,
 			Verbs:      authzStore,
+			Defaults:   installDefaults,
 
 			// The policy *document* and the policy *evaluator* are different
 			// things and both are wired: one endpoint edits the document, every

@@ -428,7 +428,10 @@ func bundlePlanFor(s *spec.AppSpec, image string, secrets map[string]secret.Valu
 		}
 
 		wp := api.WorkloadPlan{
-			Name:       w.Name,
+			Name: w.Name,
+			// R-222: every workload is capped, so a chatty app cannot fill a
+			// disk shared with twenty others.
+			LogBytes:   s.Retention.LogBytes,
 			Image:      firstNonEmpty(w.Image, image),
 			Command:    w.Command,
 			Entrypoint: w.Entrypoint,

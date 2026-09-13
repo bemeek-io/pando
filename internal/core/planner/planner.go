@@ -25,6 +25,16 @@ type Allocation struct {
 	CPUMillis   int
 	MemoryBytes int64
 	DiskBytes   int64
+
+	// LogBytes is the sum of every app's log cap on this runtime (R-224).
+	//
+	// Committed, not measured. O-16 resolved to bounding what an install
+	// promises rather than watching what accumulates: if every app's logs are
+	// capped and the caps sum under the budget, the total cannot exceed it.
+	// Measuring would mean acting after the disk was already filling, and the
+	// only remedy then is recreating containers — which the reconciler may not
+	// do because an unrelated app turned chatty.
+	LogBytes int64
 }
 
 // Allocations reports current commitments per runtime adapter.
@@ -107,6 +117,12 @@ func (p *Planner) Check(ctx context.Context, s *spec.AppSpec) (*Plan, error) {
 		return nil, err
 	}
 	plan.Checks["capacity"] = "ok"
+
+	// 8. Log retention (R-222–R-224, O-16).
+	if err := p.checkLogRetention(ctx, s, runtimeCaps); err != nil {
+		return nil, err
+	}
+	plan.Checks["log_retention"] = "ok"
 
 	plan.Bundle = p.bundlePlan(s)
 	return plan, nil
@@ -425,7 +441,10 @@ func (p *Planner) bundlePlan(s *spec.AppSpec) api.BundlePlan {
 
 	for _, w := range s.Workloads {
 		wp := api.WorkloadPlan{
-			Name:       w.Name,
+			Name: w.Name,
+			// R-222: every workload is capped, so a chatty app cannot fill a
+			// disk shared with twenty others.
+			LogBytes:   s.Retention.LogBytes,
 			Image:      w.Image,
 			Command:    w.Command,
 			Entrypoint: w.Entrypoint,
@@ -503,4 +522,82 @@ func needsBuild(s *spec.AppSpec) bool {
 		return false
 	}
 	return s.Source.Type != spec.SourceImage
+}
+
+// checkLogRetention enforces R-222's per-app cap and R-224's aggregate.
+//
+// Both at plan time, which is O-16's resolution. The per-app half is a
+// capability question: a runtime that cannot cap logs says so, and an install
+// that has set an aggregate budget cannot honor it on such a runtime — so the
+// deploy is refused with the reason rather than accepted and quietly unbounded.
+//
+// The aggregate half is a sum of commitments. It is scoped to the runtime
+// adapter because that is where the logs physically are: a clustered runtime's
+// logs are not on this host, and counting them against this host's disk would
+// refuse deploys to protect a disk they do not touch.
+func (p *Planner) checkLogRetention(ctx context.Context, s *spec.AppSpec, caps api.RuntimeCapabilities) error {
+	if p.policy == nil {
+		return nil
+	}
+	doc, err := p.policy.Document(ctx)
+	if err != nil {
+		return err
+	}
+	if doc.MaxLogDiskBytes <= 0 {
+		return nil // No aggregate budget set, so nothing to enforce against.
+	}
+
+	if !caps.LogRetention.SupportsSizeCap {
+		return errs.Newf(errs.PlanCapabilityUnsupported,
+			"This installation limits how much disk app logs may use, and %q cannot limit an app's logs.",
+			s.Runtime.AdapterRef).
+			WithRemedy("Deploy to a runtime that can cap logs, or remove the log disk limit from the installation's policy.")
+	}
+
+	want := s.Retention.LogBytes
+	if want <= 0 {
+		return errs.New(errs.PlanCapabilityUnsupported,
+			"This installation limits how much disk app logs may use, so every app needs a log limit of its own.").
+			WithRemedy("Set retention.log_bytes in the app's configuration.")
+	}
+	if min := caps.LogRetention.MinBytes; min > 0 && want < min {
+		return errs.Newf(errs.ValidInvalid,
+			"This app asks for a %s log limit, and %q cannot go below %s.",
+			humanBytes(want), s.Runtime.AdapterRef, humanBytes(min)).
+			WithRemedy("Raise retention.log_bytes for this app.")
+	}
+
+	if p.allocations == nil {
+		return nil
+	}
+	committed, err := p.allocations.AllocatedOn(ctx, s.Runtime.AdapterRef, s.AppID)
+	if err != nil {
+		return err
+	}
+
+	if total := committed.LogBytes + want; total > doc.MaxLogDiskBytes {
+		return errs.Newf(errs.CapacityWouldOversubscribe,
+			"Deploying this app would commit %s to app logs, and this installation allows %s.",
+			humanBytes(total), humanBytes(doc.MaxLogDiskBytes)).
+			WithRemedy("Lower this app's log limit, lower another app's, or raise the installation's limit.").
+			WithDetail("committed_bytes", committed.LogBytes).
+			WithDetail("requested_bytes", want).
+			WithDetail("limit_bytes", doc.MaxLogDiskBytes)
+	}
+	return nil
+}
+
+// humanBytes renders a size in the shortest honest unit, for a message someone
+// has to act on.
+func humanBytes(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%d MB", n/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%d KB", n/(1<<10))
+	default:
+		return fmt.Sprintf("%d bytes", n)
+	}
 }

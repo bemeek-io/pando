@@ -12,7 +12,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | Requirements | 207 | — |
 | Specified in a design doc | 147 | 71% |
 | Assigned to a phase | 112 | 54% |
-| Covered by a named test | 71 | 34% |
+| Covered by a named test | 73 | 35% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -176,9 +176,9 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-217** | D | Backup destination is an adapter category (R-252). | 15. Backup and Disaster Recovery | 02 | 09 | — |
 | **R-220** | D | Pando runs health listeners — health endpoints, uptime checks — so you know when an app goes… | 16.1 Health | — | — | — |
 | **R-221** | P | Health signal sources, in order: compose healthcheck if declared, HTTP endpoint if configured,… | 16.1 Health | 01, 03, 05, 07 | 04, 07 | — |
-| **R-222** | D | Log retention is bounded by size, not time, so a chatty app cannot fill a disk shared with… | 16.2 Logs | 02 | — | — |
+| **R-222** | D | Log retention is bounded by size, not time, so a chatty app cannot fill a disk shared with… | 16.2 Logs | 02 | — | `TestR222_ADeployedWorkloadHasItsLogsCapped`, `TestR222_ARuntimeThatCannotCapLogsIsRefusedWhenABudgetExists` |
 | **R-223** | P | Default cap: 100 MB per app, oldest discarded first. | 16.2 Logs | 01, 05 | 07 | — |
-| **R-224** | D | Retention must respect total host disk, in aggregate across all apps. | 16.2 Logs | 02, 05 | 07, 09 | — |
+| **R-224** | D | Retention must respect total host disk, in aggregate across all apps. | 16.2 Logs | 02, 05 | 07, 09 | `TestR224_NoBudgetMeansNoAggregateCheck`, `TestR224_TheAggregateLogBudgetIsEnforcedAtPlanTime` |
 | **R-225** | D | Log masking is out of scope for now. | 16.2 Logs | — | — | — |
 | **R-226** | D | The audit log is in core and cannot be written or rewritten by an adapter (R-027). | 16.3 Audit | — | — | — |
 | **R-227** | P | Auditable events: every spec mutation, every grant change, every deploy, every secret write,… | 16.3 Audit | — | — | `TestR227_TheAuditLogIsReadableBehindItsOwnVerb`, `TestR227_TheRestoreIsRecordedInTheInstallItProduced` |

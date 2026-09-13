@@ -45,6 +45,9 @@ type RuntimeCapabilities struct {
 	SupportsResourceLimits bool
 	SupportsStartThenSwap  bool // R-145
 
+	// LogRetention is what the runtime can do about R-222's size cap.
+	LogRetention LogRetentionCapability
+
 	// SupportsImageImport means the runtime can take an image as bytes.
 	//
 	// R-111 says Pando "hands it source, receives an image", so on a single
@@ -319,7 +322,12 @@ type WorkloadPlan struct {
 	DependsOn []string
 	Health    *HealthPlan
 	Resources ResourcePlan
-	Exposed   bool
+
+	// LogBytes caps this workload's logs (R-222, R-223). Zero means the
+	// runtime's own default, which is usually unbounded — so core always sets
+	// it from the spec rather than leaving it to chance.
+	LogBytes int64
+	Exposed  bool
 }
 
 // MountPlan attaches a volume.
@@ -416,6 +424,45 @@ type ObservedVolume struct {
 	VolumeID string
 	Present  bool
 	Handle   string
+}
+
+// LogRetentionCapability is how a runtime can bound log growth (R-222–R-224).
+//
+// Capabilities as data (R-254), and this is a case where the honest answer is
+// "partly". Docker can cap a container's log at creation and cannot change it
+// afterwards without recreating the container — and the reconciler may not
+// recreate a container because an unrelated app turned chatty, which is
+// destruction on a schedule. An adapter that says so lets the planner enforce
+// what it can and say plainly what it cannot, instead of Pando promising a
+// guarantee nothing delivers.
+//
+// That was O-16. The decision recorded here is: cap per app at creation, and
+// enforce R-224's aggregate as a **plan-time bound on the sum of caps** rather
+// than as an observation of usage. Bounding what is committed is stronger than
+// watching what accumulates — if every app's logs are capped and the caps sum
+// under the budget, the total cannot exceed it — and it needs nothing from the
+// runtime beyond the cap it already applies.
+type LogRetentionCapability struct {
+	// SupportsSizeCap means the runtime applies a per-workload byte cap when
+	// the workload is created (R-222). False means logs are unbounded, and the
+	// planner says so rather than pretending.
+	SupportsSizeCap bool
+
+	// CanChangeWithoutRecreate means a cap can be changed on a running
+	// workload. False on Docker. When false, a changed cap takes effect on the
+	// next deploy — which the console must say, because a setting that appears
+	// to apply and does not is worse than one that says "next deploy".
+	CanChangeWithoutRecreate bool
+
+	// ReportsUsage means the runtime can say how much log space an app is
+	// actually using. False on Docker, which is why R-224 is enforced against
+	// committed caps rather than measured bytes.
+	ReportsUsage bool
+
+	// MinBytes is the smallest cap the runtime will honor, 0 for none. Docker
+	// rounds; a runtime with a hard floor says so here so the planner can
+	// refuse a spec asking for less rather than silently granting more.
+	MinBytes int64
 }
 
 // Capacity is what the adapter reports about itself (R-243).

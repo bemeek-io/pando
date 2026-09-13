@@ -64,6 +64,18 @@ type Document struct {
 	// MaxTokenLifetimeDays caps how long a token may live; 0 means no cap.
 	// R-061 allows policy to forbid non-expiring tokens.
 	MaxTokenLifetimeDays int `json:"max_token_lifetime_days,omitempty"`
+
+	// MaxLogDiskBytes is R-224: the total this install will commit to app logs
+	// across every app. Zero means no aggregate limit.
+	//
+	// Enforced at plan time against the **sum of every app's cap**, not against
+	// measured usage — which is O-16's resolution. Bounding what is committed
+	// is the stronger guarantee: if every app's logs are capped and the caps
+	// sum under the budget, the total cannot exceed it. Measuring usage would
+	// mean acting after the disk was already filling, and the only remedy then
+	// is recreating containers, which the reconciler may not do on a schedule
+	// because an unrelated app turned chatty.
+	MaxLogDiskBytes int64 `json:"max_log_disk_bytes,omitempty"`
 }
 
 // Default is the permissive starting posture (R-270).

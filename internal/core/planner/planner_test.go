@@ -117,6 +117,13 @@ func capableRuntime() *fakeRuntime {
 			SupportsMultipleWorkloads: true,
 			SupportsPrivateNetwork:    true,
 			SupportsResourceLimits:    true,
+
+			// R-222: a runtime that can bound a workload's logs, which is what
+			// lets an install enforce an aggregate budget (O-16).
+			LogRetention: api.LogRetentionCapability{
+				SupportsSizeCap: true,
+				MinBytes:        2 << 20,
+			},
 		},
 		capacity: api.Capacity{
 			TotalCPUMillis:   8000,

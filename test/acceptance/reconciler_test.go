@@ -271,3 +271,36 @@ func networksFor(t *testing.T, appID string) []string {
 	require.NoError(t, err)
 	return strings.Fields(string(out))
 }
+
+// TestR222_ADeployedWorkloadHasItsLogsCapped asserts O-16's resolution reaches
+// a real container.
+//
+// R-222 says retention is bounded by size so a chatty app cannot fill a disk
+// shared with twenty others. Until now nothing carried the cap: the spec had
+// retention.log_bytes, the planner ignored it, and the container was created
+// with the daemon's default, which is unbounded.
+//
+// Asserted against Docker's own view of the container rather than against the
+// plan, because the plan saying "100 MB" and the daemon doing nothing about it
+// is exactly the failure this closes.
+func TestR222_ADeployedWorkloadHasItsLogsCapped(t *testing.T) {
+	c := login(t)
+	app := deployedApp(t, c, "logcap-"+stamp())
+
+	containers := containersFor(t, app)
+	require.Len(t, containers, 1)
+
+	out, err := exec.Command("docker", "inspect", containers[0],
+		"--format", "{{.HostConfig.LogConfig.Type}} {{index .HostConfig.LogConfig.Config \"max-size\"}} {{index .HostConfig.LogConfig.Config \"max-file\"}}").Output()
+	require.NoError(t, err)
+
+	fields := strings.Fields(string(out))
+	require.Len(t, fields, 3, "the container must have a log configuration: %q", string(out))
+	require.Equal(t, "json-file", fields[0])
+	require.NotEmpty(t, fields[1], "a size cap, or a chatty app fills the host")
+
+	// Two files, not one. Docker rotates before deleting, so a cap of N with a
+	// single file keeps somewhere between 0 and N bytes — and 0 is what you get
+	// exactly when you most want to read why something failed.
+	require.Equal(t, "2", fields[2])
+}

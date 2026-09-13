@@ -39,7 +39,8 @@
       a bundle and the row is removed, but the volume itself stays on disk with nothing referencing
       it. Leaving data is the safe direction and disk is the lesser evil, so this is recorded rather
       than guessed at — but it is a leak, and it is the same shape as the bundle-teardown one
-- [ ] GC integration: aggregate disk budget (R-224). Blocked on the same gap as O-16
+- [x] Aggregate disk budget for logs (R-224, O-16) — enforced at plan time against the sum of
+      committed caps rather than measured usage. Backups are not yet counted against it
 
 ## Requirements in scope
 

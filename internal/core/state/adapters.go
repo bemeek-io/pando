@@ -135,14 +135,15 @@ func (a *Allocations) AllocatedOn(ctx context.Context, adapterRef, excludeAppID 
 		SELECT
 			coalesce(sum((r.body->'resources'->>'cpu_millis')::int), 0),
 			coalesce(sum((r.body->'resources'->>'memory_bytes')::bigint), 0),
-			coalesce(sum((r.body->'resources'->>'disk_bytes')::bigint), 0)
+			coalesce(sum((r.body->'resources'->>'disk_bytes')::bigint), 0),
+			coalesce(sum((r.body->'retention'->>'log_bytes')::bigint), 0)
 		FROM apps a
 		JOIN spec_revisions r ON r.id = a.pinned_spec_id
 		WHERE a.deleted_at IS NULL
 		  AND a.id <> $2
 		  AND a.state IN ('running', 'degraded', 'deploying')
 		  AND r.body->'runtime'->>'adapter_ref' = $1`,
-		adapterRef, excludeAppID).Scan(&alloc.CPUMillis, &alloc.MemoryBytes, &alloc.DiskBytes)
+		adapterRef, excludeAppID).Scan(&alloc.CPUMillis, &alloc.MemoryBytes, &alloc.DiskBytes, &alloc.LogBytes)
 	if err != nil {
 		return planner.Allocation{}, errs.Wrap(errs.Internal, "Could not read how much is already allocated.", err)
 	}

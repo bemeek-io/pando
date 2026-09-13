@@ -1,8 +1,8 @@
 # Open decisions
 
 Seventeen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
-design; O-15 through O-17 were found while implementing phases 6, 7 and 8. **Thirteen are resolved.
-Four remain, none blocking.**
+design; O-15 through O-17 were found while implementing phases 6, 7 and 8. **Fourteen are resolved.
+Three remain, none blocking.**
 
 **These are not TODOs to resolve at your discretion.** An agent hitting an open one should raise it,
 state which options the docs already identify, and stop — not pick quietly and move on. Record any
@@ -15,7 +15,6 @@ resolution both here and in the requirements or design doc that owns it.
 | **O-4** | Required vs optional slot detection — the forty-key `.env.example` problem | Has a `[P]` answer that needs measuring, not deciding | Phase 6 |
 | **O-5** | TLS issuance — ACME, wildcards, self-signed local | Genuinely per-adapter; each routing adapter answers it for itself | Per adapter |
 | **O-15** | How a host port is chosen in port-mode routing | Nothing in the requirements says. Has a `[P]` answer in code | Phase 6 (shipped), revisit at phase 10 |
-| **O-16** | How log retention is actually enforced (R-222–R-224) | The requirement is clear; no mechanism exists to carry it out | Phase 7 (deferred), needed before an install runs many apps |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything not typed to
 a known service, and let the trial run settle it — a slot whose absence crashes the trial run is
@@ -92,7 +91,34 @@ shape). A routing adapter that issues certificates declares how; one that cannot
 | **O-13** | Session revocation mid-websocket | Re-authorize on the assertion lifetime; close on failure | design 06 §4.2 |
 | **O-14** | DR restore bootstrap ordering | Largely dissolved by O-11; confirm sequencing in phase 9 | design 07 D |
 | **O-6** | Which backup destinations ship | Backup is an adapter category; destinations are adapters, and `local` ships in v1 | R-217, R-252, design 03 §8.1 |
+| **O-16** | How log retention is enforced | Per-app cap applied at workload creation; the aggregate enforced at plan time against the **sum of committed caps**, not measured usage | R-222–R-224, design 03 §2 |
 | **O-17** | What an "administrative verb" is (R-265) | Install-scoped verbs, held as a grant with no app; a fourth built-in role | design 06 §2.1, R-080/R-081 |
+
+### O-16 — bound what is promised, not what accumulates
+
+The three options were: cap per app and let the aggregate be a warning; put a capability on the
+runtime adapter; or have Pando collect logs itself. The second, with a specific shape.
+
+A runtime declares what it can do about logs (`LogRetentionCapability`). Docker answers: it can cap a
+workload at creation, it cannot change that cap without recreating the container, and it cannot
+report how much log space an app is using. All three answers matter.
+
+**The aggregate is a plan-time bound on the sum of caps, not an observation of usage.** That is the
+part worth arguing for. Bounding what is committed is the stronger guarantee — if every app's logs
+are capped and the caps sum under the budget, the total cannot exceed it, and nothing has to be
+watched. Measuring usage would mean acting *after* the disk was already filling, and the only remedy
+at that point is recreating containers, which the reconciler may not do because an unrelated app
+turned chatty: that is destruction on a schedule.
+
+So R-224 does not become a notification, which is what option 1 would have cost. It becomes a refusal
+at the point where a refusal is cheap and reversible: `CAPACITY_WOULD_OVERSUBSCRIBE` at plan time,
+naming what would be committed and what is allowed.
+
+Two things fell out of implementing it. Nothing carried `retention.log_bytes` into a container at
+all, so every app's logs were unbounded regardless of what its spec said. And `Defaults.Apply` ran
+only on the detection path — so a hand-written spec, which is the API's own documented way to
+configure an app, got no retention defaults whatsoever. Every spec the acceptance suite writes is
+hand-written, which is exactly why nothing noticed.
 
 ### O-6, and the `[D]` it reversed
 

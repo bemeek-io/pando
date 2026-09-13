@@ -474,6 +474,22 @@ func (s *Server) handleCreateSpec(w http.ResponseWriter, r *http.Request) {
 
 	body.SchemaVersion = spec.SchemaVersion
 	body.AppID = app.ID
+
+	// Defaults, before validation.
+	//
+	// These used to be applied only on the detection path, so a hand-written
+	// spec — the API's own documented way to configure an app — silently got
+	// none of them. R-223's 100 MB log cap, R-211's backup retention and the
+	// spec-revision limit were all absent from every hand-written spec, which
+	// includes every spec the acceptance suite writes. That is why nothing
+	// noticed: the tests exercised exactly the path that skipped it.
+	//
+	// Non-destructive by construction: Apply fills empty fields and leaves
+	// anything the author set alone.
+	if s.Defaults != nil {
+		s.Defaults.Defaults(r.Context()).Apply(&body, app.Slug)
+	}
+
 	if err := spec.Validate(&body); err != nil {
 		Error(w, r, err)
 		return
