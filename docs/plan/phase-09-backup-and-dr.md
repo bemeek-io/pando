@@ -85,6 +85,32 @@ Three things running it found that reading it would not:
   server is 17, so the runtime base moved to 3.21. Bump it with the postgres service, never
   separately.
 
+## Found by writing the tests, not by writing the code
+
+Three things that `make check` was happy with and running was not. All three are the same shape: a
+capability that exists in the service layer and is not reached by the surface that needs it.
+
+- **Verify only ever opened a DR bundle.** `VerifyApp` existed and nothing called it, so verifying a
+  rolling backup answered `BACKUP_DECRYPT_FAILED` — "that passphrase does not open this backup" —
+  about a bundle that has no passphrase. R-216 was unreachable for the backups people actually take.
+  Restoring one through the install-wide route had the same confusion with worse consequences, so
+  that route now refuses by name rather than failing on decryption.
+
+- **The reconciler could not see a provisioned service.** `PlanShape` did not include it, so a killed
+  database was never restored (R-148 exempted it without anyone deciding that) and the running one
+  was reported every tick as a workload the spec does not declare. Both from one omission, and
+  neither visible until something kills a container.
+
+- **`MYSQL_PWD` broke every first MySQL deploy.** Added so the health check could authenticate
+  without a password on the command line, on the reasoning that unauthenticated `mysqladmin ping`
+  exits non-zero. Both halves were wrong: ping exits 0 whenever the server answers, and MYSQL_PWD
+  overrides the entrypoint's own no-password root connection during initialisation, so the container
+  exits 1 before the database is created.
+
+And one test that passed while asserting nothing: the R-134 port check filtered on a label nothing
+sets, then looped over the empty result asserting no row published a port. Green about a feature it
+never looked at. It counts what it found now.
+
 ## Traps
 
 - **Verify before touching anything.** A truncated or tampered bundle is rejected at the verify step
