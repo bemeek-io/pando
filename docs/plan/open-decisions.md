@@ -1,9 +1,11 @@
 # Open decisions
 
 Seventeen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
-design; O-15 through O-17 were found while implementing phases 6, 7 and 8. **Fifteen are resolved.
-Two remain, neither blocking, and neither is a decision** — O-4 needs a measurement and O-5 is
-per-adapter by design.
+design; O-15 through O-17 were found while implementing phases 6, 7 and 8. **Sixteen are resolved. One
+remains, and it is not a decision** — O-4 needs a measurement.
+
+O-5 was the other long-standing one and is now resolved: "per-adapter" answered it until R-174 made
+Pando run the edge and write its configuration, at which point Pando became the thing choosing.
 
 **These are not TODOs to resolve at your discretion.** An agent hitting an open one should raise it,
 state which options the docs already identify, and stop — not pick quietly and move on. Record any
@@ -14,7 +16,6 @@ resolution both here and in the requirements or design doc that owns it.
 | ID | Question | Why it stays open | Needed by |
 |---|---|---|---|
 | **O-4** | Required vs optional slot detection — the forty-key `.env.example` problem | Has a `[P]` answer that needs measuring, not deciding | Phase 6 |
-| **O-5** | TLS issuance — ACME, wildcards, self-signed local | Genuinely per-adapter; each routing adapter answers it for itself | Per adapter |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything not typed to
 a known service, and let the trial run settle it — a slot whose absence crashes the trial run is
@@ -76,9 +77,22 @@ Options, none free:
 Recorded rather than decided. Spec revision pruning (R-152) is implemented — it is the part of GC
 that operates on data Pando actually owns.
 
-**O-5** is open the way `SessionPolicy` is open: deferring it to each adapter *is* the answer (R-047's
-shape). A routing adapter that issues certificates declares how; one that cannot says so through
-`RoutingCapabilities`.
+**O-5 is resolved** — see R-169 and design 03 §4.3. Deferring to each adapter was always most of the
+answer (R-047's shape): an adapter that issues certificates declares how, one that cannot says so
+through `RoutingCapabilities`. What that left unanswered arrived with R-174, which makes Pando run the
+edge and therefore write its static configuration — so Pando is the thing choosing a challenge type,
+and "per-adapter" stopped being an answer for the adapter Pando ships.
+
+**Both, chosen in the edge settings.** HTTP-01 per hostname needs only a reachable `:80` and an email
+address, and is the one an install can turn on without understanding its own DNS. DNS-01 needs a
+provider credential and yields the wildcard R-166 prefers, covering an app's hostname before the app
+is deployed. Picking one for everybody would be wrong in opposite directions: HTTP-01 alone leaves
+R-166's preferred topology permanently unavailable, DNS-01 alone makes TLS conditional on credentials
+many installs do not have.
+
+Neither is a silent default. An install that configures neither gets `:80` and is told that is what it
+has — a certificate that quietly failed to issue is worse than one nobody promised, because the
+failure surfaces as a browser warning to a user rather than as a message to an operator.
 
 ## Resolved
 
@@ -93,6 +107,7 @@ shape). A routing adapter that issues certificates declares how; one that cannot
 | **O-10** | Retroactive policy application | Running apps untouched; next deploy fails at plan time | design 05 §3 |
 | **O-11** | How Postgres is supplied | The install topology supplies it — Compose, with an external-database override | design 00 §1.1 |
 | **O-12** | MCP exclusion list hard or policy-controlled | Policy-controlled, default-closed, expressed as host policy — not a second mechanism | design 04 §3 |
+| **O-5** | TLS issuance — ACME, wildcards, self-signed local | Per-adapter, and for Pando's own edge both challenge types offered and chosen per install | R-169, design 03 §4.3 |
 | **O-13** | Session revocation mid-websocket | Re-authorize on the assertion lifetime; close on failure | design 06 §4.2 |
 | **O-15** | How a host port is chosen in port-mode routing | Lowest free port in a configured range, held as a durable allocation; revisit closed by Traefik shipping | design 03 §4.2 |
 | **O-14** | DR restore bootstrap ordering | Largely dissolved by O-11; confirm sequencing in phase 9 | design 07 D |

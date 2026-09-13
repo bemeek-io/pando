@@ -413,6 +413,34 @@ it needs a host port at all. An install that outgrows the range has a better ans
 wider range, and R-005 rules out the obvious alternative for the laptop case: someone who may not know
 what a port is cannot pick a free one.
 
+### 4.3 Certificates on the edge Pando runs
+
+**[D] Resolved (O-5): both ACME challenge types, chosen per install.** R-169.
+
+O-5 sat open for as long as it did because deferring to each adapter really was the answer while the
+edge was somebody else's process. R-174 changed that: Pando starts the edge and therefore writes its
+static configuration, so Pando is the thing choosing a challenge type, and "the adapter decides"
+stopped being a place to put the question.
+
+| | HTTP-01 | DNS-01 |
+|---|---|---|
+| Needs | a reachable `:80`, an email address | a DNS provider credential |
+| Gives | one certificate per app hostname | `*.base-domain`, before an app exists |
+| Suits | an install that does not control its own DNS | R-166's preferred topology |
+
+Offering one would be wrong in opposite directions. HTTP-01 alone makes R-166's preference —
+subdomain where a wildcard is available — permanently unavailable on the adapter Pando ships. DNS-01
+alone makes TLS conditional on a credential many installs cannot produce, in a product whose defining
+property is that setup is paid once.
+
+**Neither is a silent default.** An install that configures neither gets `:80`, and is told that is
+what it has. A certificate that quietly failed to issue surfaces as a browser warning to a visitor
+rather than as a message to an operator, which is the wrong person finding out.
+
+The per-adapter shape is unchanged and still carries it: `RoutingCapabilities.SupportsTLS` and
+`SupportsWildcardTLS` are how an adapter says what it can do, and they now follow the configured
+challenge type rather than the mere presence of a resolver name.
+
 ---
 
 ## 5. Identity

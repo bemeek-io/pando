@@ -443,7 +443,7 @@ itself, to a registry or a daemon, and the daemon is forbidden.
 
 **R-168 [D]** Where Pando can detect a likely path-routing incompatibility, it shows a **dismissible warning**, not a fix: *"No persistent volume found…"*-style phrasing — e.g. *"Does your app need path prefix routing?"* Consistent with R-028.
 
-**R-169 [O-5]** TLS issuance (built-in ACME, wildcard requirement, self-signed local) is a per-adapter concern and unspecified here.
+**R-169 [D]** TLS issuance is a per-adapter concern: a routing adapter that can issue certificates declares how, and one that cannot says so through `RoutingCapabilities`. **For the edge Pando runs itself (R-174), both ACME challenge types are offered and the install chooses**: HTTP-01 per hostname, which needs nothing but a reachable port 80 and an email address, or DNS-01 for a wildcard, which needs a DNS provider credential and is what R-166's "where a wildcard is available" refers to. Neither is the silent default — an install that picks neither gets `:80` and is told so, because a certificate that quietly did not issue is worse than one that was never promised.
 
 **R-170 [P]** The proxy must support websockets, server-sent events, streaming responses, and large uploads. Body size caps and idle timeouts are configurable per app with permissive defaults.
 
