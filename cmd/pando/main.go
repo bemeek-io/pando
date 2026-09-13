@@ -72,7 +72,7 @@ func rootCmd() *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&configPath, "config", "", "path to a config file")
 
-	root.AddCommand(serveCmd(&configPath), migrateCmd(&configPath), versionCmd())
+	root.AddCommand(serveCmd(&configPath), migrateCmd(&configPath), adminCmd(&configPath), versionCmd())
 
 	// The client half (design 04 §4). In the same binary because Pando ships as
 	// one, and a client of the API like any other (R-261) — internal/cli
@@ -189,15 +189,33 @@ func serve(ctx context.Context, configPath string) error {
 	// R-046: the first run creates one administrative account and shows its
 	// password once. It is never stored in the clear, so an operator who misses
 	// it resets rather than retrieves.
-	first, err := bootstrap.Run(ctx, users, grants, db, auditor)
+	first, err := bootstrap.Run(ctx, users, grants, db, auditor,
+		secret.New(cfg.Bootstrap.AdminPassword))
 	if err != nil {
 		return err
 	}
-	if first.Created {
+	switch {
+	case first.Created && first.Supplied:
+		// No password field. The operator supplied it and already has it;
+		// printing it would copy a credential into a log for nobody's benefit
+		// (R-194).
+		logger.Warn("first run: created an administrator account",
+			zap.String("username", bootstrap.AdminUsername),
+			zap.String("note", "using the password from PANDO_ADMIN_PASSWORD; it must still be changed on first login"))
+
+	case first.Created:
 		logger.Warn("first run: created an administrator account",
 			zap.String("username", bootstrap.AdminUsername),
 			zap.String("password", first.Password.Reveal()),
 			zap.String("note", "this is shown once and must be changed on first login"))
+
+	case cfg.Bootstrap.AdminPassword != "":
+		// Said out loud, because the alternative is an operator who set it,
+		// cannot sign in with it, and has no reason to suspect it was never
+		// read.
+		logger.Info("PANDO_ADMIN_PASSWORD was set and ignored",
+			zap.String("reason", "this installation already has accounts"),
+			zap.String("remedy", "run `pando admin reset-password` to set one"))
 	}
 
 	// Adapter registration happens here, in main, from compiled-in packages

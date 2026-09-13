@@ -29,10 +29,17 @@ type Result struct {
 	Created bool
 	User    state.User
 
-	// Password is set only when Created is true. It is displayed once and never
-	// stored in the clear (R-046), so a caller that discards it cannot recover
-	// it — the operator resets rather than retrieves.
+	// Password is set only when Created is true and Pando generated it. It is
+	// displayed once and never stored in the clear (R-046), so a caller that
+	// discards it cannot recover it — the operator resets rather than
+	// retrieves, with `pando admin reset-password`.
 	Password secret.Value
+
+	// Supplied says the operator provided the password, so there is nothing for
+	// the caller to display. The distinction matters at the log line: printing
+	// a password the operator already has copies it somewhere they did not
+	// choose (R-194).
+	Supplied bool
 }
 
 // Run seeds the local identity adapter and, if no user exists, the first admin.
@@ -41,7 +48,20 @@ type Result struct {
 // The check is "any user at all" rather than "the admin user" so that deleting
 // the seeded admin after creating a real one does not make it reappear on the
 // next restart.
-func Run(ctx context.Context, users *state.Users, grants *state.Grants, db *state.DB, auditor *audit.Writer) (Result, error) {
+// Run creates the first administrative account if this install has none.
+//
+// supplied is an operator-chosen initial password, empty to have Pando generate
+// one. It is a [P] override of R-046's "the initial credential is generated":
+// the generated one is shown once, in a log line, and an install whose server
+// container is recreated before anyone reads it has an account nobody can sign
+// in to. That is not a hypothetical — it is what a `docker compose down && up`
+// does, and there was no way back from it until the reset command existed.
+//
+// It changes nothing else. The account still must change its password at first
+// sign-in, because an environment variable is not a safer place than a log
+// line — it is in the Compose file, in `docker inspect`, and inherited by every
+// child process. Supplying it buys a way in, not a credential.
+func Run(ctx context.Context, users *state.Users, grants *state.Grants, db *state.DB, auditor *audit.Writer, supplied secret.Value) (Result, error) {
 	if err := users.EnsureLocalAdapter(ctx); err != nil {
 		return Result{}, err
 	}
@@ -57,6 +77,17 @@ func Run(ctx context.Context, users *state.Users, grants *state.Grants, db *stat
 	password, err := generatePassword()
 	if err != nil {
 		return Result{}, err
+	}
+
+	fromOperator := !supplied.IsZero()
+	if fromOperator {
+		if supplied.Len() < hash.MinPasswordLength {
+			return Result{}, errs.Newf(errs.ValidInvalid,
+				"The administrator password supplied for this installation is shorter than %d characters.",
+				hash.MinPasswordLength).
+				WithRemedy("Set PANDO_ADMIN_PASSWORD to something longer, or unset it and Pando will generate one and print it once.")
+		}
+		password = supplied
 	}
 	digest, err := hash.New(password)
 	if err != nil {
@@ -108,8 +139,22 @@ func Run(ctx context.Context, users *state.Users, grants *state.Grants, db *stat
 	}
 
 	log.From(ctx).Info("created the first administrator", zap.String("user_id", user.ID))
-	return Result{Created: true, User: user, Password: password}, nil
+	// The password is returned only when Pando chose it. Handing back one the
+	// operator already supplied invites the caller to print it, which copies a
+	// credential into a log for no one's benefit (R-194).
+	out := Result{Created: true, User: user, Supplied: fromOperator}
+	if !fromOperator {
+		out.Password = password
+	}
+	return out, nil
 }
+
+// GeneratePassword returns a credential nobody chose.
+//
+// Exported because the reset command needs the same one first run produces:
+// two generators would eventually disagree about length or alphabet, and the
+// weaker one would be the one nobody looked at.
+func GeneratePassword() (secret.Value, error) { return generatePassword() }
 
 func generatePassword() (secret.Value, error) {
 	b := make([]byte, 24)

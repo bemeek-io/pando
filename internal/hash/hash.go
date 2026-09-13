@@ -28,6 +28,21 @@ const (
 	keyLength   = 32
 )
 
+// MinPasswordLength is the only rule a password has to satisfy.
+//
+// Here rather than beside any one of its callers because there are three — the
+// API's self-service change, first-run bootstrap, and the reset command — and
+// three copies of a number is three chances for one of them to drift low. The
+// number itself is [P], and the reasoning is in design 04 §2.7: no composition
+// classes, because a class requirement produces `Passw0rd!`, which has less
+// real entropy than three words and is the password the rule reliably produces.
+//
+// A DR bundle's passphrase is longer (sixteen, design 07 D) and that difference
+// is deliberate: a password is guessed against a server that rate-limits and
+// can lock the account, and a passphrase protects a file an attacker already
+// holds and can grind offline as fast as their hardware allows.
+const MinPasswordLength = 10
+
 // New derives an encoded hash of v in the standard argon2 string format.
 func New(v secret.Value) (string, error) {
 	salt := make([]byte, saltLength)

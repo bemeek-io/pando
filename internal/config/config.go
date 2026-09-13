@@ -17,6 +17,7 @@ import (
 // through the API without a restart or a file edit.
 type Config struct {
 	Server     Server     `mapstructure:"server"`
+	Bootstrap  Bootstrap  `mapstructure:"bootstrap"`
 	Database   Database   `mapstructure:"database"`
 	Log        Log        `mapstructure:"log"`
 	Reconciler Reconciler `mapstructure:"reconciler"`
@@ -65,6 +66,23 @@ func (r Reconciler) BackoffSchedule() ([]time.Duration, error) {
 		out = append(out, d)
 	}
 	return out, nil
+}
+
+// Bootstrap is what first run needs, and is read on no other run.
+type Bootstrap struct {
+	// AdminPassword is the first administrator's initial password, empty to
+	// have Pando generate one and print it once (R-046).
+	//
+	// The one credential in this struct, and the reason nothing logs a Config
+	// wholesale. It exists because the generated password is shown once, in a
+	// log line, and a server container recreated before anyone read it leaves
+	// an account nobody can sign in to.
+	//
+	// Ignored once the install has any account. It is a bootstrap input, not a
+	// way to set a password: the account must still change it at first sign-in,
+	// because an environment variable is in the Compose file, in
+	// `docker inspect`, and inherited by every child process.
+	AdminPassword string `mapstructure:"admin_password"`
 }
 
 type Server struct {
@@ -157,6 +175,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("reconciler.failure_threshold", 0)
 	v.SetDefault("reconciler.failure_window", time.Duration(0))
 	v.SetDefault("reconciler.gc_interval", time.Duration(0))
+	v.SetDefault("bootstrap.admin_password", "")
 
 	// Every key is bound explicitly, and that is not belt-and-braces.
 	//
@@ -179,6 +198,13 @@ func Load(path string) (*Config, error) {
 		"server.routing_mode":   "PANDO_SERVER_ROUTING_MODE",
 		"server.work_dir":       "PANDO_SERVER_WORK_DIR",
 		"log.level":             "PANDO_LOG_LEVEL",
+
+		// Not PANDO_BOOTSTRAP_ADMIN_PASSWORD, which is what the replacer would
+		// derive — this is the one setting an operator types from memory at the
+		// worst possible moment. That makes this bind load-bearing rather than
+		// belt-and-braces: AutomaticEnv only finds the derived name, so without
+		// the line below the variable is read by nothing at all.
+		"bootstrap.admin_password": "PANDO_ADMIN_PASSWORD",
 	} {
 		_ = v.BindEnv(key, env)
 	}

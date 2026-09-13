@@ -77,3 +77,37 @@ func TestBaseDomainComesFromTheEnvironment(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "apps.example.com", cfg.Server.BaseDomain)
 }
+
+// TestR046_TheAdminPasswordComesFromTheEnvironment guards a different viper
+// trap from the one above, on a setting where silence is worse.
+//
+// `PANDO_ADMIN_PASSWORD` is deliberately not the name viper derives from the
+// key — that would be `PANDO_BOOTSTRAP_ADMIN_PASSWORD`, which is not what
+// anybody types at the moment they need it. AutomaticEnv can only find the
+// derived name, so the explicit bind is not belt-and-braces here: remove it and
+// the variable is read by nothing. Verified by removing it, which fails this
+// test; removing the default alongside it does not, so the default is
+// consistency with the block it sits in rather than load-bearing.
+//
+// Worth a test because of how it fails. A base domain that arrives empty fails
+// later at plan time with a message. An admin password that arrives empty fails
+// by *succeeding*: Pando generates one instead, prints it to a log, and the
+// operator who set the variable finds out at the login screen — with nothing
+// anywhere saying the value was never read.
+func TestR046_TheAdminPasswordComesFromTheEnvironment(t *testing.T) {
+	t.Setenv("PANDO_DATABASE_URL", "postgres://pando@localhost/pando")
+	t.Setenv("PANDO_ADMIN_PASSWORD", "correct-horse-battery")
+
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	require.Equal(t, "correct-horse-battery", cfg.Bootstrap.AdminPassword)
+}
+
+// Unset is the ordinary case and means "generate one" (R-046), not "".
+func TestTheAdminPasswordIsEmptyWhenUnset(t *testing.T) {
+	t.Setenv("PANDO_DATABASE_URL", "postgres://pando@localhost/pando")
+
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	require.Empty(t, cfg.Bootstrap.AdminPassword)
+}

@@ -212,6 +212,37 @@ func (u *Users) SetPassword(ctx context.Context, userID, passwordHash string) er
 	return nil
 }
 
+// ResetPassword sets a local account's password from outside any session, and
+// requires the holder to change it again at the next sign-in.
+//
+// Separate from SetPassword, which clears must_change_password because the
+// person changing it is the person who chose it. Here somebody else chose it:
+// it was handed over out of band, so it is a way back in rather than a
+// credential, and R-046's rule applies for the same reason it applies on first
+// run.
+//
+// Returns the user ID so the caller can end that account's sessions and record
+// what it did. A reset that leaves a stolen session alive has not reset
+// anything.
+func (u *Users) ResetPassword(ctx context.Context, username, passwordHash string) (string, error) {
+	var userID string
+	err := u.db.QueryRow(ctx, `
+		UPDATE users
+		SET password_hash = $3, must_change_password = true, updated_at = now()
+		WHERE adapter_id = $1 AND external_id = $2 AND deleted_at IS NULL
+		RETURNING id`, LocalAdapterID, username, passwordHash).Scan(&userID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", errs.Newf(errs.NotFound,
+			"This installation has no local account called %q.", username).
+			WithRemedy("Accounts from an external identity provider are changed where they live, not here.")
+	}
+	if err != nil {
+		return "", errs.Wrap(errs.Internal, "Could not reset the password.", err)
+	}
+	return userID, nil
+}
+
 // Delete soft-deletes a user, which is what fires R-282's destruction rules.
 //
 // Soft, because the audit log references this ID and R-054 makes users.id the

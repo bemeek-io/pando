@@ -227,9 +227,9 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, errs.New(errs.ValidInvalid, "A password cannot be empty."))
 		return
 	}
-	if len(req.NewPassword) < minPasswordLength {
+	if len(req.NewPassword) < hash.MinPasswordLength {
 		Error(w, r, errs.Newf(errs.ValidInvalid,
-			"A password needs at least %d characters.", minPasswordLength).
+			"A password needs at least %d characters.", hash.MinPasswordLength).
 			WithRemedy("A short phrase you will remember is a good password."))
 		return
 	}
@@ -294,10 +294,3 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	})
 	JSON(w, http.StatusNoContent, nil)
 }
-
-// minPasswordLength is the only rule.
-//
-// No composition requirements — no "one uppercase, one symbol" — because they
-// produce shorter, more guessable passwords and a note on a monitor. Length is
-// the property that matters, and the bootstrap credential is 32 characters.
-const minPasswordLength = 10
