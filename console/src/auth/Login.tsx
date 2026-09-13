@@ -30,6 +30,13 @@ export function Login() {
     },
   });
 
+  // A rejection belongs to the value that caused it, and stops applying the
+  // moment that value changes.
+  const edit = (set: (v: string) => void) => (value: string) => {
+    if (signIn.isError) signIn.reset();
+    set(value);
+  };
+
   return (
     <Frame>
       <form
@@ -44,14 +51,14 @@ export function Login() {
           value={username}
           autoComplete="username"
           autoFocus
-          onChange={(e) => setUsername(e.target.value)}
+          onChange={(e) => edit(setUsername)(e.target.value)}
         />
         <Input
           label="Password"
           type="password"
           value={password}
           autoComplete="current-password"
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => edit(setPassword)(e.target.value)}
           // The server's message, shown as written. It is held to the R-105
           // standard, and paraphrasing it here would undo that in the UI layer.
           error={signIn.isError ? messageOf(signIn.error) : undefined}
@@ -91,6 +98,19 @@ export function ChangePassword({ username }: { username?: string }) {
     onSuccess: () => void queries.invalidateQueries(),
   });
 
+  // Editing any field clears the last failure.
+  //
+  // Without this, a rejection outlives the value that caused it. Type something
+  // too short, get "A password needs at least 10 characters", then type
+  // something longer — and the message is still there, because it belongs to
+  // the mutation and the mutation has not run again. The form now says the new
+  // password is too short when it is not, and the only way to find out
+  // otherwise is to submit anyway and disbelieve the screen.
+  const edit = (set: (v: string) => void) => (value: string) => {
+    if (change.isError) change.reset();
+    set(value);
+  };
+
   return (
     <Frame
       heading="Choose a password"
@@ -114,7 +134,7 @@ export function ChangePassword({ username }: { username?: string }) {
           value={current}
           autoComplete="current-password"
           autoFocus
-          onChange={(e) => setCurrent(e.target.value)}
+          onChange={(e) => edit(setCurrent)(e.target.value)}
         />
         <Input
           label="New password"
@@ -122,21 +142,20 @@ export function ChangePassword({ username }: { username?: string }) {
           value={next}
           autoComplete="new-password"
           helper="At least 10 characters. A short phrase you'll remember works well."
-          onChange={(e) => setNext(e.target.value)}
+          // The server's refusal belongs here, on the field it is about. It
+          // used to render under "New password again", so a message about the
+          // new password's length appeared beneath a field whose only job is
+          // to match — two fields' worth of confusion from one error.
+          error={!mismatch && change.isError ? messageOf(change.error) : undefined}
+          onChange={(e) => edit(setNext)(e.target.value)}
         />
         <Input
           label="New password again"
           type="password"
           value={confirm}
           autoComplete="new-password"
-          onChange={(e) => setConfirm(e.target.value)}
-          error={
-            mismatch
-              ? 'These two passwords are different.'
-              : change.isError
-                ? messageOf(change.error)
-                : undefined
-          }
+          onChange={(e) => edit(setConfirm)(e.target.value)}
+          error={mismatch ? 'These two passwords are different.' : undefined}
         />
         <Button
           type="submit"
