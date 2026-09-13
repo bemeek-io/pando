@@ -29,20 +29,30 @@ import { Sharing } from './Sharing';
 import { AppOverview } from './AppOverview';
 import { Resources } from './Resources';
 import { AddApp } from './AddApp';
+import type { Route, Section } from '../app/route';
 import { Terminal } from './Terminal';
 
-type Section = 'apps' | 'accounts' | 'identity' | 'installation' | 'policy' | 'backups' | 'audit';
-
-export function AdminConsole({ onLeave }: { onLeave: () => void }) {
-  // The app being looked at, by id rather than by value.
+export function AdminConsole({
+  route,
+  go,
+  onLeave,
+}: {
+  route: Route;
+  go: (next: Route, replace?: boolean) => void;
+  onLeave: () => void;
+}) {
+  // Where we are comes from the address bar, so a reload lands back here and a
+  // link to an app is a link to an app.
   //
-  // It used to hold the App object captured when the row was clicked, and that
-  // object never changed again. So accepting a proposal — which pins a spec on
-  // the server and moves the app out of draft — left this screen rendering the
-  // app as it was before, with only the Set up tab and no way to deploy. The
-  // work had happened and the console was showing a photograph of it.
-  const [selectedID, setSelectedID] = useState<string | null>(null);
-  const [section, setSection] = useState<Section>('apps');
+  // The app is identified by id rather than held as a value. It used to hold
+  // the App object captured when the row was clicked, and that object never
+  // changed again — so accepting a proposal left this screen rendering the app
+  // as it was before, with no way to deploy.
+  const section = route.section;
+  const selectedID = route.appID ?? null;
+  const setSection = (next: Section) => go({ view: 'admin', section: next });
+  const setSelectedID = (id: string | null) =>
+    go(id ? { view: 'admin', section: 'apps', appID: id } : { view: 'admin', section: 'apps' });
 
   // One question per screen. `install.view` is not a master key: an account can
   // hold install.audit.read and nothing else, and for them the console is the
@@ -81,10 +91,10 @@ export function AdminConsole({ onLeave }: { onLeave: () => void }) {
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--paper)' }}>
       <SidebarNav
         value={section}
-        onChange={(v) => {
-          setSection(v as Section);
-          setSelectedID(null);
-        }}
+        // One navigation, not two. setSection already drops the selected app,
+        // and calling both pushed two history entries — so one Back went to a
+        // URL that looked identical and nothing appeared to happen.
+        onChange={(v) => setSection(v as Section)}
         header={<Logo size={20} />}
         items={items}
         footer={
@@ -103,7 +113,12 @@ export function AdminConsole({ onLeave }: { onLeave: () => void }) {
         {section === 'audit' && <Audit />}
         {section === 'apps' &&
           (selectedID ? (
-            <AppScreen appID={selectedID} onBack={() => setSelectedID(null)} />
+            <AppScreen
+              appID={selectedID}
+              tab={route.tab}
+              onTab={(tab) => go({ view: 'admin', section: 'apps', appID: selectedID, tab }, true)}
+              onBack={() => setSelectedID(null)}
+            />
           ) : (
             // Adding an app opens it. Detection is already running by the time
             // the request returns, and the next thing to do is look at what it
@@ -203,7 +218,17 @@ function AppsList({
   );
 }
 
-function AppScreen({ appID, onBack }: { appID: string; onBack: () => void }) {
+function AppScreen({
+  appID,
+  tab: routeTab,
+  onTab,
+  onBack,
+}: {
+  appID: string;
+  tab?: string;
+  onTab: (tab: string) => void;
+  onBack: () => void;
+}) {
   // Read live, not handed down. Everything on this screen changes underneath
   // it: accepting a proposal pins a spec, deploying moves the app through
   // building to running. A snapshot taken when the row was clicked is wrong by
@@ -216,14 +241,20 @@ function AppScreen({ appID, onBack }: { appID: string; onBack: () => void }) {
   // An app with no pinned spec has never been through review, so detection is
   // the only thing worth showing it.
   const reviewed = Boolean(app.data?.pinned_spec_id);
-  const [tab, setTab] = useState('detection');
 
-  // Accepting a proposal is the moment this flips, and leaving somebody on the
-  // setup tab afterwards hides the thing they came for — the deploy button is
-  // on Overview. Only from 'detection', so a reviewed app whose owner has
-  // deliberately opened Configuration stays where they put themselves.
+  // The tab is in the address bar, so a reload comes back to it. Replace
+  // rather than push when switching: flicking between tabs should not make the
+  // back button walk them one at a time before leaving the app.
+  const tab = routeTab ?? (reviewed ? 'overview' : 'detection');
+  const setTab = onTab;
+
+  // Accepting a proposal is the moment `reviewed` flips, and leaving somebody
+  // on the setup tab afterwards hides the thing they came for — the deploy
+  // button is on Overview. Only from 'detection', so a reviewed app whose
+  // owner deliberately opened Configuration stays where they put themselves.
   useEffect(() => {
-    if (reviewed) setTab((current) => (current === 'detection' ? 'overview' : current));
+    if (reviewed && routeTab === 'detection') onTab('overview');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewed]);
 
   if (app.isPending) return null;
@@ -276,7 +307,7 @@ function AppScreen({ appID, onBack }: { appID: string; onBack: () => void }) {
       </div>
 
       <div style={{ padding: 'var(--space-5) var(--console-padding) var(--space-7)' }}>
-        {tab === 'detection' && <DetectionReview appID={app.data.id} />}
+        {tab === 'detection' && <DetectionReview appID={app.data.id} reviewed={reviewed} />}
         {tab === 'sharing' && <Sharing appID={app.data.id} appName={app.data.name} />}
         {tab === 'overview' && <AppOverview app={app.data} />}
         {tab === 'resources' && <Resources appID={app.data.id} />}

@@ -20,7 +20,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, CodeBlock, Icon, IconButton, Input, Select, Tag } from '@design';
+import { Button, Card, CodeBlock, Dialog, Icon, IconButton, Input, Select, Tag } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 import type { Candidate, Proposal, Question } from '@api/types.gen';
@@ -40,7 +40,7 @@ interface DetectionResponse {
   commit: string;
 }
 
-export function DetectionReview({ appID }: { appID: string }) {
+export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: boolean }) {
   const queries = useQueryClient();
 
   const detection = useQuery({
@@ -58,8 +58,13 @@ export function DetectionReview({ appID }: { appID: string }) {
     onSuccess: () => queries.invalidateQueries({ queryKey: ['apps', appID, 'detection'] }),
   });
 
+  const [replacing, setReplacing] = useState(false);
+
   const accept = useMutation({
-    mutationFn: () => api.post(`/apps/${appID}/detection/accept`),
+    // confirm only when there is something to replace. The server refuses an
+    // unconfirmed accept on a configured app, and that refusal is the real
+    // guard — this just means the console does not walk into it.
+    mutationFn: () => api.post(`/apps/${appID}/detection/accept`, reviewed ? { confirm: true } : {}),
     // ['apps'], not ['apps', appID]: accepting pins a spec and moves the app
     // out of draft, which changes both this screen and its row in the list.
     // The narrower key refreshes the screen and leaves the list saying draft.
@@ -156,15 +161,21 @@ export function DetectionReview({ appID }: { appID: string }) {
         }}
       >
         <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
-          Accepting saves this as the app&rsquo;s configuration. It doesn&rsquo;t deploy anything.
+          {reviewed
+            ? 'This app is already configured. Using this replaces those settings with what Pando found.'
+            : 'Accepting saves this as the app’s configuration. It doesn’t deploy anything.'}
         </p>
         <Button
           variant="primary"
           disabled={unanswered.length > 0 || accept.isPending}
-          onClick={() => accept.mutate()}
+          // An app that is already configured gets a confirmation rather than
+          // a one-click replace. This used to accept immediately, and the
+          // configuration it discarded — environment variables, dependencies,
+          // storage — was gone from the pinned spec with nothing said.
+          onClick={() => (reviewed ? setReplacing(true) : accept.mutate())}
           style={{ alignSelf: 'flex-start' }}
         >
-          Accept configuration
+          {reviewed ? 'Replace configuration' : 'Accept configuration'}
         </Button>
         {unanswered.length > 0 && (
           <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
@@ -175,6 +186,29 @@ export function DetectionReview({ appID }: { appID: string }) {
         )}
         {accept.isError && <Failure error={accept.error} />}
       </section>
+
+      <Dialog
+        open={replacing}
+        title="Replace this app's configuration?"
+        description="Pando will use what it just found. Environment variables, dependencies and storage you set yourself are not carried over — the previous configuration is kept in the app's history."
+        onClose={() => setReplacing(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setReplacing(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                accept.mutate();
+                setReplacing(false);
+              }}
+            >
+              Replace it
+            </Button>
+          </>
+        }
+      />
     </div>
   );
 }

@@ -5,25 +5,26 @@
 // makes a non-technical user's first experience a page of tiles rather than a
 // dashboard.
 //
-// Routing is a path switch rather than TanStack Router for now. Design 08 §1.2
-// lists typed routes as a [P] choice, and the console has five screens: the
-// router's value is in a large route tree, and adding one before there is a
-// tree to type is configuration for its own sake. Noted rather than silently
-// skipped — revisit when the admin console grows past a handful of screens.
-
-import { useState } from 'react';
+// Routing is a path switch rather than TanStack Router. Design 08 §1.2 lists
+// typed routes as a [P] choice; this overrides it, because the router's value
+// is in a large route tree and there are three shapes here — the launcher, a
+// section, and an app with a tab. Revisit when there is a tree to type.
+//
+// It is a real path switch now. It used to be this comment over a useState,
+// which is not a path switch at all: a reload dropped whoever was looking at
+// the console back on the launcher, the back button did nothing, and there was
+// no way to send anybody a link to an app.
 
 import { useAdministrative, usePrincipal } from './principal';
+import { useRoute } from './route';
 import { ChangePassword, Login } from '../auth/Login';
 import { Launcher } from '../launcher/Launcher';
 import { AdminConsole } from '../admin/AdminConsole';
 
-type View = 'launcher' | 'admin';
-
 export function App() {
   const principal = usePrincipal();
   const isAdmin = useAdministrative();
-  const [view, setView] = useState<View>('launcher');
+  const [route, go] = useRoute();
 
   if (principal.isPending) {
     return <Centered>Loading.</Centered>;
@@ -45,11 +46,23 @@ export function App() {
     return <ChangePassword username={principal.data.username} />;
   }
 
-  if (view === 'admin' && isAdmin) {
-    return <AdminConsole onLeave={() => setView('launcher')} />;
+  // Someone who lands on /admin without the verbs for it gets the launcher,
+  // and the address bar is corrected to say so — replace, not push, so the
+  // back button does not bounce them between a page they cannot see and one
+  // they can. The server refuses the requests underneath regardless; this is
+  // only about not showing a shell that answers 403 to everything (R-265).
+  if (route.view === 'admin' && isAdmin) {
+    return <AdminConsole route={route} go={go} onLeave={() => go({ view: 'launcher', section: 'apps' })} />;
+  }
+  if (route.view === 'admin' && !isAdmin && !principal.isPending) {
+    go({ view: 'launcher', section: 'apps' }, true);
   }
 
-  return <Launcher onAdmin={isAdmin ? () => setView('admin') : undefined} />;
+  return (
+    <Launcher
+      onAdmin={isAdmin ? () => go({ view: 'admin', section: 'apps' }) : undefined}
+    />
+  );
 }
 
 function Centered({ children }: { children: React.ReactNode }) {

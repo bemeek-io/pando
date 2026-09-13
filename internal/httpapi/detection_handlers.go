@@ -202,6 +202,31 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Accepting onto an app that is already configured replaces that
+	// configuration, and nothing warns about it afterwards: the new spec comes
+	// from detection, so every environment variable, slot resolution and volume
+	// added since is simply absent from it. The old revision survives —
+	// spec_revisions is append-only (R-152) — but the app is pinned to one that
+	// does not have them, and the next deploy ships that.
+	//
+	// Confirmed rather than refused, because re-accepting is a real thing to
+	// want: the repository changed and detection should win. And confirmed on
+	// the server rather than in the console, because the console is one client
+	// of three (R-261) — a guard only the browser enforces is not a guard.
+	var req struct {
+		Confirm bool `json:"confirm"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	if app.PinnedSpecID != "" && !req.Confirm {
+		Error(w, r, errs.New(errs.ValidInvalid,
+			"This app is already configured, and accepting again replaces that configuration with what detection found.").
+			WithDetail("pinned_spec_id", app.PinnedSpecID).
+			WithRemedy("Anything set since — environment variables, dependencies, storage — is not carried over. Send confirm: true to replace it anyway."))
+		return
+	}
+
 	d, err := s.Detections.Get(r.Context(), app.ID)
 	if err != nil {
 		Error(w, r, err)
