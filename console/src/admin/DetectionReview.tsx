@@ -60,7 +60,10 @@ export function DetectionReview({ appID }: { appID: string }) {
 
   const accept = useMutation({
     mutationFn: () => api.post(`/apps/${appID}/detection/accept`),
-    onSuccess: () => queries.invalidateQueries({ queryKey: ['apps', appID] }),
+    // ['apps'], not ['apps', appID]: accepting pins a spec and moves the app
+    // out of draft, which changes both this screen and its row in the list.
+    // The narrower key refreshes the screen and leaves the list saying draft.
+    onSuccess: () => queries.invalidateQueries({ queryKey: ['apps'] }),
   });
 
   // R-022: re-detection is explicit, never automatic. Offered here because a

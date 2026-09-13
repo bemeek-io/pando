@@ -11,7 +11,7 @@
 // implication graph between verbs (R-082), so a sidebar that assumed one would
 // offer a screen whose every request comes back 403.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Badge, Button, EmptyState, Logo, SidebarNav, StatusIndicator, Table, Tabs, Tooltip } from '@design';
 import type { SidebarItem } from '@design';
@@ -34,7 +34,14 @@ import { Terminal } from './Terminal';
 type Section = 'apps' | 'accounts' | 'identity' | 'installation' | 'policy' | 'backups' | 'audit';
 
 export function AdminConsole({ onLeave }: { onLeave: () => void }) {
-  const [selected, setSelected] = useState<App | null>(null);
+  // The app being looked at, by id rather than by value.
+  //
+  // It used to hold the App object captured when the row was clicked, and that
+  // object never changed again. So accepting a proposal — which pins a spec on
+  // the server and moves the app out of draft — left this screen rendering the
+  // app as it was before, with only the Set up tab and no way to deploy. The
+  // work had happened and the console was showing a photograph of it.
+  const [selectedID, setSelectedID] = useState<string | null>(null);
   const [section, setSection] = useState<Section>('apps');
 
   // One question per screen. `install.view` is not a master key: an account can
@@ -76,7 +83,7 @@ export function AdminConsole({ onLeave }: { onLeave: () => void }) {
         value={section}
         onChange={(v) => {
           setSection(v as Section);
-          setSelected(null);
+          setSelectedID(null);
         }}
         header={<Logo size={20} />}
         items={items}
@@ -95,14 +102,14 @@ export function AdminConsole({ onLeave }: { onLeave: () => void }) {
         {section === 'backups' && <Backups />}
         {section === 'audit' && <Audit />}
         {section === 'apps' &&
-          (selected ? (
-            <AppScreen app={selected} onBack={() => setSelected(null)} />
+          (selectedID ? (
+            <AppScreen appID={selectedID} onBack={() => setSelectedID(null)} />
           ) : (
             // Adding an app opens it. Detection is already running by the time
             // the request returns, and the next thing to do is look at what it
             // found — landing back on a list with a new row saying "draft"
             // leaves the person to work that out.
-            <AppsList rows={rows} onOpen={setSelected} onAdded={setSelected} />
+            <AppsList rows={rows} onOpen={(app) => setSelectedID(app.id)} onAdded={(app) => setSelectedID(app.id)} />
           ))}
       </main>
     </div>
@@ -196,11 +203,39 @@ function AppsList({
   );
 }
 
-function AppScreen({ app, onBack }: { app: App; onBack: () => void }) {
+function AppScreen({ appID, onBack }: { appID: string; onBack: () => void }) {
+  // Read live, not handed down. Everything on this screen changes underneath
+  // it: accepting a proposal pins a spec, deploying moves the app through
+  // building to running. A snapshot taken when the row was clicked is wrong by
+  // the time anything interesting has happened.
+  const app = useQuery({
+    queryKey: ['apps', appID],
+    queryFn: () => api.get<App>(`/apps/${appID}`),
+  });
+
   // An app with no pinned spec has never been through review, so detection is
   // the only thing worth showing it.
-  const reviewed = Boolean(app.pinned_spec_id);
-  const [tab, setTab] = useState(reviewed ? 'overview' : 'detection');
+  const reviewed = Boolean(app.data?.pinned_spec_id);
+  const [tab, setTab] = useState('detection');
+
+  // Accepting a proposal is the moment this flips, and leaving somebody on the
+  // setup tab afterwards hides the thing they came for — the deploy button is
+  // on Overview. Only from 'detection', so a reviewed app whose owner has
+  // deliberately opened Configuration stays where they put themselves.
+  useEffect(() => {
+    if (reviewed) setTab((current) => (current === 'detection' ? 'overview' : current));
+  }, [reviewed]);
+
+  if (app.isPending) return null;
+  if (app.isError || !app.data) {
+    return (
+      <div style={{ padding: 'var(--space-6) var(--console-padding)' }}>
+        <Button variant="ghost" onClick={onBack}>
+          Apps
+        </Button>
+      </div>
+    );
+  }
 
   const tabs = reviewed
     ? [
@@ -226,8 +261,8 @@ function AppScreen({ app, onBack }: { app: App; onBack: () => void }) {
           Apps
         </Button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-          <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.name}</h3>
-          <StatusIndicator status={statusSymbol(app.state)} label={statusLabel(app.state)} />
+          <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
+          <StatusIndicator status={statusSymbol(app.data.state)} label={statusLabel(app.data.state)} />
         </div>
       </header>
 
@@ -236,11 +271,11 @@ function AppScreen({ app, onBack }: { app: App; onBack: () => void }) {
       </div>
 
       <div style={{ padding: 'var(--space-5) var(--console-padding) var(--space-7)' }}>
-        {tab === 'detection' && <DetectionReview appID={app.id} />}
-        {tab === 'sharing' && <Sharing appID={app.id} appName={app.name} />}
-        {tab === 'overview' && <AppOverview app={app} />}
-        {tab === 'resources' && <Resources appID={app.id} />}
-        {tab === 'terminal' && <Terminal appID={app.id} />}
+        {tab === 'detection' && <DetectionReview appID={app.data.id} />}
+        {tab === 'sharing' && <Sharing appID={app.data.id} appName={app.data.name} />}
+        {tab === 'overview' && <AppOverview app={app.data} />}
+        {tab === 'resources' && <Resources appID={app.data.id} />}
+        {tab === 'terminal' && <Terminal appID={app.data.id} />}
       </div>
     </div>
   );

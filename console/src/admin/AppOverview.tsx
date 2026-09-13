@@ -32,7 +32,9 @@ export function AppOverview({ app }: { app: App }) {
 
   const deploy = useMutation({
     mutationFn: () => api.post(`/apps/${app.id}/deployments`, {}),
-    onSuccess: () => queries.invalidateQueries({ queryKey: ['apps', app.id] }),
+    // ['apps'] so the list's status follows the app through building to
+    // running, rather than only this screen.
+    onSuccess: () => queries.invalidateQueries({ queryKey: ['apps'] }),
   });
 
   const latest = (deployments.data?.deployments ?? [])[0];
