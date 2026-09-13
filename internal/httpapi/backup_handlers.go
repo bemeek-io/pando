@@ -260,7 +260,25 @@ func (s *Server) handleVerifyBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v, err := s.Backup.Verify(r.Context(), rec.AdapterRef, rec.ObjectName, secret.New(req.Passphrase))
+	// An app backup is opened with the install's own key, a DR bundle with the
+	// passphrase (R-213).
+	//
+	// Chosen from the record rather than from whether a passphrase was sent: a
+	// caller who supplies one for a rolling backup is confused, and the useful
+	// answer is the verification, not a lecture. Getting this wrong is how
+	// R-216 stops being reachable for the backups people actually take — a
+	// rolling backup verified against a passphrase fails with
+	// BACKUP_DECRYPT_FAILED, which says the passphrase is wrong about a bundle
+	// that has none.
+	var (
+		v   backup.Verified
+		err error
+	)
+	if rec.AppID != "" {
+		v, err = s.Backup.VerifyApp(r.Context(), rec.AdapterRef, rec.ObjectName)
+	} else {
+		v, err = s.Backup.Verify(r.Context(), rec.AdapterRef, rec.ObjectName, secret.New(req.Passphrase))
+	}
 	if err != nil {
 		s.audit(r, audit.Event{
 			PrincipalKind: audit.PrincipalKind(p.Kind), PrincipalID: p.ID, OnBehalfOf: p.UserID,
@@ -291,6 +309,22 @@ func (s *Server) handleVerifyBackup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 	p, rec, ok := s.requireBackup(w, r)
 	if !ok {
+		return
+	}
+
+	// An app's backup is not an installation.
+	//
+	// It would fail anyway — a rolling backup is sealed with the install key
+	// and this path opens with a passphrase — but it would fail as
+	// BACKUP_DECRYPT_FAILED, which tells someone their passphrase is wrong
+	// about a bundle that never had one. On the most destructive route in the
+	// API that is the wrong sentence to answer with, and it sends them looking
+	// for a passphrase instead of for the right endpoint (R-105).
+	if rec.AppID != "" {
+		Error(w, r, errs.New(errs.ValidInvalid,
+			"That backup holds one app's data, not this installation.").
+			WithDetail("app_id", rec.AppID).
+			WithRemedy("Restore it from that app instead. This route replaces the whole installation from a full backup."))
 		return
 	}
 

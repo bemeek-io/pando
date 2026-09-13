@@ -507,11 +507,23 @@ func TestR216_ABackupIsVerifiableBeforeItIsNeeded(t *testing.T) {
 	var made map[string]any
 	require.NoError(t, json.Unmarshal([]byte(body), &made))
 
-	body, status = admin.do(t, http.MethodPost, "/backups/"+made["id"].(string)+"/verify", `{}`)
+	backupID := made["id"].(string)
+
+	body, status = admin.do(t, http.MethodPost, "/backups/"+backupID+"/verify", `{}`)
 	require.Equal(t, http.StatusOK, status, body)
 
 	// And the app is untouched by having been checked.
 	require.Equal(t, "intact", strings.TrimSpace(readFrom(t, app, "/data/keep.txt")))
+
+	// An app's backup is not an installation. The install-wide restore route
+	// refuses it by name rather than failing to decrypt it, which would answer
+	// "that passphrase is wrong" about a bundle that never had one — on the
+	// most destructive route in the API.
+	body, status = admin.do(t, http.MethodPost, "/backups/"+backupID+"/restore",
+		`{"passphrase":"whatever-sixteen-plus","confirm":true}`)
+	require.GreaterOrEqual(t, status, 400, body)
+	require.NotContains(t, body, "BACKUP_DECRYPT_FAILED",
+		"the refusal should name the mismatch, not the passphrase: %s", body)
 }
 
 // TestR217_TheBackupDestinationIsAnAdapter asserts R-217.
