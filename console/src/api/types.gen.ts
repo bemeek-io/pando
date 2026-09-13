@@ -93,6 +93,7 @@ export interface Candidate {
   confidence: number;
   evidence?: (string[] | null);
   questions?: (Question[] | null);
+  draft?: Draft;
 }
 
 export interface Question {
@@ -144,6 +145,15 @@ export interface Source {
   digest?: string;
   upload_id?: string;
   credential_ref?: string;
+}
+
+export interface Draft {
+  Workloads: (Workload[] | null);
+  Volumes: (Volume[] | null);
+  Slots: (Slot[] | null);
+  Build: Build;
+  Health: Health;
+  Warnings: (Warning[] | null);
 }
 
 export interface Build {

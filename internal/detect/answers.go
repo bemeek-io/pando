@@ -27,12 +27,14 @@ const (
 // with Source "user", which is what the review UI shows beside it (design 01
 // §2.3). Where the value came from is part of the value.
 func (p Proposal) WithAnswers(answers map[string]string) spec.AppSpec {
-	out := p.DraftSpec
+	// The tie-break is resolved first, because it chooses which reading of the
+	// repository the rest of the answers apply to.
+	out := p.chosen(answers)
 
 	// Copy the workload slice: a proposal is read from storage and may be
 	// applied more than once, and mutating it in place would make the second
 	// application see the first one's results.
-	out.Workloads = append([]spec.Workload(nil), p.DraftSpec.Workloads...)
+	out.Workloads = append([]spec.Workload(nil), out.Workloads...)
 
 	for key, value := range answers {
 		value = strings.TrimSpace(value)
@@ -61,10 +63,52 @@ func (p Proposal) WithAnswers(answers map[string]string) spec.AppSpec {
 				out.Build.Strategy = spec.BuildBuildpack
 			}
 		case KeyBuildStrategy, KeyBuildMethod:
-			out.Build.Strategy = spec.BuildStrategy(value)
+			// Applied by chosen() above, which swapped in that candidate's
+			// whole draft. Setting the strategy here is what used to produce a
+			// spec describing one detector's reading under another's name.
 		}
 	}
 	return out
+}
+
+// chosen returns the reading the answers select, defaulting to the winner's.
+//
+// The tie-break offers the two close candidates' own strategies (see tieBreak),
+// so an answer naming one of them means "that detector read this repository
+// correctly" — which is a different draft, not a different label on this one.
+//
+// One honest limitation: the winner's draft has been through the trial run and
+// a runner-up's has not, so adopting one gives up whatever the trial
+// discovered — a port observed rather than declared, mostly. Re-running the
+// trial here would be better and is a larger change; producing a coherent spec
+// instead of a corrupt one is the part that could not wait.
+func (p Proposal) chosen(answers map[string]string) spec.AppSpec {
+	want := spec.BuildStrategy(strings.TrimSpace(answers[KeyBuildStrategy]))
+	if want == "" {
+		want = spec.BuildStrategy(strings.TrimSpace(answers[KeyBuildMethod]))
+	}
+	if want == "" || want == p.Winner.Strategy {
+		return p.DraftSpec
+	}
+
+	for _, c := range p.RunnersUp {
+		if c.Strategy != want {
+			continue
+		}
+		// A candidate that recognized the repository and could not import it —
+		// a compose file using a construct that cannot cross the boundary
+		// (R-099) — has no workloads. Adopting it would replace a working
+		// proposal with an empty one.
+		if len(c.Draft.Workloads) == 0 {
+			return p.DraftSpec
+		}
+		return Assemble(p.DraftSpec.AppID, p.DraftSpec.Source, c.Draft)
+	}
+
+	// An answer naming something that did not bid is not a choice between
+	// readings. Ignored rather than invented: stamping it on the winner is
+	// exactly the bug this function exists to remove.
+	return p.DraftSpec
 }
 
 func withPort(s spec.AppSpec, value string) spec.AppSpec {

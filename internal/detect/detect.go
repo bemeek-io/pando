@@ -47,7 +47,16 @@ type Candidate struct {
 	Questions []Question `json:"questions,omitempty"`
 
 	// Draft is what this detector would put in the spec.
-	Draft Draft `json:"-"`
+	//
+	// Serialized, and it has to be. The auction asks which of two close
+	// readings is right (see tieBreak), and answering that means adopting the
+	// other candidate's draft — impossible if the losing drafts were discarded
+	// when the proposal was stored. They were, so the answer could do nothing
+	// but stamp the chosen strategy's *name* onto the winner's draft: choosing
+	// "compose" produced the Dockerfile detector's spec labelled
+	// `strategy: compose`, which no builder implements, and the app was refused
+	// at plan time with a message about the builder.
+	Draft Draft `json:"draft,omitempty"`
 
 	// Blocked is set when a detector recognizes the repository and cannot
 	// proceed with it — a compose file using a construct that cannot cross the

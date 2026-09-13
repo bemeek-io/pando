@@ -876,3 +876,72 @@ services:
   worker:
     build: ./worker
 `
+
+// TestR102_AnsweringTheTieBreakAdoptsThatReading asserts the answer means what
+// it says.
+//
+// The auction asks which of two close readings is right, and answering used to
+// overwrite the winning draft's strategy *name* while keeping its workloads —
+// so choosing "compose" produced the Dockerfile detector's spec labelled
+// `strategy: compose`, which no builder implements. The app was then refused at
+// plan time with a message about the builder, nowhere near the cause.
+func TestR102_AnsweringTheTieBreakAdoptsThatReading(t *testing.T) {
+	// A repository both detectors recognize: a Dockerfile at the root and a
+	// compose file naming two services.
+	src := memSource{"Dockerfile": "FROM node:22\nEXPOSE 3000\n", "compose.yaml": composeStack}
+
+	result, err := auction().Run(context.Background(), src)
+	require.NoError(t, err)
+
+	// Close enough that Pando asks rather than guesses.
+	var question bool
+	for _, q := range result.Questions {
+		if q.Key == detect.KeyBuildStrategy {
+			question = true
+		}
+	}
+	require.True(t, question, "questions: %+v", result.Questions)
+
+	proposal := detect.Proposal{
+		Winner:    result.Winner,
+		RunnersUp: result.RunnersUp,
+		DraftSpec: detect.Assemble("app_1", spec.Source{Type: spec.SourceGit}, result.Winner.Draft),
+	}
+
+	// Answering with the winner's own strategy changes nothing.
+	same := proposal.WithAnswers(map[string]string{
+		detect.KeyBuildStrategy: string(result.Winner.Strategy),
+	})
+	require.Equal(t, len(proposal.DraftSpec.Workloads), len(same.Workloads))
+
+	// Answering with the other one adopts that candidate's draft entirely —
+	// its workloads, not just its name.
+	other := result.RunnersUp[0]
+	switched := proposal.WithAnswers(map[string]string{
+		detect.KeyBuildStrategy: string(other.Strategy),
+	})
+	require.Equal(t, other.Draft.Build.Strategy, switched.Build.Strategy,
+		"the strategy is the adopted draft's own, not the answer string")
+	require.Equal(t, len(other.Draft.Workloads), len(switched.Workloads),
+		"the workloads come from the adopted reading")
+
+	// And the spec stays coherent: whatever strategy it now claims is one the
+	// adopted draft actually describes.
+	require.NotEqual(t, spec.BuildStrategy("compose"), switched.Build.Strategy,
+		"no spec claims a strategy nothing implements")
+}
+
+// An answer naming something that never bid is ignored rather than stamped on.
+func TestAnAnswerNamingNoCandidateIsIgnored(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{"Dockerfile": "FROM node:22\n"})
+	require.NoError(t, err)
+
+	proposal := detect.Proposal{
+		Winner:    result.Winner,
+		RunnersUp: result.RunnersUp,
+		DraftSpec: detect.Assemble("app_1", spec.Source{Type: spec.SourceGit}, result.Winner.Draft),
+	}
+
+	out := proposal.WithAnswers(map[string]string{detect.KeyBuildStrategy: "nonsense"})
+	require.Equal(t, result.Winner.Draft.Build.Strategy, out.Build.Strategy)
+}

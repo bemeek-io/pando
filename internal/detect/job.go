@@ -302,6 +302,15 @@ func declaredPaths(w spec.Workload) []string {
 // Origin is detected, and the revision stays 0: this is a proposal. It becomes
 // revision 1 when someone accepts it (Sequence A step 14), and not before.
 func (j *Job) assemble(appID string, src spec.Source, draft Draft) spec.AppSpec {
+	return Assemble(appID, src, draft)
+}
+
+// Assemble turns a draft into a spec that can be shown, diffed and pinned.
+//
+// A plain function because answering the tie-break needs it too: adopting the
+// other candidate's reading means assembling that candidate's draft, and doing
+// it a second way is how the two would drift.
+func Assemble(appID string, src spec.Source, draft Draft) spec.AppSpec {
 	return spec.AppSpec{
 		SchemaVersion: spec.SchemaVersion,
 		AppID:         appID,

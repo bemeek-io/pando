@@ -102,7 +102,7 @@ func (a *Adapter) Capabilities(context.Context) (api.BuilderCapabilities, error)
 		// Reported honestly so a policy floor above this excludes it (R-114).
 		IsolationClass: spec.IsolationContainer,
 
-		Strategies: []api.BuildStrategy{spec.BuildDockerfile},
+		Strategies: []api.BuildStrategy{spec.BuildDockerfile, spec.BuildStatic},
 
 		SupportsCache: true,
 
@@ -136,12 +136,6 @@ func (a *Adapter) Build(ctx context.Context, req api.BuildRequest) (api.BuildRes
 	if a.cli == nil {
 		return api.BuildResult{}, errs.New(errs.AdapterUnavailable, "The build service is not responding.")
 	}
-	if req.Strategy != spec.BuildDockerfile {
-		return api.BuildResult{}, errs.Newf(errs.PlanCapabilityUnsupported,
-			"This builder can only build from a Dockerfile.").
-			WithDetail("requested", string(req.Strategy))
-	}
-
 	dir, ok := req.Source.(interface{ Root() string })
 	if !ok {
 		return api.BuildResult{}, errs.New(errs.BuildFailed,
@@ -157,6 +151,21 @@ func (a *Adapter) Build(ctx context.Context, req api.BuildRequest) (api.BuildRes
 		dockerfile = "Dockerfile"
 	}
 	dockerfileDir := filepath.Dir(filepath.Join(contextDir, dockerfile))
+
+	// A strategy with no Dockerfile in the repository gets one written for it.
+	//
+	// The context stays the checkout; only the generated Dockerfile lives in a
+	// temporary directory, which BuildKit accepts because it takes the two as
+	// separate filesystems. So nothing is copied and the app's source is never
+	// modified.
+	if req.Strategy != spec.BuildDockerfile {
+		generated, name, genErr := synthesize(req, contextDir)
+		if genErr != nil {
+			return api.BuildResult{}, genErr
+		}
+		defer func() { _ = os.RemoveAll(generated) }()
+		dockerfileDir, dockerfile = generated, name
+	}
 
 	// R-119: a build that never finishes is a build that holds a slot forever.
 	timeout := req.Timeout

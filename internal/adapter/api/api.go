@@ -625,6 +625,13 @@ type BuildRequest struct {
 	Context    string
 	Args       map[string]string
 
+	// StaticDir is the directory to serve, for the static strategy.
+	//
+	// What "serving" means is the builder's business, not core's. Core says
+	// "this app is a directory of files"; the builder decides what image serves
+	// them (R-250, R-251). Empty means the repository root.
+	StaticDir string
+
 	IsolationFloor IsolationClass
 	Timeout        time.Duration
 	EgressMode     EgressMode

@@ -387,6 +387,7 @@ func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Ch
 		Strategy:   s.Build.Strategy,
 		Dockerfile: s.Build.Dockerfile,
 		Context:    s.Build.Context,
+		StaticDir:  s.Build.StaticDir,
 		Args:       args,
 
 		IsolationFloor: s.Build.IsolationFloor,
