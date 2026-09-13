@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
+	servicesdocker "github.com/bemeek-io/pando/internal/adapter/services/docker"
 	"github.com/bemeek-io/pando/internal/core/planner"
 	"github.com/bemeek-io/pando/internal/core/policy"
 	"github.com/bemeek-io/pando/internal/core/spec"
@@ -157,6 +158,18 @@ func registry(t *testing.T, runtime api.Adapter, routing api.Adapter, builder ap
 	if builder != nil {
 		require.NoError(t, r.Register("bld_buildkit", builder))
 	}
+	require.NoError(t, r.Register("svcs_docker", servicesdocker.New()))
+	require.NoError(t, r.SetDefault(api.CategoryServices, "svcs_docker"))
+	return r
+}
+
+// registryWithoutServices is the same install with nothing that can provision.
+func registryWithoutServices(t *testing.T) *api.Registry {
+	t.Helper()
+	r := api.NewRegistry()
+	require.NoError(t, r.Register("rt_docker", capableRuntime()))
+	require.NoError(t, r.Register("rte_loopback", capableRouting()))
+	require.NoError(t, r.Register("bld_buildkit", capableBuilder()))
 	return r
 }
 
@@ -203,6 +216,47 @@ func TestPlanSucceedsAndCreatesNothing(t *testing.T) {
 	// Env is empty at plan time: resolving it means reading secrets, which is a
 	// side effect and belongs after the plan boundary.
 	require.Empty(t, plan.Bundle.Workloads[0].Env)
+}
+
+// TestR131_ProvisioningWithNoProvisionerIsRefusedAtPlanTime asserts R-131.
+//
+// The plan boundary's whole value: an app that chose "provision one" on an
+// install with no provisioner learns so before a build runs and before the
+// running version is stopped, not after.
+func TestR131_ProvisioningWithNoProvisionerIsRefusedAtPlanTime(t *testing.T) {
+	s := plannableSpec()
+	s.Slots = []spec.Slot{{
+		Key: "DATABASE_URL", Type: spec.SlotPostgres, Required: true,
+		Resolution: &spec.Resolution{Mode: spec.ResolutionProvisioned},
+	}}
+
+	p := planner.New(registryWithoutServices(t), policy.Static(policy.Default()), fixedAllocations{})
+	_, err := p.Check(context.Background(), s)
+	require.Error(t, err)
+	require.Equal(t, errs.PlanAdapterNotConfigured, errs.CodeOf(err))
+
+	e := errs.As(err)
+	require.Contains(t, e.Message, "PostgreSQL", "the message names what is missing")
+	require.Contains(t, e.Remedy, "DATABASE_URL", "R-105: the remedy names the slot to act on")
+
+	// The same spec plans cleanly where a provisioner is configured.
+	_, err = newPlanner(t).Check(context.Background(), s)
+	require.NoError(t, err)
+}
+
+// TestR131_AnUnprovisionableTypeIsRefused asserts that Pando says so rather
+// than pretending: S3 and SMTP are slot types Pando recognises and deliberately
+// does not stand up (R-010).
+func TestR131_AnUnprovisionableTypeIsRefused(t *testing.T) {
+	s := plannableSpec()
+	s.Slots = []spec.Slot{{
+		Key: "S3_BUCKET", Type: spec.SlotS3, Required: true,
+		Resolution: &spec.Resolution{Mode: spec.ResolutionProvisioned},
+	}}
+
+	_, err := newPlanner(t).Check(context.Background(), s)
+	require.Error(t, err)
+	require.Equal(t, errs.PlanAdapterNotConfigured, errs.CodeOf(err))
 }
 
 // --- the four errors phase 3's Done when names ----------------------------

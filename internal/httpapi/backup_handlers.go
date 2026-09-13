@@ -227,6 +227,82 @@ func (s *Server) handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleRestoreAppBackup puts one app's data back (R-206, R-210).
+//
+// Distinct from restoring a DR bundle, which replaces the installation. This
+// replaces one app's data, in place, and is gated on the app rather than the
+// install: it is an app operation, so an app's owner can do it without holding
+// install.backup.manage.
+func (s *Server) handleRestoreAppBackup(w http.ResponseWriter, r *http.Request) {
+	app, ok := s.requireControl(w, r, authz.AppDeploy)
+	if !ok {
+		return
+	}
+	if s.Backups == nil || s.Backup == nil || s.BundleSource == nil {
+		Error(w, r, errs.New(errs.Internal, "Backups are not set up on this installation."))
+		return
+	}
+
+	var req struct {
+		BackupID string `json:"backup_id"`
+		Confirm  bool   `json:"confirm"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read."))
+		return
+	}
+
+	rec, found, err := s.Backups.ByID(r.Context(), req.BackupID)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	if !found {
+		Error(w, r, errs.New(errs.NotFound, "There is no backup with that ID."))
+		return
+	}
+	if rec.AppID != app.ID {
+		// R-206: in place only, matched by Pando's own identity for the app.
+		// Restoring one app's data into another is a promise Pando cannot keep
+		// — it cannot know what is inside a volume — so it is refused rather
+		// than attempted.
+		Error(w, r, errs.New(errs.ValidInvalid, "That backup belongs to a different app.").
+			WithRemedy("A backup restores only to the app it came from."))
+		return
+	}
+
+	volumes, err := s.BundleSource.VolumesForApp(r.Context(), app.ID)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	p := PrincipalFrom(r.Context())
+	s.audit(r, audit.Event{
+		PrincipalKind: audit.PrincipalKind(p.Kind), PrincipalID: p.ID, OnBehalfOf: p.UserID,
+		Action: "app.restore.start", AppID: app.ID, TargetKind: "backup", TargetID: rec.ID,
+	})
+
+	result, err := s.Backup.RestoreApp(r.Context(), backup.AppRestoreRequest{
+		AppID: app.ID, AdapterRef: rec.AdapterRef, ObjectName: rec.ObjectName,
+		Volumes: volumes, Confirm: req.Confirm,
+	})
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	s.audit(r, audit.Event{
+		PrincipalKind: audit.PrincipalKind(p.Kind), PrincipalID: p.ID, OnBehalfOf: p.UserID,
+		Action: "app.restore", AppID: app.ID, TargetKind: "backup", TargetID: rec.ID,
+		Detail: map[string]any{"volumes": result.VolumesApplied},
+	})
+	JSON(w, http.StatusOK, map[string]any{
+		"restored": true, "volumes": result.VolumesApplied,
+		"note": "Restart the app so it reads the restored data.",
+	})
+}
+
 // requireBackup resolves the backup and checks the verb.
 func (s *Server) requireBackup(w http.ResponseWriter, r *http.Request) (authz.Principal, state.Backup, bool) {
 	p, ok := s.requireInstall(w, r, authz.InstallBackupManage)

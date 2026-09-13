@@ -482,6 +482,101 @@ func (a *Apps) MarkBundleDestroyed(ctx context.Context, appID string) error {
 	return nil
 }
 
+// AppWithStorage is an app that has data worth backing up (R-210).
+type AppWithStorage struct {
+	AppID string
+	Spec  []byte
+
+	// Retain is how many daily copies to keep (R-211).
+	Retain int
+}
+
+// WithStorage lists live apps that declare volumes, for rolling backups.
+//
+// Only apps with storage. An app with none has nothing a rolling backup would
+// hold that its spec revisions do not already, and taking one anyway would fill
+// the destination with empty bundles nobody wants to page through.
+func (a *Apps) WithStorage(ctx context.Context) ([]AppWithStorage, error) {
+	rows, err := a.db.Query(ctx, `
+		SELECT a.id, r.body,
+		       coalesce((r.body->'retention'->>'backup_daily_count')::int, 0)
+		FROM apps a
+		JOIN spec_revisions r ON r.id = a.pinned_spec_id
+		WHERE a.deleted_at IS NULL
+		  AND a.state IN ('running', 'degraded')
+		  AND jsonb_array_length(coalesce(r.body->'volumes', '[]'::jsonb)) > 0
+		ORDER BY a.id`)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not list apps with storage.", err)
+	}
+	defer rows.Close()
+
+	out := make([]AppWithStorage, 0)
+	for rows.Next() {
+		var app AppWithStorage
+		if err := rows.Scan(&app.AppID, &app.Spec, &app.Retain); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not list apps with storage.", err)
+		}
+		out = append(out, app)
+	}
+	return out, rows.Err()
+}
+
+// OrphanedVolume is storage whose app is gone and whose data is in a backup.
+type OrphanedVolume struct {
+	VolumeID   string
+	AppID      string
+	AdapterRef string
+	Handle     string
+}
+
+// OrphanedVolumes lists storage that is safe to reclaim.
+//
+// Narrow on purpose. A volume qualifies only when its app is deleted *and* a
+// backup of that app exists — R-204 says volumes outlive the apps that mount
+// them, and this does not weaken that. It stops the storage outliving the last
+// thing that could ever want it, which is a different claim.
+//
+// Volumes of a deleted app with no backup are never returned. Those were
+// deleted with force, meaning somebody said the data was not worth keeping —
+// but "not worth backing up" is not "safe for a janitor to destroy later", and
+// the difference costs a few gigabytes rather than someone's data.
+func (a *Apps) OrphanedVolumes(ctx context.Context, limit int) ([]OrphanedVolume, error) {
+	rows, err := a.db.Query(ctx, `
+		SELECT v.id, v.app_id, v.adapter_ref, coalesce(v.handle, '')
+		FROM volumes v
+		JOIN apps a ON a.id = v.app_id
+		WHERE a.deleted_at IS NOT NULL
+		  AND v.handle IS NOT NULL
+		  AND EXISTS (
+		        SELECT 1 FROM backups b
+		        WHERE b.app_id = v.app_id AND b.kind = 'on_delete')
+		ORDER BY a.deleted_at
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not list orphaned storage.", err)
+	}
+	defer rows.Close()
+
+	out := make([]OrphanedVolume, 0)
+	for rows.Next() {
+		var o OrphanedVolume
+		if err := rows.Scan(&o.VolumeID, &o.AppID, &o.AdapterRef, &o.Handle); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not list orphaned storage.", err)
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// ForgetVolume removes a volume row whose storage has been destroyed.
+func (a *Apps) ForgetVolume(ctx context.Context, volumeID string) error {
+	if _, err := a.db.Exec(ctx, `DELETE FROM volumes WHERE id = $1`, volumeID); err != nil {
+		return errs.Wrap(errs.Internal, "Could not remove the storage record.", err)
+	}
+	return nil
+}
+
 // SetSource replaces an app's source.
 //
 // For `pando deploy ./`, which turns an app into one fed by uploads. Recorded

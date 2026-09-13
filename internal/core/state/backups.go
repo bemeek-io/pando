@@ -152,6 +152,21 @@ func (b *Backups) Expired(ctx context.Context, now time.Time) ([]Backup, error) 
 	return out, rows.Err()
 }
 
+// LastRolling returns when the app last had a rolling backup, or the zero time.
+func (b *Backups) LastRolling(ctx context.Context, appID string) (time.Time, error) {
+	var at *time.Time
+	err := b.db.QueryRow(ctx,
+		`SELECT max(created_at) FROM backups WHERE app_id = $1 AND kind = 'rolling'`,
+		appID).Scan(&at)
+	if err != nil {
+		return time.Time{}, errs.Wrap(errs.Internal, "Could not read the app's backups.", err)
+	}
+	if at == nil {
+		return time.Time{}, nil
+	}
+	return *at, nil
+}
+
 // Forget removes the record of a backup whose object has been deleted.
 //
 // The object goes first, then this. The other order leaves an object nothing
@@ -268,6 +283,33 @@ func (b *BundleSource) VolumesToSnapshot(ctx context.Context) ([]backup.VolumeRe
 		var v backup.VolumeRef
 		if err := rows.Scan(&v.VolumeID, &v.AdapterRef, &v.Handle); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read this installation's storage.", err)
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// ServicesToSnapshot lists every provisioned service (R-131, R-212).
+//
+// Every one, not only those the backup will call Snapshot on. The manifest
+// records both counts, and a bundle that says "5 services, 0 snapshotted"
+// because they all live in app volumes is very different from a bundle that
+// says it because the provisioner was unreachable — but only if the first
+// number is counted here rather than inferred from the second.
+func (b *BundleSource) ServicesToSnapshot(ctx context.Context) ([]backup.ServiceRef, error) {
+	rows, err := b.db.Query(ctx, `
+		SELECT id, app_id, adapter_ref, handle
+		FROM service_instances ORDER BY id`)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read this installation's provisioned services.", err)
+	}
+	defer rows.Close()
+
+	out := make([]backup.ServiceRef, 0)
+	for rows.Next() {
+		var v backup.ServiceRef
+		if err := rows.Scan(&v.ServiceID, &v.AppID, &v.AdapterRef, &v.Handle); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read this installation's provisioned services.", err)
 		}
 		out = append(out, v)
 	}

@@ -28,6 +28,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/routing/traefik"
 	dockerruntime "github.com/bemeek-io/pando/internal/adapter/runtime/docker"
 	secretslocal "github.com/bemeek-io/pando/internal/adapter/secrets/local"
+	servicesdocker "github.com/bemeek-io/pando/internal/adapter/services/docker"
 	"github.com/bemeek-io/pando/internal/cli"
 	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/console"
@@ -250,7 +251,8 @@ func serve(ctx context.Context, configPath string) error {
 		proxyUpstream = "http://pando:8080"
 	}
 	reconciles := state.NewReconciles(db)
-	deployer := deploy.NewRunner(registry, appPlanner, apps, deployments, secrets, reconciles, logStore, volumes, proxyUpstream)
+	deployer := deploy.NewRunner(registry, appPlanner, apps, deployments, secrets, reconciles, logStore, volumes, proxyUpstream).
+		WithServices(state.NewServices(db), secrets)
 
 	// Detection (Sequence A). Every detector bids; the runtime supplies the
 	// trial run (R-097), and a registry probe would supply R-094's top tier.
@@ -467,6 +469,13 @@ func serve(ctx context.Context, configPath string) error {
 		Registry: registryAdapters{registry},
 		Auditor:  reconcilerAuditor{auditor},
 		Interval: cfg.Reconciler.GCInterval,
+		Clock:    clock.System{},
+
+		// R-211's rolling backups, which had a column, a default and an expiry
+		// query and nothing that ever took one.
+		Backups:      backups,
+		Backup:       backupService,
+		BundleSource: bundleSource,
 	}).Run(loopCtx)
 
 	errCh := make(chan error, 1)
@@ -524,6 +533,8 @@ func registerAdapters(ctx context.Context, store *state.Adapters, notifications 
 			adapter = buildkitadapter.New()
 		case c.Category == string(adapterapi.CategoryBackup) && c.Kind == backuplocal.Kind:
 			adapter = backuplocal.New()
+		case c.Category == string(adapterapi.CategoryServices) && c.Kind == servicesdocker.Kind:
+			adapter = servicesdocker.New()
 		case c.Category == string(adapterapi.CategoryRouting) && c.Kind == traefik.Kind:
 			adapter = traefik.New()
 		case c.Category == string(adapterapi.CategoryNotify) && c.Kind == notifyconsole.Kind:
@@ -596,6 +607,12 @@ func seedDefaultAdapters(ctx context.Context, store *state.Adapters) error {
 		// backups testable, not the one an operator should keep.
 		{ID: "bkp_local", Category: string(adapterapi.CategoryBackup), Kind: backuplocal.Kind,
 			Name: "Local disk", IsDefault: true, Enabled: true},
+
+		// Provisioned slots, the hobbyist default in R-131. A Postgres, MySQL
+		// or Redis stood up inside the app's own bundle, reachable from
+		// nowhere else (R-134).
+		{ID: "svcs_docker", Category: string(adapterapi.CategoryServices), Kind: servicesdocker.Kind,
+			Name: "Inside the app", IsDefault: true, Enabled: true},
 
 		// Console-only notifications (R-231). Nothing is sent anywhere; a
 		// message waits in Pando for the next time the recipient looks.

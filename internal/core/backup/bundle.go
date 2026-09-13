@@ -65,6 +65,15 @@ const (
 	AdaptersName  = "adapters.json"
 	PolicyName    = "policy.json"
 	VolumesPrefix = "volumes/"
+
+	// ServicesPrefix holds provisioned services whose data is not in an app
+	// volume (R-212).
+	//
+	// Empty for every install running only the in-bundle provisioner, whose
+	// databases live in app volumes and are already under volumes/. It exists
+	// for the adapter that provisions somewhere Pando can only reach over the
+	// wire, where Snapshot is the only way the data gets into the bundle.
+	ServicesPrefix = "services/"
 )
 
 // Writer assembles a bundle.

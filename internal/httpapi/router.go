@@ -346,6 +346,11 @@ func (s *Server) Routes() http.Handler {
 				r.Get("/volumes", s.handleListVolumes)
 				r.Post("/volumes", s.handleCreateVolume)
 
+				// Restoring one app's data, in place (R-206). Gated on the app
+				// rather than the install: it is an app operation, so an
+				// owner can do it without install.backup.manage.
+				r.Post("/restore", s.handleRestoreAppBackup)
+
 				r.Get("/export", s.handleExportSpec)
 
 				// `pando deploy ./` — a gzipped tar becomes the app's source

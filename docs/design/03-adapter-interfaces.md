@@ -435,6 +435,7 @@ Fills provisioned slots (R-131).
 ```go
 type ServicesAdapter interface {
     Adapter
+    Capabilities() ServicesCapabilities
     Supports() []SlotType
     Provision(ctx context.Context, req ProvisionRequest) (ProvisionResult, error)
     Destroy(ctx context.Context, h ServiceHandle) error
@@ -442,14 +443,68 @@ type ServicesAdapter interface {
     Restore(ctx context.Context, h ServiceHandle, src io.Reader) error
 }
 
+type ServicesCapabilities struct {
+    DataInAppVolumes bool  // the data is in volumes Pando already backs up
+}
+
+type ProvisionRequest struct {
+    AppID, BundleID, SlotKey string
+    Type      SlotType
+    ServiceID string        // minted by core, so Provision is idempotent
+    ExistingSecret secret.Value // the DSN a previous Provision returned, if any
+}
+
 type ProvisionResult struct {
     Handle      ServiceHandle
     ConnectionSecret secret.Value  // the URL/DSN, stored as a secret (R-131 literal note)
     Workloads   []WorkloadPlan     // injected into the bundle, never exposed (R-026)
+    Volumes     []VolumePlan       // the workloads' storage, owned by the app
 }
 ```
 
 **[D]** A provisioned service returns workloads that join the app's private bundle. It is not exposed, not addressable from outside, and not shareable with another app (R-134).
+
+**[P]** `ProvisionResult.Volumes` — added in phase 9. A database workload with nowhere to put its files
+loses everything on the next deploy, and R-135 says a provisioned service's data follows the app's
+volume rules, which it can only do if it is in a Pando volume. The volumes are the app's: recorded
+after Apply, carried in the DR bundle, offered at delete, reclaimed once backed up. None of that
+machinery knows services exist.
+
+**[P]** `ProvisionRequest.ServiceID` and `ExistingSecret` — added in phase 9 because **Provision runs on
+every deploy**, not only the first: the workloads it returns *are* the service, so a redeploy that
+skipped it would produce a bundle with no database in it and the runtime would converge to that.
+Running every time means every run after the first must produce the same names and the same
+credentials. A database sets its password when its data directory is created and ignores the variable
+forever after, so an adapter generating a fresh one each call would hand the app a password the
+database has never heard of — a deploy that succeeds and an app that cannot authenticate, with the
+symptom nowhere near the cause.
+
+**[P]** `Capabilities().DataInAppVolumes` — how the DR path knows whether to call `Snapshot` (R-212).
+True for the in-bundle provisioner: its data is under `volumes/` in the bundle already, and calling
+`Snapshot` would put the same bytes in twice. False for an adapter that provisions somewhere Pando can
+only reach over the wire, where `Snapshot` is the only way the data arrives. The bundle manifest counts
+both `services` and `services_snapshotted`, so "5 services, 0 snapshotted" is legible rather than
+alarming. Data and not a type assertion, per R-254.
+
+### 7.1 The in-bundle provisioner
+
+**[P]** `internal/adapter/services/docker` fills `postgres`, `mysql` and `redis` and talks to no daemon.
+It *plans* a service; the runtime adapter runs it. Two properties follow, and both are the point: the
+service is reachable only on the app's private network because that is the only network its workloads
+join and nothing publishes a port (R-134), and its data is an ordinary app volume (R-135).
+
+**[P]** Images default to `postgres:17-alpine`, `mysql:8.4`, `redis:7-alpine`, overridable per install
+through the adapter's config. Pinned by tag and not digest, carrying the same known weakness as the
+runtime's BusyBox helper.
+
+**[P]** `s3` and `smtp` are slot types Pando recognises (R-130) and deliberately does not provision:
+standing up MinIO or an SMTP server is running infrastructure, which R-010 says Pando is not. The
+planner refuses a `provisioned` resolution for them by name, at plan time.
+
+**[P]** `Destroy` is a no-op and `Snapshot`/`Restore` return an error rather than an empty archive. The
+workloads go with the bundle and the volume follows R-204 and R-135 — it outlives the app on purpose
+and is reclaimed once it is backed up. An empty archive would look like a service with no data, which
+is a thing an operator discovers at restore time.
 
 ---
 

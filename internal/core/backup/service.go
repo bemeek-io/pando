@@ -62,6 +62,18 @@ type StateSource interface {
 
 	// VolumesToSnapshot lists every live volume with the runtime that holds it.
 	VolumesToSnapshot(ctx context.Context) ([]VolumeRef, error)
+
+	// ServicesToSnapshot lists every provisioned service with the adapter that
+	// holds it (R-131).
+	ServicesToSnapshot(ctx context.Context) ([]ServiceRef, error)
+}
+
+// ServiceRef names one provisioned service and the adapter that owns it.
+type ServiceRef struct {
+	ServiceID  string
+	AppID      string
+	AdapterRef string
+	Handle     string
 }
 
 // VolumeRef names one volume and the adapter that can snapshot it.
@@ -223,6 +235,17 @@ func (s *Service) assemble(ctx context.Context, w io.Writer) (Manifest, error) {
 		}
 	}
 
+	// Provisioned services (R-212).
+	//
+	// This was the last thing a bundle promised and did not contain. A restore
+	// used to bring back every app, every secret and every volume, and then the
+	// app's own database — the one Pando stood up for it — would come back
+	// empty, because nothing ever asked the services adapter for it.
+	services, captured, err := s.addServices(ctx, b)
+	if err != nil {
+		return Manifest{}, err
+	}
+
 	counts, err := s.State.Counts(ctx)
 	if err != nil {
 		return Manifest{}, err
@@ -231,8 +254,80 @@ func (s *Service) assemble(ctx context.Context, w io.Writer) (Manifest, error) {
 		b.Count(object, n)
 	}
 	b.Count("volumes", len(volumes))
+	b.Count("services", services)
+
+	// Counted separately from services, and both go in the manifest, because
+	// "5 services, 0 snapshotted" is the state an operator needs to be able to
+	// read off a bundle: it is correct for the in-bundle provisioner, whose
+	// data is under volumes/, and a disaster for anything else.
+	b.Count("services_snapshotted", captured)
 
 	return b.Finish()
+}
+
+// addServices snapshots provisioned services whose data is not already in an
+// app volume, and returns how many services there were and how many were
+// captured here.
+func (s *Service) addServices(ctx context.Context, b *Writer) (total, captured int, err error) {
+	if s.State == nil {
+		return 0, 0, nil
+	}
+	services, err := s.State.ServicesToSnapshot(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	for _, sv := range services {
+		total++
+
+		adapter, ok := s.Registry.Services(sv.AdapterRef)
+		if !ok {
+			return 0, 0, errs.Newf(errs.AdapterFailed,
+				"The provisioner holding %s is not configured, so its data cannot be backed up.", sv.ServiceID).
+				WithRemedy("Configure that provisioner, or delete the app that uses it, then back up again.")
+		}
+
+		// The capability, not a type assertion (R-254). An adapter whose data
+		// is in app volumes has already had it backed up by the loop above;
+		// calling Snapshot would copy the same bytes into the bundle twice, and
+		// double the size of the one file an operator has to store offsite.
+		if adapter.Capabilities().DataInAppVolumes {
+			continue
+		}
+
+		if err := s.addServiceSnapshot(ctx, b, adapter, sv); err != nil {
+			return 0, 0, err
+		}
+		captured++
+	}
+	return total, captured, nil
+}
+
+// addServiceSnapshot stages one service's snapshot and adds it to the bundle.
+//
+// Staged for the same reason volumes are: tar needs a size in the header and a
+// database dump streams.
+func (s *Service) addServiceSnapshot(ctx context.Context, b *Writer, adapter api.ServicesAdapter, sv ServiceRef) error {
+	staged, err := os.CreateTemp(s.WorkDir, "pando-svc-*.dump")
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Pando could not stage the service's data.", err)
+	}
+	defer func() {
+		_ = staged.Close()
+		_ = os.Remove(staged.Name())
+	}()
+
+	if err := adapter.Snapshot(ctx, api.ServiceHandle{ServiceID: sv.ServiceID, Handle: sv.Handle}, staged); err != nil {
+		return err
+	}
+	info, err := staged.Stat()
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Pando could not stage the service's data.", err)
+	}
+	if _, err := staged.Seek(0, io.SeekStart); err != nil {
+		return errs.Wrap(errs.Internal, "Pando could not stage the service's data.", err)
+	}
+	return b.Add(ServicesPrefix+sv.ServiceID+".dump", info.Size(), staged)
 }
 
 // addVolume snapshots one volume through its runtime adapter.
@@ -356,6 +451,24 @@ func (s *Service) Verify(ctx context.Context, adapterRef, objectName string, pas
 		return Verified{}, verifyErr
 	}
 	return v, nil
+}
+
+// Discard removes a stored bundle, for retention (R-211).
+//
+// Refused when the destination owns retention or holds the object immutably:
+// deleting what the store has already locked fails every time, and the failure
+// looks like a Pando bug rather than the policy it is.
+func (s *Service) Discard(ctx context.Context, adapterRef, objectName string) error {
+	dest, _, err := s.destination(adapterRef)
+	if err != nil {
+		return err
+	}
+
+	caps := dest.Capabilities()
+	if caps.OwnsRetention || caps.Immutable {
+		return nil
+	}
+	return dest.Delete(ctx, objectName)
 }
 
 // ensureWorkDir creates the staging directory.

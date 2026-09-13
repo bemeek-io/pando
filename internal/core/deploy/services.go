@@ -1,0 +1,147 @@
+package deploy
+
+import (
+	"context"
+	"fmt"
+	"io"
+
+	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/bemeek-io/pando/internal/core/state"
+	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/bemeek-io/pando/internal/secret"
+)
+
+// ServiceSecretPrefix namespaces the connection strings Pando generates.
+//
+// A prefix rather than the bare slot key so a provisioned DATABASE_URL cannot
+// collide with a secret someone set by hand under the same name — and so that
+// looking at an app's secrets makes it obvious which ones Pando owns and will
+// overwrite.
+const ServiceSecretPrefix = "pando.service."
+
+// provisioned is what a deploy needs to add to the bundle for one app's
+// provisioned slots.
+type provisioned struct {
+	workloads []api.WorkloadPlan
+	volumes   []api.VolumePlan
+
+	// connections is the DSN per slot key, for resolveEnv.
+	connections map[string]secret.Value
+
+	// names is the workload name per slot key, so the app's own workloads can
+	// be ordered after the services they depend on.
+	names map[string]string
+}
+
+// provision fills every provisioned slot in the spec (R-131).
+//
+// Runs on every deploy, not only the first, because the workloads it returns
+// are the service. Skipping it on a redeploy would produce a bundle without the
+// database in it, and the runtime would dutifully converge to that.
+//
+// The database row is what makes this idempotent rather than the adapter: the
+// row holds the service ID and the secret key, and the stored connection string
+// carries the credentials the data on disk was created with.
+func (r *Runner) provision(ctx context.Context, s *spec.AppSpec, sink io.Writer) (provisioned, error) {
+	out := provisioned{
+		connections: map[string]secret.Value{},
+		names:       map[string]string{},
+	}
+	if r.services == nil {
+		return out, nil
+	}
+
+	for _, slot := range s.Slots {
+		if slot.Resolution == nil || slot.Resolution.Mode != spec.ResolutionProvisioned {
+			continue
+		}
+
+		adapter, ref, ok := r.registry.ServicesFor(slot.Type)
+		if !ok {
+			return provisioned{}, errs.Newf(errs.PlanAdapterNotConfigured,
+				"Nothing on this installation can provision a %s for %s.", slot.Type.DisplayName(), slot.Key).
+				WithDetail("slot_key", slot.Key).
+				WithRemedy("Connect this slot to an instance you already run, or paste a connection string.")
+		}
+
+		existing, found, err := r.services.Get(ctx, s.AppID, slot.Key)
+		if err != nil {
+			return provisioned{}, err
+		}
+
+		serviceID := existing.ID
+		secretKey := existing.SecretKey
+		var prior secret.Value
+		if found {
+			// Reading the stored DSN is what lets the adapter return the same
+			// credentials it returned the first time.
+			prior, err = r.secretStore.Get(ctx, s.AppID, secretKey)
+			if err != nil {
+				return provisioned{}, err
+			}
+		} else {
+			serviceID = r.services.NewID()
+			secretKey = ServiceSecretPrefix + slot.Key
+			fmt.Fprintf(sink, "=> Provisioning a %s for %s\n", slot.Type.DisplayName(), slot.Key)
+		}
+
+		res, err := adapter.Provision(ctx, api.ProvisionRequest{
+			AppID: s.AppID, BundleID: s.AppID, SlotKey: slot.Key,
+			Type: slot.Type, ServiceID: serviceID, ExistingSecret: prior,
+		})
+		if err != nil {
+			return provisioned{}, err
+		}
+
+		// Store before recording the row. A secret with no row is an unused
+		// value; a row with no secret is an app that cannot start and whose
+		// password is gone.
+		if !found {
+			if err := r.secretStore.Put(ctx, s.AppID, secretKey, res.ConnectionSecret); err != nil {
+				return provisioned{}, err
+			}
+			if err := r.services.Record(ctx, state.ServiceInstance{
+				ID: serviceID, AppID: s.AppID, SlotKey: slot.Key, SlotType: slot.Type,
+				AdapterRef: ref, Handle: res.Handle.Handle, SecretKey: secretKey,
+			}); err != nil {
+				return provisioned{}, err
+			}
+		}
+
+		out.workloads = append(out.workloads, res.Workloads...)
+		out.volumes = append(out.volumes, res.Volumes...)
+		out.connections[slot.Key] = res.ConnectionSecret
+		if len(res.Workloads) > 0 {
+			out.names[slot.Key] = res.Workloads[0].Name
+		}
+	}
+	return out, nil
+}
+
+// dependsOn is every provisioned workload an app workload should start after.
+//
+// Start order, not readiness — Docker's depends_on does not wait for a health
+// check and neither does this. What actually covers the race is the restart
+// policy: an app that exits because Postgres was still running initdb comes
+// back a second later and connects. Ordering removes the common case; the
+// restart policy removes the rest.
+func (p provisioned) dependsOn(s *spec.AppSpec, w spec.Workload) []string {
+	if len(p.names) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range w.Env {
+		if e.SlotRef == nil {
+			continue
+		}
+		name, ok := p.names[*e.SlotRef]
+		if !ok || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out
+}

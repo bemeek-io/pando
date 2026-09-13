@@ -34,7 +34,10 @@
 - [ ] **Restoring** a per-app backup. Creation works and the bundle holds everything a restore needs —
       spec and volume data — but nothing reads it back yet. R-206 says in-place only, matched by
       Pando's own identity for the app, and that matching is the work
-- [ ] Provisioned services in the bundle (R-212). Volumes are in; services are not
+- [x] Provisioned services in the bundle (R-212). The in-bundle provisioner's data is under
+      `volumes/` because a provisioned service's storage is an ordinary app volume (R-135); anything
+      provisioned out of reach is snapshotted through the adapter into `services/`. The manifest
+      counts both, so an operator can tell the two cases apart
 - [ ] **A deleted app's Docker volume is never reclaimed.** With `backup=true` the data is safely in
       a bundle and the row is removed, but the volume itself stays on disk with nothing referencing
       it. Leaving data is the safe direction and disk is the lesser evil, so this is recorded rather

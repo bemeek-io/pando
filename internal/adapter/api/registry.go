@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+
+	"github.com/bemeek-io/pando/internal/core/spec"
 )
 
 // Registry holds configured adapter instances.
@@ -181,6 +183,42 @@ func (r *Registry) Secrets(ref string) (SecretsAdapter, bool) {
 	}
 	s, ok := a.(SecretsAdapter)
 	return s, ok
+}
+
+// Services returns a services adapter by reference (R-131).
+func (r *Registry) Services(ref string) (ServicesAdapter, bool) {
+	a, ok := r.Get(ref)
+	if !ok {
+		return nil, false
+	}
+	s, ok := a.(ServicesAdapter)
+	return s, ok
+}
+
+// ServicesFor returns the configured services adapter that can fill a slot of
+// this type, preferring the category default.
+//
+// Type-directed rather than ref-directed because a slot says what it needs, not
+// who should supply it: an app declaring REDIS_URL has no opinion about which
+// adapter stands a Redis up, and asking the user to pick one would be asking
+// them to answer a question they cannot have information about.
+func (r *Registry) ServicesFor(t spec.SlotType) (ServicesAdapter, string, bool) {
+	refs := r.ByCategory(CategoryServices)
+	if def, ok := r.Default(CategoryServices); ok {
+		refs = append([]string{def}, refs...)
+	}
+	for _, ref := range refs {
+		sa, ok := r.Services(ref)
+		if !ok {
+			continue
+		}
+		for _, supported := range sa.Supports() {
+			if supported == t {
+				return sa, ref, true
+			}
+		}
+	}
+	return nil, "", false
 }
 
 // Backup returns a backup adapter by reference (R-217).

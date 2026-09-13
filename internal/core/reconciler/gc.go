@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/clock"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
 )
@@ -32,6 +33,16 @@ type GC struct {
 	// Auditor records teardowns. Destroying a bundle is destruction, and
 	// R-227's rule does not have an exception for the janitor.
 	Auditor Auditor
+
+	// Backups, Backup and BundleSource drive R-211's rolling backups and their
+	// expiry. Nil disables both rather than failing: an install with no backup
+	// destination configured has nowhere to put one.
+	Backups      *state.Backups
+	Backup       BackupRunner
+	BundleSource *state.BundleSource
+
+	// Clock is here so retention is testable without waiting a day.
+	Clock clock.Clock
 
 	// Interval overrides GCInterval. Zero means the default.
 	//
@@ -97,6 +108,8 @@ func (g *GC) Collect(ctx context.Context) {
 	}
 
 	g.tearDownDeletedBundles(ctx)
+	g.runBackups(ctx)
+	g.reclaimOrphanedVolumes(ctx)
 }
 
 // tearDownDeletedBundles destroys the bundles of apps that have been deleted.
@@ -155,6 +168,56 @@ func (g *GC) tearDownDeletedBundles(ctx context.Context) {
 				Action: "app.bundle.destroy",
 				AppID:  t.AppID,
 				Detail: map[string]any{"runtime": t.RuntimeRef, "kept_volumes": true},
+			})
+		}
+	}
+}
+
+// reclaimOrphanedVolumes destroys the runtime volumes of deleted apps whose
+// data is already safe in a backup.
+//
+// The gap this closes: deleting an app with backup=true copies its data into a
+// bundle and removes the volume *rows*, and the volume itself stayed on disk
+// forever with nothing referencing it. Leaving data was the safe direction
+// while there was any doubt; once a backup holds it there is none.
+//
+// Deliberately narrow. A volume is only destroyed when the app that owned it is
+// deleted AND a backup of that app exists — R-204 says volumes outlive apps,
+// and this does not weaken that, it just stops the storage outliving the last
+// thing that could ever want it.
+func (g *GC) reclaimOrphanedVolumes(ctx context.Context) {
+	if g.Backups == nil || g.Registry == nil {
+		return
+	}
+
+	orphans, err := g.Apps.OrphanedVolumes(ctx, TeardownBatch)
+	if err != nil {
+		g.Logger.Warn("could not list orphaned storage", zap.Error(err))
+		return
+	}
+
+	for _, o := range orphans {
+		rt, ok := g.Registry.Runtime(o.AdapterRef)
+		if !ok {
+			continue
+		}
+		if err := rt.DestroyVolume(ctx, api.VolumeHandle{VolumeID: o.VolumeID, Handle: o.Handle}); err != nil {
+			g.Logger.Warn("could not remove orphaned storage",
+				zap.String("volume_id", o.VolumeID), zap.Error(err))
+			continue
+		}
+		if err := g.Apps.ForgetVolume(ctx, o.VolumeID); err != nil {
+			g.Logger.Warn("removed orphaned storage but could not record it",
+				zap.String("volume_id", o.VolumeID), zap.Error(err))
+			continue
+		}
+
+		g.Logger.Info("removed storage whose app was deleted and backed up",
+			zap.String("volume_id", o.VolumeID), zap.String("app_id", o.AppID))
+		if g.Auditor != nil {
+			_ = g.Auditor.Write(ctx, AuditEvent{
+				Action: "volume.destroy", AppID: o.AppID,
+				Detail: map[string]any{"volume_id": o.VolumeID, "backed_up": true},
 			})
 		}
 	}

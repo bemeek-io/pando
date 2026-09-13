@@ -709,11 +709,30 @@ type StoredRef struct {
 // ServicesAdapter fills provisioned slots (R-131).
 type ServicesAdapter interface {
 	Adapter
+	Capabilities() ServicesCapabilities
 	Supports() []spec.SlotType
 	Provision(ctx context.Context, req ProvisionRequest) (ProvisionResult, error)
 	Destroy(ctx context.Context, h ServiceHandle) error
 	Snapshot(ctx context.Context, h ServiceHandle, dst io.Writer) error
 	Restore(ctx context.Context, h ServiceHandle, src io.Reader) error
+}
+
+// ServicesCapabilities is what a services adapter can do, as data (R-254).
+type ServicesCapabilities struct {
+	// DataInAppVolumes says the service's data lives in volumes returned from
+	// Provision, which Pando owns and already backs up.
+	//
+	// This is the difference between a service that runs inside the app's
+	// bundle and one that lives somewhere Pando can only reach over the wire.
+	// It decides how a DR bundle captures the service (R-212): a true here
+	// means the volume snapshots already contain it and calling Snapshot would
+	// copy the same bytes twice; a false means Snapshot is the only way to get
+	// the data, and a bundle taken without calling it silently omits every
+	// provisioned database in the install.
+	//
+	// Data, not a type assertion, so the backup path can state in its manifest
+	// which services it captured and how.
+	DataInAppVolumes bool
 }
 
 // ProvisionRequest asks for a service instance.
@@ -722,6 +741,28 @@ type ProvisionRequest struct {
 	BundleID string
 	SlotKey  string
 	Type     spec.SlotType
+
+	// ServiceID is Pando's identifier for this instance, minted by core before
+	// the adapter is called.
+	//
+	// Supplied rather than returned so provisioning is idempotent: a deploy
+	// that fails after the adapter answered and before core stored the row can
+	// call again with the same ID and get the same names back, instead of
+	// leaving an orphaned database nobody references.
+	ServiceID string
+
+	// ExistingSecret is the connection string a previous Provision returned for
+	// this same service, empty the first time.
+	//
+	// Every deploy calls Provision, because the workloads it returns are what
+	// keeps the service running. So every deploy after the first must produce
+	// the *same* credentials: a database sets its password once, when its data
+	// directory is created, and ignores the variable forever after. An adapter
+	// that generated a fresh password on each call would hand the app a
+	// password the database has never heard of, and the symptom — an app that
+	// deployed successfully and cannot authenticate — points nowhere near the
+	// cause.
+	ExistingSecret secret.Value
 }
 
 // ServiceHandle is the adapter's own identifier for a provisioned service.
@@ -741,6 +782,15 @@ type ProvisionResult struct {
 	// exposed, not addressable from outside, and not shareable with another app
 	// (R-134) — sharing is two apps binding to one external target.
 	Workloads []WorkloadPlan
+
+	// Volumes the workloads mount. [P], added because a database workload with
+	// nowhere to put its files is a database that loses everything on the next
+	// deploy, and because R-135 says a provisioned service's data follows the
+	// app's volume rules — which it can only do if it is in a Pando volume.
+	//
+	// The volumes are the app's, recorded and backed up like any other. That
+	// is what makes R-135 true rather than aspirational.
+	Volumes []VolumePlan
 }
 
 // --- notification ----------------------------------------------------------

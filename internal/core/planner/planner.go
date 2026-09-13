@@ -107,7 +107,7 @@ func (p *Planner) Check(ctx context.Context, s *spec.AppSpec) (*Plan, error) {
 	plan.Checks["isolation"] = "ok"
 
 	// 6. Every required slot resolved (R-132).
-	if err := checkSlots(s); err != nil {
+	if err := p.checkSlots(s); err != nil {
 		return nil, err
 	}
 	plan.Checks["slots"] = "ok"
@@ -333,7 +333,7 @@ func (p *Planner) checkIsolation(ctx context.Context, s *spec.AppSpec, runtimeCa
 // Details name every unfilled slot, not just the first: someone filling slots
 // one deploy attempt at a time is the experience this requirement exists to
 // prevent.
-func checkSlots(s *spec.AppSpec) error {
+func (p *Planner) checkSlots(s *spec.AppSpec) error {
 	var unfilled []map[string]string
 	var firstDisplay string
 	for _, slot := range s.Slots {
@@ -348,7 +348,14 @@ func checkSlots(s *spec.AppSpec) error {
 		}
 	}
 	if len(unfilled) == 0 {
-		return nil
+		// A slot chosen as "provision one" with nothing on this install that
+		// can provision it is refused here, not at deploy.
+		//
+		// This is the plan boundary doing its job: the alternative is a deploy
+		// that builds an image, stops the running app and then discovers there
+		// is no Postgres provisioner — a plan-time answer costs nothing and a
+		// deploy-time one costs the app's uptime (R-132).
+		return p.checkProvisionable(s)
 	}
 
 	message := fmt.Sprintf("This app needs a %s, and one hasn't been chosen yet.", firstDisplay)
@@ -363,6 +370,32 @@ func checkSlots(s *spec.AppSpec) error {
 	return errs.New(errs.PlanSlotUnfilled, message).
 		WithRemedy(remedy).
 		WithDetail("slots", unfilled)
+}
+
+// checkProvisionable refuses a provisioned slot no configured adapter can fill.
+func (p *Planner) checkProvisionable(s *spec.AppSpec) error {
+	var unsupported []map[string]string
+	for _, slot := range s.Slots {
+		if slot.Resolution == nil || slot.Resolution.Mode != spec.ResolutionProvisioned {
+			continue
+		}
+		if _, _, ok := p.registry.ServicesFor(slot.Type); !ok {
+			unsupported = append(unsupported, map[string]string{
+				"key": slot.Key, "type": string(slot.Type),
+			})
+		}
+	}
+	if len(unsupported) == 0 {
+		return nil
+	}
+
+	first := spec.SlotType(unsupported[0]["type"])
+	return errs.Newf(errs.PlanAdapterNotConfigured,
+		"Nothing on this installation can provision a %s.", first.DisplayName()).
+		WithRemedy(fmt.Sprintf(
+			"Connect %s to an instance you already run, or paste a connection string.",
+			unsupported[0]["key"])).
+		WithDetail("slots", unsupported)
 }
 
 // checkCapacity implements R-242.

@@ -61,6 +61,16 @@ type Runner struct {
 	// data it is responsible for.
 	volumes *state.Volumes
 
+	// services records which provisioned instance fills which slot (R-131).
+	services *state.Services
+
+	// secretStore stores the connection strings provisioning generates.
+	//
+	// Separate from the secrets field above, which is the narrow read-side
+	// interface a deploy needs. Provisioning writes, and writing a secret is
+	// not something every Runner caller should be able to hand in a stub for.
+	secretStore *state.Secrets
+
 	// ProxyUpstream is where routing adapters must send traffic (R-023). It is
 	// Pando's proxy, always, and it is passed to every Ensure so that no adapter
 	// has to work it out.
@@ -100,6 +110,17 @@ func NewRunner(registry *api.Registry, p *planner.Planner, apps *state.Apps, dep
 		secrets: secrets, reconciles: reconciles, logs: logs, volumes: volumes,
 		ProxyUpstream: proxyUpstream,
 	}
+}
+
+// WithServices enables provisioned slots (R-131).
+//
+// Optional rather than a constructor argument because a Runner without it is
+// still correct: an app with no provisioned slot never notices, and one with a
+// provisioned slot is refused at plan time rather than deployed half-wired.
+func (r *Runner) WithServices(services *state.Services, secrets *state.Secrets) *Runner {
+	r.services = services
+	r.secretStore = secrets
+	return r
 }
 
 // Run executes a deployment to completion.
@@ -194,7 +215,15 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 		return fail("secrets", err)
 	}
 
-	bundle, err := r.bundlePlan(appSpec, image, secrets)
+	// Provisioned slots become real workloads here (R-131). After secrets, so a
+	// redeploy can reuse the credentials the database was created with, and
+	// before the bundle plan, because the services are part of it.
+	svcs, err := r.provision(ctx, appSpec, sink)
+	if err != nil {
+		return fail("apply", err)
+	}
+
+	bundle, err := r.bundlePlan(appSpec, image, secrets, svcs)
 	if err != nil {
 		return fail("apply", err)
 	}
@@ -395,14 +424,14 @@ func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Ch
 // mounts, volumes — and must never be a reason to decrypt a secret, so this
 // stops short of environment and R-193's fingerprint covers the rest.
 func BundlePlanShape(s *spec.AppSpec, image string) (api.BundlePlan, error) {
-	return bundlePlanFor(s, image, nil, false)
+	return bundlePlanFor(s, image, nil, provisioned{}, false)
 }
 
-func (r *Runner) bundlePlan(s *spec.AppSpec, image string, secrets map[string]secret.Value) (api.BundlePlan, error) {
-	return bundlePlanFor(s, image, secrets, true)
+func (r *Runner) bundlePlan(s *spec.AppSpec, image string, secrets map[string]secret.Value, svcs provisioned) (api.BundlePlan, error) {
+	return bundlePlanFor(s, image, secrets, svcs, true)
 }
 
-func bundlePlanFor(s *spec.AppSpec, image string, secrets map[string]secret.Value, withEnv bool) (api.BundlePlan, error) {
+func bundlePlanFor(s *spec.AppSpec, image string, secrets map[string]secret.Value, svcs provisioned, withEnv bool) (api.BundlePlan, error) {
 	plan := api.BundlePlan{
 		BundleID: s.AppID,
 		Network: api.NetworkPlan{
@@ -416,11 +445,15 @@ func bundlePlanFor(s *spec.AppSpec, image string, secrets map[string]secret.Valu
 	for _, v := range s.Volumes {
 		plan.Volumes = append(plan.Volumes, api.VolumePlan{VolumeID: v.ID, Name: v.Name})
 	}
+	// A provisioned service's storage is an ordinary app volume, which is what
+	// makes R-135 true: it is recorded, backed up, offered at delete and
+	// reclaimed afterwards by code that knows nothing about services.
+	plan.Volumes = append(plan.Volumes, svcs.volumes...)
 
 	for _, w := range s.Workloads {
 		var env map[string]secret.Value
 		if withEnv {
-			resolved, err := resolveEnv(s, w, secrets)
+			resolved, err := resolveEnv(s, w, secrets, svcs)
 			if err != nil {
 				return api.BundlePlan{}, err
 			}
@@ -437,7 +470,7 @@ func bundlePlanFor(s *spec.AppSpec, image string, secrets map[string]secret.Valu
 			Entrypoint: w.Entrypoint,
 			WorkingDir: w.WorkingDir,
 			Env:        env,
-			DependsOn:  w.DependsOn,
+			DependsOn:  append(append([]string(nil), w.DependsOn...), svcs.dependsOn(s, w)...),
 			Exposed:    w.Exposed,
 			Resources: api.ResourcePlan{
 				CPUMillis:   s.Resources.CPUMillis,
@@ -458,6 +491,26 @@ func bundlePlanFor(s *spec.AppSpec, image string, secrets map[string]secret.Valu
 		}
 		plan.Workloads = append(plan.Workloads, wp)
 	}
+
+	// Appended, not interleaved: the runtime orders by DependsOn, and the app's
+	// workloads name the services they need.
+	//
+	// The caps come from the app, not the adapter. R-222 says every workload is
+	// capped, and a provisioned Postgres is a workload — one that will happily
+	// log every connection and every checkpoint onto a disk shared with twenty
+	// other apps. An adapter cannot know the app's limits and should not be
+	// asked to; the app's own allocation is the honest answer, and it is the
+	// same one a second workload declared in the spec already gets.
+	for _, w := range svcs.workloads {
+		w.LogBytes = s.Retention.LogBytes
+		if w.Resources == (api.ResourcePlan{}) {
+			w.Resources = api.ResourcePlan{
+				CPUMillis:   s.Resources.CPUMillis,
+				MemoryBytes: s.Resources.MemoryBytes,
+			}
+		}
+		plan.Workloads = append(plan.Workloads, w)
+	}
 	return plan, nil
 }
 
@@ -466,7 +519,7 @@ func bundlePlanFor(s *spec.AppSpec, image string, secrets map[string]secret.Valu
 // A reference that cannot be resolved is an error rather than an empty string:
 // starting an app with a blank database password because a secret was missing is
 // the kind of failure that looks like it worked.
-func resolveEnv(s *spec.AppSpec, w spec.Workload, secrets map[string]secret.Value) (map[string]secret.Value, error) {
+func resolveEnv(s *spec.AppSpec, w spec.Workload, secrets map[string]secret.Value, svcs provisioned) (map[string]secret.Value, error) {
 	env := make(map[string]secret.Value, len(w.Env))
 
 	for _, e := range w.Env {
@@ -502,9 +555,21 @@ func resolveEnv(s *spec.AppSpec, w spec.Workload, secrets map[string]secret.Valu
 						WithDetail("slot_key", slot.Key)
 				}
 				env[e.Key] = v
+			case spec.ResolutionProvisioned:
+				v, ok := svcs.connections[slot.Key]
+				if !ok {
+					// Reachable only if provisioning was skipped, which means
+					// the workload is about to start with no database and no
+					// message saying why.
+					return nil, errs.Newf(errs.PlanSlotUnfilled,
+						"%s comes from a service Pando has not provisioned yet.", e.Key).
+						WithDetail("slot_key", slot.Key).
+						WithRemedy("Deploy again, or connect this slot to an instance you already run.")
+				}
+				env[e.Key] = v
 			default:
 				return nil, errs.Newf(errs.PlanSlotUnfilled,
-					"%s comes from a service Pando has not provisioned yet.", e.Key).
+					"%s comes from a slot Pando cannot fill.", e.Key).
 					WithDetail("slot_key", slot.Key)
 			}
 		}
@@ -670,10 +735,13 @@ func (r *Runner) recordVolumes(ctx context.Context, runtime api.RuntimeAdapter, 
 		handles[v.VolumeID] = v.Handle
 	}
 
-	records := make([]state.VolumeRecord, 0, len(s.Volumes))
-	for _, v := range s.Volumes {
+	// The plan's volumes, not the spec's: a provisioned service's storage is in
+	// the plan and nowhere in the spec, and a database volume Pando does not
+	// record is a database that is never backed up (R-135).
+	records := make([]state.VolumeRecord, 0, len(bundle.Volumes))
+	for _, v := range bundle.Volumes {
 		records = append(records, state.VolumeRecord{
-			VolumeID: v.ID, Name: v.Name, Handle: handles[v.ID],
+			VolumeID: v.VolumeID, Name: v.Name, Handle: handles[v.VolumeID],
 		})
 	}
 	return r.volumes.RecordFromRuntime(ctx, s.AppID, s.Runtime.AdapterRef, records)
