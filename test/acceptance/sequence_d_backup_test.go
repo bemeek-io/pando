@@ -426,3 +426,147 @@ func TestR030_AnAppsStorageIsRecordedWhenItDeploys(t *testing.T) {
 	}
 	require.True(t, hasVolume, "and the volume's data must actually be in the bundle")
 }
+
+// TestR206_AnAppIsRestoredFromItsOwnBackup asserts R-206.
+//
+// The half of backup that is actually reached for. R-210 says the scope of a
+// per-app backup is "recover from a recent mistake", and a copy nobody can put
+// back is not a recovery path — it is a file. This restores one app's data in
+// place, without touching anything else on the install.
+func TestR206_AnAppIsRestoredFromItsOwnBackup(t *testing.T) {
+	admin := login(t)
+	app := deployedAppWithStorage(t, admin, "restore-app-"+stamp())
+
+	// Something to lose, then a copy of it.
+	writeInto(t, app, "/data/keep.txt", "before")
+
+	body, status := admin.do(t, http.MethodPost, "/backups",
+		fmt.Sprintf(`{"kind":"rolling","app_id":%q}`, app))
+	require.Equal(t, http.StatusCreated, status, body)
+
+	var made map[string]any
+	require.NoError(t, json.Unmarshal([]byte(body), &made))
+	backupID := made["id"].(string)
+
+	// The mistake.
+	writeInto(t, app, "/data/keep.txt", "after the mistake")
+
+	// Restoring replaces data, so it is confirmed. A restore that happens
+	// because a request arrived is a restore that happens by accident.
+	body, status = admin.do(t, http.MethodPost, "/apps/"+app+"/restore",
+		fmt.Sprintf(`{"backup_id":%q}`, backupID))
+	require.GreaterOrEqual(t, status, 400, "restoring without confirming must be refused: %s", body)
+
+	body, status = admin.do(t, http.MethodPost, "/apps/"+app+"/restore",
+		fmt.Sprintf(`{"backup_id":%q,"confirm":true}`, backupID))
+	require.Equal(t, http.StatusOK, status, body)
+
+	require.Equal(t, "before", strings.TrimSpace(readFrom(t, app, "/data/keep.txt")),
+		"the app's data was not put back")
+}
+
+// A backup restores only to the app it came from.
+//
+// The alternative is one mistyped identifier overwriting a different app's
+// database with this one's, which is the most destructive single request the
+// API could accept.
+func TestR206_ABackupRestoresOnlyToItsOwnApp(t *testing.T) {
+	admin := login(t)
+
+	source := deployedAppWithStorage(t, admin, "restore-src-"+stamp())
+	other := deployedAppWithStorage(t, admin, "restore-other-"+stamp())
+
+	body, status := admin.do(t, http.MethodPost, "/backups",
+		fmt.Sprintf(`{"kind":"rolling","app_id":%q}`, source))
+	require.Equal(t, http.StatusCreated, status, body)
+
+	var made map[string]any
+	require.NoError(t, json.Unmarshal([]byte(body), &made))
+
+	body, status = admin.do(t, http.MethodPost, "/apps/"+other+"/restore",
+		fmt.Sprintf(`{"backup_id":%q,"confirm":true}`, made["id"].(string)))
+	require.GreaterOrEqual(t, status, 400,
+		"a backup must not restore into a different app: %s", body)
+}
+
+// TestR216_ABackupIsVerifiableBeforeItIsNeeded asserts R-216.
+//
+// A backup nobody has checked is a backup nobody knows they have. Verification
+// touches nothing, which is the property that makes it a separate call rather
+// than a flag on restore — a flag is a thing somebody passes wrongly, and the
+// wrong value here overwrites an install.
+func TestR216_ABackupIsVerifiableBeforeItIsNeeded(t *testing.T) {
+	admin := login(t)
+	app := deployedAppWithStorage(t, admin, "verify-"+stamp())
+	writeInto(t, app, "/data/keep.txt", "intact")
+
+	body, status := admin.do(t, http.MethodPost, "/backups",
+		fmt.Sprintf(`{"kind":"rolling","app_id":%q}`, app))
+	require.Equal(t, http.StatusCreated, status, body)
+
+	var made map[string]any
+	require.NoError(t, json.Unmarshal([]byte(body), &made))
+
+	body, status = admin.do(t, http.MethodPost, "/backups/"+made["id"].(string)+"/verify", `{}`)
+	require.Equal(t, http.StatusOK, status, body)
+
+	// And the app is untouched by having been checked.
+	require.Equal(t, "intact", strings.TrimSpace(readFrom(t, app, "/data/keep.txt")))
+}
+
+// TestR217_TheBackupDestinationIsAnAdapter asserts R-217.
+//
+// Backup is the eighth adapter category, not a hard-coded directory. The
+// evidence is that it is configured like every other category and reports its
+// own retention ownership — which is what decides whether Pando prunes or the
+// store does.
+func TestR217_TheBackupDestinationIsAnAdapter(t *testing.T) {
+	admin := login(t)
+
+	raw := admin.get(t, "/adapters")
+	list, _ := raw["adapters"].([]any)
+	require.NotEmpty(t, list)
+
+	found := false
+	for _, a := range list {
+		row, ok := a.(map[string]any)
+		if ok && row["category"] == "backup" {
+			found = true
+		}
+	}
+	require.True(t, found, "the backup destination is configured as an adapter like any other")
+}
+
+// TestR211_AnAppsRetentionIsCarriedOnItsBackups asserts R-211.
+//
+// "Seven retained" has to mean seven. Retention is recorded on the row at the
+// moment the copy is taken, because a count evaluated later against a policy
+// that has since changed prunes a different set than the one anybody chose.
+func TestR211_AnAppsRetentionIsCarriedOnItsBackups(t *testing.T) {
+	admin := login(t)
+	app := deployedAppWithStorage(t, admin, "rolling-"+stamp())
+
+	body, status := admin.do(t, http.MethodPost, "/backups",
+		fmt.Sprintf(`{"kind":"rolling","app_id":%q,"retain_days":7}`, app))
+	require.Equal(t, http.StatusCreated, status, body)
+
+	var made map[string]any
+	require.NoError(t, json.Unmarshal([]byte(body), &made))
+	require.Equal(t, "rolling", made["kind"])
+	require.NotNil(t, made["retain_until"],
+		"a rolling backup ages out; that is what distinguishes it from the copy kept at delete")
+}
+
+// writeInto puts a file inside a running app, through Docker.
+//
+// A test probe rather than a second client: the assertion is about bytes on a
+// volume, and routing it through /exec would be testing the websocket.
+func writeInto(t *testing.T, appID, path, content string) {
+	t.Helper()
+	inApp(t, appID, "web", "sh", "-c", fmt.Sprintf("printf %%s %q > %s", content, path))
+}
+
+func readFrom(t *testing.T, appID, path string) string {
+	t.Helper()
+	return inApp(t, appID, "web", "cat", path)
+}

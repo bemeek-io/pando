@@ -27,7 +27,18 @@ import (
 // Resolution comes first so a caller without access cannot tell a missing app
 // from one they may not see — both return the same not-found.
 func (s *Server) requireControl(w http.ResponseWriter, r *http.Request, verb authz.Verb) (state.App, bool) {
-	appID := chi.URLParam(r, "appID")
+	return s.requireControlOn(w, r, chi.URLParam(r, "appID"), verb)
+}
+
+// requireControlOn is requireControl for an app named in the body rather than
+// the path.
+//
+// One endpoint takes it that way — POST /backups with kind "rolling", where the
+// app is a field because design 04 puts both backup kinds on one route. Sharing
+// the check rather than writing a second one is the point: this is where the
+// not-found-rather-than-forbidden rule lives, and a second copy would be the
+// one that eventually forgets it.
+func (s *Server) requireControlOn(w http.ResponseWriter, r *http.Request, appID string, verb authz.Verb) (state.App, bool) {
 	if !id.Is(id.App, appID) {
 		Error(w, r, errs.New(errs.NotFound, "There is no app with that ID."))
 		return state.App{}, false

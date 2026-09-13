@@ -494,8 +494,15 @@ service is reachable only on the app's private network because that is the only 
 join and nothing publishes a port (R-134), and its data is an ordinary app volume (R-135).
 
 **[P]** Images default to `postgres:17-alpine`, `mysql:8.4`, `redis:7-alpine`, overridable per install
-through the adapter's config. Pinned by tag and not digest, carrying the same known weakness as the
-runtime's BusyBox helper.
+through the adapter's config. Alpine variants because a hobbyist's host is the target and a 400MB
+Postgres image on a two-core VPS is a cost with nothing to show for it.
+
+**[P] Every image Pando supplies itself is pinned by tag, not digest** — these three and the runtime
+adapter's `busybox:stable` volume helper. This is a real weakness and worth naming rather than
+leaving in a code comment: the bytes behind a tag can change, and the BusyBox one is pulled at
+*restore* time, which means it can change between the backup and the disaster. A digest belongs in all
+four places once there is a way to update them — a pinned digest with no update path is an image that
+never gets a security fix, which is the failure this trades against.
 
 **[P]** `s3` and `smtp` are slot types Pando recognises (R-130) and deliberately does not provision:
 standing up MinIO or an SMTP server is running infrastructure, which R-010 says Pando is not. The

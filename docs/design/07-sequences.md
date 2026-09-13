@@ -165,6 +165,20 @@ Admin → POST /api/v1/backups { kind: "dr_bundle", passphrase }
 
 **[D]** The passphrase is never persisted. If the operator loses it the bundle is unusable (R-214) — an accepted cost, and the console must say so at creation, not in documentation.
 
+**[P] Sixteen characters, and that is the only rule.** Longer than a password's minimum (ten, §06)
+because the threat is different in both directions: a password is rate-limited by a server that can
+lock an account, and a passphrase protects a file an attacker holds and can grind offline at whatever
+rate their hardware allows. No composition rules in either place — a class requirement pushes people
+toward `Passw0rd!`, which is shorter in real entropy than four words, and the KDF is what actually
+buys the margin here (argon2id, 256MiB, which is the number to raise if the margin needs raising).
+
+**[P] Step 5 asks the adapter whether it needs asking.** A services adapter reports
+`DataInAppVolumes` (§03 7): true means its data is in app volumes and step 5's volume snapshot already
+holds it, so calling `Snapshot` would put the same bytes in twice and double the size of the one file
+an operator has to store offsite. The manifest counts `services` and `services_snapshotted`
+separately, so "5 services, 0 snapshotted" reads as the in-bundle provisioner working rather than as
+five databases silently missing.
+
 ### Restore
 
 ```

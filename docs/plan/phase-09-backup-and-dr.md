@@ -23,25 +23,31 @@
       ships, anything else is an ordinary adapter
 - [x] Console screen, with R-214 stated in the dialog above the passphrase field — not a tooltip,
       not documentation
-- [ ] Rolling backups per app, retained per `Retention.BackupDaily` (R-211). The schema, the
-      retention column and the `Expired` query are here; nothing schedules them yet, so every backup
-      today is taken by hand
+- [x] Rolling backups per app, retained per `Retention.BackupDaily` (R-211). The reconciler's GC pass
+      takes one per app per day and prunes what has expired; `POST /backups` with kind `rolling` takes
+      the same object on demand, so "restore from this morning's" and "restore from the one I took
+      before the migration" are one path and not two. An app with no volumes is refused rather than
+      backed up empty — a bundle that restores nothing is worse than a refusal, because it is a
+      recovery somebody believes in
 - [x] On-delete backups (R-204, R-205). Deleting an app with storage takes a final backup, kept
       until explicitly discarded. A failed backup refuses the delete and says how to proceed anyway.
       Encrypted under the install's own secrets key rather than a passphrase — R-213 governs the DR
       bundle and its reasoning (a fresh machine cannot unwrap the dead machine's keys) does not apply
       to an in-place app restore (R-206)
-- [ ] **Restoring** a per-app backup. Creation works and the bundle holds everything a restore needs —
-      spec and volume data — but nothing reads it back yet. R-206 says in-place only, matched by
-      Pando's own identity for the app, and that matching is the work
+- [x] **Restoring** a per-app backup (R-206). In place, confirmed, and only into the app the backup
+      came from — a mistyped identifier overwriting a different app's database with this one's is the
+      most destructive single request the API could accept. Gated on `app.deploy`, the same verb as
+      taking the copy, because an owner who may do the destructive half should not need an
+      administrator for the safe one
 - [x] Provisioned services in the bundle (R-212). The in-bundle provisioner's data is under
       `volumes/` because a provisioned service's storage is an ordinary app volume (R-135); anything
       provisioned out of reach is snapshotted through the adapter into `services/`. The manifest
       counts both, so an operator can tell the two cases apart
-- [ ] **A deleted app's Docker volume is never reclaimed.** With `backup=true` the data is safely in
-      a bundle and the row is removed, but the volume itself stays on disk with nothing referencing
-      it. Leaving data is the safe direction and disk is the lesser evil, so this is recorded rather
-      than guessed at — but it is a leak, and it is the same shape as the bundle-teardown one
+- [x] **A deleted app's Docker volume is reclaimed**, and only once its data is in a backup. R-204
+      says volumes outlive apps and this does not weaken that — it stops the storage outliving the
+      last thing that could ever want it. A force-deleted app's volume is never touched: "not worth
+      backing up" is not "safe for a janitor to destroy later", and the difference costs gigabytes
+      rather than someone's data
 - [x] Aggregate disk budget for logs (R-224, O-16) — enforced at plan time against the sum of
       committed caps rather than measured usage. Backups are not yet counted against it
 

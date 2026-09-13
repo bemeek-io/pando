@@ -238,12 +238,31 @@ GET  /api/v1/audit                        filterable; install.audit.read
 GET  /api/v1/roles                        install-scoped roles (R-082); install.view
 GET  /api/v1/backups
 POST /api/v1/backups                      trigger; kind = rolling | dr_bundle
+POST /api/v1/apps/{id}/restore            put one app's data back (R-206); app.deploy
 POST /api/v1/backups/{id}:verify          R-216
 POST /api/v1/backups/{id}:restore         verifies first (R-215)
 GET  /api/v1/.well-known/jwks.json        assertion keys (R-057)
 ```
 
 **[D]** `GET /adapters` returns live capabilities, not stored config, so the console can grey out routing modes an adapter doesn't support instead of offering choices that fail at plan time.
+
+**[D]** The two backup kinds are **two objects on one route, authorized differently**, and the
+difference is scope rather than size. `dr_bundle` is the whole installation, needs
+`install.backup.manage`, and is encrypted under a passphrase Pando never stores (R-213). `rolling` is
+one app's data, names that app in `app_id`, and needs `app.deploy` **on that app** — the same verb as
+restoring it, because taking a copy and putting it back are two halves of one operation and an owner
+who may do the destructive half should not need an administrator for the safe one. An administrator
+holds no `app.*` verb (R-087), so this is not the install verb with a filter; it is a different
+question.
+
+**[P]** A rolling backup is encrypted under the install's own secrets key, not a typed passphrase.
+R-213 governs the bundle that has to survive the machine; applying it here would mean an app backup
+nobody schedules, and R-210's scope — "recover from a recent mistake" — is served by a copy that
+exists, on a host whose key the attacker would already have if they had the copy.
+
+**[P]** A rolling backup of an app with no volumes is **refused**, not taken empty. An app with no
+storage has nothing a copy would hold that its spec revisions do not, and a bundle that restores
+nothing is worse than a refusal: it is a recovery somebody believes in (R-105).
 
 **[D]** Policy is read with `install.view` and written with `install.policy.manage`. Seeing the rules
 you work under is not the same privilege as changing them — the same split as `app.secrets.read` and
@@ -285,6 +304,12 @@ a borrowed one could lock the owner out of their own account. It is self-only an
 changing your own password is not administration, and changing somebody else's is a *reset* — a
 different action with different consequences, which does not exist yet and must not arrive by
 relaxing this route.
+
+**[P] Ten characters, and that is the only rule.** No composition classes: a class requirement pushes
+people toward `Passw0rd!`, which has less real entropy than three words and is the password the rule
+reliably produces. Ten rather than a DR bundle's sixteen (§07) because the threats differ — a password
+is guessed against a server that rate-limits and can lock the account, and a passphrase protects a
+file an attacker already holds and can grind offline as fast as their hardware allows.
 
 **[D]** Success clears `must_change_password` and revokes the caller's **other** sessions. The
 current one survives, because being signed out by your own password change teaches people that

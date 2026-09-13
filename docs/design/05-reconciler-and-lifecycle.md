@@ -215,6 +215,12 @@ it. Instead Pando **warns at startup** when the cap is below `MinProductionCap`,
 testing setting — an install retrying a broken app every second forever is a real way to melt a host,
 and this is exactly the kind of line that gets copied out of a test compose file into a real one.
 
+**[P]** `MinProductionCap` is **30 seconds**, compared against the last step of the schedule. Not the
+shipped 5-minute cap: an install that has deliberately tuned backoff down to a minute is making a
+reasonable choice and should not be warned at every start, and a warning that fires on reasonable
+settings is a warning people learn to scroll past. Thirty seconds is where the schedule stops being a
+tuning choice and starts being a load generator.
+
 **[D]** Counter resets when the app reaches `running` with health passing. A flapping app that recovers between failures still accumulates toward the threshold, which is correct — flapping is a failure mode.
 
 **[D] The window is measured from the last failure, not the first.** Measured from the first, the

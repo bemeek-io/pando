@@ -41,6 +41,19 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 }
 
 type createBackupRequest struct {
+	// Kind is "dr_bundle" (the default) or "rolling" (design 04 §2.8).
+	//
+	// Two very different objects behind one endpoint, and the difference is
+	// scope, not size: a DR bundle is the whole installation and is encrypted
+	// under a passphrase Pando never keeps (R-213), while a rolling backup is
+	// one app's data and is encrypted under the install's own secrets key.
+	// R-213 governs the bundle that has to survive the machine; an app backup
+	// that needed a typed passphrase would be an app backup nobody schedules.
+	Kind string `json:"kind"`
+
+	// AppID is required for a rolling backup and meaningless for a DR bundle.
+	AppID string `json:"app_id"`
+
 	// Passphrase is never stored (R-213). Losing it makes the bundle unusable
 	// (R-214) — the console says so at the point of creation, which is the only
 	// place saying it does any good.
@@ -59,10 +72,6 @@ type createBackupRequest struct {
 // request, which is the right cost for this — nobody takes a DR bundle in a
 // loop.
 func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireInstall(w, r, authz.InstallBackupManage)
-	if !ok {
-		return
-	}
 	if s.Backups == nil || s.Backup == nil {
 		Error(w, r, errs.New(errs.Internal, "Backups are not set up on this installation."))
 		return
@@ -71,6 +80,28 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 	var req createBackupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read."))
+		return
+	}
+
+	// A rolling backup is one app's data and is authorized on that app.
+	//
+	// The same verb as restoring it: taking a copy and putting it back are two
+	// halves of one operation, and an owner who may do the destructive half
+	// should not need an administrator for the safe one. An administrator holds
+	// no app verb (R-087), so this is not install.backup.manage with a filter —
+	// it is a different question.
+	if req.Kind == "rolling" {
+		s.createRollingBackup(w, r, req)
+		return
+	}
+
+	p, ok := s.requireInstall(w, r, authz.InstallBackupManage)
+	if !ok {
+		return
+	}
+	if req.Kind != "" && req.Kind != "dr_bundle" {
+		Error(w, r, errs.Newf(errs.ValidInvalid, "There is no backup kind called %q.", req.Kind).
+			WithRemedy(`Use "dr_bundle" for the whole installation, or "rolling" for one app's data.`))
 		return
 	}
 	if len(req.Passphrase) < minPassphraseLength {
@@ -115,6 +146,98 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 			"size_bytes":  created.SizeBytes,
 			"counts":      created.Manifest.Counts,
 		},
+	})
+	JSON(w, http.StatusCreated, rec)
+}
+
+// createRollingBackup takes one app's data, on demand (R-206, R-210).
+//
+// The same object the reconciler takes on a schedule (R-211), so "restore from
+// this morning's" and "restore from the one I took before the migration" are
+// the same path and not two. A recovery path that only exists on a schedule is
+// one nobody can reach at the moment they need it.
+func (s *Server) createRollingBackup(w http.ResponseWriter, r *http.Request, req createBackupRequest) {
+	if req.AppID == "" {
+		Error(w, r, errs.New(errs.ValidInvalid, "A rolling backup needs to know which app it is for.").
+			WithRemedy(`Send app_id, or use kind "dr_bundle" to back up the whole installation.`))
+		return
+	}
+
+	app, ok := s.requireControlOn(w, r, req.AppID, authz.AppDeploy)
+	if !ok {
+		return
+	}
+	if s.BundleSource == nil || s.Apps == nil {
+		Error(w, r, errs.New(errs.Internal, "Backups are not set up on this installation."))
+		return
+	}
+
+	if app.PinnedSpecID == "" {
+		Error(w, r, errs.New(errs.StateInvalid, "This app has never been deployed, so there is nothing to back up.").
+			WithRemedy("Deploy it first."))
+		return
+	}
+	rev, found, err := s.Apps.RevisionByID(r.Context(), app.PinnedSpecID)
+	if err != nil || !found {
+		Error(w, r, orNotFound(err))
+		return
+	}
+
+	// The spec as stored, not as re-marshalled. The bundle keeps the exact
+	// bytes the app was deployed from, so a restore has the configuration and
+	// not Pando's later idea of it.
+	appSpec, err := json.Marshal(rev.Body)
+	if err != nil {
+		Error(w, r, errs.Wrap(errs.Internal, "Could not read this app's configuration.", err))
+		return
+	}
+
+	volumes, err := s.BundleSource.VolumesForApp(r.Context(), app.ID)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	if len(volumes) == 0 {
+		// Not an empty backup. An app with no storage has nothing a copy would
+		// hold that its spec revisions do not, and a bundle that restores
+		// nothing is worse than a refusal: it is a recovery somebody believes
+		// in (R-105).
+		Error(w, r, errs.New(errs.StateInvalid, "This app keeps no data, so there is nothing to back up.").
+			WithRemedy("Its configuration is already kept in full, and every deploy can be rolled back to an earlier revision."))
+		return
+	}
+
+	p := PrincipalFrom(r.Context())
+	id := s.Backups.NewID()
+	created, err := s.Backup.CreateForApp(r.Context(), id, backup.AppCreateRequest{
+		AppID: app.ID, Kind: "rolling", Spec: appSpec, Volumes: volumes,
+		DestinationRef: req.DestinationRef,
+		RetainFor:      time.Duration(req.RetainDays) * 24 * time.Hour,
+	})
+	if err != nil {
+		s.audit(r, audit.Event{
+			PrincipalKind: audit.PrincipalKind(p.Kind), PrincipalID: p.ID, OnBehalfOf: p.UserID,
+			Action: "backup.failed", AppID: app.ID, TargetKind: "backup", TargetID: id,
+		})
+		Error(w, r, err)
+		return
+	}
+
+	rec := state.Backup{
+		ID: id, AppID: app.ID, Kind: "rolling",
+		AdapterRef: created.AdapterRef, ObjectName: created.ObjectName,
+		SizeBytes: created.SizeBytes, Manifest: created.Manifest,
+		RetainUntil: created.RetainUntil, CreatedBy: p.ID,
+	}
+	if err := s.Backups.Record(r.Context(), rec); err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	s.audit(r, audit.Event{
+		PrincipalKind: audit.PrincipalKind(p.Kind), PrincipalID: p.ID, OnBehalfOf: p.UserID,
+		Action: "backup.create", AppID: app.ID, TargetKind: "backup", TargetID: id,
+		Detail: map[string]any{"kind": "rolling", "destination": created.AdapterRef, "size_bytes": created.SizeBytes},
 	})
 	JSON(w, http.StatusCreated, rec)
 }
