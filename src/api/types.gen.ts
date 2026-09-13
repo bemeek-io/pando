@@ -63,7 +63,6 @@ export interface GrantRow {
   principal_id?: string;
   role_id?: string;
   principal_name?: string;
-  role_name?: string;
 }
 
 export interface User {

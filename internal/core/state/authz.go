@@ -271,6 +271,25 @@ type GrantRow struct {
 	PrincipalKind string `json:"principal_kind"`
 	PrincipalID   string `json:"principal_id,omitempty"`
 	RoleID        string `json:"role_id,omitempty"`
+
+	// PrincipalName is who the principal is, for a screen a person reads.
+	//
+	// Carried here rather than joined by the caller because the caller cannot.
+	// This list is read with app.view, and resolving a name from /users needs
+	// install.view — so an app's owner, who is the person this screen exists
+	// for, would be refused the second request and left looking at identifiers.
+	// The API is the product (R-261); a surface that cannot render a name
+	// without a permission it has no business holding is an API gap.
+	//
+	// Empty for an anonymous grant, which is not a person and is rendered as a
+	// sentence rather than a name (R-077).
+	PrincipalName string `json:"principal_name,omitempty"`
+
+	// RoleName is what the role is called, for the same reason as above:
+	// resolving one from /roles needs install.view, which the app owner reading
+	// this screen does not hold. Empty on a data-plane grant, which carries no
+	// role at all (R-070).
+	RoleName string `json:"role_name,omitempty"`
 }
 
 // Create adds a grant.
@@ -474,9 +493,23 @@ func (g *Grants) InstallRoles(ctx context.Context) ([]authz.Role, error) {
 
 // ListForApp returns an app's grants.
 func (g *Grants) ListForApp(ctx context.Context, appID string) ([]GrantRow, error) {
+	// The name comes from the same query, for both principal kinds a grant can
+	// name. A user's display name falls back to the username it signs in with,
+	// because a local account created without one would otherwise render blank
+	// — worse than an identifier, since there is nothing to recognise at all.
 	rows, err := g.db.Query(ctx, `
-		SELECT id, app_id, plane, principal_kind, coalesce(principal_id, ''), coalesce(role_id, '')
-		FROM grants WHERE app_id = $1 ORDER BY plane, principal_kind`, appID)
+		SELECT g.id, g.app_id, g.plane, g.principal_kind,
+		       coalesce(g.principal_id, ''), coalesce(g.role_id, ''),
+		       coalesce(nullif(u.display_name, ''), u.external_id, gr.name, ''),
+		       coalesce(r.name, '')
+		FROM grants g
+		LEFT JOIN users u
+		       ON g.principal_kind = 'user' AND u.id = g.principal_id
+		LEFT JOIN groups gr
+		       ON g.principal_kind = 'group' AND gr.id = g.principal_id
+		LEFT JOIN roles r ON r.id = g.role_id
+		WHERE g.app_id = $1
+		ORDER BY g.plane, g.principal_kind`, appID)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not read who this app is shared with.", err)
 	}
@@ -485,7 +518,8 @@ func (g *Grants) ListForApp(ctx context.Context, appID string) ([]GrantRow, erro
 	out := make([]GrantRow, 0)
 	for rows.Next() {
 		var row GrantRow
-		if err := rows.Scan(&row.ID, &row.AppID, &row.Plane, &row.PrincipalKind, &row.PrincipalID, &row.RoleID); err != nil {
+		if err := rows.Scan(&row.ID, &row.AppID, &row.Plane, &row.PrincipalKind,
+			&row.PrincipalID, &row.RoleID, &row.PrincipalName, &row.RoleName); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read who this app is shared with.", err)
 		}
 		out = append(out, row)

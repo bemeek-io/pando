@@ -245,7 +245,12 @@ function AppScreen({ appID, onBack }: { appID: string; onBack: () => void }) {
         { value: 'terminal', label: 'Terminal' },
         { value: 'detection', label: 'Configuration' },
       ]
-    : [{ value: 'detection', label: 'Set up' }];
+    : // One name, both states. It used to read "Set up" before a spec was
+      // pinned and "Configuration" after, and somebody who finished setup went
+      // looking for the tab they had just been using and concluded it had
+      // disappeared. The design system's rule — an action keeps its name
+      // through the whole flow — applies to the place you do it as well.
+      [{ value: 'detection', label: 'Configuration' }];
 
   return (
     <div style={{ maxWidth: 'var(--console-max)' }}>

@@ -61,7 +61,11 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: 'var(--console-max)' }}>
       <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-        <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Who can open this app</h4>
+        {/* Both planes are in this table, so the heading cannot claim only one
+            of them. "Who can open this app" over a row that says `owner` reads
+            as a mistake — and the R-070/071 distinction is the thing this
+            screen exists to make visible, not to paper over. */}
+        <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Who has access</h4>
         <Table
           columns={[
             { key: 'who', header: 'Who', width: 'minmax(0,2fr)', render: who },
@@ -96,12 +100,24 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
           They&rsquo;ll see {appName} the next time they sign in. Pando doesn&rsquo;t send them a
           message.
         </p>
-        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-end' }}>
+        {/* The select used to be sized with `width: var(--space-9)` — a spacing
+            token used as a width, and far narrower than its longest option. The
+            label overflowed and the button sat on top of it. It is sized from
+            its content now, and the row wraps instead of overlapping when there
+            is not enough of it. */}
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 'var(--space-3)',
+            alignItems: 'flex-end',
+          }}
+        >
           <Input
             label="Email address"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            style={{ flex: 1 }}
+            style={{ flex: '2 1 24ch' }}
           />
           <Select
             label="What they can do"
@@ -113,7 +129,7 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
             ]}
             value={role}
             onChange={(e) => setRole(e.target.value)}
-            style={{ width: 'var(--space-9)' }}
+            style={{ flex: '1 1 28ch' }}
           />
           <Button
             onClick={() => share.mutate({ email, role })}
@@ -199,14 +215,28 @@ function who(row: GrantRow): React.ReactNode {
   if (row.principal_kind === 'anonymous') {
     return <span>Anyone on the internet, without signing in</span>;
   }
-  return <span>{row.principal_id}</span>;
+  // The name the server resolved, falling back to the identifier only when
+  // there is genuinely nothing else — a principal deleted since the grant was
+  // made. Showing `usr_01M2DW05…` to somebody deciding who may open their app
+  // asks them to recognise a ULID, which nobody can do.
+  return <span>{row.principal_name || row.principal_id}</span>;
 }
 
 function access(row: GrantRow): React.ReactNode {
   // Two planes, and the difference matters to the person reading it: a data
   // grant opens the app, a control grant administers it (R-070, R-071).
   if (row.plane === 'data') return <span>Can open it</span>;
-  return <Tag>{row.role_id || 'control'}</Tag>;
+
+  // The role's name, not its identifier. `role_owner` in a table somebody reads
+  // to decide who may administer their app is the same mistake as showing them
+  // a ULID for the person.
+  return <Tag>{sentence(row.role_name || row.role_id || 'control')}</Tag>;
+}
+
+/** Role names are stored lowercase; the design system sets everything in
+ *  sentence case. */
+function sentence(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function Failure({ error }: { error: unknown }) {
