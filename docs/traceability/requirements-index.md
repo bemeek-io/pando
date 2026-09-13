@@ -9,10 +9,10 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 
 | | Count | Of total |
 |---|---:|---:|
-| Requirements | 210 | — |
-| Specified in a design doc | 156 | 74% |
+| Requirements | 211 | — |
+| Specified in a design doc | 156 | 73% |
 | Assigned to a phase | 125 | 59% |
-| Covered by a named test | 88 | 41% |
+| Covered by a named test | 89 | 42% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -88,6 +88,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-085** | D | Host policy may disable exec install-wide. | 6.4 Verbs and roles | 00, 03, 04, 06 | — | `TestR085_HostPolicyCanDisableExecInstallWide` |
 | **R-086** | D | Exec is the highest-privilege action in the system. | 6.4 Verbs and roles | 03, 04 | 08 | `TestR086_AnAbandonedSessionIsStillRecorded`, `TestR086_ExecCarriesTheTerminalBothWays`, `TestR086_ExecOpensATerminalInTheRunningWorkload`, `TestR086_ExecRecordsTheCommandAndNotTheStream` |
 | **R-087** | D | Pando does not claim to defend against its own host operator. | 6.4 Verbs and roles | 04, 06 | 01, 05 | — |
+| **R-088** | D | An installation cannot be left with nobody who can administer it. | 6.4 Verbs and roles | — | — | `TestR088_TheLastAdministratorCannotBeRevoked` |
 | **R-090** | D | The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting… | 7.1 Input | — | — | — |
 | **R-091** | D LATER | Private repos are in scope, supporting the credential mechanisms GitHub offers (PAT, GitHub… | 7.1 Input | 01 | — | — |
 | **R-092** | D | Source allowlist. | 7.1 Input | 00, 04, 05, 07 | 06 | `TestR092_BlockedSourceFailsBeforeAnythingElse` |
@@ -252,6 +253,7 @@ Check each against the categories above before treating it as a gap.
 - **R-043** (5.1 Adapter model) — Additional identity adapters: GitHub OAuth, generic OIDC, SAML.
 - **R-045** (5.1 Adapter model) — Multiple identity adapters may be configured simultaneously.
 - **R-050** (5.3 Sessions and revocation) — For adapters that cannot push revocation, Pando falls back to expiry at next token refresh.
+- **R-088** (6.4 Verbs and roles) — An installation cannot be left with nobody who can administer it.
 - **R-090** (7.1 Input) — The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting…
 - **R-106** (7.3 When detection cannot decide) — AI assistance is optional supporting functionality, never required.
 - **R-110** (8. Build) — Builds never run on the host (R-024).

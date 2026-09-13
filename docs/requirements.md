@@ -276,6 +276,8 @@ administrator holds a grant on it like anyone else (R-087).
 
 **R-087 [D]** Pando does not claim to defend against its own host operator. A host admin has root and can reach any container outside Pando entirely. What Pando guarantees is that the **supported path** requires a grant — so unauthorized access requires deliberately leaving the tool, which is a materially different thing to detect and audit.
 
+**R-088 [D]** **An installation cannot be left with nobody who can administer it.** Removing the last install-wide grant holding `install.users.manage` is refused, and the message names the way out: make someone else an administrator first. The rule is stated in terms of the verb rather than the built-in role, because a custom role (R-082) holding it is just as much an administrator. Recovery from the state this prevents requires shell access to the host and `pando admin`, which is a different and much higher bar than the one click that would otherwise reach it.
+
 ---
 
 ## 7. Onboarding an App

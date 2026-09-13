@@ -239,13 +239,13 @@ func TestR080_InstallGrantsAreNeverReturnedByAnAppLookup(t *testing.T) {
 	require.Empty(t, verbs)
 }
 
-// TestR265_TheLastAdministratorCannotBeRevoked asserts R-265.
+// TestR088_TheLastAdministratorCannotBeRevoked asserts R-088.
 //
 // An installation with nobody who can manage accounts cannot be repaired
 // through the API — the only way back is `pando admin` against the database,
 // which requires shell access to the host. The refusal is at the store, below
 // every surface, so the console, the CLI and the API all inherit it.
-func TestR265_TheLastAdministratorCannotBeRevoked(t *testing.T) {
+func TestR088_TheLastAdministratorCannotBeRevoked(t *testing.T) {
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")

@@ -392,7 +392,7 @@ func (g *Grants) GrantInstall(ctx context.Context, kind, principalID, roleID, cr
 
 // RevokeInstall removes a principal's installation-wide grant.
 //
-// Refuses to remove the last account that can manage accounts. Without that
+// Refuses to remove the last account that can manage accounts (R-088). Without that
 // check the install becomes unadministrable in one click and the only way back
 // is a psql prompt — which is the same lockout O-17 allowed by accident, now
 // reachable on purpose. The check and the delete share a transaction, so two
