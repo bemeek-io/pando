@@ -68,6 +68,33 @@ updates:
           - '@xterm/*'
       console-minor-and-patch:
         update-types: [minor, patch]
+    # Grouping is not enough when the group has no version that agrees with
+    # itself. These two majors have no installable combination at all, so
+    # Dependabot proposes half the move and `npm ci` refuses the result — a
+    # pull request nobody can merge and nobody can fix, reopened weekly.
+    #
+    # Each entry says what has to ship before it comes off. Neither is a
+    # judgment that the major is unwanted.
+    ignore:
+      # TypeScript 7 is the Go rewrite. @typescript-eslint/parser has no release
+      # that accepts it — 8.70.0 is the latest, there is no 9.x, and it peers
+      # `typescript >=4.8.4 <6.1.0`. 6.0.3 is the highest version that installs
+      # and is what the console is on.
+      #
+      # Remove when @typescript-eslint/parser peers a 7.x range.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # eslint 10 is blocked one plugin over: eslint-plugin-react@7.37.5 is the
+      # latest and peers `... || ^9.7`. @typescript-eslint/parser already
+      # accepts ^10, so this is the only thing holding it.
+      #
+      # This one has a cost — eslint 9 is now deprecated upstream ("no longer
+      # supported"), so the console lints with a version that gets no fixes.
+      # Remove as soon as eslint-plugin-react peers ^10, and if that release
+      # does not come, the question is whether eslint-plugin-react is still
+      # worth having rather than whether eslint should be upgraded.
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
