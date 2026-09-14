@@ -12,7 +12,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | Requirements | 211 | — |
 | Specified in a design doc | 156 | 73% |
 | Assigned to a phase | 125 | 59% |
-| Covered by a named test | 108 | 51% |
+| Covered by a named test | 109 | 51% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -37,7 +37,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-020** | D | Nothing lives in the repo. | 3. Core Invariants | 01, 02, 03, 07 | 02, 06, 10 | `TestR020_AComposeBuildIsResolvedIntoTheSpec`, `TestR020_APinnedSpecCanBeExported`, `TestR020_AddingAVolumeWritesARevisionRatherThanCreatingStorage`, `TestR020_AnEditedPlanIsTheOneThatRuns`, `TestR020_SpecCarriesNoSecretValues`, `TestR020_TheViewCannotReachOutsideTheSource` |
 | **R-021** | D | Pando fills declared slots; it never invents topology. | 3. Core Invariants | 01 | 06 | `TestR021_SlotsComeFromWhatTheRepoDeclares` |
 | **R-022** | D | Detection never re-runs implicitly. | 3. Core Invariants | 01, 04 | — | `TestR022_DetectionEndpointsAnswerForAnAppThatHasNotDetectedYet`, `TestR022_ReDetectingKeepsHowADependencyIsFilled`, `TestR022_ReDetectingKeepsStorageSomebodyAdded`, `TestR022_ReDetectingKeepsWhatAPersonDecided` |
-| **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 05, 06 | 05 | `TestR023_APortListenerIsTheSameEnforcementPoint`, `TestR023_ARouteWithNoUpstreamIsRefused`, `TestR023_EnsureRefusesARouteWithNoProxyUpstream`, `TestR023_EveryRequestIsCountedWhateverItsOutcome`, `TestR023_EverythingUnrecognizedGoesThroughTheProxy`, `TestR023_ProxyRejoinsRunningAppsNetworksAfterItIsReplaced`, `TestR023_RejoiningLeavesTheNetworksOfStoppedAppsAlone`, `TestR023_RoutingPointsAtPandoNotTheWorkload`, `TestR023_TraefikPointsAtPandoNeverAtTheWorkload` |
+| **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 05, 06 | 05 | `TestR023_APortListenerIsTheSameEnforcementPoint`, `TestR023_ARouteIsWrittenRemovedAndObserved`, `TestR023_ARouteWithNoUpstreamIsRefused`, `TestR023_EnsureRefusesARouteWithNoProxyUpstream`, `TestR023_EveryRequestIsCountedWhateverItsOutcome`, `TestR023_EverythingUnrecognizedGoesThroughTheProxy`, `TestR023_ProxyRejoinsRunningAppsNetworksAfterItIsReplaced`, `TestR023_RejoiningLeavesTheNetworksOfStoppedAppsAlone`, `TestR023_RoutingPointsAtPandoNotTheWorkload`, `TestR023_TraefikPointsAtPandoNeverAtTheWorkload` |
 | **R-024** | D | Builds never execute on the host. | 3. Core Invariants | 00, 04, 05, 07 | 03 | `TestR024_NoAdapterMeetsPolicyBlocksDeploy`, `TestR024_SourceThatMustBeBuiltNeedsABuilder` |
 | **R-025** | D | Apps are isolated from each other. | 3. Core Invariants | 06 | — | `TestR025_EachBundleGetsItsOwnNetwork` |
 | **R-026** | D | Non-exposed workloads are unreachable from outside their bundle. | 3. Core Invariants | 01, 03, 05, 06 | 02, 05, 10 | `TestR026_NoPortsArePublishedToTheHost` |
@@ -53,7 +53,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-044** | D | Identity adapters perform authentication only. | 5.1 Adapter model | 03 | 01 | `TestR044_AuthenticateReturnsASubjectWithNoPermissions` |
 | **R-045** | P | Multiple identity adapters may be configured simultaneously. | 5.1 Adapter model | — | — | — |
 | **R-046** | P | First run creates a single administrative local user. | 5.2 Bootstrap | 04 | 08 | `TestR046_ASuppliedPasswordStillMustBeChanged`, `TestR046_AnOperatorCanSupplyTheFirstPassword`, `TestR046_FirstRunCreatesOneAdminAndIsIdempotent`, `TestR046_FirstRunGeneratesAPasswordAndShowsItOnce`, `TestR046_TheAdminPasswordComesFromTheEnvironment`, `TestR046_TheFirstRunAccountSignsInAndIsToldToChangeItsPassword`, `TestR046_TheGeneratedPasswordCanActuallyBeChanged` |
-| **R-047** | D | Each identity adapter declares its own session policy and revocation mechanism, documented in… | 5.3 Sessions and revocation | 02, 03 | 01 | `TestR047_AdapterDeclaresItsOwnSessionPolicy` |
+| **R-047** | D | Each identity adapter declares its own session policy and revocation mechanism, documented in… | 5.3 Sessions and revocation | 02, 03 | 01 | `TestR047_AdapterDeclaresItsOwnSessionPolicy`, `TestR047_TheSessionPolicyIsDeclaredAndConfigurable` |
 | **R-048** | D LATER | SCIM support is the enterprise revocation and provisioning path. | 5.3 Sessions and revocation | 02, 03, 04, 06 | 01 | `TestR048_SuspensionEndsEverySessionImmediately` |
 | **R-049** | D | Suspended is not deleted. | 5.3 Sessions and revocation | 02, 04, 06, 07 | 01 | `TestR049_SuspendedAdministratorHoldsNothing`, `TestR049_SuspendedIsNotDeletedButBothDeny`, `TestR049_SuspendingAnAccountStopsItSigningInWithoutDeletingIt` |
 | **R-050** | P | For adapters that cannot push revocation, Pando falls back to expiry at next token refresh. | 5.3 Sessions and revocation | — | — | — |
@@ -91,7 +91,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-088** | D | An installation cannot be left with nobody who can administer it. | 6.4 Verbs and roles | — | — | `TestR088_TheLastAdministratorCannotBeRemoved`, `TestR088_TheLastAdministratorCannotBeRevoked` |
 | **R-090** | D | The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting… | 7.1 Input | — | — | — |
 | **R-091** | D LATER | Private repos are in scope, supporting the credential mechanisms GitHub offers (PAT, GitHub… | 7.1 Input | 01 | — | — |
-| **R-092** | D | Source allowlist. | 7.1 Input | 00, 04, 05, 07 | 06 | `TestR092_ASourceOutsideTheAllowlistIsRefusedAtCreation`, `TestR092_BlockedSourceFailsBeforeAnythingElse`, `TestR092_TheSourceAllowlistAcceptsOnlyApprovedHosts` |
+| **R-092** | D | Source allowlist. | 7.1 Input | 00, 04, 05, 07 | 06 | `TestR092_ABlockedSourceIsRefusedBeforeAnythingIsCloned`, `TestR092_ASourceOutsideTheAllowlistIsRefusedAtCreation`, `TestR092_BlockedSourceFailsBeforeAnythingElse`, `TestR092_TheSourceAllowlistAcceptsOnlyApprovedHosts` |
 | **R-093** | D | Detection is a detector auction. | 7.2 Detection | 03, 07 | 06 | `TestR093_RunnersUpAreReturned` |
 | **R-094** | D | Confidence ladder, highest first: | 7.2 Detection | 07 | 06 | `TestR094_APublishedImageOnGHCRIsFound` |
 | **R-095** | P | For tier 4, wrap an existing buildpack implementation (Paketo, nixpacks) rather than | 7.2 Detection | 03 | — | `TestR095_ABuildpackPlanComesFromNixpacks` |
@@ -103,7 +103,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-101** | D | There is always a bottom escape hatch: supply an image reference and a command, skipping… | 7.2 Detection | 01 | 02, 06, 08 | — |
 | **R-102** | D | Ask, never guess. | 7.3 When detection cannot decide | 03, 04, 08 | 08 | `TestR102_ACloseCallBecomesAQuestion`, `TestR102_AnsweringTheTieBreakAdoptsThatReading` |
 | **R-103** | D | The number of questions is the product metric. | 7.3 When detection cannot decide | 01, 08 | 06, 08 | — |
-| **R-104** | D | Questions are blockers; everything else is configuration. | 7.3 When detection cannot decide | 03, 08 | 08 | — |
+| **R-104** | D | Questions are blockers; everything else is configuration. | 7.3 When detection cannot decide | 03, 08 | 08 | `TestR104_TheProposalCarriesTheInstallsOwnAnswers` |
 | **R-105** | D | Every question must be self-contained and pasteable. | 7.3 When detection cannot decide | 00, 03, 04, 07, 08 | 00, 03, 06, 08, 10 | `TestR105_AnUnsupportedBuildMethodNamesWhatIsAvailable`, `TestR105_EveryQuestionAnyDetectorProducesIsSelfContained`, `TestR105_TheServersErrorEnvelopeIsRenderedAsWritten`, `TestR105_UnansweredDetectionQuestionsArePrintedVerbatimAndStopTheDeploy`, `TestR105_ValidatorCatchesTheRealFailureModes`, `TestR105_ValidatorRejectsTheDesignsCounterExample` |
 | **R-106** | D | AI assistance is optional supporting functionality, never required. | 7.3 When detection cannot decide | — | — | — |
 | **R-107** | D | The correct failure: a repo needs Postgres and never mentions it anywhere — no compose… | 7.3 When detection cannot decide | 01 | 06 | `TestR107_ACrashDoesNotInventASlotTheRepoNeverDeclared`, `TestR107_ACrashingTrialReturnsItsLog` |
@@ -167,7 +167,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-201** | D | Where no volume is declared, Pando shows a warning at setup rather than inferring one: | 14. Persistence and Volumes | 01, 04, 07, 08 | 02, 06, 08 | `TestR201_NoDeclaredVolumeWarnsEvenWithNothingObserved` |
 | **R-202** | P | The trial run improves this warning: where Pando observed the app writing to a directory… | 14. Persistence and Volumes | 01, 03, 07 | 06 | `TestR202_ATrialRunObservesWritesOutsideDeclaredStorage`, `TestR202_TheWarningNamesTheDirectoryTheAppActuallyWrote` |
 | **R-203** | D | Rationale for treating this specially: an undeclared Postgres fails loudly on first boot. | 14. Persistence and Volumes | 05 | 07 | `TestR203_AVolumeThatHeldDataIsReportedNeverRecreated` |
-| **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 03, 04, 05 | 02, 09 | `TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes`, `TestR204_DeletingAnAppKeepsAFinalBackup`, `TestR204_DeletingAnAppTearsDownItsBundleButKeepsVolumes`, `TestR204_DestroyKeepsVolumesByDefault`, `TestR204_DiscardingABackupThatIsAlreadyGoneIsNotAnError`, `TestR204_VolumesAreListedPerApp` |
+| **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 03, 04, 05 | 02, 09 | `TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes`, `TestR204_DeletingAnAppKeepsAFinalBackup`, `TestR204_DeletingAnAppTearsDownItsBundleButKeepsVolumes`, `TestR204_DestroyKeepsVolumesByDefault`, `TestR204_DiscardingABackupThatIsAlreadyGoneIsNotAnError`, `TestR204_TearingDownAnAppKeepsItsVolumes`, `TestR204_VolumesAreListedPerApp` |
 | **R-205** | D | Non-interactive delete (CLI, API, MCP) backs up by default. | 14. Persistence and Volumes | 04 | 02, 09 | `TestR205_ADeleteWithNoDecisionIsAnsweredRatherThanAssumed`, `TestR205_DeleteBacksUpByDefaultAndDiscardsOnlyWhenAsked`, `TestR205_DeletingAnAppTakesTheBackupDecisionExplicitly` |
 | **R-206** | D | Restore is in-place only. | 14. Persistence and Volumes | 01, 02, 04 | 09 | `TestR206_ABackupRestoresOnlyToItsOwnApp`, `TestR206_AnAppIsRestoredFromItsOwnBackup`, `TestR206_RestoringOneAppsDataIsGatedOnTheAppNotTheInstall` |
 | **R-210** | D | Per-app rolling backups of app data. | 15. Backup and Disaster Recovery | 04 | — | — |
@@ -179,7 +179,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-216** | P | Verification should also be invocable against a bundle without committing it, so a backup can… | 15. Backup and Disaster Recovery | 03, 04 | 09 | `TestR216_ABackupIsVerifiableBeforeItIsNeeded`, `TestR216_VerifyingABundleThatIsNotThereTouchesNothing` |
 | **R-217** | D | Backup destination is an adapter category (R-252). | 15. Backup and Disaster Recovery | 02 | 09 | `TestR217_TheBackupDestinationIsAnAdapter` |
 | **R-220** | D | Pando runs health listeners — health endpoints, uptime checks — so you know when an app goes… | 16.1 Health | — | — | — |
-| **R-221** | P | Health signal sources, in order: compose healthcheck if declared, HTTP endpoint if configured,… | 16.1 Health | 01, 03, 05, 07 | 04, 07 | `TestR221_NoHealthSignalIsNotUnhealthy` |
+| **R-221** | P | Health signal sources, in order: compose healthcheck if declared, HTTP endpoint if configured,… | 16.1 Health | 01, 03, 05, 07 | 04, 07 | `TestR221_NoHealthConfiguredMeansNoHealthPlan`, `TestR221_NoHealthSignalIsNotUnhealthy` |
 | **R-222** | D | Log retention is bounded by size, not time, so a chatty app cannot fill a disk shared with… | 16.2 Logs | 02 | 07 | `TestR222_ADeployedWorkloadHasItsLogsCapped`, `TestR222_AProvisionedServiceIsCappedLikeAnyOtherWorkload`, `TestR222_ARuntimeThatCannotCapLogsIsRefusedWhenABudgetExists` |
 | **R-223** | P | Default cap: 100 MB per app, oldest discarded first. | 16.2 Logs | 01, 05 | — | — |
 | **R-224** | D | Retention must respect total host disk, in aggregate across all apps. | 16.2 Logs | 02, 05 | 07, 09 | `TestR224_NoBudgetMeansNoAggregateCheck`, `TestR224_TheAggregateLogBudgetIsEnforcedAtPlanTime` |
