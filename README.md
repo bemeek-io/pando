@@ -74,7 +74,11 @@ gating.
 
 ## Install
 
-Requires Docker and Docker Compose.
+Two pieces, and most people need only the first.
+
+### The server
+
+Requires Docker and Docker Compose. Nothing else — no Go, no Node, no Postgres of your own.
 
 ```bash
 git clone https://github.com/bemeek-io/pando.git
@@ -82,7 +86,36 @@ cd pando
 docker compose up -d
 ```
 
-Pando and Postgres start together. Open **http://localhost:8080**.
+Pando and Postgres start together. The first run builds the image, which takes a few minutes; after
+that it starts in seconds. Open **http://localhost:8080**.
+
+### The CLI
+
+Optional. It is the same binary as the server and talks to an installation over its API, so it goes
+on your own machine rather than on the host, and everything it does can also be done in the console.
+
+macOS, and Linux with Homebrew 4.5 or newer:
+
+```bash
+brew install bemeek-io/tap/pando
+```
+
+Debian and Ubuntu: download the `.deb` for your architecture from the
+[releases page](https://github.com/bemeek-io/pando/releases), then
+
+```bash
+sudo apt install ./pando_<version>_linux_amd64.deb
+```
+
+The same page has `.rpm` and `.apk` packages, and plain tarballs for macOS and Linux on both
+architectures. To build it from source instead:
+
+```bash
+go install github.com/bemeek-io/pando/cmd/pando@latest
+```
+
+Or skip installing it and use the copy already inside the container, via
+`docker compose exec pando pando …`.
 
 ### First sign-in
 
@@ -128,35 +161,8 @@ into any running container.
 
 ## CLI
 
-The CLI is the same binary as the server, so you can install it on your own machine. This installs
-the CLI only — the server is the Compose install above, because it needs a Postgres a package
-manager will not supply.
-
-macOS, with Homebrew. The fully qualified name taps `bemeek-io/homebrew-tap` on the way, so there is
-no `brew tap` step first:
-
-```bash
-brew install bemeek-io/tap/pando
-```
-
-The same command works on Linux with Homebrew 4.5 or newer, which is where cask support arrived. On
-anything older, use the `.deb` or the tarball.
-
-Debian and Ubuntu: download the `.deb` for your architecture from the
-[releases page](https://github.com/bemeek-io/pando/releases), then
-
-```bash
-sudo apt install ./pando_<version>_linux_amd64.deb
-```
-
-The same page has `.rpm` and `.apk` packages and plain tarballs for macOS and Linux. To build it from
-source instead:
-
-```bash
-go install github.com/bemeek-io/pando/cmd/pando@latest
-```
-
-Or use the one already inside the container, via `docker compose exec pando pando …`.
+[Installed separately](#the-cli), or used from inside the container with
+`docker compose exec pando pando …`.
 
 ```bash
 pando login https://pando.example.com    # stores an API token for this machine
