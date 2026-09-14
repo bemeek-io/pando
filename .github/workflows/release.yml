@@ -84,10 +84,37 @@ jobs:
       # Signs checksums.txt. Installed before GoReleaser, which shells out to it.
       - uses: sigstore/cosign-installer@v3
 
+      # Release notes come from CHANGELOG.md, not from the commit log.
+      #
+      # GoReleaser's generated changelog is one line per commit — subject, SHA
+      # and author email — which is a version control log with bullet points,
+      # not something an operator can read to decide whether to upgrade. It is
+      # also what the OpenSSF passing criteria rule out by name.
+      #
+      # Failing when the section is missing is the point: a release whose notes
+      # would be a commit log is a release that should not be cut yet.
+      - name: Release notes from the changelog
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { inside = 1; next }
+            inside && /^## / { exit }
+            inside { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::CHANGELOG.md has no '## [$version]' section. Add one before releasing (docs/releasing.md)."
+            exit 1
+          fi
+          echo "Release notes for $version:"
+          cat notes.md
+
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
-          args: release --clean
+          args: release --clean --release-notes=notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # A PAT with contents:write on bemeek-io/homebrew-tap. Without it the

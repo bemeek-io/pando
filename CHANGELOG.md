@@ -15,7 +15,22 @@ fixed in it, with its CVE or GHSA identifier), **Added**, **Changed**, **Depreca
 
 ## [Unreleased]
 
-Pando has not had a release yet. The sections below accumulate until the first tag.
+Changes since v0.1.0. Rename this heading to the version and date when the next release is cut — the
+release workflow reads the section matching the tag and refuses to release without one.
+
+### Fixed
+
+- The Docker image ships with the console in it. `docker compose up -d` built an image whose binary
+  had no UI embedded, so it served the API and returned 404 for every console route.
+
+### Security
+
+- Base images, GitHub Actions and the two scanners CI installs are pinned by digest or exact version
+  rather than by a mutable tag.
+- `containerd/v2` to 2.3.5 (GHSA-7jxh-36q5-gcqv) and `moby/go-archive` to 0.3.0 (GO-2026-6253, a
+  crafted tar writing outside the extraction directory).
+- The console's `vite` to 8.3.0, with `@vitejs/plugin-react` 6.1.1 alongside it, clearing six
+  high-severity dev-server advisories.
 
 ### Security
 
@@ -46,4 +61,10 @@ Pando has not had a release yet. The sections below accumulate until the first t
   attribute. Needs a decision about which forwarded-protocol signal Pando trusts. See
   [`docs/plan/open-decisions.md`](docs/plan/open-decisions.md).
 
-[Unreleased]: https://github.com/bemeek-io/pando/commits/main
+## [0.1.0] - 2026-09-14
+
+The first release. Its notes were generated from the commit log, which is what this file now exists
+to replace; see the release page for the artifact list.
+
+[Unreleased]: https://github.com/bemeek-io/pando/compare/v0.1.0...main
+[0.1.0]: https://github.com/bemeek-io/pando/releases/tag/v0.1.0
