@@ -25,8 +25,14 @@ test: ## Run unit tests
 # COVERPROFILE is set by CI so the integration run's coverage can be uploaded
 # under its own flag. Empty locally, where writing a profile nobody reads is
 # just a slower test run.
+#
+# -coverpkg=./... is what makes the integration profile mean what it says. By
+# default a package's coverage counts only its own tests, so an API test that
+# drives the state store, the planner and the audit writer credits none of
+# them — and those packages read as untested because the tests that exercise
+# them live one package over.
 COVERPROFILE ?=
-COVERFLAGS := $(if $(COVERPROFILE),-coverprofile=$(COVERPROFILE) -covermode=atomic,)
+COVERFLAGS := $(if $(COVERPROFILE),-coverpkg=./... -coverprofile=$(COVERPROFILE) -covermode=atomic,)
 
 .PHONY: test-integration
 test-integration: ## Run integration tests (real Postgres + Docker, via testcontainers)

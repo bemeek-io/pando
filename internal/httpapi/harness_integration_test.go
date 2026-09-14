@@ -39,6 +39,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/planner"
 	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
 	"github.com/bemeek-io/pando/internal/core/source"
+	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/httpapi"
 	"github.com/bemeek-io/pando/internal/secret"
@@ -387,6 +388,53 @@ func (i *install) tokenFor(s *session) *session {
 	got.JSON(i.t, &issued)
 	require.NotEmpty(i.t, issued.Secret)
 	return &session{token: issued.Secret}
+}
+
+// minimalSpec is the smallest spec that validates: one primary workload
+// serving HTTP, from a prebuilt image so no builder is needed.
+func minimalSpec() map[string]any {
+	return map[string]any{
+		"schema_version": spec.SchemaVersion,
+		"source":         map[string]any{"type": "image", "image": "nginx:alpine"},
+		"build":          map[string]any{"strategy": "prebuilt"},
+		"workloads": []map[string]any{{
+			"name":    "web",
+			"image":   "nginx:alpine",
+			"primary": true,
+			"exposed": true,
+			"ports":   []map[string]any{{"number": 8080, "protocol": "http", "source": "user"}},
+		}},
+	}
+}
+
+// writeSpec creates a revision from body and returns its number.
+func (i *install) writeSpec(s *session, appID string, body map[string]any) int {
+	i.t.Helper()
+	got := i.do(s, http.MethodPost, "/apps/"+appID+"/specs", body)
+	require.Equal(i.t, http.StatusCreated, got.Code, got.String())
+
+	var rev struct {
+		Revision int `json:"revision"`
+	}
+	got.JSON(i.t, &rev)
+	require.Positive(i.t, rev.Revision)
+	return rev.Revision
+}
+
+// pinSpec points the app at a revision. Pinning does not deploy.
+func (i *install) pinSpec(s *session, appID string, revision int) {
+	i.t.Helper()
+	got := i.do(s, http.MethodPost, fmt.Sprintf("/apps/%s/specs/%d/pin", appID, revision), map[string]any{})
+	require.Equal(i.t, http.StatusOK, got.Code, got.String())
+}
+
+// appWithSpec is an app carrying one pinned revision, which is the state most
+// of the interesting endpoints need before they do anything.
+func (i *install) appWithSpec(s *session, name string) string {
+	i.t.Helper()
+	id := i.createApp(s, name)
+	i.pinSpec(s, id, i.writeSpec(s, id, minimalSpec()))
+	return id
 }
 
 // createApp makes an app owned by the caller and returns its ID.
