@@ -1,18 +1,29 @@
 name: Release
 
-# A tag is the trigger, and the tag is the version — .goreleaser.yaml stamps it
-# into the binary. CI has already run on main by the time a tag is pushed, so
-# this job builds and publishes rather than re-checking.
+# Two ways in, one job.
+#
+# Normally: run this workflow from main with a version, and it creates the tag
+# and releases it. Merging a pull request does not release anything, because
+# which version a change is worth is a judgment nobody should automate away.
+#
+# Or push a `v*` tag by hand and this runs on it, which is the escape hatch when
+# the tag has to point somewhere other than the head of main.
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, with the v — v0.1.0, or v0.1.0-rc.1 for a prerelease'
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
-  goreleaser:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,6 +31,39 @@ jobs:
           # GoReleaser needs the full history to build a changelog, and the tags
           # to work out the version.
           fetch-depth: 0
+
+      # Only on a manual run. On a tag push the tag is already the reason we are
+      # here.
+      #
+      # The tag is pushed with GITHUB_TOKEN, and a push made with GITHUB_TOKEN
+      # deliberately does not start another workflow run. That is what keeps the
+      # `push: tags` trigger above from firing a second, duplicate release.
+      - name: Tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
+            echo "::error::Release from main. This run is on ${{ github.ref }}."
+            exit 1
+          fi
+
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Version must look like v1.2.3, or v1.2.3-rc.1 for a prerelease. Got '$VERSION'."
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "::error::$VERSION is already tagged. A released version is never re-cut; pick the next one."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "$VERSION"
+          git push origin "$VERSION"
 
       - uses: actions/setup-go@v5
         with:
@@ -44,3 +88,22 @@ jobs:
           # release fails at the cask step: GITHUB_TOKEN is scoped to this
           # repository and cannot push to the tap.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      # A manual run pushes the tag before building, so a build that then fails
+      # leaves a tag on a version nobody can install — and leaves the next
+      # attempt at that version refused as already tagged.
+      - name: Clean up a tag that released nothing
+        if: failure() && github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Not unconditionally: the likeliest failure is the cask push, which
+          # happens after the release is published. That release is real and
+          # people can already install it, so its tag has to stay.
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::$VERSION was published before the failure, so the tag stays. Fix the failure and re-run this job."
+            exit 0
+          fi
+          git push --delete origin "$VERSION" || true
+          echo "::notice::Removed the tag $VERSION, because nothing was released under it."
