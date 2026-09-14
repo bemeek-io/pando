@@ -4,8 +4,7 @@
 
 # Pando
 
-**Self-hosted app deployment. Give it a git repository and it builds the app, runs it in a container,
-and serves it behind a proxy that handles sign-in and access control.**
+**Deploy and share apps**
 
 [![CI](https://github.com/bemeek-io/pando/actions/workflows/ci.yml/badge.svg)](https://github.com/bemeek-io/pando/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/bemeek-io/pando/branch/implementation/graph/badge.svg)](https://codecov.io/gh/bemeek-io/pando)
