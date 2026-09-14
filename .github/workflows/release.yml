@@ -93,6 +93,11 @@ jobs:
 
       # Release notes come from CHANGELOG.md, not from the commit log.
       #
+      # Written to RUNNER_TEMP rather than the working tree. GoReleaser refuses
+      # to build from a dirty checkout — a modified or untracked file means the
+      # artifacts would not match the tag — and an untracked notes.md in the
+      # repository root is exactly that. It failed the first v0.1.1 attempt.
+      #
       # GoReleaser's generated changelog is one line per commit — subject, SHA
       # and author email — which is a version control log with bullet points,
       # not something an operator can read to decide whether to upgrade. It is
@@ -110,18 +115,18 @@ jobs:
             $0 ~ "^## \\[" v "\\]" { inside = 1; next }
             inside && /^## / { exit }
             inside { print }
-          ' CHANGELOG.md > notes.md
-          if [ ! -s notes.md ]; then
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
             echo "::error::CHANGELOG.md has no '## [$version]' section. Add one before releasing (docs/releasing.md)."
             exit 1
           fi
           echo "Release notes for $version:"
-          cat notes.md
+          cat "$RUNNER_TEMP/notes.md"
 
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           version: '~> v2'
-          args: release --clean --release-notes=notes.md
+          args: release --clean --release-notes=${{ runner.temp }}/notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # A PAT with contents:write on bemeek-io/homebrew-tap. Without it the
