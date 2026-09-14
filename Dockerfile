@@ -1,6 +1,11 @@
 # Pando ships as one binary (R-253). This image is how it reaches a host —
 # the artifact is unchanged, the container is just the delivery.
 #
+# Base images are pinned by digest, with the tag kept as the readable half. A
+# tag moves — `alpine:3.24` is a different filesystem this month than last — so
+# a build is only reproducible against a digest. Dependabot updates these, which
+# is what keeps the pin from meaning "old".
+#
 # The console is embedded in the binary rather than served beside it (R-253),
 # so it has to exist before the Go build, not after it. Building it here rather
 # than relying on whatever the host happens to have in internal/console/dist:
@@ -14,7 +19,7 @@
 # the one in package.json.
 #
 # Neither toolchain reaches the final image.
-FROM golang:1.27-alpine AS console
+FROM golang:1.27-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS console
 WORKDIR /src
 RUN apk add --no-cache nodejs npm
 
@@ -29,7 +34,7 @@ COPY . .
 # go:embed reads.
 RUN cd console && npm run build
 
-FROM golang:1.27-alpine AS build
+FROM golang:1.27-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS build
 WORKDIR /src
 
 # Dependencies first, so a source change does not re-download the module cache.
@@ -64,7 +69,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pando ./cmd/pando
 # builds, and pinned so the same repository produces the same plan a year from
 # now. It only ever *generates* — `nixpacks build --out` writes a Dockerfile and
 # does not build, so no container runtime socket is involved anywhere (R-112).
-FROM alpine:3.24 AS nixpacks
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS nixpacks
 ARG NIXPACKS_VERSION=1.41.0
 ARG TARGETARCH
 RUN apk add --no-cache curl tar \
@@ -78,7 +83,7 @@ RUN apk add --no-cache curl tar \
     && tar xzf /tmp/nixpacks.tgz -C /usr/local/bin nixpacks \
     && chmod +x /usr/local/bin/nixpacks
 
-FROM alpine:3.24
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 RUN apk add --no-cache ca-certificates tzdata su-exec postgresql17-client \
     && adduser -D -u 10001 pando \
     && mkdir -p /var/lib/pando /etc/traefik/dynamic \

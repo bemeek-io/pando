@@ -188,6 +188,11 @@ or **Actions → Release → Run workflow** in the browser. That creates the tag
 The version in `pando version` and in the manifest is stamped from the tag, so a build made any other
 way reports `dev`.
 
+Release notes come from the `CHANGELOG.md` section for the version being released, and the workflow
+refuses to release a version that has no section. That refusal is deliberate: GoReleaser's generated
+changelog is one line per commit, which is a version control log rather than something an operator
+can read to decide whether to upgrade.
+
 The version number is the one thing not automated, because it is the one part that is a judgment. A
 tag with a suffix — `v0.1.0-rc.1` — is published as a prerelease, which `brew upgrade` and the package
 managers ignore, so it is the way to exercise the whole pipeline without shipping to anyone.

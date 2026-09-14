@@ -64,7 +64,7 @@ name the supported minor versions and the date each stops receiving fixes.
 | Most recent release | Yes |
 | Anything older | No — upgrade |
 
-There are no published releases yet. Until there are, security fixes land on `main`.
+v0.1.0 is the current release. Security fixes land on `main` and go out in the next release.
 
 ## Security model
 
@@ -113,6 +113,13 @@ to the host beyond the port Pando allocates it.
 - It does not terminate TLS itself. TLS is the job of whatever sits in front of it — Traefik, a
   reverse proxy, or a load balancer. On a public installation, running Pando without TLS in front
   exposes session cookies and bearer tokens.
+
+  Behind a TLS-terminating proxy, set **`PANDO_SERVER_EXTERNAL_URL`** to the address browsers use —
+  `https://pando.example.com`. Pando cannot tell an encrypted browser connection from an unencrypted
+  one when every request reaches it over plain HTTP, so without this the session cookie is not marked
+  `Secure` and one plaintext request to the hostname puts it on the wire. Pando does not infer this
+  from `X-Forwarded-Proto`, for the same reason it strips inbound `X-Pando-*`: any client that can
+  reach it directly can set that header.
 - Accounts are local to the installation in this version. There is no external identity provider yet.
 
 ### Cryptography
