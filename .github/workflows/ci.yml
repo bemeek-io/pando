@@ -44,7 +44,13 @@ jobs:
       # Unit coverage only. The integration job runs separately against real
       # Postgres and real Docker, and merging the two profiles would report a
       # number neither job measured.
+      #
+      # always(), because the profile is written as the tests run: a failing
+      # package would otherwise discard the coverage of every package that
+      # passed, and the pull request would be told its coverage collapsed when
+      # what actually happened is that one test failed.
       - name: Upload coverage
+        if: always()
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -134,6 +140,7 @@ jobs:
       # handlers, the state store, the runtime adapter — read as untested when
       # they are not.
       - name: Upload coverage
+        if: always()
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
