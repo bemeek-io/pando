@@ -121,6 +121,11 @@ jobs:
     runs-on: ubuntu-latest
     # Real Postgres and real Docker, via testcontainers. The four sequences in
     # docs/design/07-sequences.md are the acceptance criteria for v1.
+    #
+    # Not the detection corpus: it clones ten real repositories and was 71% of
+    # this job's runtime, on every push, for twenty statements nothing else
+    # covers. It runs nightly in corpus.yml instead, and on a pull request that
+    # touches detection.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7

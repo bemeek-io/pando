@@ -80,7 +80,9 @@ grep -rhoE '^func Test[A-Za-z0-9_]+' test/acceptance/*_test.go | sort -u | wc -l
 ```
 
 Run everything with `make test-integration`. They use `testcontainers-go` against real Postgres and real Docker,
-and are behind an `integration` build tag so `make test` stays fast.
+and are behind an `integration` build tag so `make test` stays fast. That target covers every
+integration package except the detection corpus, which has its own target and runs nightly rather
+than on every push.
 
 ## The assertions that matter most
 
