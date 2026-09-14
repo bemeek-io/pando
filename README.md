@@ -11,6 +11,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-B23A2C)](LICENSE)
 [![Go 1.27](https://img.shields.io/badge/go-1.27-B23A2C)](go.mod)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/bemeek-io/pando/badge)](https://scorecard.dev/viewer/?uri=github.com/bemeek-io/pando)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14626/badge)](https://www.bestpractices.dev/projects/14626)
 
 </div>
 
