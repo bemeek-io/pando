@@ -20,6 +20,36 @@ const (
 	KeyBuildMethod       = "build_method"
 )
 
+// answerOrder is the order answers are applied in, and it is load-bearing.
+//
+// Ranging over the answers map applied them in Go's randomized map order, and
+// two of them are not independent: withPrimaryService decides which workload is
+// primary, and withPort and withStartCommand both write to "the primary
+// workload". Applied the other way round, the port landed on whichever workload
+// was primary beforehand. So the same answers produced two different specs at
+// random — and the spec someone reviewed was not necessarily the one that got
+// pinned.
+//
+// The same reasoning as resolving the tie-break first: an answer that changes
+// what the rest of the answers apply to has to be applied before them.
+var answerOrder = []string{
+	// What is being deployed at all.
+	KeyDeployableProject,
+	KeyDockerfilePath,
+	KeyStaticSource,
+
+	// Which workload the rest of the answers mean.
+	KeyPrimaryService,
+
+	// And then the ones that write to it.
+	KeyPrimaryPort,
+	KeyStartCommand,
+
+	// Applied by chosen() before any of this; listed so the set is complete.
+	KeyBuildStrategy,
+	KeyBuildMethod,
+}
+
 // WithAnswers folds a user's answers into the draft spec.
 //
 // An answer is worth more than anything Pando worked out for itself, so it
@@ -36,8 +66,8 @@ func (p Proposal) WithAnswers(answers map[string]string) spec.AppSpec {
 	// application see the first one's results.
 	out.Workloads = append([]spec.Workload(nil), out.Workloads...)
 
-	for key, value := range answers {
-		value = strings.TrimSpace(value)
+	for _, key := range answerOrder {
+		value := strings.TrimSpace(answers[key])
 		if value == "" {
 			continue
 		}

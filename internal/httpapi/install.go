@@ -401,8 +401,18 @@ func (s *Server) handleListAudit(w http.ResponseWriter, r *http.Request) {
 	// The cursor for the next page, or empty when this was the last one. Named
 	// rather than left for the client to derive: deriving it means knowing that
 	// IDs descend, which is this endpoint's business and not the console's.
+	//
+	// The empty check is load-bearing. Without it, a query with no explicit
+	// limit that matched nothing satisfied `len(events) == q.Limit` as 0 == 0
+	// and then indexed events[-1] — so every audit filter that found no events
+	// answered 500 instead of an empty page, which is the one answer a search
+	// UI produces most often.
+	page := q.Limit
+	if page <= 0 {
+		page = audit.DefaultLimit
+	}
 	var next string
-	if len(events) == q.Limit || (q.Limit == 0 && len(events) == 100) {
+	if len(events) > 0 && len(events) == page {
 		next = strconv.FormatInt(events[len(events)-1].ID, 10)
 	}
 	JSON(w, http.StatusOK, map[string]any{"events": events, "next_before": next})

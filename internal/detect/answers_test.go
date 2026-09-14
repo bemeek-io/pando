@@ -150,12 +150,46 @@ func TestApplyingAnswersTwiceGivesTheSameSpec(t *testing.T) {
 		detect.KeyPrimaryService: "api",
 	}
 
+	// Repeated, because the bug this guards against was Go's randomized map
+	// order: a single pair of runs agreed most of the time.
 	first := p.WithAnswers(answers)
-	second := p.WithAnswers(answers)
+	for range 50 {
+		require.Equal(t, first, p.WithAnswers(answers))
+	}
 
-	require.Equal(t, first, second)
 	require.True(t, p.DraftSpec.Workloads[0].Primary, "the proposal itself is untouched")
 	require.Empty(t, p.DraftSpec.Workloads[0].Ports)
+}
+
+// An answer that changes what the other answers apply to has to be applied
+// before them.
+//
+// withPrimaryService decides which workload is primary; withPort and
+// withStartCommand both write to "the primary workload". Ranging over the
+// answers map applied them in random order, so the port landed on whichever
+// workload happened to be primary first — and the spec someone reviewed was not
+// necessarily the one that got pinned.
+func TestAnswersThatDependOnEachOtherAreAppliedInOrder(t *testing.T) {
+	p := proposalFor(primary("web"), spec.Workload{Name: "api"})
+
+	got := p.WithAnswers(map[string]string{
+		detect.KeyPrimaryService: "api",
+		detect.KeyPrimaryPort:    "3000",
+		detect.KeyStartCommand:   "node api.js",
+	})
+
+	byName := map[string]spec.Workload{}
+	for _, w := range got.Workloads {
+		byName[w.Name] = w
+	}
+
+	require.True(t, byName["api"].Primary)
+	require.Len(t, byName["api"].Ports, 1, "the port goes on the workload the answers chose")
+	require.Equal(t, 3000, byName["api"].Ports[0].Number)
+	require.Equal(t, []string{"sh", "-c", "node api.js"}, byName["api"].Command)
+
+	require.Empty(t, byName["web"].Ports, "and not on the one that used to be primary")
+	require.Empty(t, byName["web"].Command)
 }
 
 // The tie-break offers the close candidates' own strategies, so an answer

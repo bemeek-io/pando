@@ -122,4 +122,21 @@ jobs:
           go-version: '1.27'
           cache: true
       # Runners have Docker, so testcontainers works without extra setup.
-      - run: make test-integration
+      - run: make test-integration COVERPROFILE=coverage.integration.out
+
+      # Uploaded under its own flag rather than merged into the unit profile.
+      #
+      # Merging the two files would report a number neither job measured, which
+      # is why the unit step does not do it. Two flagged uploads are a different
+      # thing: Codecov takes the union, and every line it then counts was
+      # executed by a test that ran. That union is the honest project number,
+      # and without it the packages that need Postgres or Docker — the API
+      # handlers, the state store, the runtime adapter — read as untested when
+      # they are not.
+      - name: Upload coverage
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.integration.out
+          flags: integration
+          fail_ci_if_error: false
