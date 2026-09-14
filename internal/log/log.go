@@ -90,7 +90,7 @@ func Untrusted(key, value string) zap.Field {
 		if unicode.IsPrint(r) {
 			return r
 		}
-		return '�'
+		return '\uFFFD'
 	}, value)
 	return zap.String(key, value)
 }
