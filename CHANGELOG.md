@@ -5,8 +5,9 @@ when they do. This file is not a git log; a change that nobody operating an inst
 does not belong here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Pando follows
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a version number promises, and how a
-release is made, is in [`docs/releasing.md`](docs/releasing.md).
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a version number promises is in
+[`docs/releasing.md`](docs/releasing.md); how a release is cut is in
+[`CONTRIBUTING.md`](CONTRIBUTING.md#releasing).
 
 Every release section names, in this order: **Security** (including every publicly known vulnerability
 fixed in it, with its CVE or GHSA identifier), **Added**, **Changed**, **Deprecated**, **Removed**,
@@ -31,17 +32,16 @@ Pando has not had a release yet. The sections below accumulate until the first t
 
 - Security policy, coordinated disclosure process and documented security model
   ([`SECURITY.md`](SECURITY.md)).
-- Release process, versioned artifacts, and signed checksums for every release
-  ([`docs/releasing.md`](docs/releasing.md)).
+- Checksums signed with cosign on every release, and the verification procedure that goes with them
+  ([`docs/releasing.md`](docs/releasing.md#verifying-a-download)).
 - CodeQL, `gosec`, `govulncheck`, `gitleaks` and OpenSSF Scorecard in continuous integration.
 - Fuzz targets over the parsers that see untrusted input, run in continuous integration.
-- `pando version` reports the version, the commit it was built from, and when, stamped at build time.
 - Issue and pull request templates, a code of conduct, Dependabot, and a reference index of the
   external interfaces ([`docs/reference.md`](docs/reference.md)).
 
 ### Open
 
-- **O-18**: the session cookie is marked `Secure` only when Pando terminates TLS itself, so behind a
+- **O-19**: the session cookie is marked `Secure` only when Pando terminates TLS itself, so behind a
   TLS-terminating reverse proxy — the topology `SECURITY.md` describes — it is sent without the
   attribute. Needs a decision about which forwarded-protocol signal Pando trusts. See
   [`docs/plan/open-decisions.md`](docs/plan/open-decisions.md).

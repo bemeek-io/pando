@@ -75,7 +75,7 @@ Two sets, and the distinction matters:
 | [`docs/plan/`](docs/plan/) | Build order by phase, open decisions, risk register. |
 | [`docs/traceability/`](docs/traceability/) | Generated index mapping requirements to design, code and tests. |
 | [`docs/reference.md`](docs/reference.md) | The external interfaces in one place — API, configuration, what an app receives. |
-| [`docs/releasing.md`](docs/releasing.md) | Version numbering, tagging, and how a release is built and signed. |
+| [`docs/releasing.md`](docs/releasing.md) | What a version number promises, and how to verify a download's signature. |
 | [`SECURITY.md`](SECURITY.md) | The security model, the cryptography in use, and coordinated disclosure. |
 | [`CLAUDE.md`](CLAUDE.md) | Conventions, invariants, and the definition of done. |
 
@@ -111,7 +111,7 @@ Two that catch people out:
 fixed or suppressed with a `//nolint:gosec` comment that names the rule and says why it does not
 apply — a bare `//nolint` is indistinguishable from one nobody checked, so it will be asked about in
 review. If a finding is real but the fix is a decision rather than a correction, record it in
-[`docs/plan/open-decisions.md`](docs/plan/open-decisions.md) and point the suppression at it. O-18
+[`docs/plan/open-decisions.md`](docs/plan/open-decisions.md) and point the suppression at it. O-19
 is an example: the comment says the finding is not a false positive.
 
 `govulncheck`, `npm audit` and `gitleaks` run daily as well as on pull requests. A `gitleaks`
@@ -165,6 +165,61 @@ answer: a port number such as 3000." passes it.
 The console is built from the design system in `.claude/skills/pando-design/`. Colors, type, spacing
 and radius come from its tokens; a raw hex value, a raw `px` value, or a font that is not Newsreader,
 Public Sans or IBM Plex Mono fails `npm run check`.
+
+## Releasing
+
+What a version number promises to an operator, and how somebody verifies a download, is in
+[`docs/releasing.md`](docs/releasing.md). This is the mechanics.
+
+Merging a pull request does not release anything. Cutting a release is one command, run from main:
+
+```bash
+gh workflow run release.yml -f version=v0.1.0
+```
+
+or **Actions → Release → Run workflow** in the browser. That creates the tag and runs
+`.github/workflows/release.yml`, which runs GoReleaser against `.goreleaser.yaml` and publishes:
+
+- tarballs for macOS and Linux, `amd64` and `arm64`, with a `checksums.txt`
+- `.deb`, `.rpm` and `.apk` packages
+- a Homebrew cask pushed to `bemeek-io/homebrew-tap`, which is what `brew install bemeek-io/tap/pando`
+  reads
+
+The version in `pando version` and in the manifest is stamped from the tag, so a build made any other
+way reports `dev`.
+
+The version number is the one thing not automated, because it is the one part that is a judgment. A
+tag with a suffix — `v0.1.0-rc.1` — is published as a prerelease, which `brew upgrade` and the package
+managers ignore, so it is the way to exercise the whole pipeline without shipping to anyone.
+
+The workflow also still runs on a `v*` tag pushed by hand, for the case where the tag has to point
+somewhere other than the head of main.
+
+If the release fails, the workflow removes the tag it created, so the same version can be tried again
+once the cause is fixed — unless the release had already been published, in which case the tag stays
+and the fix is to re-run the failed job.
+
+### What the release depends on
+
+- **The tap.** `bemeek-io/homebrew-tap`, public. GoReleaser writes `Casks/pando.rb` into it and
+  overwrites it on every release; nothing in that repository is edited by hand.
+- **`HOMEBREW_TAP_TOKEN`.** A repository secret here holding a fine-grained token owned by
+  `bemeek-io`, scoped to the tap, with `contents: write`. The workflow's own `GITHUB_TOKEN` is scoped
+  to this repository and cannot push to another one, so without this the release fails at the cask
+  step — after the artifacts have been uploaded. When the token expires that is how it will show up.
+
+### Before you tag
+
+```bash
+make release-check
+make release-snapshot     # artifacts land in dist/
+```
+
+Both need `goreleaser` on your path, and the snapshot needs Node, because the console is embedded in
+the binary and is built before the Go build. Nothing is published either way.
+
+The macOS binaries are not signed with a Developer ID, so the cask removes the quarantine attribute
+after installing. Signing and notarization would replace that; see the comment in `.goreleaser.yaml`.
 
 ## Licensing of contributions
 

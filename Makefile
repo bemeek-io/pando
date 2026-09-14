@@ -5,22 +5,6 @@ GO      ?= go
 BIN     ?= bin/pando
 PKG     := ./...
 
-# Version stamps (docs/releasing.md). VERSION is the tag when HEAD is tagged and
-# "dev" otherwise — a working-tree build must never claim to be a release,
-# because `pando version` is what an operator reads to decide whether their
-# installation has a given fix in it.
-#
-# SOURCE_DATE_EPOCH, when set, makes the build date reproducible; the release
-# workflow sets it from the tagged commit.
-VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null || echo dev)
-COMMIT  ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
-DATE    ?= $(shell date -u -r "$${SOURCE_DATE_EPOCH:-$$(date +%s)}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
-             || date -u -d "@$${SOURCE_DATE_EPOCH:-$$(date +%s)}" +%Y-%m-%dT%H:%M:%SZ)
-
-LDFLAGS := -X main.buildVersion=$(VERSION) \
-           -X main.buildCommit=$(COMMIT) \
-           -X main.buildDate=$(DATE)
-
 .PHONY: help
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -32,7 +16,7 @@ help: ## Show this help
 
 .PHONY: build
 build: ## Build the pando binary
-	$(GO) build -trimpath -ldflags="$(LDFLAGS)" -o $(BIN) ./cmd/pando
+	$(GO) build -o $(BIN) ./cmd/pando
 
 .PHONY: test
 test: ## Run unit tests
@@ -136,6 +120,18 @@ requirements-index: ## Regenerate docs/traceability/requirements-index.md
 .PHONY: requirements-coverage
 requirements-coverage: ## Report which R-IDs have a named acceptance test
 	python3 scripts/gen-requirements-index.py --coverage
+
+# ---------------------------------------------------------------------------
+# Release
+# ---------------------------------------------------------------------------
+
+.PHONY: release-check
+release-check: ## Validate .goreleaser.yaml (needs goreleaser)
+	goreleaser check
+
+.PHONY: release-snapshot
+release-snapshot: ## Build the release artifacts locally, publishing nothing
+	goreleaser release --snapshot --clean
 
 # ---------------------------------------------------------------------------
 # Housekeeping

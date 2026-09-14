@@ -68,9 +68,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// out without Secure even though the browser's connection is encrypted.
 	//
 	// Resolving that needs a decision about which forwarded-protocol signal
-	// Pando trusts and when. It is recorded as O-18 in
+	// Pando trusts and when. It is recorded as O-19 in
 	// docs/plan/open-decisions.md and is not decided here.
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is conditional; O-18.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is conditional; O-19.
 		Name:     SessionCookie,
 		Value:    sess.ID,
 		Path:     "/",
@@ -117,7 +117,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// The attributes have to match the cookie being cleared, or a browser may
 	// treat this as a different cookie and leave the original one in place.
 	// Same set as handleLogin, with MaxAge: -1 and an empty value.
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: see the Secure note in handleLogin (O-18).
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: see the Secure note in handleLogin (O-19).
 		Name:     SessionCookie,
 		Value:    "",
 		Path:     "/",

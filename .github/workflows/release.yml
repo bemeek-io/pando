@@ -1,171 +1,115 @@
-# Release. Triggered by pushing a `v*` tag; see docs/releasing.md.
-#
-# Two things this workflow exists to guarantee, beyond producing files:
-#
-#   1. Every artifact carries a version. A binary that reports "dev" did not
-#      come from here.
-#   2. The checksum file is signed, not merely served over HTTPS. A checksum
-#      downloaded from the same server as the binary proves only that the server
-#      is self-consistent. cosign in keyless mode binds SHA256SUMS to this
-#      workflow's identity through Sigstore's transparency log, so there is no
-#      long-lived signing key to leak.
-
 name: Release
 
+# Two ways in, one job.
+#
+# Normally: run this workflow from main with a version, and it creates the tag
+# and releases it. Merging a pull request does not release anything, because
+# which version a change is worth is a judgment nobody should automate away.
+#
+# Or push a `v*` tag by hand and this runs on it, which is the escape hatch when
+# the tag has to point somewhere other than the head of main.
 on:
   push:
-    tags: ['v*']
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, with the v — v0.1.0, or v0.1.0-rc.1 for a prerelease'
+        required: true
+        type: string
 
 permissions:
-  contents: read
+  contents: write
+  # Keyless signing: cosign exchanges this job's OIDC token for a short-lived
+  # Fulcio certificate. Without it the `signs` block in .goreleaser.yaml fails.
+  id-token: write
 
 jobs:
-  binaries:
+  release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # create the release and upload assets
-      id-token: write # keyless signing via Sigstore
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # `git describe` needs the tags
+          # GoReleaser needs the full history to build a changelog, and the tags
+          # to work out the version.
+          fetch-depth: 0
+
+      # Only on a manual run. On a tag push the tag is already the reason we are
+      # here.
+      #
+      # The tag is pushed with GITHUB_TOKEN, and a push made with GITHUB_TOKEN
+      # deliberately does not start another workflow run. That is what keeps the
+      # `push: tags` trigger above from firing a second, duplicate release.
+      - name: Tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
+            echo "::error::Release from main. This run is on ${{ github.ref }}."
+            exit 1
+          fi
+
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Version must look like v1.2.3, or v1.2.3-rc.1 for a prerelease. Got '$VERSION'."
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "::error::$VERSION is already tagged. A released version is never re-cut; pick the next one."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "$VERSION"
+          git push origin "$VERSION"
 
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27'
           cache: true
 
-      - name: Build the console into the embedded assets
-        uses: actions/setup-node@v4
+      # The console is embedded in the binary, so the release build needs Node
+      # even though nothing else about a Go release does.
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: console/package-lock.json
-      - run: npm ci && npm run build
-        working-directory: console
 
-      - name: Stamp
-        id: stamp
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          commit="$(git rev-parse --short=12 HEAD)"
-          # From the tagged commit rather than "now", so rebuilding the same tag
-          # produces the same binary.
-          date="$(git show -s --format=%cI HEAD)"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "commit=$commit"   >> "$GITHUB_OUTPUT"
-          echo "date=$date"       >> "$GITHUB_OUTPUT"
-
-      - name: Cross-compile
-        env:
-          VERSION: ${{ steps.stamp.outputs.version }}
-          COMMIT: ${{ steps.stamp.outputs.commit }}
-          BUILD_DATE: ${{ steps.stamp.outputs.date }}
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          ldflags="-s -w \
-            -X main.buildVersion=${VERSION} \
-            -X main.buildCommit=${COMMIT} \
-            -X main.buildDate=${BUILD_DATE}"
-          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
-            os="${target%/*}"; arch="${target#*/}"
-            out="dist/pando_${VERSION}_${os}_${arch}"
-            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
-              go build -trimpath -ldflags="$ldflags" -o "$out" ./cmd/pando
-            tar -czf "${out}.tar.gz" -C dist "$(basename "$out")"
-            rm "$out"
-          done
-
-      - name: Checksums
-        working-directory: dist
-        run: sha256sum ./*.tar.gz > SHA256SUMS
-
+      # Signs checksums.txt. Installed before GoReleaser, which shells out to it.
       - uses: sigstore/cosign-installer@v3
 
-      - name: Sign the checksums
-        working-directory: dist
-        run: |
-          cosign sign-blob --yes SHA256SUMS \
-            --output-signature SHA256SUMS.sig \
-            --output-certificate SHA256SUMS.pem
-
-      - name: Release notes from the changelog
-        id: notes
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean
         env:
-          VERSION: ${{ steps.stamp.outputs.version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A PAT with contents:write on bemeek-io/homebrew-tap. Without it the
+          # release fails at the cask step: GITHUB_TOKEN is scoped to this
+          # repository and cannot push to the tap.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      # A manual run pushes the tag before building, so a build that then fails
+      # leaves a tag on a version nobody can install — and leaves the next
+      # attempt at that version refused as already tagged.
+      - name: Clean up a tag that released nothing
+        if: failure() && github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # The section for this version, verbatim. A release whose notes would
-          # be a commit log is a release that should not have been cut, so this
-          # fails rather than falling back to one.
-          awk -v v="$VERSION" '
-            $0 ~ "^## \\[" v "\\]" { inside = 1; next }
-            inside && /^## / { exit }
-            inside { print }
-          ' CHANGELOG.md > notes.md
-          if [ ! -s notes.md ]; then
-            echo "::error::CHANGELOG.md has no '## [$VERSION]' section. Add one before tagging (docs/releasing.md)."
-            exit 1
+          # Not unconditionally: the likeliest failure is the cask push, which
+          # happens after the release is published. That release is real and
+          # people can already install it, so its tag has to stay.
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::$VERSION was published before the failure, so the tag stays. Fix the failure and re-run this job."
+            exit 0
           fi
-
-      - name: Publish
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/*.tar.gz
-            dist/SHA256SUMS
-            dist/SHA256SUMS.sig
-            dist/SHA256SUMS.pem
-          body_path: notes.md
-          prerelease: ${{ contains(github.ref_name, '-') }}
-
-  image:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref_name, 'v0.') }}
-
-      - id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          provenance: mode=max
-          sbom: true
-          build-args: |
-            VERSION=${{ steps.meta.outputs.version }}
-            COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
-
-      - uses: sigstore/cosign-installer@v3
-
-      - name: Sign the image by digest
-        env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: cosign sign --yes "ghcr.io/${GITHUB_REPOSITORY}@${DIGEST}"
+          git push --delete origin "$VERSION" || true
+          echo "::notice::Removed the tag $VERSION, because nothing was released under it."

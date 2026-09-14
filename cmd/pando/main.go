@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime"
 	"syscall"
 	"time"
 
@@ -114,13 +113,19 @@ func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print the version",
-		Long: "Print the version, the commit it was built from, and when.\n\n" +
-			"A binary that reports \"dev\" was built from a working tree rather than a\n" +
-			"release tag, and nothing about which commit it came from can be assumed.",
 		Run: func(cmd *cobra.Command, _ []string) {
-			fmt.Fprintf(cmd.OutOrStdout(), "pando %s\ncommit %s\nbuilt %s\n%s %s/%s\n",
-				buildVersion, buildCommit, buildDate,
-				runtime.Version(), runtime.GOOS, runtime.GOARCH)
+			out := cmd.OutOrStdout()
+			if buildVersion == "dev" {
+				fmt.Fprintln(out, "pando (development build)")
+				return
+			}
+			fmt.Fprintf(out, "pando %s\n", buildVersion)
+			if buildCommit != "" {
+				fmt.Fprintf(out, "commit %s\n", buildCommit)
+			}
+			if buildDate != "" {
+				fmt.Fprintf(out, "built %s\n", buildDate)
+			}
 		},
 	}
 }
@@ -763,18 +768,15 @@ func secretsKeyPath(ctx context.Context, store *state.Adapters, logger *zap.Logg
 	return ""
 }
 
-// Build stamps. Set with -ldflags at release time; see docs/releasing.md.
+// buildVersion is what the manifest records. Stamped by the release build
+// (.goreleaser.yaml); "dev" in every other build, which is honest rather than a
+// version number nobody set.
 //
-// The defaults are what a build from a working tree reports, and they are
-// deliberately not a version number nobody set: "dev" is the only thing a
-// binary built outside the release workflow can honestly claim to be.
-//
-// buildVersion is also what the backup manifest records, which is why it has to
-// be exact — a restore compares it against the version doing the restoring.
+// Variables rather than constants because -ldflags -X cannot write to a const.
 var (
 	buildVersion = "dev"
-	buildCommit  = "unknown"
-	buildDate    = "unknown"
+	buildCommit  = ""
+	buildDate    = ""
 )
 
 // warnIfRetriesAreFast says so when the retry schedule is configured faster than
