@@ -64,7 +64,7 @@ name the supported minor versions and the date each stops receiving fixes.
 | Most recent release | Yes |
 | Anything older | No — upgrade |
 
-There are no published releases yet. Until there are, security fixes land on `main`.
+v0.1.0 is the current release. Security fixes land on `main` and go out in the next release.
 
 ## Security model
 

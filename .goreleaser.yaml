@@ -81,6 +81,10 @@ signs:
 snapshot:
   version_template: '{{ incpatch .Version }}-next'
 
+# Only a fallback. The workflow passes --release-notes with the CHANGELOG.md
+# section for the version being released, which takes precedence over anything
+# generated here — and a generated changelog is a commit log, which is not what
+# release notes are for.
 changelog:
   use: github
   sort: asc
