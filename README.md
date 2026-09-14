@@ -128,7 +128,25 @@ into any running container.
 
 ## CLI
 
-The CLI is the same binary as the server, so you can install it on your own machine:
+The CLI is the same binary as the server, so you can install it on your own machine. This installs
+the CLI only — the server is the Compose install above, because it needs a Postgres a package
+manager will not supply.
+
+macOS and Linux, with Homebrew:
+
+```bash
+brew install bemeek-io/tap/pando
+```
+
+Debian and Ubuntu: download the `.deb` for your architecture from the
+[releases page](https://github.com/bemeek-io/pando/releases), then
+
+```bash
+sudo apt install ./pando_<version>_linux_amd64.deb
+```
+
+The same page has `.rpm` and `.apk` packages and plain tarballs for macOS and Linux. To build it from
+source instead:
 
 ```bash
 go install github.com/bemeek-io/pando/cmd/pando@latest

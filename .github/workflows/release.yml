@@ -1,0 +1,46 @@
+name: Release
+
+# A tag is the trigger, and the tag is the version — .goreleaser.yaml stamps it
+# into the binary. CI has already run on main by the time a tag is pushed, so
+# this job builds and publishes rather than re-checking.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # GoReleaser needs the full history to build a changelog, and the tags
+          # to work out the version.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: true
+
+      # The console is embedded in the binary, so the release build needs Node
+      # even though nothing else about a Go release does.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A PAT with contents:write on bemeek-io/homebrew-tap. Without it the
+          # release fails at the cask step: GITHUB_TOKEN is scoped to this
+          # repository and cannot push to the tap.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
