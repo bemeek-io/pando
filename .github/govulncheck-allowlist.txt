@@ -29,6 +29,43 @@
 # and is patched by patching Docker, which is outside what Pando ships.
 #
 # Remove both when github.com/docker/docker publishes a fixed release.
-# Last reviewed: 2026-09-13, against github.com/docker/docker v28.5.2.
+# Last reviewed: 2026-09-14, against github.com/docker/docker v28.5.2.
 GO-2026-4887
 GO-2026-4883
+
+# --------------------------------------------------------------------------
+# Dependabot raises four more against the same module. They are recorded here
+# rather than only in the Security tab, because a dismissal whose reasoning
+# lives in a web UI is one nobody re-reads when the advisory changes. They are
+# not listed as IDs below: this file is read by scripts/check-vulns.py, which
+# matches govulncheck's OSV IDs, and these have none.
+#
+#   GHSA-rg2x-37c3-w2rh  high    `docker cp` race redirects a bind mount to a
+#                                host path
+#   GHSA-vp62-88p7-qqf5  medium  `docker cp` race creates empty files at
+#                                arbitrary host paths
+#   GHSA-x86f-5xw2-fm2r  high    PUT /containers/{id}/archive runs the
+#                                container's decompression binary on the host
+#   GHSA-pxq6-2prw-chj9  medium  off-by-one in plugin privilege validation
+#                                (the same advisory as GO-2026-4883 above)
+#
+# All four are daemon code: the first three are the `docker cp` mount setup in
+# the daemon's archive handling, the fourth is plugin installation. None of it
+# is in the binary. `go list -deps ./internal/adapter/runtime/docker` resolves
+# to exactly three things under that module — api/…, client, and pkg/stdcopy —
+# and no daemon/… or plugin/… package at all.
+#
+# The exposure these advisories describe belongs to the host's own Docker
+# installation, which is patched by patching Docker. Pando is one of the clients
+# talking to it.
+#
+# github.com/docker/docker has no fixed release and will not get one: the module
+# stops at v28.5.2+incompatible, and Moby's maintained line is the split-out
+# github.com/moby/moby/api and github.com/moby/moby/client modules, which these
+# advisories do not name. Those are already in the module graph, pulled in by
+# testcontainers-go. Porting the runtime adapter onto them is what actually
+# removes this dependency; it is a real port rather than a rename, because the
+# client's surface moved to options and result structs. Tracked separately.
+#
+# Dismissed on GitHub as "vulnerable code is not actually used", pointing here.
+# Last reviewed: 2026-09-14, against github.com/docker/docker v28.5.2.
