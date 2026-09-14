@@ -19,13 +19,16 @@
 
 ## What is Pando?
 
-Pando is a deployment platform you run on one machine you control — a VPS, a home server, a laptop.
-It takes the place of a hosting provider for web applications: you give it a git repository, and it
-handles building the app, running it, giving it an address, and controlling who can reach it.
+Pando is a self-hosted deployment platform. It runs on a machine you control — a laptop, a home
+server, a VPS, a server inside a company network — and hosts web applications on it: building them
+from a git repository, running them in containers, giving each an address, and deciding who can
+reach them.
 
-It is aimed at people who deploy a handful of applications rather than hundreds: side projects,
-internal tools, small products. The work of setting up builds, networking and access happens once
-when you install Pando, rather than once per application.
+It is used two ways, and does the same job in both. On your own machine it takes the place of a
+hosting provider for side projects and tools you would rather not pay to host. Inside a team or a
+company it is one place to run internal applications, with accounts, groups, roles, host policy and
+an audit log — and with every app reached through one Pando hostname rather than a public hostname,
+certificate and firewall rule per application.
 
 What it does:
 
@@ -43,7 +46,31 @@ What it does:
 - **Gives you logs, a terminal into a running container, and one-click rollback** to any previous
   configuration.
 - **Backs up app storage**, including automatically before an app is deleted.
-- **Records an audit log** of everything anyone did, which cannot be edited or deleted.
+
+### For teams and organizations
+
+The same installation, configured rather than upgraded. There is no separate edition and no feature
+gating.
+
+- **Accounts, groups and roles.** Permissions are individual verbs in two scopes — what someone can
+  do to one app, and what they can do to the installation. The four built-in roles cannot be edited,
+  and custom roles are composed from the verb list. Access can be granted to a group as easily as to
+  a person, and group membership is read at the moment of the decision rather than copied into
+  grants. Accounts are local to the installation in this version.
+- **Two separate planes.** Being able to *use* an app and being able to *administer* it are separate
+  grants, so somebody who runs an application need not be able to open it, and somebody who uses it
+  daily need not be able to change it.
+- **Host policy**, set once and enforced everywhere: which sources apps may be deployed from, whether
+  apps may be made public, minimum isolation for builds and for runtime, an egress allowlist, whether
+  a backup is required before anything is destroyed, a maximum lifetime for API tokens, and verbs
+  disabled installation-wide — `app.exec` most often, and separately for automated tokens.
+- **An audit log that cannot be rewritten.** Every action is recorded with who did it, and the
+  database role Pando runs as holds no `UPDATE` or `DELETE` on that table, so neither Pando nor an
+  adapter can alter it after the fact.
+- **Isolation between apps.** Each app runs on its own private network and publishes nothing to the
+  host. Builds run in a rootless builder with no access to a container runtime socket.
+- **One way in.** All traffic reaches applications through Pando's proxy, which authenticates the
+  caller and makes the authorization decision. There is no bypass for public apps or for websockets.
 
 ## Install
 
