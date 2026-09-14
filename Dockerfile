@@ -1,6 +1,34 @@
 # Pando ships as one binary (R-253). This image is how it reaches a host —
 # the artifact is unchanged, the container is just the delivery.
 #
+# The console is embedded in the binary rather than served beside it (R-253),
+# so it has to exist before the Go build, not after it. Building it here rather
+# than relying on whatever the host happens to have in internal/console/dist:
+# that directory holds only a README in a fresh clone, so an image built without
+# this stage starts, serves the API, and 404s the UI.
+#
+# Go as well as Node, because `npm run build` regenerates the API types from the
+# Go types first (R-261: the API is the product, so the console's view of it is
+# generated rather than written). A Node-only stage cannot run it, and splitting
+# the steps here would put a second definition of how the console builds next to
+# the one in package.json.
+#
+# Neither toolchain reaches the final image.
+FROM golang:1.27-alpine AS console
+WORKDIR /src
+RUN apk add --no-cache nodejs npm
+
+# Manifests first, so a change to console source does not re-run npm ci.
+COPY console/package.json console/package-lock.json ./console/
+RUN cd console && npm ci
+
+# The whole tree: the build reads cmd/gen-api-types for the types and
+# .claude/skills/pando-design for the design system.
+COPY . .
+# Vite is configured to write to ../internal/console/dist, which is the path
+# go:embed reads.
+RUN cd console && npm run build
+
 FROM golang:1.27-alpine AS build
 WORKDIR /src
 
@@ -9,6 +37,14 @@ COPY go.mod go.sum* ./
 RUN go mod download
 
 COPY . .
+COPY --from=console /src/internal/console/dist/ ./internal/console/dist/
+
+# go:embed is satisfied by the directory's README alone, so a console that
+# failed to arrive would produce a binary that builds, starts, and has no UI.
+# Fail here instead, where the cause is still visible.
+RUN test -f internal/console/dist/index.html \
+    || { echo "the console did not reach the build stage" >&2; exit 1; }
+
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pando ./cmd/pando
 
 # 3.21 rather than 3.20 because that is where postgresql17-client appears, and
