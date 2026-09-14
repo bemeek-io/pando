@@ -21,10 +21,13 @@
     "isolatedModules": true,
     "noEmit": true,
 
-    "baseUrl": ".",
+    // No baseUrl: TypeScript 6 rejects it (TS5101) and 7 removes it. Without
+    // one, a path mapping resolves against this file's own directory, which is
+    // what "." meant here anyway — so the entries say so explicitly rather
+    // than relying on a default that is easy to misread.
     "paths": {
-      "@design": ["src/design/index.d.ts"],
-      "@api/*": ["src/api/*"]
+      "@design": ["./src/design/index.d.ts"],
+      "@api/*": ["./src/api/*"]
     }
   },
   "include": ["src"],
