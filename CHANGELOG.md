@@ -11,8 +11,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Every release section names, in this order: **Security** (including every publicly known vulnerability
 fixed in it, with its CVE or GHSA identifier), **Added**, **Changed**, **Deprecated**, **Removed**,
-**Fixed**, **Upgrade notes** for anything requiring an operator action, and **Open** for a known
-weakness an operator should know about that is not yet decided.
+**Fixed**, and **Upgrade notes** for anything requiring an operator action.
 
 ## [Unreleased]
 
@@ -35,6 +34,12 @@ Unreleased above it.
   zero parallelism, and an empty key field compared equal to an empty candidate, so a corrupted or
   hand-edited row could take the process down or accept anything. Both are now rejected during
   decoding. Found by fuzzing; covered by `TestR042_AMalformedStoredHashDeniesRatherThanPanics`.
+- Session cookies are marked `Secure` behind a TLS-terminating reverse proxy. Pando sees plain HTTP
+  in that topology, so it could not tell an encrypted browser connection from an unencrypted one and
+  sent the cookie without the attribute; one plaintext request to the hostname put a live session on
+  the wire. Set `PANDO_SERVER_EXTERNAL_URL` to the address browsers use. **Upgrade note:** an
+  installation behind a proxy should set it — unset keeps the previous behavior, which is correct
+  only when Pando serves TLS itself or runs on localhost. (O-19)
 - The API server sets `ReadHeaderTimeout` and `IdleTimeout`. Without them a client dribbling header
   bytes held a connection open indefinitely. The proxy's per-app listeners already did this; the API
   server was the one that did not. Found by `gosec`.
@@ -55,12 +60,6 @@ Unreleased above it.
 - The Docker image ships with the console in it. `docker compose up -d` built an image whose binary
   had no UI embedded, so it served the API and returned 404 for every console route.
 
-### Open
-
-- **O-19**: the session cookie is marked `Secure` only when Pando terminates TLS itself, so behind a
-  TLS-terminating reverse proxy — the topology `SECURITY.md` describes — it is sent without the
-  attribute. Needs a decision about which forwarded-protocol signal Pando trusts. See
-  [`docs/plan/open-decisions.md`](docs/plan/open-decisions.md).
 
 ## [0.1.0] - 2026-09-14
 

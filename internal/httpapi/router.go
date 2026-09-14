@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -76,6 +77,12 @@ type Server struct {
 	// source allowlist check (R-092) is skipped rather than assumed to pass —
 	// the call site says so explicitly.
 	Policy SourcePolicy
+
+	// ExternalURL is how a browser reaches this installation, when something
+	// other than Pando terminates TLS. It decides one thing: whether the
+	// session cookie is marked Secure (O-19). Nil falls back to the request,
+	// which is right when Pando serves TLS itself and on a localhost install.
+	ExternalURL *url.URL
 
 	// Minter publishes the assertion signing keys at /.well-known/jwks.json.
 	Minter     *assertion.Minter

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -98,6 +99,27 @@ type Server struct {
 	// install to the apps it fronts.
 	Issuer string `mapstructure:"issuer"`
 
+	// ExternalURL is how a browser reaches this installation, and exists
+	// because Pando usually does not terminate its own TLS (O-19).
+	//
+	// Behind a TLS-terminating reverse proxy — the topology SECURITY.md
+	// describes — every request arrives over plain HTTP, so `r.TLS` is nil and
+	// Pando cannot tell an encrypted browser connection from an unencrypted
+	// one. Session cookies then go out without `Secure`, and a single plaintext
+	// request to the hostname puts one on the wire.
+	//
+	// The operator states the scheme rather than Pando guessing it from a
+	// header. `X-Forwarded-Proto` is the usual answer and is rejected here for
+	// the same reason R-053 strips inbound `X-Pando-*`: any client that can
+	// reach Pando directly can also set it, so trusting it without a
+	// trusted-proxy list trades one hole for another, and with one it becomes a
+	// second thing to get wrong.
+	//
+	// Empty is correct for the two topologies where the request already tells
+	// the truth: Pando serving TLS itself, and the plain-HTTP localhost install
+	// the README documents.
+	ExternalURL string `mapstructure:"external_url"`
+
 	// RoutingMode is how apps are addressed — "subdomain" or "path" (design 03
 	// §4.1). Neither is a global setting in the spec sense; this is the
 	// install's default shape, and each app's spec still names its own mode.
@@ -171,6 +193,7 @@ func Load(path string) (*Config, error) {
 	//
 	// A zero default is not a value: it is how the key gets registered.
 	v.SetDefault("server.base_domain", "")
+	v.SetDefault("server.external_url", "")
 	v.SetDefault("reconciler.backoff", "")
 	v.SetDefault("reconciler.failure_threshold", 0)
 	v.SetDefault("reconciler.failure_window", time.Duration(0))
@@ -194,6 +217,7 @@ func Load(path string) (*Config, error) {
 		"server.base_domain":    "PANDO_SERVER_BASE_DOMAIN",
 		"server.proxy_upstream": "PANDO_SERVER_PROXY_UPSTREAM",
 		"server.issuer":         "PANDO_SERVER_ISSUER",
+		"server.external_url":   "PANDO_SERVER_EXTERNAL_URL",
 		"server.addr":           "PANDO_SERVER_ADDR",
 		"server.routing_mode":   "PANDO_SERVER_ROUTING_MODE",
 		"server.work_dir":       "PANDO_SERVER_WORK_DIR",
@@ -227,5 +251,37 @@ func (c *Config) validate() error {
 	if c.Database.URL == "" {
 		return fmt.Errorf("no database URL configured: set PANDO_DATABASE_URL, or database.url in the config file")
 	}
+	if _, err := c.Server.External(); err != nil {
+		return err
+	}
 	return nil
+}
+
+// External parses ExternalURL, returning nil when it is unset.
+//
+// Checked at startup rather than at the first sign-in, because the symptom of
+// getting it wrong is a cookie attribute nobody looks at until it matters.
+func (s Server) External() (*url.URL, error) {
+	if strings.TrimSpace(s.ExternalURL) == "" {
+		return nil, nil
+	}
+
+	u, err := url.Parse(strings.TrimSpace(s.ExternalURL))
+	if err != nil {
+		return nil, fmt.Errorf(
+			"PANDO_SERVER_EXTERNAL_URL is not a URL: %q. "+
+				"Valid answer: the address browsers use to reach Pando, such as https://pando.example.com", s.ExternalURL)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf(
+			"PANDO_SERVER_EXTERNAL_URL must start with http:// or https://, got %q. "+
+				"The scheme is the whole point of this setting: it is how Pando knows whether to mark "+
+				"session cookies Secure when something else terminates TLS", s.ExternalURL)
+	}
+	if u.Host == "" {
+		return nil, fmt.Errorf(
+			"PANDO_SERVER_EXTERNAL_URL has no host: %q. "+
+				"Valid answer: the address browsers use to reach Pando, such as https://pando.example.com", s.ExternalURL)
+	}
+	return u, nil
 }

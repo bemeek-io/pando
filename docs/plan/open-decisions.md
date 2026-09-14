@@ -2,9 +2,9 @@
 
 Eighteen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
 design; O-15 through O-17 were found while implementing phases 6, 7 and 8; O-18 was found while
-setting up the release build; O-19 was found by turning `gosec` on. **Sixteen are resolved. Three
-remain** — O-4 needs a measurement, O-18 needs somebody to pick a host and pay for it, and O-19 is
-the only one of the three that is a design decision.
+setting up the release build; O-19 was found by turning `gosec` on. **Seventeen are resolved. Two
+remain, and neither is a design decision** — O-4 needs a measurement and O-18 needs somebody to pick
+a host and pay for it.
 
 O-5 was the other long-standing one and is now resolved: "per-adapter" answered it until R-174 made
 Pando run the edge and write its configuration, at which point Pando became the thing choosing.
@@ -19,7 +19,6 @@ resolution both here and in the requirements or design doc that owns it.
 |---|---|---|---|
 | **O-4** | Required vs optional slot detection — the forty-key `.env.example` problem | Has a `[P]` answer that needs measuring, not deciding | Phase 6 |
 | **O-18** | Where a signed apt repository is hosted, so `apt install pando` works without downloading a file first | Costs money or custody of a signing key; neither is an engineering call | Not blocking — the `.deb` is already published |
-| **O-19** | When is the session cookie marked `Secure`? | Needs a decision about which forwarded-protocol signal Pando trusts | Before an install is exposed to the internet |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything not typed to
 a known service, and let the trial run settle it — a slot whose absence crashes the trial run is
@@ -45,7 +44,21 @@ key:
 The choice matters more than it looks: an unsigned repository, or one added with `[trusted=yes]`,
 tells every user of a product that argues for provenance to skip checking ours.
 
-**O-19 is a live weakness, not a tidiness question.** `handleLogin` sets the session cookie with
+**O-19 — the session cookie's `Secure` attribute. Resolved:** option 3, an explicit
+`PANDO_SERVER_EXTERNAL_URL`. The operator states the scheme browsers reach the installation on, and
+Pando believes the operator rather than the request. Unset falls back to `r.TLS != nil`, which is
+correct for the two topologies where the request tells the truth — Pando terminating its own TLS, and
+the plain-HTTP localhost install the README documents. Implemented in
+`internal/httpapi.Server.secureCookie`, with the decision table in
+`cookie_secure_internal_test.go`; the value is parsed and rejected at startup rather than at the
+first sign-in.
+
+Option 2, a trusted-proxy list, was the other real candidate and is a fine answer; it loses on
+having two things to get wrong instead of one, and on a wrong trusted-proxy list failing quietly.
+Option 1 was never viable and option 4 breaks the README as written. The rest of this section is the
+original write-up, kept because the reasoning is why the answer is what it is.
+
+**It was a live weakness, not a tidiness question.** `handleLogin` sets the session cookie with
 `Secure: r.TLS != nil` (`internal/httpapi/session_handlers.go`). That is right for the documented
 default install — plain HTTP on `localhost`, where an unconditional `Secure` would stop sign-in
 working, and where `localtest.me` is not a browser-trustworthy origin either. It is **wrong** for the
@@ -75,8 +88,8 @@ What has to be decided is not *whether* to fix it but **which signal Pando trust
 Whichever is chosen, the cookie set in `handleLogout` has to follow it: a clearing cookie whose
 attributes differ from the original may not clear it at all.
 
-Until this is decided, `gosec`'s G124 finding on both call sites is suppressed with a `//nolint`
-naming O-19, rather than with a claim that it is a false positive. It is not one.
+`gosec`'s G124 finding on both call sites is still suppressed, because `Secure` is computed rather
+than a literal `true` — but it now names the function that decides it instead of an open question.
 
 **O-15** was found by asking whether a detected app could actually deploy. It could not: the spec had
 no routing, and filling that in surfaced the question nobody had answered. **It is now resolved** —

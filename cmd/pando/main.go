@@ -363,6 +363,20 @@ func serve(ctx context.Context, configPath string) error {
 		return err
 	}
 
+	// Validated in config.Load, so this cannot fail here; the second read is
+	// how the parsed value reaches the handlers.
+	externalURL, err := cfg.Server.External()
+	if err != nil {
+		return err
+	}
+	if externalURL == nil {
+		logger.Info("no external URL configured; session cookies are marked Secure only when Pando itself serves TLS",
+			zap.String("setting", "PANDO_SERVER_EXTERNAL_URL"))
+	} else if externalURL.Scheme != "https" {
+		logger.Warn("external URL is http, so session cookies are not marked Secure",
+			zap.String("external_url", externalURL.String()))
+	}
+
 	authenticator := &httpapi.Authenticator{
 		Sessions: sessions,
 		Tokens:   tokens,
@@ -422,6 +436,9 @@ func serve(ctx context.Context, configPath string) error {
 		Authent:  authenticator,
 		Minter:   minter,
 		AppProxy: appProxy,
+
+		// Decides whether the session cookie is marked Secure (O-19).
+		ExternalURL: externalURL,
 
 		// So the console does not answer on an app's own hostname. Without
 		// this the console's "/" route shadows every subdomain app's root.
