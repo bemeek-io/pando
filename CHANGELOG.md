@@ -11,12 +11,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Every release section names, in this order: **Security** (including every publicly known vulnerability
 fixed in it, with its CVE or GHSA identifier), **Added**, **Changed**, **Deprecated**, **Removed**,
-**Fixed**, and **Upgrade notes** for anything requiring an operator action.
+**Fixed**, **Upgrade notes** for anything requiring an operator action, and **Open** for a known
+weakness an operator should know about that is not yet decided.
 
 ## [Unreleased]
 
-Changes since v0.1.0. Rename this heading to the version and date when the next release is cut — the
-release workflow reads the section matching the tag and refuses to release without one.
+Nothing yet. Rename this heading to the version and date when the next release is cut — the release
+workflow reads the section matching the tag and refuses to release without one — and open a fresh
+Unreleased above it.
+
+## [0.1.1] - 2026-09-14
 
 ### Security
 
@@ -63,5 +67,6 @@ release workflow reads the section matching the tag and refuses to release witho
 The first release. Its notes were generated from the commit log, which is what this file now exists
 to replace; see the release page for the artifact list.
 
-[Unreleased]: https://github.com/bemeek-io/pando/compare/v0.1.0...main
+[Unreleased]: https://github.com/bemeek-io/pando/compare/v0.1.1...main
+[0.1.1]: https://github.com/bemeek-io/pando/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/bemeek-io/pando/releases/tag/v0.1.0
