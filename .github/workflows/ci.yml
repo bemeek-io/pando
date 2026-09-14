@@ -2,10 +2,7 @@ name: CI
 
 on:
   push:
-    # The default branch, whatever it is currently called. A filter naming only
-    # "main" on a repository whose default branch is not main means CI never
-    # runs and the badge never turns green — which looks like a broken build.
-    branches: [main, implementation]
+    branches: [main]
   pull_request:
 
 jobs:
@@ -37,12 +34,13 @@ jobs:
       - name: Test
         run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
 
-      # Public repository, so no token is needed. Unit coverage only — the
-      # integration job runs separately against real Postgres and real Docker,
-      # and merging the two profiles would report a number neither job measured.
+      # Unit coverage only. The integration job runs separately against real
+      # Postgres and real Docker, and merging the two profiles would report a
+      # number neither job measured.
       - name: Upload coverage
         uses: codecov/codecov-action@v5
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
           flags: unit
           fail_ci_if_error: false

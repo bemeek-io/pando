@@ -7,7 +7,7 @@
 **Deploy and share apps**
 
 [![CI](https://github.com/bemeek-io/pando/actions/workflows/ci.yml/badge.svg)](https://github.com/bemeek-io/pando/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/bemeek-io/pando/branch/implementation/graph/badge.svg)](https://codecov.io/gh/bemeek-io/pando)
+[![codecov](https://codecov.io/gh/bemeek-io/pando/branch/main/graph/badge.svg)](https://codecov.io/gh/bemeek-io/pando)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-B23A2C)](LICENSE)
 [![Go 1.27](https://img.shields.io/badge/go-1.27-B23A2C)](go.mod)
 
@@ -131,7 +131,7 @@ into any running container.
 The CLI is the same binary as the server, so you can install it on your own machine:
 
 ```bash
-go install github.com/bemeek-io/pando/cmd/pando@implementation
+go install github.com/bemeek-io/pando/cmd/pando@latest
 ```
 
 Or use the one already inside the container, via `docker compose exec pando pando …`.
