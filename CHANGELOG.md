@@ -15,7 +15,13 @@ fixed in it, with its CVE or GHSA identifier), **Added**, **Changed**, **Depreca
 
 ## [Unreleased]
 
-Nothing yet. Rename this heading to the version and date when the next release is cut — the release
+### Fixed
+
+- The `cosign verify-blob` command in [`docs/releasing.md`](docs/releasing.md#verifying-a-download)
+  rejected every release cut the normal way. It required a certificate identity ending
+  `@refs/tags/v`, but a release dispatched from `main` lets the workflow create the tag, so the run —
+  and the certificate — belongs to `refs/heads/main`. Anyone following the instructions on v0.1.1
+  would have concluded a good release was forged. The documented regex now matches both paths. Rename this heading to the version and date when the next release is cut — the release
 workflow reads the section matching the tag and refuses to release without one — and open a fresh
 Unreleased above it.
 
