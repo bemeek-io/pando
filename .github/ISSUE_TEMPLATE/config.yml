@@ -1,0 +1,14 @@
+blank_issues_enabled: true
+
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/bemeek-io/pando/security/advisories/new
+    about: >-
+      Privately, through GitHub's advisory form — not as an issue. A public
+      issue describes the bug before anyone can upgrade. See SECURITY.md.
+
+  - name: Ask a question
+    url: https://github.com/bemeek-io/pando/discussions
+    about: >-
+      For "how do I" and "should this work this way". If the answer turns out
+      to be a bug, open an issue then.

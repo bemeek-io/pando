@@ -71,6 +71,7 @@ func Verify(v secret.Value, encoded string) (bool, error) {
 	}
 
 	candidate := argon2.IDKey([]byte(v.Reveal()), salt,
+		//nolint:gosec // G115: decode bounds len(key) to maxKeyLength.
 		params.time, params.memory, params.parallelism, uint32(len(key)))
 
 	return subtle.ConstantTimeCompare(key, candidate) == 1, nil
@@ -109,5 +110,50 @@ func decode(encoded string) (params, []byte, []byte, error) {
 	if err != nil {
 		return params{}, nil, nil, fmt.Errorf("malformed argon2id key: %w", err)
 	}
+
+	// Everything above parses; this rejects what parses but is not usable.
+	// Found by FuzzVerifyEncodedHash, and both halves are worth stating:
+	//
+	// argon2.IDKey *panics* on t=0 or p=0 rather than returning an error, so
+	// without this a stored hash carrying either takes the process down from
+	// inside the sign-in path — the exact outcome Verify's doc comment
+	// promises it will not have.
+	//
+	// An empty key is worse than a panic. subtle.ConstantTimeCompare reports a
+	// match for two zero-length slices, so a hash ending in an empty key field
+	// verifies true against every password. Writing one takes database access,
+	// which is why this is a robustness rule and not an advisory — but a rule
+	// whose absence turns a corrupted row into an authentication bypass is one
+	// worth having.
+	switch {
+	case p.time < 1:
+		return params{}, nil, nil, fmt.Errorf("argon2id time cost must be at least 1, got %d", p.time)
+	case p.parallelism < 1:
+		return params{}, nil, nil, fmt.Errorf("argon2id parallelism must be at least 1, got %d", p.parallelism)
+	case p.memory < 8*uint32(p.parallelism):
+		// argon2 silently raises memory to this floor, which would derive a
+		// different key than the hash claims to hold. Refuse instead.
+		return params{}, nil, nil, fmt.Errorf("argon2id memory cost %d is below the floor for parallelism %d",
+			p.memory, p.parallelism)
+	case len(salt) < minSaltLength:
+		return params{}, nil, nil, fmt.Errorf("argon2id salt is %d bytes, minimum %d", len(salt), minSaltLength)
+	case len(key) < minKeyLength || len(key) > maxKeyLength:
+		return params{}, nil, nil, fmt.Errorf("argon2id key is %d bytes, expected %d to %d",
+			len(key), minKeyLength, maxKeyLength)
+	}
+
 	return p, salt, key, nil
 }
+
+// Bounds on what decode will accept from a stored hash.
+//
+// A range rather than the exact keyLength this package writes, because the key
+// length is the one parameter the encoding does not record: Verify derives its
+// candidate at whatever length the stored key is, so a hash written by a
+// version that used a different length still verifies. The range is what keeps
+// that flexibility from including zero.
+const (
+	minSaltLength = 8 // RFC 9106 §4
+	minKeyLength  = 16
+	maxKeyLength  = 64
+)

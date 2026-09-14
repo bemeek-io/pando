@@ -3,6 +3,10 @@
 # The depguard block below is not style enforcement — it is R-027 made mechanical.
 # See docs/design/03-adapter-interfaces.md §9 and internal/adapter/CLAUDE.md.
 #
+# gosec is the static analysis pass for common vulnerability classes. Every
+# suppression in the source names the rule and why it does not apply; a bare
+# //nolint is indistinguishable from one nobody checked. See SECURITY.md.
+#
 # errcheck, govet, ineffassign, staticcheck and unused are enabled by default in v2
 # and are not repeated here.
 
@@ -14,11 +18,22 @@ linters:
     - contextcheck
     - depguard
     - errorlint
+    - gosec
     - nilerr
     - rowserrcheck
     - sqlclosecheck
 
   settings:
+    gosec:
+      excludes:
+        # G101 matches on identifier *names*, not values. Every hit in this
+        # repository is a constant whose name contains "secret" or "token" and
+        # whose value is a verb string or an error code — `app.secrets.write`,
+        # `AUTH_TOKEN_INVALID`. Suppressed globally rather than site by site,
+        # because the verb list and the error code list both grow, and a rule
+        # that fires on every addition is a rule people learn to silence.
+        - G101
+
     depguard:
       rules:
         # R-027: adapters cannot touch authorization, audit, or state.
@@ -75,10 +90,25 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
+      # Tests deliberately build the insecure thing in order to assert that the
+      # code under test rejects it: a forged cookie with no Secure flag, a
+      # handler that echoes its path. Flagging the fixture rather than the
+      # behavior under test is noise, and the R-053 and R-173 tests are exactly
+      # the ones that would be weakened to silence it.
+      - path: _test\.go
+        linters:
+          - gosec
     paths:
       - third_party$
       - builtin$
       - examples$
+
+# Report every finding. The defaults cap a linter at 50 issues and the same
+# issue at 3, which hid four gosec findings behind three identical ones the
+# first time gosec was switched on — including a real one.
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
 
 formatters:
   enable:

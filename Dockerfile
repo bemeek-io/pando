@@ -45,6 +45,10 @@ COPY --from=console /src/internal/console/dist/ ./internal/console/dist/
 RUN test -f internal/console/dist/index.html \
     || { echo "the console did not reach the build stage" >&2; exit 1; }
 
+# No version stamp. The server is installed from this image by building it
+# locally (design 00 §1.1), so this build is not a release and must not claim to
+# be one — `pando version` reports "development build" and that is accurate.
+# GoReleaser stamps the released CLI; see .goreleaser.yaml.
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pando ./cmd/pando
 
 # 3.21 rather than 3.20 because that is where postgresql17-client appears, and

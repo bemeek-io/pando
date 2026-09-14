@@ -269,7 +269,10 @@ func (s *Server) handleDeploymentLogs(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	for _, line := range backlog {
-		fmt.Fprintf(w, "data: %s\n\n", line)
+		// G705: not an HTML context. The response is text/event-stream, set
+		// above before anything is written, and a browser never parses an SSE
+		// frame as markup. The console renders these lines as text.
+		fmt.Fprintf(w, "data: %s\n\n", line) //nolint:gosec
 	}
 	_ = rc.Flush()
 

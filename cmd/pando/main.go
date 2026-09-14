@@ -450,7 +450,21 @@ func serve(ctx context.Context, configPath string) error {
 		Idempotency: state.NewIdempotency(db),
 	}).Routes()
 
-	srv := &http.Server{Addr: cfg.Server.Addr, Handler: apiHandler}
+	srv := &http.Server{
+		Addr:    cfg.Server.Addr,
+		Handler: apiHandler,
+
+		// A client that opens a connection and dribbles header bytes holds a
+		// goroutine open indefinitely without this. Matches what the proxy's
+		// per-app listeners already do (internal/proxy/ports.go).
+		//
+		// ReadHeaderTimeout and IdleTimeout only. A ReadTimeout or WriteTimeout
+		// would cut the responses this API exists to stream — the deploy log's
+		// SSE feed, `pando logs --follow`, and the exec websocket — at a fixed
+		// wall-clock deadline, which is the wrong tool for a slow client.
+		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 
 	// The reconciler. Apps that kept running while Pando was away are converged
 	// to, not restarted for tidiness — an app that was running and is still

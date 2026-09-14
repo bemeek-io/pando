@@ -61,7 +61,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	// Secure is conditional because the documented default install is plain
+	// HTTP on localhost, and an unconditional Secure flag would stop sign-in
+	// working there. That condition is wrong in the other documented topology:
+	// behind a TLS-terminating reverse proxy r.TLS is nil, so the cookie goes
+	// out without Secure even though the browser's connection is encrypted.
+	//
+	// Resolving that needs a decision about which forwarded-protocol signal
+	// Pando trusts and when. It is recorded as O-19 in
+	// docs/plan/open-decisions.md and is not decided here.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is conditional; O-19.
 		Name:     SessionCookie,
 		Value:    sess.ID,
 		Path:     "/",
@@ -105,8 +114,17 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name: SessionCookie, Value: "", Path: "/", HttpOnly: true, MaxAge: -1,
+	// The attributes have to match the cookie being cleared, or a browser may
+	// treat this as a different cookie and leave the original one in place.
+	// Same set as handleLogin, with MaxAge: -1 and an empty value.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: see the Secure note in handleLogin (O-19).
+		Name:     SessionCookie,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
 	})
 	JSON(w, http.StatusNoContent, nil)
 }

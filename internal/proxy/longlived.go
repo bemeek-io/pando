@@ -101,7 +101,9 @@ func closeFrame(code uint16, reason string) []byte {
 
 	frame := make([]byte, 0, 2+len(payload))
 	frame = append(frame, 0x88) // FIN + opcode 8 (close)
-	frame = append(frame, byte(len(payload)))
+	// G115: payload was truncated to 125 bytes immediately above, which is the
+	// reason the truncation is there.
+	frame = append(frame, byte(len(payload))) //nolint:gosec
 	return append(frame, payload...)
 }
 

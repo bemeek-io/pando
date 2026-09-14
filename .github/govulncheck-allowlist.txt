@@ -1,0 +1,34 @@
+# Vulnerabilities govulncheck reports that this build accepts, one OSV ID per
+# line. Anything not listed here fails the build.
+#
+# An entry is a claim that somebody looked at the advisory and decided it does
+# not apply, and it has to say why. An entry with no reasoning is an entry
+# nobody can re-check when the advisory changes — and an allowlist nobody
+# re-checks is worse than no scanner, because it reads like the scan passed.
+#
+# Review these whenever the module is upgraded. Remove an entry the moment a
+# fixed version exists; the reason for keeping one is always "there is no fix",
+# never "the fix is inconvenient".
+
+# --------------------------------------------------------------------------
+# GO-2026-4887 — Moby: AuthZ plugin bypass with oversized request bodies
+# GO-2026-4883 — Moby: off-by-one in plugin privilege validation
+#
+# Both are vulnerabilities in the Moby **daemon**. Pando imports
+# github.com/docker/docker as a client library — it speaks to a daemon, it does
+# not contain one — and neither the authorization-plugin path nor the plugin
+# privilege path exists in the client.
+#
+# govulncheck reports them as called because the advisories name the whole
+# module rather than specific symbols, so every trace it prints resolves to
+# something like `docker.init calls filters.init`. That is module-level
+# matching, not reachability.
+#
+# Neither has a fixed version (`Fixed in: N/A`), so there is no upgrade to take.
+# The daemon these advisories are about is the host's own Docker installation
+# and is patched by patching Docker, which is outside what Pando ships.
+#
+# Remove both when github.com/docker/docker publishes a fixed release.
+# Last reviewed: 2026-09-13, against github.com/docker/docker v28.5.2.
+GO-2026-4887
+GO-2026-4883

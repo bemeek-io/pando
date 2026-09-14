@@ -1,0 +1,52 @@
+# gitleaks configuration. Extends the shipped rule set rather than replacing it.
+#
+# The allowlists below are deliberately narrow — exact strings, not paths and
+# not `*_test.go`. Excluding test files wholesale is the obvious shortcut and it
+# is the wrong one: a credential committed by accident lands in a test fixture
+# at least as often as in production code, and an allowlist covering every test
+# file would not have caught it.
+#
+# Two blocks, because a rule may match on the whole line or on the captured
+# secret, and an entry only suppresses the target it is written against. Both
+# lists hold the same strings; which one a given rule needs is not something you
+# can tell without running it.
+
+title = "Pando"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Secret-shaped fixtures, matched against the captured secret."
+regexTarget = "secret"
+regexes = [
+  # internal/hash/hash_test.go — the literal a test hashes to assert that the
+  # stored argon2id hash does not contain the password it was derived from. The
+  # test only works if the value is distinctive enough to search for.
+  '''hunter2-THE-ACTUAL-SECRET''',
+
+  # internal/adapter/identity/local — a real argon2id hash of an unguessable
+  # value, verified against when the account does not exist so that a failed
+  # sign-in costs the same whether or not the username is real. A decoy with no
+  # plaintext, which is the entire point of it.
+  '''\$argon2id\$v=19\$m=65536,t=3,p=2\$Y2Fubm90Z3Vlc3N0aGlz''',
+
+  # internal/core/assertion/fuzz_test.go — an `alg: none` JWT with no
+  # signature, one of the seeds FuzzVerifyToken feeds the verifier to assert
+  # that it is refused. A token that verified would fail the test.
+  '''eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0\.eyJzdWIiOiJ1c3JfYWRtaW4ifQ\.''',
+
+  # The name of a cipher, in prose. SECURITY.md names the algorithms in use,
+  # and the generic-api-key rule reads this one as a high-entropy string.
+  '''ChaCha20-Poly1305''',
+]
+
+[[allowlists]]
+description = "The same fixtures, matched against the whole line."
+regexTarget = "match"
+regexes = [
+  '''hunter2-THE-ACTUAL-SECRET''',
+  '''\$argon2id\$v=19\$m=65536,t=3,p=2\$Y2Fubm90Z3Vlc3N0aGlz''',
+  '''eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0\.eyJzdWIiOiJ1c3JfYWRtaW4ifQ\.''',
+  '''ChaCha20-Poly1305''',
+]

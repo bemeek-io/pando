@@ -1,0 +1,80 @@
+name: Bug report
+description: Something does not work the way it is documented to work.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        If this is a security vulnerability, close this and use
+        [the advisory form](https://github.com/bemeek-io/pando/security/advisories/new)
+        instead. A public issue describes the bug before anyone can upgrade.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: >-
+        What you did, what you expected, and what you got instead. Exact error
+        text beats a description of it — Pando's errors carry a machine-readable
+        code and a request ID, and both narrow this down fast.
+      placeholder: |
+        I ran `pando deploy notes` and got:
+
+          PLAN_SLOT_UNFILLED — This app needs a PostgreSQL database, and one
+          hasn't been chosen yet.
+          request_id: req_01HQ8…
+
+        I expected it to use the database I connected last week.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce it
+      description: >-
+        Numbered steps from a fresh install where you can. If it depends on a
+        particular repository being deployed, a link to one that reproduces it
+        is worth more than anything else in this form.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `pando version`.
+      placeholder: pando 0.3.1, commit a1b2c3d4e5f6
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How is it installed
+      options:
+        - The shipped docker-compose.yml
+        - Docker Compose, modified
+        - The binary, run directly
+        - Built from source
+        - Something else — described below
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: >-
+        Host OS and architecture, Docker version, and whether Pando is behind a
+        reverse proxy. Whether an external Postgres is configured, if it is.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        `docker compose logs pando` around the failure. Pando redacts secret
+        values in its own logs, but read through what you paste — an app's log
+        lines pass through and those are not Pando's to redact.
+      render: text

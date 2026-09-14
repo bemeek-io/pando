@@ -136,7 +136,10 @@ func (c *Client) watchResize(ctx context.Context, conn *websocket.Conn, fd int) 
 		if err != nil || rows <= 0 || cols <= 0 {
 			return
 		}
-		body, err := json.Marshal(control{Rows: uint16(rows), Cols: uint16(cols)})
+		// G115: term.GetSize reads the kernel's winsize, whose fields are
+		// unsigned shorts. The values are already in uint16 range before Go
+		// widens them to int, and the guard above rules out the negative half.
+		body, err := json.Marshal(control{Rows: uint16(rows), Cols: uint16(cols)}) //nolint:gosec
 		if err != nil {
 			return
 		}
