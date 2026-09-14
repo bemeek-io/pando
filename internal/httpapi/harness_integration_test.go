@@ -25,17 +25,20 @@ import (
 	"go.uber.org/zap"
 
 	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
+	backuplocal "github.com/bemeek-io/pando/internal/adapter/backup/local"
 	identitylocal "github.com/bemeek-io/pando/internal/adapter/identity/local"
 	secretslocal "github.com/bemeek-io/pando/internal/adapter/secrets/local"
 	"github.com/bemeek-io/pando/internal/core/assertion"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/backup"
 	"github.com/bemeek-io/pando/internal/core/bootstrap"
 	"github.com/bemeek-io/pando/internal/core/clock"
 	"github.com/bemeek-io/pando/internal/core/deploy"
 	"github.com/bemeek-io/pando/internal/core/detection"
 	"github.com/bemeek-io/pando/internal/core/planner"
 	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
+	"github.com/bemeek-io/pando/internal/core/source"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/httpapi"
 	"github.com/bemeek-io/pando/internal/secret"
@@ -110,7 +113,8 @@ func newInstall(t *testing.T) *install {
 	t.Helper()
 	ctx := context.Background()
 
-	db, err := state.Connect(ctx, state.ConnectOptions{OwnerURL: freshDatabase(t)})
+	dbURL := freshDatabase(t)
+	db, err := state.Connect(ctx, state.ConnectOptions{OwnerURL: dbURL})
 	require.NoError(t, err)
 	t.Cleanup(db.Close)
 
@@ -142,6 +146,20 @@ func newInstall(t *testing.T) *install {
 		json.RawMessage(`{"key_path":`+quote(t, t.TempDir()+"/secrets.key")+`}`)))
 	require.NoError(t, registry.Register("sec_local", secretsAdapter))
 	require.NoError(t, registry.SetDefault(adapterapi.CategorySecrets, "sec_local"))
+
+	// Uploaded source goes to a directory this test owns. The default is
+	// /var/lib/pando/uploads, which a test cannot write to — and the failure
+	// arrives as a 500 from the upload endpoint rather than as anything that
+	// names the directory.
+	previousUploadDir := source.UploadDir
+	source.UploadDir = t.TempDir()
+	t.Cleanup(func() { source.UploadDir = previousUploadDir })
+
+	backupAdapter := backuplocal.New()
+	require.NoError(t, backupAdapter.Configure(ctx,
+		json.RawMessage(`{"path":`+quote(t, t.TempDir())+`}`)))
+	require.NoError(t, registry.Register("bk_local", backupAdapter))
+	require.NoError(t, registry.SetDefault(adapterapi.CategoryBackup, "bk_local"))
 
 	secrets := state.NewSecrets(db, secretsAdapter, "sec_local")
 	deployments := state.NewDeployments(db)
@@ -195,9 +213,17 @@ func newInstall(t *testing.T) *install {
 		PolicyStore: policyStore,
 		AuditLog:    audit.NewReader(db.Pool),
 
-		Groups:       state.NewGroups(db),
-		Roles:        state.NewRoles(db),
-		Backups:      state.NewBackups(db),
+		Groups:  state.NewGroups(db),
+		Roles:   state.NewRoles(db),
+		Backups: state.NewBackups(db),
+		Backup: &backup.Service{
+			Registry:      registry,
+			DatabaseURL:   secret.New(dbURL),
+			State:         state.NewBundleSource(db),
+			Version:       "test",
+			SchemaVersion: db.SchemaVersion(),
+			WorkDir:       t.TempDir(),
+		},
 		BundleSource: state.NewBundleSource(db),
 		Idempotency:  state.NewIdempotency(db),
 	}
