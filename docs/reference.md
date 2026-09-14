@@ -95,6 +95,7 @@ setting is joined with an underscore: `server.base_domain` is `PANDO_SERVER_BASE
 | `PANDO_SERVER_BASE_DOMAIN` | `localtest.me` | Domain per-app subdomains are taken from, under hostname routing. |
 | `PANDO_SERVER_ROUTING_MODE` | port | How apps are addressed: port, subdomain or path. |
 | `PANDO_SERVER_ISSUER` | derived | The `iss` claim in identity assertions. |
+| `PANDO_SERVER_EXTERNAL_URL` | — | The address browsers reach this installation on, such as `https://pando.example.com`. Set it when something other than Pando terminates TLS: it is what marks the session cookie `Secure`. Unset means "use the request", which is right on a localhost install and when Pando serves TLS itself. |
 | `PANDO_SERVER_PROXY_UPSTREAM` | — | Where the proxy sends traffic it has authorized. |
 | `PANDO_SERVER_WORK_DIR` | `/var/lib/pando` | Build contexts, uploads and adapter state. |
 | `PANDO_APP_PORT_START` / `_END` | `9000` / `9019` | Range of host ports apps are allocated. |
