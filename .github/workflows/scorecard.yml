@@ -30,7 +30,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ossf/scorecard-action@v2
+      # Pinned to an exact release. scorecard-action publishes no floating `v2`
+      # tag, so `@v2` fails to resolve before the job starts — which is how this
+      # was found, on main, after the workflow merged.
+      - uses: ossf/scorecard-action@v2.4.4
         with:
           results_file: results.sarif
           results_format: sarif
