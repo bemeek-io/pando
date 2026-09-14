@@ -34,9 +34,29 @@ test: ## Run unit tests
 COVERPROFILE ?=
 COVERFLAGS := $(if $(COVERPROFILE),-coverpkg=./... -coverprofile=$(COVERPROFILE) -covermode=atomic,)
 
+# Every integration package except the detection corpus, which has its own
+# target and its own workflow below.
+#
+# The corpus clones ten real repositories over the network and took 425 of the
+# 597 seconds this job spent — 71% of it, waiting on one package, on every
+# push. Measured against the rest of the suite it covers twenty statements
+# nothing else reaches, all of them in internal/detect. That is not a gate
+# worth putting in front of every change; it is a gate worth running nightly.
+#
+# `-tags=integration` on the `go list` is load-bearing, not decoration. Both
+# packages under test/ contain only integration-tagged files, so an untagged
+# `go list ./...` does not report them as packages at all — and a list built
+# without the tag would have quietly dropped test/acceptance, which is the four
+# sequences design 07 calls the acceptance criteria for v1. Excluding the
+# corpus must not exclude those.
+#
+# Lazy `=` rather than `:=` so the `go list` runs when a corpus-excluding
+# target is invoked, and not on every make.
+INTEGRATION_PKGS = $(shell $(GO) list -tags=integration ./... | grep -v '/test/corpus$$')
+
 .PHONY: test-integration
-test-integration: ## Run integration tests (real Postgres + Docker, via testcontainers)
-	$(GO) test -race -count=1 -timeout=15m -tags=integration $(COVERFLAGS) ./...
+test-integration: ## Run integration tests, minus the corpus (real Postgres + Docker)
+	$(GO) test -race -count=1 -timeout=15m -tags=integration $(COVERFLAGS) $(INTEGRATION_PKGS)
 
 .PHONY: vet
 vet: ## go vet, including the integration-tagged tests
@@ -117,8 +137,14 @@ console-check: ## Brand adherence and types for the console (needs npm)
 # ---------------------------------------------------------------------------
 # Detection
 
+# Not part of `make test-integration`, and not on the push path. It clones ten
+# real repositories, so it is slow and it depends on ten third-party projects
+# staying reachable — two properties that belong to a nightly run rather than
+# to every pull request. The corpus workflow runs it nightly, on demand, and on
+# a pull request that touches detection; `make vet` still compiles it on every
+# push, so it cannot rot in silence.
 .PHONY: detection-corpus
-detection-corpus: ## Run detection against the corpus of real repositories
+detection-corpus: ## Run detection against the corpus of real repositories (network, slow)
 	$(GO) test -tags=integration -count=1 -timeout=20m -v ./test/corpus/
 
 # ---------------------------------------------------------------------------

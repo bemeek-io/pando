@@ -22,9 +22,16 @@ make help                    # all targets
 make build                   # the pando binary
 make console                 # build the console into the embedded assets
 make test-integration        # real Postgres and Docker, via testcontainers
+make detection-corpus        # detection against ten real repositories (network, slow)
 make requirements-coverage   # which requirements have a named acceptance test
 make fuzz                    # fuzz the parsers that read untrusted input
 ```
+
+`make detection-corpus` is not part of `make test-integration` and does not run on a pull request
+unless that request touches `internal/detect`. It clones ten real repositories, so it is slow and it
+depends on those repositories staying reachable. CI runs it nightly; run it yourself before changing
+a detector, because the number it reports — questions per deploy, the R-103 metric — appears nowhere
+else.
 
 `make fuzz` runs each target for `FUZZ_TIME` (60s by default) and is not part of `make check`, which
 has to stay fast. Their seed corpora do run in `make test`, so a crasher committed to `testdata/fuzz`
