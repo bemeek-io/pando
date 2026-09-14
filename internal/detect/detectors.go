@@ -333,8 +333,9 @@ func (d StaticDetector) Bid(_ context.Context, src api.SourceView) (Candidate, e
 // carry no deployment instructions at all.
 //
 // This is the case R-103 is really about: an app written by someone who never
-// thought about deployment. The bid is deliberately modest and always carries
-// questions, because a language is not a deployment.
+// thought about deployment. The bid is deliberately modest, because a language
+// is not a deployment — but modest is not the same as inquisitive, and what it
+// can work out it does not ask. With a planner attached it asks nothing at all.
 type BuildpackDetector struct {
 	// Planner turns a repository with no deployment instructions into build
 	// inputs. Supplied by the builder adapter, because what those inputs are is
@@ -409,36 +410,58 @@ func (d BuildpackDetector) Bid(ctx context.Context, src api.SourceView) (Candida
 	// only that it would be. A planner that fails leaves the bid standing: a
 	// language Pando recognizes is still the right reading of the repository,
 	// and the builder will try again at build time with a real error to show.
+	var planned string
 	if d.Planner != nil {
 		if files, dockerfile, err := d.Planner.Plan(ctx, src); err == nil && len(files) > 0 {
 			c.Draft.Build.GeneratedFiles = files
 			c.Draft.Build.Dockerfile = dockerfile
 			c.Evidence = append(c.Evidence, "build plan generated, and editable before it runs")
+			_, planned = scanDockerfile(strings.NewReader(files[dockerfile]))
 		}
 	}
 
-	c.Questions = append(c.Questions, Question{
-		Key:  "start_command",
-		Kind: api.QuestionText,
-		Prompt: fmt.Sprintf(
-			"This app appears to be a %s project, but it does not include a Dockerfile or any other "+
-				"instructions for running it. Pando needs the command that starts it. "+
-				"Valid answer: a shell command, such as %q.",
-			signal.language, signal.start),
-		Why: "Pando runs this command to start the app.",
-	})
+	// Asked only when nothing worked it out. The plan is the thing that works it
+	// out: nixpacks reads the repository and writes a Dockerfile ending in the
+	// command that starts the app, so on a plain Go module the answer is already
+	// in hand before the question would be put.
+	//
+	// It used to be asked either way, two lines after the plan was attached to
+	// the draft — which made the prompt's own first clause ("it does not include
+	// a Dockerfile or any other instructions for running it") false at the
+	// moment it was shown. R-103 counts questions as the product metric and
+	// R-104 says Pando asks only when it genuinely cannot proceed; it could.
+	if planned == "" {
+		c.Questions = append(c.Questions, Question{
+			Key:  "start_command",
+			Kind: api.QuestionText,
+			Prompt: fmt.Sprintf(
+				"This app appears to be a %s project, but it does not include a Dockerfile or any other "+
+					"instructions for running it. Pando needs the command that starts it. "+
+					"Valid answer: a shell command, such as %q.",
+				signal.language, signal.start),
+			Why: "Pando runs this command to start the app.",
+		})
+	} else {
+		c.Evidence = append(c.Evidence, "starts with "+planned)
+	}
 
-	c.Questions = append(c.Questions, Question{
-		Key:      "primary_port",
-		Kind:     api.QuestionPort,
-		Deferred: true,
-		Prompt: fmt.Sprintf(
-			"Pando could not determine which port this %s app serves HTTP on. It will watch the app "+
-				"start and try to work it out, but if that does not succeed it needs to be told. "+
-				"Valid answer: a port number, such as %d.",
-			signal.language, signal.port),
-		Why: "Pando needs to know where to send traffic once the app is running.",
-	})
+	// The port is not asked at all, and the draft's framework default stands.
+	//
+	// R-097 says a port is observed rather than asked, and for an app that comes
+	// with an image that is what happens. A source build has no image until it
+	// is built, so the trial run has nothing to start (Job.trial returns early
+	// on an empty image) — and a deferred question whose trial never runs is
+	// promoted to one a person has to answer. That put a port question in front
+	// of someone R-005 says may not know what a port is, on every repository
+	// with no Dockerfile.
+	//
+	// R-104 settles it: anything with a reasonable default gets the default and
+	// is changeable later. The default is already in the draft above, carried as
+	// PortFramework so the review screen says where it came from, and editable
+	// there before anything is pinned.
+	c.Evidence = append(c.Evidence, fmt.Sprintf(
+		"assumed to serve HTTP on %d, the usual port for a %s app — change it below if it does not",
+		signal.port, signal.language))
 
 	c.Draft.Slots = slotsFromEnvExample(src)
 	return c, nil
@@ -459,11 +482,25 @@ func readDockerfile(src api.SourceView, name string) ([]int, string) {
 		return nil, ""
 	}
 	defer func() { _ = f.Close() }()
+	return scanDockerfile(f)
+}
 
+// scanDockerfile is readDockerfile's parser, over content rather than a file.
+//
+// Separate because a generated build plan arrives as a string — the planner
+// hands back the Dockerfile it wrote, and there is no second copy on disk to
+// open.
+//
+// The last start instruction wins, not the first. A multi-stage build declares
+// one per stage and only the final stage's survives into the image, so taking
+// the first reports a builder stage's command as the app's. nixpacks writes
+// exactly that shape: `ENTRYPOINT ["/bin/bash", "-l", "-c"]` in the build stage
+// and the real `CMD` at the end.
+func scanDockerfile(r io.Reader) ([]int, string) {
 	var ports []int
 	var command string
 
-	scanner := bufio.NewScanner(io.LimitReader(f, 256<<10))
+	scanner := bufio.NewScanner(io.LimitReader(r, 256<<10))
 	for _, line := range joinContinuations(scanner) {
 		if m := exposePattern.FindStringSubmatch(line); m != nil {
 			for _, field := range strings.Fields(m[1]) {
@@ -472,7 +509,7 @@ func readDockerfile(src api.SourceView, name string) ([]int, string) {
 				}
 			}
 		}
-		if m := cmdPattern.FindStringSubmatch(line); m != nil && command == "" {
+		if m := cmdPattern.FindStringSubmatch(line); m != nil {
 			command = strings.TrimSpace(m[2])
 		}
 	}

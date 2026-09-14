@@ -135,8 +135,26 @@ func runCase(t *testing.T, auction *detect.Auction, c testCase) outcome {
 
 	out.Strategy = string(result.Winner.Strategy)
 	out.Confidence = result.Winner.Confidence
-	out.Questions = len(detect.Asked(result.Questions))
-	out.Deferred = len(result.Questions) - out.Questions
+
+	// Counted after the trial run is given its chance, because a deferred
+	// question is only free if something can actually answer it.
+	//
+	// Job.trial returns early when the winning draft's primary workload has no
+	// image, and a source build has none: there is nothing to start until it has
+	// been built, and building before a proposal is reviewed is work nobody
+	// asked for. So for every strategy that builds — dockerfile, buildpack,
+	// static — the trial does not run and ApplyTrial promotes what was deferred
+	// back into a question somebody answers.
+	//
+	// Counting the auction's raw output instead is how a repository that asks
+	// two questions was recorded here as asking one, and the mean sat at 0.90
+	// while a plain Go module put two questions in front of a person.
+	questions := result.Questions
+	if !hasImage(result.Winner.Draft) {
+		_, questions = detect.ApplyTrial(result.Winner.Draft, questions, detect.Trial{Ran: false})
+	}
+	out.Questions = len(detect.Asked(questions))
+	out.Deferred = len(result.Questions) - len(detect.Asked(result.Questions))
 
 	if c.Expect.Strategy != "" && out.Strategy != c.Expect.Strategy {
 		out.Failures = append(out.Failures,
@@ -243,6 +261,20 @@ func report(t *testing.T, m manifest, results []outcome) {
 		"mean questions per deploy is above budget — detection is asking more than it used to")
 	require.LessOrEqual(t, worst, m.Budgets.QuestionsPerDeployMax)
 	require.GreaterOrEqual(t, rate, m.Budgets.MustDetectStrategy)
+}
+
+// hasImage reports whether the trial run has something to start.
+//
+// The same condition Job.trial applies. A draft whose primary workload names an
+// image — a published one, or a compose service's — can be run and watched; one
+// that has to be built first cannot, not at this point in the pipeline.
+func hasImage(draft detect.Draft) bool {
+	for _, w := range draft.Workloads {
+		if w.Primary && w.Image != "" {
+			return true
+		}
+	}
+	return len(draft.Workloads) == 1 && draft.Workloads[0].Image != ""
 }
 
 func hasSlotType(slots []spec.Slot, want string) bool {
