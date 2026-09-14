@@ -19,17 +19,24 @@ on:
         required: true
         type: string
 
+# Read-only by default, with the writes granted on the one job that needs them.
+# A top-level write is inherited by every job a workflow ever grows, including
+# the one somebody adds later without thinking about the token.
 permissions:
-  contents: write
-  # Keyless signing: cosign exchanges this job's OIDC token for a short-lived
-  # Fulcio certificate. Without it the `signs` block in .goreleaser.yaml fails.
-  id-token: write
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      # Creating the tag and publishing the release.
+      contents: write
+      # Keyless signing: cosign exchanges this job's OIDC token for a
+      # short-lived Fulcio certificate. Without it the `signs` block in
+      # .goreleaser.yaml fails.
+      id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # GoReleaser needs the full history to build a changelog, and the tags
           # to work out the version.
@@ -68,21 +75,21 @@ jobs:
           git tag -a "$VERSION" -m "$VERSION"
           git push origin "$VERSION"
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.27'
           cache: true
 
       # The console is embedded in the binary, so the release build needs Node
       # even though nothing else about a Go release does.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: console/package-lock.json
 
       # Signs checksums.txt. Installed before GoReleaser, which shells out to it.
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
       # Release notes come from CHANGELOG.md, not from the commit log.
       #
@@ -111,7 +118,7 @@ jobs:
           echo "Release notes for $version:"
           cat notes.md
 
-      - uses: goreleaser/goreleaser-action@v7
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           version: '~> v2'
           args: release --clean --release-notes=notes.md
