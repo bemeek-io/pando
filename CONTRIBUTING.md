@@ -135,8 +135,14 @@ Public Sans or IBM Plex Mono fails `npm run check`.
 
 ## Releasing
 
-A tag is the whole release process. Pushing `vX.Y.Z` runs `.github/workflows/release.yml`, which runs
-GoReleaser against `.goreleaser.yaml` and publishes:
+Merging a pull request does not release anything. Cutting a release is one command, run from main:
+
+```bash
+gh workflow run release.yml -f version=v0.1.0
+```
+
+or **Actions → Release → Run workflow** in the browser. That creates the tag and runs
+`.github/workflows/release.yml`, which runs GoReleaser against `.goreleaser.yaml` and publishes:
 
 - tarballs for macOS and Linux, `amd64` and `arm64`, with a `checksums.txt`
 - `.deb`, `.rpm` and `.apk` packages
@@ -146,16 +152,27 @@ GoReleaser against `.goreleaser.yaml` and publishes:
 The version in `pando version` and in the manifest is stamped from the tag, so a build made any other
 way reports `dev`.
 
-Two things have to exist before the first tag, and neither is in this repository:
+The version number is the one thing not automated, because it is the one part that is a judgment. A
+tag with a suffix — `v0.1.0-rc.1` — is published as a prerelease, which `brew upgrade` and the package
+managers ignore, so it is the way to exercise the whole pipeline without shipping to anyone.
 
-1. **The tap.** A repository named `homebrew-tap` under `bemeek-io`, with a README and nothing else.
-   GoReleaser writes `Casks/pando.rb` into it.
-2. **`HOMEBREW_TAP_TOKEN`.** A repository secret here holding a fine-grained token with
-   `contents: write` on the tap. The workflow's own `GITHUB_TOKEN` is scoped to this repository and
-   cannot push to another one, so without this the release fails at the cask step — after the
-   artifacts have been uploaded, which means re-running the job rather than re-tagging.
+The workflow also still runs on a `v*` tag pushed by hand, for the case where the tag has to point
+somewhere other than the head of main.
 
-Check the configuration and build everything locally, publishing nothing:
+If the release fails, the workflow removes the tag it created, so the same version can be tried again
+once the cause is fixed — unless the release had already been published, in which case the tag stays
+and the fix is to re-run the failed job.
+
+### What the release depends on
+
+- **The tap.** `bemeek-io/homebrew-tap`, public. GoReleaser writes `Casks/pando.rb` into it and
+  overwrites it on every release; nothing in that repository is edited by hand.
+- **`HOMEBREW_TAP_TOKEN`.** A repository secret here holding a fine-grained token owned by
+  `bemeek-io`, scoped to the tap, with `contents: write`. The workflow's own `GITHUB_TOKEN` is scoped
+  to this repository and cannot push to another one, so without this the release fails at the cask
+  step — after the artifacts have been uploaded. When the token expires that is how it will show up.
+
+### Before you tag
 
 ```bash
 make release-check
@@ -163,7 +180,7 @@ make release-snapshot     # artifacts land in dist/
 ```
 
 Both need `goreleaser` on your path, and the snapshot needs Node, because the console is embedded in
-the binary and is built before the Go build.
+the binary and is built before the Go build. Nothing is published either way.
 
 The macOS binaries are not signed with a Developer ID, so the cask removes the quarantine attribute
 after installing. Signing and notarization would replace that; see the comment in `.goreleaser.yaml`.
