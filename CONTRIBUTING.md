@@ -133,6 +133,41 @@ The console is built from the design system in `.claude/skills/pando-design/`. C
 and radius come from its tokens; a raw hex value, a raw `px` value, or a font that is not Newsreader,
 Public Sans or IBM Plex Mono fails `npm run check`.
 
+## Releasing
+
+A tag is the whole release process. Pushing `vX.Y.Z` runs `.github/workflows/release.yml`, which runs
+GoReleaser against `.goreleaser.yaml` and publishes:
+
+- tarballs for macOS and Linux, `amd64` and `arm64`, with a `checksums.txt`
+- `.deb`, `.rpm` and `.apk` packages
+- a Homebrew cask pushed to `bemeek-io/homebrew-tap`, which is what `brew install bemeek-io/tap/pando`
+  reads
+
+The version in `pando version` and in the manifest is stamped from the tag, so a build made any other
+way reports `dev`.
+
+Two things have to exist before the first tag, and neither is in this repository:
+
+1. **The tap.** A repository named `homebrew-tap` under `bemeek-io`, with a README and nothing else.
+   GoReleaser writes `Casks/pando.rb` into it.
+2. **`HOMEBREW_TAP_TOKEN`.** A repository secret here holding a fine-grained token with
+   `contents: write` on the tap. The workflow's own `GITHUB_TOKEN` is scoped to this repository and
+   cannot push to another one, so without this the release fails at the cask step — after the
+   artifacts have been uploaded, which means re-running the job rather than re-tagging.
+
+Check the configuration and build everything locally, publishing nothing:
+
+```bash
+make release-check
+make release-snapshot     # artifacts land in dist/
+```
+
+Both need `goreleaser` on your path, and the snapshot needs Node, because the console is embedded in
+the binary and is built before the Go build.
+
+The macOS binaries are not signed with a Developer ID, so the cask removes the quarantine attribute
+after installing. Signing and notarization would replace that; see the comment in `.goreleaser.yaml`.
+
 ## Licensing of contributions
 
 Pando is dual-licensed, so contributions must be available under both licenses. By opening a pull

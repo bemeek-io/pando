@@ -1,8 +1,9 @@
 # Open decisions
 
-Seventeen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
-design; O-15 through O-17 were found while implementing phases 6, 7 and 8. **Sixteen are resolved. One
-remains, and it is not a decision** — O-4 needs a measurement.
+Eighteen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
+design; O-15 through O-17 were found while implementing phases 6, 7 and 8; O-18 was found while
+setting up the release build. **Sixteen are resolved. Two remain, and neither is a design decision**
+— O-4 needs a measurement and O-18 needs somebody to pick a host and pay for it.
 
 O-5 was the other long-standing one and is now resolved: "per-adapter" answered it until R-174 made
 Pando run the edge and write its configuration, at which point Pando became the thing choosing.
@@ -16,12 +17,31 @@ resolution both here and in the requirements or design doc that owns it.
 | ID | Question | Why it stays open | Needed by |
 |---|---|---|---|
 | **O-4** | Required vs optional slot detection — the forty-key `.env.example` problem | Has a `[P]` answer that needs measuring, not deciding | Phase 6 |
+| **O-18** | Where a signed apt repository is hosted, so `apt install pando` works without downloading a file first | Costs money or custody of a signing key; neither is an engineering call | Not blocking — the `.deb` is already published |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything not typed to
 a known service, and let the trial run settle it — a slot whose absence crashes the trial run is
 promoted to required with the crash log as evidence. This turns an unanswerable question into an
 observation. It is open because it needs a false-block rate measured against the detection corpus, not
 because nobody has decided.
+
+**O-18** exists because a `.deb` attached to a release and an apt repository are different products.
+The release build publishes `.deb`, `.rpm` and `.apk` packages, which install with
+`sudo apt install ./pando_<version>_linux_amd64.deb` and never upgrade themselves. `apt install pando`
+and `apt upgrade` need a repository that apt trusts, and the options differ in who holds the signing
+key:
+
+- **A hosted repository** — Cloudsmith has an open-source tier and Gemfury hosts public packages for
+  free. Both sign the repository and give users a key to install. GoReleaser publishes to either. The
+  cost is a dependency on a vendor for the install path, and an account somebody has to own.
+- **Self-hosted on GitHub Pages**, generated with `aptly` or `apt-ftparchive` and signed in CI. Free,
+  and the key is ours — which is also the problem, because the key then has to live somewhere, be
+  rotated, and survive the person who made it.
+- **Neither**, and the `.deb` on the release page stays the answer. Debian and Ubuntu users download
+  a file and upgrade by downloading another one.
+
+The choice matters more than it looks: an unsigned repository, or one added with `[trusted=yes]`,
+tells every user of a product that argues for provenance to skip checking ours.
 
 **O-15** was found by asking whether a detected app could actually deploy. It could not: the spec had
 no routing, and filling that in surfaced the question nobody had answered. **It is now resolved** —

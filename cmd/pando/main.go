@@ -114,7 +114,18 @@ func versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print the version",
 		Run: func(cmd *cobra.Command, _ []string) {
-			fmt.Fprintln(cmd.OutOrStdout(), "pando (development build)")
+			out := cmd.OutOrStdout()
+			if buildVersion == "dev" {
+				fmt.Fprintln(out, "pando (development build)")
+				return
+			}
+			fmt.Fprintf(out, "pando %s\n", buildVersion)
+			if buildCommit != "" {
+				fmt.Fprintf(out, "commit %s\n", buildCommit)
+			}
+			if buildDate != "" {
+				fmt.Fprintf(out, "built %s\n", buildDate)
+			}
 		},
 	}
 }
@@ -743,10 +754,16 @@ func secretsKeyPath(ctx context.Context, store *state.Adapters, logger *zap.Logg
 	return ""
 }
 
-// buildVersion is what the manifest records. Stamped at build time once there
-// is a release process; "dev" until then, which is honest rather than a version
-// number nobody set.
-const buildVersion = "dev"
+// buildVersion is what the manifest records. Stamped by the release build
+// (.goreleaser.yaml); "dev" in every other build, which is honest rather than a
+// version number nobody set.
+//
+// Variables rather than constants because -ldflags -X cannot write to a const.
+var (
+	buildVersion = "dev"
+	buildCommit  = ""
+	buildDate    = ""
+)
 
 // warnIfRetriesAreFast says so when the retry schedule is configured faster than
 // R-149's default.

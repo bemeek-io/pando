@@ -88,6 +88,18 @@ requirements-coverage: ## Report which R-IDs have a named acceptance test
 	python3 scripts/gen-requirements-index.py --coverage
 
 # ---------------------------------------------------------------------------
+# Release
+# ---------------------------------------------------------------------------
+
+.PHONY: release-check
+release-check: ## Validate .goreleaser.yaml (needs goreleaser)
+	goreleaser check
+
+.PHONY: release-snapshot
+release-snapshot: ## Build the release artifacts locally, publishing nothing
+	goreleaser release --snapshot --clean
+
+# ---------------------------------------------------------------------------
 # Housekeeping
 # ---------------------------------------------------------------------------
 

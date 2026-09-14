@@ -1,0 +1,134 @@
+# Release build. Produces the artifacts a tag is expected to produce: signed-by-
+# checksum archives for macOS and Linux, Linux packages, and a Homebrew cask.
+#
+# What this ships is the CLI. Pando the *server* is installed with the Compose
+# file (design 00 §1.1) — it needs Postgres, a container runtime and nixpacks,
+# none of which a package manager is going to supply. The binary is the same
+# binary either way (R-253), so `pando serve` works from a Homebrew install if
+# you bring your own Postgres; it is just not the path the docs point at.
+#
+# Dry run without publishing anything: `make release-snapshot`.
+version: 2
+
+project_name: pando
+
+before:
+  hooks:
+    - go mod download
+    # The console is embedded (internal/console) and the checked-in dist holds
+    # only a README, so a release binary without this step serves the "console
+    # was not built" message instead of the console.
+    - make console
+
+builds:
+  - id: pando
+    main: ./cmd/pando
+    binary: pando
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.buildVersion={{ .Version }}
+      - -X main.buildCommit={{ .FullCommit }}
+      - -X main.buildDate={{ .CommitDate }}
+    # Reproducible: the timestamp comes from the commit rather than the clock.
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: pando
+    formats: [tar.gz]
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    files:
+      - README.md
+      - LICENSE
+      - LICENSING.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-next'
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+# brew install bemeek-io/tap/pando
+#
+# A tap rather than homebrew-core: core has notability requirements a new
+# project does not meet, and core builds from source, which for Pando means a
+# Node toolchain to build the console before the Go build. Revisit when the
+# project is established enough for core to accept it.
+homebrew_casks:
+  - name: pando
+    ids: [pando]
+    repository:
+      owner: bemeek-io
+      name: homebrew-tap
+      # A PAT with contents:write on the tap repository. The default
+      # GITHUB_TOKEN cannot push to another repository.
+      token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
+    homepage: https://github.com/bemeek-io/pando
+    description: Deploy applications to a host you own
+    license: AGPL-3.0-only
+    binaries:
+      - pando
+    hooks:
+      post:
+        # The binaries are not signed with a Developer ID, so macOS quarantines
+        # them and Gatekeeper refuses to run them. Removing the attribute is
+        # what every unsigned cask does; it is also a real weakening of the
+        # check, and the fix is signing and notarization rather than this.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/pando"]
+          end
+
+# .deb, .rpm and .apk attached to the release. Installable today with
+# `sudo apt install ./pando_<version>_amd64.deb`; a hosted apt repository that
+# would make `apt install pando` work is O-18, still open.
+nfpms:
+  - id: pando
+    ids: [pando]
+    package_name: pando
+    vendor: Bemeek
+    homepage: https://github.com/bemeek-io/pando
+    maintainer: Ben Meeker <ben@benmeeker.com>
+    description: |
+      Deploy applications to a host you own.
+      This package installs the pando CLI. The server is installed with the
+      project's Compose file, which supplies the Postgres it needs.
+    license: AGPL-3.0-only
+    section: utils
+    formats:
+      - deb
+      - rpm
+      - apk
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/pando/LICENSE
+      - src: LICENSING.md
+        dst: /usr/share/doc/pando/LICENSING.md
+      - src: README.md
+        dst: /usr/share/doc/pando/README.md
+
+release:
+  github:
+    owner: bemeek-io
+    name: pando
+  # A tag with a suffix (v1.0.0-rc.1) is published as a prerelease, and a
+  # prerelease is not what `brew upgrade` or a package manager should pick up.
+  prerelease: auto

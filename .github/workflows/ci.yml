@@ -49,6 +49,14 @@ jobs:
       - name: Requirement coverage
         run: make requirements-coverage
 
+      # The release config is only exercised by a tag, which is the worst time
+      # to find out it stopped parsing.
+      - name: Release config is valid
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: check
+
       - name: Traceability index is up to date
         run: |
           make requirements-index
