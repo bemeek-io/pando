@@ -80,8 +80,7 @@ func fetchGit(ctx context.Context, src spec.Source) (*Checkout, error) {
 	cleanup := func() { _ = os.RemoveAll(dir) }
 
 	opts := &git.CloneOptions{
-		URL:   src.URL,
-		Depth: 1,
+		URL: src.URL,
 
 		// Submodules are not initialized. R-021: Pando fills declared slots and
 		// never invents topology, and silently pulling in another repository's
@@ -94,6 +93,18 @@ func fetchGit(ctx context.Context, src spec.Source) (*Checkout, error) {
 	if src.Commit == "" && src.Ref != "" {
 		opts.ReferenceName = referenceFor(src.Ref)
 		opts.SingleBranch = true
+	}
+
+	// Shallow only when nothing is pinned.
+	//
+	// Depth 1 fetches the tip commit and no history, so checking out any other
+	// SHA fails with "object not found" — which made R-120 true only when the
+	// pinned commit happened to still be the tip. Every rollback to an earlier
+	// spec revision pins one that is not, and every one of them failed at
+	// clone. The cost of the full history is paid on the deploys that need it
+	// and nowhere else.
+	if src.Commit == "" {
+		opts.Depth = 1
 	}
 
 	repo, err := git.PlainCloneContext(ctx, dir, false, opts)
