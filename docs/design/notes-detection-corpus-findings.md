@@ -131,6 +131,15 @@ Per-case budgets have since been ratcheted down to what detection actually
 asks, so a new question is a deliberate decision rather than slack absorbed by a
 loose ceiling.
 
+**This accounting was half right, and the half that was wrong hid four cases.**
+A deferred question is only free when the trial run can answer it, and the trial
+run needs an image to start — which a source build does not have until it has
+been built. So for `dockerfile`, `buildpack` and `static` the trial never runs,
+`undefer` promotes the question back, and the person pays for it after all. The
+count above was taken before that step, so it recorded 0.90 while a plain Go
+module put two questions on the screen. See
+[deferring to a trial that cannot run](notes-deferring-to-a-trial-that-cannot-run.md).
+
 ## What to keep doing
 
 Each of the three detector defects is now also a unit test in

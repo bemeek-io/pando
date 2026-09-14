@@ -17,6 +17,18 @@ func fullyObservant() api.RuntimeCapabilities {
 	}
 }
 
+// A repository whose Dockerfile declares no EXPOSE.
+//
+// This is the case where a port question is still a real one: the app brings
+// its own image, so the trial run has something to start and R-097's watch-
+// rather-than-ask applies to it. The language detectors no longer raise a port
+// question at all — a framework default is a reasonable default, and R-104 puts
+// those in the draft as configuration rather than in front of a person — so the
+// trial machinery is exercised through the path that still produces one.
+func noExposeSource() memSource {
+	return memSource{"Dockerfile": "FROM alpine\nCMD [\"sh\"]\n"}
+}
+
 // R-097: the port is watched, not asked about. This is the requirement that
 // makes R-005 survivable — the person deploying may not know what a port is.
 func TestR097_AWatchedPortAnswersTheQuestionInsteadOfAPerson(t *testing.T) {
@@ -51,11 +63,11 @@ func TestR097_ObservedPortsAreMarkedObservedNotFramework(t *testing.T) {
 
 // A question deferred to a trial that never ran must not vanish.
 func TestADeferredQuestionSurvivesATrialThatDidNotHappen(t *testing.T) {
-	result, _ := auction().Run(context.Background(), memSource{"package.json": `{"name":"app"}`})
+	result, _ := auction().Run(context.Background(), noExposeSource())
 
 	_, questions := detect.ApplyTrial(result.Winner.Draft, result.Questions, detect.Trial{Ran: false})
 
-	require.Len(t, detect.Asked(questions), 2,
+	require.Len(t, detect.Asked(questions), 1,
 		"with no trial, the port question is one a person answers after all")
 	for _, q := range questions {
 		require.False(t, q.Deferred)
@@ -64,19 +76,19 @@ func TestADeferredQuestionSurvivesATrialThatDidNotHappen(t *testing.T) {
 
 // A runtime that cannot observe ports is not the same as an app with no port.
 func TestARuntimeThatCannotObservePortsLeavesTheQuestionStanding(t *testing.T) {
-	result, _ := auction().Run(context.Background(), memSource{"package.json": `{"name":"app"}`})
+	result, _ := auction().Run(context.Background(), noExposeSource())
 
 	blind := api.RuntimeCapabilities{SupportsTrialRun: true}
 	_, questions := detect.ApplyTrial(result.Winner.Draft, result.Questions,
 		detect.FromTrialResult(blind, api.TrialResult{Started: true, ObservedPorts: []int{8080}}))
 
-	require.Len(t, detect.Asked(questions), 2,
+	require.Len(t, detect.Asked(questions), 1,
 		"a runtime that does not report ports must not have its silence read as an answer")
 }
 
 // The trial ran, watched, and saw nothing. The question comes back saying so.
 func TestAnAppThatOpensNoPortGetsAQuestionThatSaysPandoLooked(t *testing.T) {
-	result, _ := auction().Run(context.Background(), memSource{"package.json": `{"name":"app"}`})
+	result, _ := auction().Run(context.Background(), noExposeSource())
 
 	_, questions := detect.ApplyTrial(result.Winner.Draft, result.Questions,
 		detect.FromTrialResult(fullyObservant(), api.TrialResult{Started: true}))
@@ -233,7 +245,7 @@ func TestR168_NothingToCheckIsNotAWarning(t *testing.T) {
 
 // An app bound only to loopback is healthy, unreachable, and silent about it.
 func TestAnAppListeningOnlyOnLoopbackIsToldSoExplicitly(t *testing.T) {
-	result, _ := auction().Run(context.Background(), memSource{"package.json": `{"name":"app"}`})
+	result, _ := auction().Run(context.Background(), noExposeSource())
 
 	_, questions := detect.ApplyTrial(result.Winner.Draft, result.Questions,
 		detect.FromTrialResult(fullyObservant(), api.TrialResult{
@@ -257,7 +269,7 @@ func TestAnAppListeningOnlyOnLoopbackIsToldSoExplicitly(t *testing.T) {
 
 // An app that never started says so, rather than claiming it opened no port.
 func TestAnAppThatNeverStartedSaysThatRatherThanBlamingThePort(t *testing.T) {
-	result, _ := auction().Run(context.Background(), memSource{"package.json": `{"name":"app"}`})
+	result, _ := auction().Run(context.Background(), noExposeSource())
 
 	_, questions := detect.ApplyTrial(result.Winner.Draft, result.Questions,
 		detect.FromTrialResult(fullyObservant(), api.TrialResult{Started: false}))

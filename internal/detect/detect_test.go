@@ -2,6 +2,7 @@ package detect_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"path"
 	"sort"
@@ -495,7 +496,7 @@ func TestWhereIndexHTMLSitsDecidesWhatPackageJSONMeans(t *testing.T) {
 // R-097: a question the trial run answers is not a question a person answers.
 func TestPortQuestionsAreDeferredToTheTrialRun(t *testing.T) {
 	result, err := auction().Run(context.Background(), memSource{
-		"package.json": `{"name":"app"}`,
+		"Dockerfile": "FROM alpine\nCMD [\"sh\"]\n",
 	})
 	require.NoError(t, err)
 
@@ -505,7 +506,8 @@ func TestPortQuestionsAreDeferredToTheTrialRun(t *testing.T) {
 			port = q
 		}
 	}
-	require.Equal(t, "primary_port", port.Key, "a language-only bid should raise the port question")
+	require.Equal(t, "primary_port", port.Key,
+		"a Dockerfile that declares no EXPOSE should raise the port question")
 	require.True(t, port.Deferred,
 		"R-097 exists so Pando watches the app bind rather than asking someone who may not know what a port is")
 
@@ -514,6 +516,93 @@ func TestPortQuestionsAreDeferredToTheTrialRun(t *testing.T) {
 	// Deferred is not discarded. The trial run can fail to observe a port, and
 	// then it becomes a real question — so it has to still meet R-105.
 	require.NoError(t, port.Validate())
+}
+
+// R-104: a framework default is configuration, not a question.
+//
+// A language bid used to raise a port question and defer it to the trial run.
+// That works when the app arrives with an image, and a source build has none:
+// the trial has nothing to start, so the question was promoted to one a person
+// had to answer — a question about a port, put to someone R-005 says may not
+// know what a port is, on every repository with no Dockerfile.
+//
+// The default belongs in the draft, where the review screen shows it, says it
+// came from the framework rather than from watching, and lets it be changed.
+func TestR104_AFrameworkPortIsADefaultRatherThanAQuestion(t *testing.T) {
+	for _, tc := range []struct {
+		file string
+		body string
+		port int
+	}{
+		{"go.mod", "module app\n", 8080},
+		{"package.json", `{"name":"app"}`, 3000},
+		{"requirements.txt", "flask\n", 8000},
+	} {
+		t.Run(tc.file, func(t *testing.T) {
+			result, err := auction().Run(context.Background(), memSource{tc.file: tc.body})
+			require.NoError(t, err)
+
+			for _, q := range result.Questions {
+				require.NotEqual(t, api.QuestionPort, q.Kind,
+					"a language with a known default port must not ask about it, deferred or otherwise")
+			}
+
+			require.Equal(t,
+				[]spec.Port{{Number: tc.port, Protocol: "http", Source: spec.PortFramework}},
+				result.Winner.Draft.Workloads[0].Ports,
+				"the default rides in the draft, marked as the guess it is")
+
+			// Still visible. A default nobody is told about is one that looks
+			// like Pando knew something it did not.
+			require.Contains(t, strings.Join(result.Winner.Evidence, "\n"), fmt.Sprint(tc.port))
+		})
+	}
+}
+
+// R-104: a start command the build plan worked out is not a question either.
+//
+// The question and the plan used to be produced two lines apart, so a prompt
+// opening "it does not include a Dockerfile or any other instructions for
+// running it" was shown about a repository Pando had just written a Dockerfile
+// for, with the start command in it.
+func TestR104_AStartCommandFromTheBuildPlanIsNotAsked(t *testing.T) {
+	withPlan := detect.NewAuction(detect.BuildpackDetector{Planner: plannerWritingCMD{}})
+	planned, err := withPlan.Run(context.Background(), memSource{"go.mod": "module app\n"})
+	require.NoError(t, err)
+
+	require.Empty(t, detect.Asked(planned.Questions),
+		"the plan says how to build it and how to start it, so there is nothing left to ask")
+	require.Contains(t, strings.Join(planned.Winner.Evidence, "\n"), `["./out"]`,
+		"what the plan decided is evidence, and it is what the app will run")
+
+	// Without one, the question is real and comes back.
+	bare, err := detect.NewAuction(detect.BuildpackDetector{}).
+		Run(context.Background(), memSource{"go.mod": "module app\n"})
+	require.NoError(t, err)
+
+	asked := detect.Asked(bare.Questions)
+	require.Len(t, asked, 1)
+	require.Equal(t, "start_command", asked[0].Key,
+		"with nothing to work it out from, Pando has to ask")
+	require.NoError(t, asked[0].Validate())
+}
+
+// plannerWritingCMD stands in for nixpacks: it writes a multi-stage Dockerfile
+// whose build stage carries its own ENTRYPOINT, which is the shape that made
+// reading the first start instruction rather than the last report
+// `/bin/bash -l -c` as the way to run the app.
+type plannerWritingCMD struct{}
+
+func (plannerWritingCMD) Plan(context.Context, api.SourceView) (map[string]string, string, error) {
+	return map[string]string{
+		".nixpacks/Dockerfile": "FROM ubuntu:noble\n" +
+			"ENTRYPOINT [\"/bin/bash\", \"-l\", \"-c\"]\n" +
+			"RUN go build -o out ./cmd/server\n\n" +
+			"FROM ubuntu:noble\n" +
+			"ENTRYPOINT [\"/bin/bash\", \"-l\", \"-c\"]\n" +
+			"WORKDIR /app/\n" +
+			"CMD [\"./out\"]\n",
+	}, ".nixpacks/Dockerfile", nil
 }
 
 // --- compose import (R-096, R-099) ------------------------------------------
