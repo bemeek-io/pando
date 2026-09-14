@@ -132,11 +132,15 @@ The CLI is the same binary as the server, so you can install it on your own mach
 the CLI only — the server is the Compose install above, because it needs a Postgres a package
 manager will not supply.
 
-macOS and Linux, with Homebrew:
+macOS, with Homebrew. The fully qualified name taps `bemeek-io/homebrew-tap` on the way, so there is
+no `brew tap` step first:
 
 ```bash
 brew install bemeek-io/tap/pando
 ```
+
+The same command works on Linux with Homebrew 4.5 or newer, which is where cask support arrived. On
+anything older, use the `.deb` or the tarball.
 
 Debian and Ubuntu: download the `.deb` for your architecture from the
 [releases page](https://github.com/bemeek-io/pando/releases), then
