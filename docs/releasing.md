@@ -58,7 +58,7 @@ it. The signature is what makes the check mean something.
 
 Signing is keyless — there is no Pando signing key to distribute, and none to leak. cosign holds a
 short-lived certificate bound to the release workflow's identity, so what you verify is *"this was
-produced by Pando's release workflow, from a tag"*.
+produced by Pando's release workflow"*.
 
 Download the tarball, `checksums.txt`, `checksums.txt.sig` and `checksums.txt.pem` from the release,
 then:
@@ -67,11 +67,21 @@ then:
 cosign verify-blob checksums.txt \
   --signature   checksums.txt.sig \
   --certificate checksums.txt.pem \
-  --certificate-identity-regexp '^https://github\.com/bemeek-io/pando/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-identity-regexp '^https://github\.com/bemeek-io/pando/\.github/workflows/release\.yml@refs/(heads/main|tags/v)' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 
 sha256sum --check --ignore-missing checksums.txt
 ```
+
+The identity matches two refs because there are two ways to release. The normal one dispatches the
+workflow from `main` and lets it create the tag, so the run — and therefore the certificate — belongs
+to `refs/heads/main`; the escape hatch pushes a `v*` tag by hand and the run belongs to that tag. A
+regex naming only `refs/tags/v` rejects every release cut the normal way, which is worse than no
+instruction: it tells the careful reader that a good release is forged.
+
+Both halves of the identity still matter. The certificate has to name *this* repository's
+`release.yml`, issued by GitHub's OIDC provider — a signature from any other workflow, in any other
+repository, fails.
 
 The first command establishes that `checksums.txt` came from Pando's release workflow. The second
 establishes that the file you have is the one it describes. Running the second without the first is
