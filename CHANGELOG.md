@@ -18,11 +18,6 @@ fixed in it, with its CVE or GHSA identifier), **Added**, **Changed**, **Depreca
 Changes since v0.1.0. Rename this heading to the version and date when the next release is cut — the
 release workflow reads the section matching the tag and refuses to release without one.
 
-### Fixed
-
-- The Docker image ships with the console in it. `docker compose up -d` built an image whose binary
-  had no UI embedded, so it served the API and returned 404 for every console route.
-
 ### Security
 
 - Base images, GitHub Actions and the two scanners CI installs are pinned by digest or exact version
@@ -31,9 +26,6 @@ release workflow reads the section matching the tag and refuses to release witho
   crafted tar writing outside the extraction directory).
 - The console's `vite` to 8.3.0, with `@vitejs/plugin-react` 6.1.1 alongside it, clearing six
   high-severity dev-server advisories.
-
-### Security
-
 - A malformed stored credential hash no longer crashes the sign-in path or verifies against an
   arbitrary password. `argon2.IDKey` panics rather than returning an error on a zero time cost or
   zero parallelism, and an empty key field compared equal to an empty candidate, so a corrupted or
@@ -53,6 +45,11 @@ release workflow reads the section matching the tag and refuses to release witho
 - Fuzz targets over the parsers that see untrusted input, run in continuous integration.
 - Issue and pull request templates, a code of conduct, Dependabot, and a reference index of the
   external interfaces ([`docs/reference.md`](docs/reference.md)).
+
+### Fixed
+
+- The Docker image ships with the console in it. `docker compose up -d` built an image whose binary
+  had no UI embedded, so it served the API and returned 404 for every console route.
 
 ### Open
 
