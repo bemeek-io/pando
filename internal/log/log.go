@@ -9,6 +9,8 @@ package log
 
 import (
 	"context"
+	"strings"
+	"unicode"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -58,4 +60,37 @@ func From(ctx context.Context) *zap.Logger {
 // through the layers that know them.
 func With(ctx context.Context, fields ...zap.Field) context.Context {
 	return Into(ctx, From(ctx).With(fields...))
+}
+
+// Untrusted is zap.String for a value that came from a request.
+//
+// A request path reaches a handler percent-decoded, so a caller can put a
+// newline in one. A newline in a log line ends it, and what follows is a second
+// line indistinguishable from one Pando wrote — the caller choosing what the
+// record of its own request says.
+//
+// Both of zap's encoders happen to prevent that today: the JSON encoder
+// escapes control characters, and the console encoder writes the field block as
+// JSON and escapes them too. That makes this belt and braces, and it is worth
+// having because the property is currently owned by a dependency's choice of
+// encoder rather than by any code here. Sanitizing at the call site means the
+// guarantee survives a different encoder, a different logger, or a value that
+// reaches an io.Writer some other way.
+//
+// Newlines, carriage returns and tabs become spaces — the three control
+// characters with an obvious readable substitute. Everything else unprintable
+// becomes U+FFFD: an ANSI escape in a path is not a forged line, but it can
+// repaint the terminal of whoever is reading the log, and nothing Pando logs
+// has a use for one.
+func Untrusted(key, value string) zap.Field {
+	value = strings.ReplaceAll(value, "\n", " ")
+	value = strings.ReplaceAll(value, "\r", " ")
+	value = strings.ReplaceAll(value, "\t", " ")
+	value = strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return '\uFFFD'
+	}, value)
+	return zap.String(key, value)
 }

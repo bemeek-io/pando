@@ -51,7 +51,7 @@ type Query struct {
 	AppID       string
 	PrincipalID string
 
-	// Limit defaults to 100, capped at 500.
+	// Limit defaults to 100, capped at 500. PageSize is the clamp.
 	Limit int
 
 	// Cursor is the ID of the last record on the previous page. The log is
@@ -61,24 +61,34 @@ type Query struct {
 	Cursor int64
 }
 
-// DefaultLimit is the page size when a caller names none.
-//
-// Exported because the API layer has to know it to decide whether a page was
-// full — it had the number written out a second time, and a duplicated page
-// size is one that drifts.
-const DefaultLimit = 100
+const defaultLimit = 100
 
 const maxAuditLimit = 500
 
+// PageSize is how many records a Query asking for `requested` will return.
+//
+// Exported because the API layer has to know it to decide whether a page was
+// full, and a function rather than the constant it used to export because
+// knowing the default is not enough: a caller asking for 1000 got 500 records
+// and a layer above comparing them against 1000, so the page never looked full
+// and the cursor for the next page was never sent. Asking the same code that
+// does the clamping is the only version of this that cannot drift.
+//
+// It is also what keeps the allocation below bounded by a constant rather than
+// by whatever number arrived in a query string.
+func PageSize(requested int) int {
+	if requested <= 0 {
+		return defaultLimit
+	}
+	if requested > maxAuditLimit {
+		return maxAuditLimit
+	}
+	return requested
+}
+
 // List reads the log, newest first.
 func (r *Reader) List(ctx context.Context, q Query) ([]Record, error) {
-	limit := q.Limit
-	if limit <= 0 {
-		limit = DefaultLimit
-	}
-	if limit > maxAuditLimit {
-		limit = maxAuditLimit
-	}
+	limit := PageSize(q.Limit)
 
 	var where []string
 	var args []any
