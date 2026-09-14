@@ -26,10 +26,10 @@
     "@types/react-dom": "19.3.0",
     "@typescript-eslint/parser": "^8.70.0",
     "@vitejs/plugin-react": "6.1.1",
-    "eslint": "^9.38.0",
+    "eslint": "^10.10.0",
     "eslint-plugin-react": "^7.37.5",
     "oxlint": "1.82.0",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vite": "8.3.0",
     "vitest": "5.0.0"
   }
