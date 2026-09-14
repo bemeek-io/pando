@@ -29,7 +29,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pando ./cmd/pando
 # builds, and pinned so the same repository produces the same plan a year from
 # now. It only ever *generates* — `nixpacks build --out` writes a Dockerfile and
 # does not build, so no container runtime socket is involved anywhere (R-112).
-FROM alpine:3.21 AS nixpacks
+FROM alpine:3.24 AS nixpacks
 ARG NIXPACKS_VERSION=1.41.0
 ARG TARGETARCH
 RUN apk add --no-cache curl tar \
@@ -43,7 +43,7 @@ RUN apk add --no-cache curl tar \
     && tar xzf /tmp/nixpacks.tgz -C /usr/local/bin nixpacks \
     && chmod +x /usr/local/bin/nixpacks
 
-FROM alpine:3.21
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata su-exec postgresql17-client \
     && adduser -D -u 10001 pando \
     && mkdir -p /var/lib/pando /etc/traefik/dynamic \
