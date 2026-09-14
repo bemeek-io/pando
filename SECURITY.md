@@ -151,8 +151,7 @@ sign, they do not encrypt.
 - **Dependency vulnerabilities.** `govulncheck` on every push and daily, Dependabot for Go modules,
   npm, GitHub Actions and Docker base images. Findings that are understood and accepted are listed,
   with the reasoning, in [`.github/govulncheck-allowlist.txt`](.github/govulncheck-allowlist.txt);
-  anything not in that file fails the build. There are two entries today, both Moby daemon
-  advisories with no fixed release, in code the client library Pando imports does not contain.
+  anything not in that file fails the build. The open advisories are enumerated below.
 - **Secret scanning.** `gitleaks` over the full history on every push, in addition to GitHub's own
   push protection.
 - **Dynamic analysis.** The whole test suite runs under the Go race detector. Native Go fuzzing
@@ -161,3 +160,51 @@ sign, they do not encrypt.
 - **Structural invariants.** The rules in §2 of [`CLAUDE.md`](CLAUDE.md) are enforced by database
   constraints, triggers, grants and lint rules rather than by review, because review eventually
   misses one.
+
+### Open advisories
+
+Two tools look at dependencies and disagree, for a reason worth understanding before reading either.
+
+**`govulncheck` matches at the call level.** It reports an advisory only when a vulnerable function is
+reachable from Pando's own code. It is what gates CI, because a finding it reports is a call path
+rather than a row in a dependency tree.
+
+**OpenSSF Scorecard matches at the module level**, through OSV. If a module Pando depends on has any
+advisory against it, Scorecard counts it — whatever package the advisory is about, and whether or not
+that package is linked into the binary. Its count is therefore always the higher of the two, and the
+difference is not a disagreement about facts.
+
+Six advisories are open against the dependency tree. None has a fix available today.
+
+| Advisory | Module | Why it is open |
+|---|---|---|
+| GO-2026-4883 | `github.com/docker/docker` | Off-by-one in plugin privilege validation |
+| GO-2026-4887 | `github.com/docker/docker` | AuthZ plugin bypass on oversized request bodies |
+| GO-2026-5617 | `github.com/docker/docker` | `docker cp` race allowing bind-mount replacement |
+| GO-2026-5668 | `github.com/docker/docker` | `docker cp` race allowing arbitrary file creation |
+| GO-2026-5746 | `github.com/docker/docker` | `PUT /containers/{id}/archive` executes a container binary on the host |
+| GO-2026-5932 | `golang.org/x/crypto` | `openpgp` is unmaintained and unsafe by design |
+
+**The five Docker advisories are daemon vulnerabilities.** Pando imports
+`github.com/docker/docker` as a *client* library — it speaks to a daemon over a socket, it does not
+contain one — and none of the affected code paths exist in the client. `v28.5.2` is the newest
+release of that module path and none of the five is fixed in it; the fixes are in
+`github.com/moby/moby/v2`, which is a different module and currently at `v2.0.0-beta.23`. Moving a
+deployment platform's runtime adapter onto a beta module to silence advisories about code it does not
+execute is the wrong trade. The daemon these describe is the host's own Docker installation, and it
+is patched by patching Docker.
+
+Two of the five are reachable in `govulncheck`'s sense, because the advisories name the whole module
+rather than specific symbols, so every trace resolves to something like `docker.init calls
+filters.init`. Those two are in the allowlist with that reasoning; the rest are not reported by
+`govulncheck` at all.
+
+**The `x/crypto` advisory is about a package Pando does not build.** `golang.org/x/crypto/openpgp`
+does not appear anywhere in the build graph — `go list -deps ./...` does not name it. Pando uses
+`x/crypto` for argon2, ChaCha20-Poly1305 and SSH; the OpenPGP code reached through `go-git` is
+`github.com/ProtonMail/go-crypto/openpgp`, the maintained fork that exists because the `x/crypto` one
+was deprecated. There is no version of `x/crypto` that resolves this, because the resolution is not
+to use the package, which Pando already does not.
+
+Re-check this list whenever a dependency is upgraded, and remove an entry the moment a fixed release
+exists. An entry stays here because there is no fix, never because the fix is inconvenient.

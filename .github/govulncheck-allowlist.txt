@@ -28,7 +28,16 @@
 # The daemon these advisories are about is the host's own Docker installation
 # and is patched by patching Docker, which is outside what Pando ships.
 #
+# v28.5.2 is the newest release of this module path and neither is fixed in it.
+# The fixes are in github.com/moby/moby/v2, a different module currently at
+# v2.0.0-beta.23 — moving the runtime adapter onto a beta module to silence
+# advisories about code it does not execute is the wrong trade.
+#
+# Scorecard reports four more against this same dependency tree that govulncheck
+# does not reach; all six are enumerated with their reasoning in SECURITY.md,
+# under "Open advisories".
+#
 # Remove both when github.com/docker/docker publishes a fixed release.
-# Last reviewed: 2026-09-13, against github.com/docker/docker v28.5.2.
+# Last reviewed: 2026-09-14, against github.com/docker/docker v28.5.2.
 GO-2026-4887
 GO-2026-4883
