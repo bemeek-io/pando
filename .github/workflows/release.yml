@@ -29,7 +29,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # GoReleaser needs the full history to build a changelog, and the tags
           # to work out the version.
@@ -68,14 +68,14 @@ jobs:
           git tag -a "$VERSION" -m "$VERSION"
           git push origin "$VERSION"
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.27'
           cache: true
 
       # The console is embedded in the binary, so the release build needs Node
       # even though nothing else about a Go release does.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -84,7 +84,7 @@ jobs:
       # Signs checksums.txt. Installed before GoReleaser, which shells out to it.
       - uses: sigstore/cosign-installer@v3
 
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
           args: release --clean
