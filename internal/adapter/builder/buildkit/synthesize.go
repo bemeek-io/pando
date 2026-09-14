@@ -180,7 +180,11 @@ func writeInto(contextDir string, files map[string]string) error {
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			return errs.Wrap(errs.BuildFailed, "Could not prepare the build.", err)
 		}
-		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		// G306: 0644 is deliberate. This is a generated build input inside the
+		// build context, and the rootless builder that reads it runs as a
+		// different user. It holds no secret — a secret reaches a build as a
+		// build secret, never as a file in the context.
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil { //nolint:gosec
 			return errs.Wrap(errs.BuildFailed, "Could not prepare the build.", err)
 		}
 	}
@@ -264,7 +268,10 @@ COPY %s/ /usr/share/nginx/html/
 RUN printf '%%s' %q > /etc/nginx/conf.d/default.conf
 `, staticServerImage, serve, staticConfig)
 
-	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(content), 0o644); err != nil {
+	// G306: a generated Dockerfile in the build context, read by the rootless
+	// builder running as a different user. Not a secret — a secret reaches a
+	// build as a build secret, never as a file in the context.
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(content), 0o644); err != nil { //nolint:gosec
 		_ = os.RemoveAll(dir)
 		return "", "", errs.Wrap(errs.BuildFailed, "Could not prepare the build.", err)
 	}

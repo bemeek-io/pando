@@ -1,0 +1,171 @@
+# Release. Triggered by pushing a `v*` tag; see docs/releasing.md.
+#
+# Two things this workflow exists to guarantee, beyond producing files:
+#
+#   1. Every artifact carries a version. A binary that reports "dev" did not
+#      come from here.
+#   2. The checksum file is signed, not merely served over HTTPS. A checksum
+#      downloaded from the same server as the binary proves only that the server
+#      is self-consistent. cosign in keyless mode binds SHA256SUMS to this
+#      workflow's identity through Sigstore's transparency log, so there is no
+#      long-lived signing key to leak.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  binaries:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload assets
+      id-token: write # keyless signing via Sigstore
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # `git describe` needs the tags
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: true
+
+      - name: Build the console into the embedded assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - run: npm ci && npm run build
+        working-directory: console
+
+      - name: Stamp
+        id: stamp
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          commit="$(git rev-parse --short=12 HEAD)"
+          # From the tagged commit rather than "now", so rebuilding the same tag
+          # produces the same binary.
+          date="$(git show -s --format=%cI HEAD)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit"   >> "$GITHUB_OUTPUT"
+          echo "date=$date"       >> "$GITHUB_OUTPUT"
+
+      - name: Cross-compile
+        env:
+          VERSION: ${{ steps.stamp.outputs.version }}
+          COMMIT: ${{ steps.stamp.outputs.commit }}
+          BUILD_DATE: ${{ steps.stamp.outputs.date }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ldflags="-s -w \
+            -X main.buildVersion=${VERSION} \
+            -X main.buildCommit=${COMMIT} \
+            -X main.buildDate=${BUILD_DATE}"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${target%/*}"; arch="${target#*/}"
+            out="dist/pando_${VERSION}_${os}_${arch}"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              go build -trimpath -ldflags="$ldflags" -o "$out" ./cmd/pando
+            tar -czf "${out}.tar.gz" -C dist "$(basename "$out")"
+            rm "$out"
+          done
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum ./*.tar.gz > SHA256SUMS
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Sign the checksums
+        working-directory: dist
+        run: |
+          cosign sign-blob --yes SHA256SUMS \
+            --output-signature SHA256SUMS.sig \
+            --output-certificate SHA256SUMS.pem
+
+      - name: Release notes from the changelog
+        id: notes
+        env:
+          VERSION: ${{ steps.stamp.outputs.version }}
+        run: |
+          # The section for this version, verbatim. A release whose notes would
+          # be a commit log is a release that should not have been cut, so this
+          # fails rather than falling back to one.
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { inside = 1; next }
+            inside && /^## / { exit }
+            inside { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' section. Add one before tagging (docs/releasing.md)."
+            exit 1
+          fi
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+            dist/SHA256SUMS.sig
+            dist/SHA256SUMS.pem
+          body_path: notes.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref_name, 'v0.') }}
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Sign the image by digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "ghcr.io/${GITHUB_REPOSITORY}@${DIGEST}"

@@ -1,5 +1,12 @@
 # Contributing
 
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) applies everywhere this project happens.
+
+**Found a security vulnerability?** Do not open an issue or a pull request for it — a pull request
+that fixes a security bug describes the bug in public before anyone can upgrade. Use
+[the advisory form](https://github.com/bemeek-io/pando/security/advisories/new), and see
+[`SECURITY.md`](SECURITY.md) for what to include and what response to expect.
+
 ## Getting set up
 
 ```bash
@@ -16,7 +23,13 @@ make build                   # the pando binary
 make console                 # build the console into the embedded assets
 make test-integration        # real Postgres and Docker, via testcontainers
 make requirements-coverage   # which requirements have a named acceptance test
+make fuzz                    # fuzz the parsers that read untrusted input
 ```
+
+`make fuzz` runs each target for `FUZZ_TIME` (60s by default) and is not part of `make check`, which
+has to stay fast. Their seed corpora do run in `make test`, so a crasher committed to `testdata/fuzz`
+fails on every pull request. CI fuzzes for longer on a schedule. If you find a crasher, commit the
+input file it writes — that is what turns it into a regression test.
 
 To run a full stack while you work:
 
@@ -61,6 +74,9 @@ Two sets, and the distinction matters:
 | [`docs/design/`](docs/design/) | How it is built. Nine documents, `00`–`08`. |
 | [`docs/plan/`](docs/plan/) | Build order by phase, open decisions, risk register. |
 | [`docs/traceability/`](docs/traceability/) | Generated index mapping requirements to design, code and tests. |
+| [`docs/reference.md`](docs/reference.md) | The external interfaces in one place — API, configuration, what an app receives. |
+| [`docs/releasing.md`](docs/releasing.md) | Version numbering, tagging, and how a release is built and signed. |
+| [`SECURITY.md`](SECURITY.md) | The security model, the cryptography in use, and coordinated disclosure. |
 | [`CLAUDE.md`](CLAUDE.md) | Conventions, invariants, and the definition of done. |
 
 Requirements are tagged **[D]** decided, **[P]** proposed, **[O]** open. Where the design contradicts
@@ -88,6 +104,19 @@ Two that catch people out:
   depguard rule in `make lint`, not a convention.
 - **Builds never get a container runtime socket.** BuildKit runs rootless in its own container, and
   an integration test asserts on that container's actual mount list.
+
+## Static analysis
+
+`make lint` includes `gosec`, and CodeQL runs separately on every push. A `gosec` finding is either
+fixed or suppressed with a `//nolint:gosec` comment that names the rule and says why it does not
+apply — a bare `//nolint` is indistinguishable from one nobody checked, so it will be asked about in
+review. If a finding is real but the fix is a decision rather than a correction, record it in
+[`docs/plan/open-decisions.md`](docs/plan/open-decisions.md) and point the suppression at it. O-18
+is an example: the comment says the finding is not a false positive.
+
+`govulncheck`, `npm audit` and `gitleaks` run daily as well as on pull requests. A `gitleaks`
+allowlist entry goes in `.gitleaks.toml` naming the exact fixture; excluding `*_test.go` wholesale is
+the shortcut that stops the check finding the thing it exists to find.
 
 ## Writing an adapter
 
@@ -118,6 +147,10 @@ A change is complete when:
 2. `make check` passes.
 3. Any `[P]` default you overrode is noted in the design document, with the reason — not only in a
    code comment.
+4. [`CHANGELOG.md`](CHANGELOG.md) has an entry under **Unreleased** if an operator running an
+   installation would notice the change. A refactor does not need one; a new configuration variable,
+   a changed default, a fixed bug and anything security-relevant all do. Security entries name the
+   advisory or CVE identifier — that is what tells someone whether an upgrade is urgent.
 
 Cite requirement IDs in commit messages and comments where a non-obvious choice traces to one. `R-151`
 in a comment explains an absent code path better than three sentences will.

@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Read-only by default. No job here writes anything to the repository, and a
+# workflow token that can is a workflow token an action can misuse.
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -23,7 +28,9 @@ jobs:
         run: go vet ./...
 
       # Includes the depguard rule enforcing R-027: adapters may not import
-      # core/authz, core/audit, core/state, or core/policy.
+      # core/authz, core/audit, core/state, or core/policy — and gosec, the
+      # fast static analysis pass for common vulnerability classes. CodeQL runs
+      # separately and does the dataflow this cannot.
       #
       # .golangci.yml is v2 format, which needs golangci-lint v2 and action v7+.
       - name: Lint

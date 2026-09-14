@@ -9,7 +9,19 @@ COPY go.mod go.sum* ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pando ./cmd/pando
+
+# Version stamps. The release workflow passes these; a local `docker build`
+# leaves them at the defaults and the image reports itself as a development
+# build, which is what it is. See docs/releasing.md.
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w \
+      -X main.buildVersion=${VERSION} \
+      -X main.buildCommit=${COMMIT} \
+      -X main.buildDate=${BUILD_DATE}" \
+    -o /out/pando ./cmd/pando
 
 # 3.21 rather than 3.20 because that is where postgresql17-client appears, and
 # the client major version has to match the server: pg_dump refuses a server

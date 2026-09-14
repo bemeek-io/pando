@@ -1,0 +1,47 @@
+# Dependabot. Grouped updates, weekly, so that keeping dependencies current is
+# one pull request to review rather than fifteen — fifteen is how a project ends
+# up merging them without reading any.
+#
+# Security updates are not grouped and not weekly: GitHub raises those
+# immediately and separately, whatever is configured here.
+
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      go-minor-and-patch:
+        update-types: [minor, patch]
+    # A major bump of any of these is a change to how Pando builds or runs
+    # apps, not a version number. Reviewed one at a time.
+    ignore:
+      - dependency-name: github.com/docker/docker
+        update-types: ["version-update:semver-major"]
+      - dependency-name: github.com/moby/buildkit
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: npm
+    directory: /console
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      console-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

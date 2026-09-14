@@ -12,7 +12,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | Requirements | 211 | — |
 | Specified in a design doc | 156 | 73% |
 | Assigned to a phase | 125 | 59% |
-| Covered by a named test | 89 | 42% |
+| Covered by a named test | 90 | 42% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -48,7 +48,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-031** | P | An app has exactly one owner of record at any time, plus any number of additional grants. | 4. Object Model | 02 | — | — |
 | **R-040** | D | Identity is an adapter category like any other. | 5.1 Adapter model | — | — | — |
 | **R-041** | D V1 | Local users — username and password, stored by Pando. | 5.1 Adapter model | — | — | — |
-| **R-042** | D | Local users must be secure but are not claimed to be the most secure option. | 5.1 Adapter model | — | — | — |
+| **R-042** | D | Local users must be secure but are not claimed to be the most secure option. | 5.1 Adapter model | — | — | `TestR042_AMalformedStoredHashDeniesRatherThanPanics` |
 | **R-043** | D LATER | Additional identity adapters: GitHub OAuth, generic OIDC, SAML. | 5.1 Adapter model | — | — | — |
 | **R-044** | D | Identity adapters perform authentication only. | 5.1 Adapter model | 03 | 01 | `TestR044_AuthenticateReturnsASubjectWithNoPermissions` |
 | **R-045** | P | Multiple identity adapters may be configured simultaneously. | 5.1 Adapter model | — | — | — |

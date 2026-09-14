@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -113,8 +114,13 @@ func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print the version",
+		Long: "Print the version, the commit it was built from, and when.\n\n" +
+			"A binary that reports \"dev\" was built from a working tree rather than a\n" +
+			"release tag, and nothing about which commit it came from can be assumed.",
 		Run: func(cmd *cobra.Command, _ []string) {
-			fmt.Fprintln(cmd.OutOrStdout(), "pando (development build)")
+			fmt.Fprintf(cmd.OutOrStdout(), "pando %s\ncommit %s\nbuilt %s\n%s %s/%s\n",
+				buildVersion, buildCommit, buildDate,
+				runtime.Version(), runtime.GOOS, runtime.GOARCH)
 		},
 	}
 }
@@ -439,7 +445,21 @@ func serve(ctx context.Context, configPath string) error {
 		Idempotency: state.NewIdempotency(db),
 	}).Routes()
 
-	srv := &http.Server{Addr: cfg.Server.Addr, Handler: apiHandler}
+	srv := &http.Server{
+		Addr:    cfg.Server.Addr,
+		Handler: apiHandler,
+
+		// A client that opens a connection and dribbles header bytes holds a
+		// goroutine open indefinitely without this. Matches what the proxy's
+		// per-app listeners already do (internal/proxy/ports.go).
+		//
+		// ReadHeaderTimeout and IdleTimeout only. A ReadTimeout or WriteTimeout
+		// would cut the responses this API exists to stream — the deploy log's
+		// SSE feed, `pando logs --follow`, and the exec websocket — at a fixed
+		// wall-clock deadline, which is the wrong tool for a slow client.
+		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 
 	// The reconciler. Apps that kept running while Pando was away are converged
 	// to, not restarted for tidiness — an app that was running and is still
@@ -743,10 +763,19 @@ func secretsKeyPath(ctx context.Context, store *state.Adapters, logger *zap.Logg
 	return ""
 }
 
-// buildVersion is what the manifest records. Stamped at build time once there
-// is a release process; "dev" until then, which is honest rather than a version
-// number nobody set.
-const buildVersion = "dev"
+// Build stamps. Set with -ldflags at release time; see docs/releasing.md.
+//
+// The defaults are what a build from a working tree reports, and they are
+// deliberately not a version number nobody set: "dev" is the only thing a
+// binary built outside the release workflow can honestly claim to be.
+//
+// buildVersion is also what the backup manifest records, which is why it has to
+// be exact — a restore compares it against the version doing the restoring.
+var (
+	buildVersion = "dev"
+	buildCommit  = "unknown"
+	buildDate    = "unknown"
+)
 
 // warnIfRetriesAreFast says so when the retry schedule is configured faster than
 // R-149's default.

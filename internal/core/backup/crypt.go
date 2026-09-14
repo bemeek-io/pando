@@ -203,7 +203,9 @@ func nonce(counter uint64, last bool) []byte {
 
 func writeChunk(dst io.Writer, sealed []byte) error {
 	var length [4]byte
-	binary.BigEndian.PutUint32(length[:], uint32(len(sealed)))
+	// G115: sealed is one chunk plus the AEAD tag, bounded by chunkSize well
+	// below 2^32. The read side rejects any length above that bound.
+	binary.BigEndian.PutUint32(length[:], uint32(len(sealed))) //nolint:gosec
 	if _, err := dst.Write(length[:]); err != nil {
 		return errs.Wrap(errs.Internal, "Pando could not write the backup.", err)
 	}

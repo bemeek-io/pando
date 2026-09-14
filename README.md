@@ -10,6 +10,7 @@
 [![codecov](https://codecov.io/gh/bemeek-io/pando/branch/main/graph/badge.svg)](https://codecov.io/gh/bemeek-io/pando)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-B23A2C)](LICENSE)
 [![Go 1.27](https://img.shields.io/badge/go-1.27-B23A2C)](go.mod)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/bemeek-io/pando/badge)](https://scorecard.dev/viewer/?uri=github.com/bemeek-io/pando)
 
 </div>
 
@@ -232,10 +233,27 @@ not multi-tenant — one installation serves one organization.
 It reports problems rather than working around them. If an app loads its assets from the domain root
 and will break under a path prefix, Pando says so; it does not rewrite the app's pages.
 
+## Documentation
+
+- [`docs/reference.md`](docs/reference.md) — the external interfaces in one place: the HTTP API, what
+  an app receives, every configuration variable, and the guarantees worth relying on.
+- [`docs/design/04-api.md`](docs/design/04-api.md) — the full API reference.
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release, and whether you need to act.
+
+## Reporting a problem
+
+- **A bug**, or something that does not work as documented: [open an
+  issue](https://github.com/bemeek-io/pando/issues/new/choose).
+- **A security vulnerability**: privately, through [the advisory
+  form](https://github.com/bemeek-io/pando/security/advisories/new) — not as an issue. See
+  [`SECURITY.md`](SECURITY.md) for what to include and what response to expect.
+- **A question**: [Discussions](https://github.com/bemeek-io/pando/discussions).
+
 ## Contributing
 
 Bug reports and pull requests are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how the
 project is organized, how to build it, and what a change needs before it can be merged.
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) applies everywhere the project happens.
 
 ## License
 

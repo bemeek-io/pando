@@ -74,7 +74,9 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err := os.WriteFile(path, out, 0o644); err != nil {
+	// G306: generated source, committed to the repository and read by every
+	// developer and by CI. It holds no secret.
+	if err := os.WriteFile(path, out, 0o644); err != nil { //nolint:gosec
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
