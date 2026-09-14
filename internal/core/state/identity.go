@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/bemeek-io/pando/internal/adapter/identity/local"
+	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/errs"
 	"github.com/bemeek-io/pando/internal/id"
 )
@@ -178,9 +179,82 @@ func (u *Users) SetStatus(ctx context.Context, userID, status string) error {
 	default:
 		return errs.New(errs.ValidInvalid, "An account can be set to active or suspended.")
 	}
-	_, err := u.db.Exec(ctx,
-		`UPDATE users SET status = $2, updated_at = now() WHERE id = $1`, userID, status)
+
+	if status == "active" {
+		_, err := u.db.Exec(ctx,
+			`UPDATE users SET status = $2, updated_at = now() WHERE id = $1`, userID, status)
+		if err != nil {
+			return errs.Wrap(errs.Internal, "Could not update the account.", err)
+		}
+		return nil
+	}
+
+	// Suspending the last account that can manage accounts is R-088's lockout
+	// reached by a different route.
+	//
+	// Grants.RevokeInstall refuses to take the last administrator's role away,
+	// for the reason given there: the install becomes unadministrable in one
+	// click and the only way back is a psql prompt. Suspending that same
+	// account does exactly the same thing — it cannot sign in, and nobody else
+	// can lift the suspension — and nothing was stopping it. An administrator
+	// could do it to themselves in one request, which is how it was found.
+	//
+	// Checked here rather than in the handler so the console, the CLI and the
+	// API all inherit it, which is where the sibling rule already lives.
+	tx, err := u.db.Begin(ctx)
 	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not update the account.", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Only this account's own suspension can cause the lockout. An install that
+	// had no administrator before is not made worse by suspending someone who
+	// was never one — and refusing that would break every install whose access
+	// is granted through groups alone.
+	var administers bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM grants g
+			JOIN roles r ON r.id = g.role_id
+			WHERE g.app_id IS NULL AND g.plane = 'control'
+			  AND g.principal_kind = 'user' AND g.principal_id = $1
+			  AND $2 = ANY (r.verbs))`,
+		userID, string(authz.InstallUsersManage)).Scan(&administers); err != nil {
+		return errs.Wrap(errs.Internal, "Could not update the account.", err)
+	}
+
+	if _, err := tx.Exec(ctx,
+		`UPDATE users SET status = $2, updated_at = now() WHERE id = $1`, userID, status); err != nil {
+		return errs.Wrap(errs.Internal, "Could not update the account.", err)
+	}
+
+	if administers {
+		// Counted after the update, so the account being suspended is already
+		// excluded. A grant held by a group still counts — Pando cannot tell
+		// whether that group has reachable members — but a grant held by an
+		// account that cannot sign in does not, which is the whole point.
+		var remaining int
+		if err := tx.QueryRow(ctx, `
+			SELECT count(*)
+			FROM grants g
+			JOIN roles r ON r.id = g.role_id
+			LEFT JOIN users u ON g.principal_kind = 'user' AND u.id = g.principal_id
+			WHERE g.app_id IS NULL
+			  AND g.plane = 'control'
+			  AND $1 = ANY (r.verbs)
+			  AND (g.principal_kind <> 'user'
+			       OR (u.deleted_at IS NULL AND u.status = 'active'))`,
+			string(authz.InstallUsersManage)).Scan(&remaining); err != nil {
+			return errs.Wrap(errs.Internal, "Could not update the account.", err)
+		}
+		if remaining == 0 {
+			return errs.New(errs.ValidInvalid,
+				"This is the only account that can manage accounts, so Pando cannot suspend it.").
+				WithRemedy("Make someone else an administrator first, then suspend this one.")
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		return errs.Wrap(errs.Internal, "Could not update the account.", err)
 	}
 	return nil

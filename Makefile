@@ -22,9 +22,21 @@ build: ## Build the pando binary
 test: ## Run unit tests
 	$(GO) test -race -count=1 $(PKG)
 
+# COVERPROFILE is set by CI so the integration run's coverage can be uploaded
+# under its own flag. Empty locally, where writing a profile nobody reads is
+# just a slower test run.
+#
+# -coverpkg=./... is what makes the integration profile mean what it says. By
+# default a package's coverage counts only its own tests, so an API test that
+# drives the state store, the planner and the audit writer credits none of
+# them — and those packages read as untested because the tests that exercise
+# them live one package over.
+COVERPROFILE ?=
+COVERFLAGS := $(if $(COVERPROFILE),-coverpkg=./... -coverprofile=$(COVERPROFILE) -covermode=atomic,)
+
 .PHONY: test-integration
 test-integration: ## Run integration tests (real Postgres + Docker, via testcontainers)
-	$(GO) test -race -count=1 -timeout=15m -tags=integration ./...
+	$(GO) test -race -count=1 -timeout=15m -tags=integration $(COVERFLAGS) ./...
 
 .PHONY: vet
 vet: ## go vet, including the integration-tagged tests

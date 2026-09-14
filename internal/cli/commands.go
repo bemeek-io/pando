@@ -170,7 +170,7 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 		},
 	})
 
-	cmd.AddCommand(&cobra.Command{
+	add := &cobra.Command{
 		Use:   "add <source-url>",
 		Short: "Create an app from a repository",
 		Args:  cobra.ExactArgs(1),
@@ -198,8 +198,14 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 				name, app["id"], app["id"])
 			return nil
 		},
-	})
-	cmd.Commands()[len(cmd.Commands())-1].Flags().String("name", "", "name for the app (defaults to the repository name)")
+	}
+	// Bound to `add` directly. Reaching for the last entry of cmd.Commands()
+	// instead put the flag on whichever subcommand sorted last — cobra keeps
+	// that slice in alphabetical order, not insertion order — so `app add
+	// --name` was rejected as an unknown flag and `app list --name` quietly
+	// accepted one it ignores.
+	add.Flags().String("name", "", "name for the app (defaults to the repository name)")
+	cmd.AddCommand(add)
 
 	del := &cobra.Command{
 		Use:   "delete <app>",

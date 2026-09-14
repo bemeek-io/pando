@@ -44,7 +44,13 @@ jobs:
       # Unit coverage only. The integration job runs separately against real
       # Postgres and real Docker, and merging the two profiles would report a
       # number neither job measured.
+      #
+      # always(), because the profile is written as the tests run: a failing
+      # package would otherwise discard the coverage of every package that
+      # passed, and the pull request would be told its coverage collapsed when
+      # what actually happened is that one test failed.
       - name: Upload coverage
+        if: always()
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -122,4 +128,22 @@ jobs:
           go-version: '1.27'
           cache: true
       # Runners have Docker, so testcontainers works without extra setup.
-      - run: make test-integration
+      - run: make test-integration COVERPROFILE=coverage.integration.out
+
+      # Uploaded under its own flag rather than merged into the unit profile.
+      #
+      # Merging the two files would report a number neither job measured, which
+      # is why the unit step does not do it. Two flagged uploads are a different
+      # thing: Codecov takes the union, and every line it then counts was
+      # executed by a test that ran. That union is the honest project number,
+      # and without it the packages that need Postgres or Docker — the API
+      # handlers, the state store, the runtime adapter — read as untested when
+      # they are not.
+      - name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.integration.out
+          flags: integration
+          fail_ci_if_error: false

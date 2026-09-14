@@ -61,16 +61,20 @@ type Query struct {
 	Cursor int64
 }
 
-const (
-	defaultAuditLimit = 100
-	maxAuditLimit     = 500
-)
+// DefaultLimit is the page size when a caller names none.
+//
+// Exported because the API layer has to know it to decide whether a page was
+// full — it had the number written out a second time, and a duplicated page
+// size is one that drifts.
+const DefaultLimit = 100
+
+const maxAuditLimit = 500
 
 // List reads the log, newest first.
 func (r *Reader) List(ctx context.Context, q Query) ([]Record, error) {
 	limit := q.Limit
 	if limit <= 0 {
-		limit = defaultAuditLimit
+		limit = DefaultLimit
 	}
 	if limit > maxAuditLimit {
 		limit = maxAuditLimit
