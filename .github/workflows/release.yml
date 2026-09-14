@@ -21,6 +21,9 @@ on:
 
 permissions:
   contents: write
+  # Keyless signing: cosign exchanges this job's OIDC token for a short-lived
+  # Fulcio certificate. Without it the `signs` block in .goreleaser.yaml fails.
+  id-token: write
 
 jobs:
   release:
@@ -77,6 +80,9 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: console/package-lock.json
+
+      # Signs checksums.txt. Installed before GoReleaser, which shells out to it.
+      - uses: sigstore/cosign-installer@v3
 
       - uses: goreleaser/goreleaser-action@v6
         with:

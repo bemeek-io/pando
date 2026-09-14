@@ -1,0 +1,41 @@
+# OpenSSF Scorecard. Scores the repository's supply-chain posture — branch
+# protection, pinned dependencies, signed releases, token permissions, whether a
+# security policy exists — and publishes the result.
+#
+# It measures the same ground as the OpenSSF Best Practices badge from the other
+# direction: the badge is what the project asserts, Scorecard is what a tool can
+# observe without being told. Where they disagree, Scorecard is usually right.
+
+name: Scorecard
+
+on:
+  branch_protection_rule:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '43 6 * * 2' # weekly
+
+permissions: read-all
+
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # upload the SARIF result to the Security tab
+      id-token: write # publish the result so the score badge resolves
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: ossf/scorecard-action@v2
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif

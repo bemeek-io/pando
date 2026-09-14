@@ -54,6 +54,30 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# A checksum file served from the same place as the artifacts proves only that
+# the server is self-consistent: anyone who can replace the tarball can replace
+# checksums.txt beside it. Signing it is what makes the check mean something.
+#
+# Keyless, so there is no long-lived signing key to leak, rotate or lose. cosign
+# gets a short-lived certificate from Fulcio bound to this workflow's OIDC
+# identity and records it in Rekor, so verification asks "was this produced by
+# Pando's release workflow, from a tag" rather than "do I have the right key".
+# Requires `id-token: write` on the job.
+#
+# Verification is in docs/releasing.md.
+signs:
+  - id: checksums
+    cmd: cosign
+    artifacts: checksum
+    certificate: '${artifact}.pem'
+    output: true
+    args:
+      - sign-blob
+      - '--output-certificate=${certificate}'
+      - '--output-signature=${signature}'
+      - '${artifact}'
+      - '--yes'
+
 snapshot:
   version_template: '{{ incpatch .Version }}-next'
 

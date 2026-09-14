@@ -97,7 +97,9 @@ func (a *Adapter) HealthCheck(context.Context) error {
 	}
 
 	probe := filepath.Join(a.config.Dir, ".pando-probe.yml")
-	if err := os.WriteFile(probe, []byte("# pando write probe\n"), 0o644); err != nil {
+	// G306: 0644 because Traefik reads this directory as its own user, and the
+	// probe's whole job is to prove that it can. The content is a comment.
+	if err := os.WriteFile(probe, []byte("# pando write probe\n"), 0o644); err != nil { //nolint:gosec
 		return errs.Wrap(errs.AdapterFailed,
 			fmt.Sprintf("Pando cannot write to Traefik's configuration directory at %s.", a.config.Dir), err)
 	}
@@ -158,7 +160,10 @@ func (a *Adapter) Ensure(_ context.Context, r api.RouteRequest) (api.RouteHandle
 	// Written to a temporary file and renamed, because Traefik watches the
 	// directory and will read a half-written file the moment it appears.
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
+	// G306: 0644 because Traefik runs as a different user and has to read it.
+	// Router rules, not credentials: Traefik never sees a secret, which is why
+	// the proxy and not the router makes the authorization decision (R-023).
+	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil { //nolint:gosec
 		return api.RouteHandle{}, errs.Wrap(errs.AdapterFailed,
 			"Pando could not write Traefik's configuration.", err)
 	}

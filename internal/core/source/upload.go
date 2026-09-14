@@ -172,7 +172,10 @@ const maxUploadFileBytes = 1 << 30 // 1 GiB per file
 // An executable bit is kept, because a repository with a build script in it
 // needs one.
 func fileMode(mode int64) os.FileMode {
-	perm := os.FileMode(mode).Perm()
+	// G115: Perm masks to the low nine bits after the conversion, so a mode
+	// that overflows uint32 cannot produce a permission this function did not
+	// intend. The mask is also what drops setuid and setgid.
+	perm := os.FileMode(mode).Perm() //nolint:gosec
 	if perm == 0 {
 		return 0o644
 	}

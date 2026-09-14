@@ -88,7 +88,11 @@ func PackDirectory(dir string) ([]byte, int, error) {
 		if err != nil {
 			return err
 		}
-		f, err := os.Open(path)
+		// G122: the symlink TOCTOU this warns about needs an attacker who can
+		// swap entries in the directory being walked. That directory is the
+		// user's own working tree on their own machine, and the IsRegular check
+		// above already declines to archive anything that is not a plain file.
+		f, err := os.Open(path) //nolint:gosec
 		if err != nil {
 			return err
 		}

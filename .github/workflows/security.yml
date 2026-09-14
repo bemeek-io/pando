@@ -1,0 +1,119 @@
+# The security checks that are not CodeQL: known-vulnerable dependencies, and
+# credentials committed by accident.
+#
+# Separate from ci.yml because both are scheduled as well as triggered. A
+# dependency that was clean yesterday is the normal way a vulnerability arrives,
+# and nothing about this repository has to change for that to happen.
+
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 5 * * *' # daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: Known vulnerabilities in dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: true
+
+      # GOTOOLCHAIN=local so govulncheck is built with the Go that setup-go just
+      # installed. x/vuln's own go.mod names an older toolchain, and a
+      # govulncheck built with it refuses to analyze source written for a newer
+      # one — "package requires newer Go version", on every package.
+      - run: GOTOOLCHAIN=local go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      # `|| true`, then decide. govulncheck exits non-zero for anything
+      # reachable and offers no way to say "this one is understood", so on its
+      # own a module-level advisory with no fixed version makes this job red
+      # forever. scripts/check-vulns.py fails on anything not in the allowlist,
+      # and the allowlist requires a written reason per entry.
+      - run: govulncheck -format=json ./... > vulns.json || true
+      - run: python3 scripts/check-vulns.py vulns.json .github/govulncheck-allowlist.txt
+
+  npm-audit:
+    name: Known vulnerabilities in console dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - run: npm ci
+        working-directory: console
+      # High and above fails. The console's dependencies are build-time and
+      # front-end; a low-severity advisory in a build tool is not worth blocking
+      # an unrelated pull request over, and blocking on one teaches people to
+      # skip the check.
+      - run: npm audit --audit-level=high
+        working-directory: console
+
+  fuzz:
+    name: Fuzz the untrusted-input parsers
+    runs-on: ubuntu-latest
+    # Scheduled and on request only. Twenty minutes on every pull request buys
+    # almost nothing — the seed corpora already run in `make test` there — and
+    # a slow required check is a check people learn to route around.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: true
+
+      # Every target's seed corpus runs in `make test` on every pull request,
+      # so a crasher committed to testdata/fuzz fails fast there. This job is
+      # the part that looks for new ones, which is why it is scheduled: a fixed
+      # budget applied daily finds more than a long run applied once.
+      #
+      # Five minutes each. Long enough to be worth the run, short enough that
+      # nobody turns it off.
+      - run: make fuzz FUZZ_TIME=5m
+
+      # A crasher is only useful if it survives the runner. Committing the
+      # input to testdata/fuzz turns it into a regression test; without this
+      # the failure is a log line that scrolls away.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-crashers
+          path: ~/.cache/go-build/fuzz/
+          if-no-files-found: ignore
+
+  gitleaks:
+    name: Committed credentials
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the whole history, not just the diff
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: true
+
+      # The binary rather than gitleaks-action: the action asks organizations
+      # for a license key, and a security check that silently stops running when
+      # a key expires is worse than no check at all.
+      - run: go install github.com/zricethezav/gitleaks/v8@latest
+
+      # The whole history. A credential that was committed and removed in the
+      # next commit is still in the history, and still published. Allowlisted
+      # fixtures are named one by one in .gitleaks.toml.
+      - run: gitleaks git . --no-banner --redact --config .gitleaks.toml

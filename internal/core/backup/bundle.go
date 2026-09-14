@@ -218,7 +218,11 @@ func Verify(r io.Reader) (Verified, error) {
 		}
 
 		sum := sha256.New()
-		n, err := io.Copy(sum, tr)
+		// G110: nothing is buffered — the entry streams through a hash, so a
+		// bundle claiming a petabyte costs time and not memory. Reaching here
+		// also means the bundle's passphrase already decrypted it, so the input
+		// is not attacker-supplied in the sense the rule assumes.
+		n, err := io.Copy(sum, tr) //nolint:gosec
 		if err != nil {
 			return Verified{}, errs.New(errs.BackupIncomplete, "This backup is damaged and cannot be read.")
 		}
