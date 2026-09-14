@@ -46,6 +46,12 @@ updates:
         patterns:
           - vite
           - '@vitejs/*'
+          # vitest is part of this unit, not a separate tool: it runs on Vite's
+          # own module graph and each major pins a Vite range — vitest 5 wants
+          # vite 8. Bumped on its own it either duplicates Vite in the tree or
+          # fails to resolve, which is the ERESOLVE above with different names.
+          - vitest
+          - '@vitest/*'
       linting-and-types:
         # eslint, its plugins, TypeScript and the parser that bridges them are
         # one unit: @typescript-eslint/parser pins a TypeScript range, and the

@@ -47,7 +47,9 @@ func Logger(base *zap.Logger) func(http.Handler) http.Handler {
 
 			log.From(ctx).Info("request",
 				zap.String("method", r.Method),
-				zap.String("path", r.URL.Path),
+				// The path is whatever the caller typed, and it reaches here
+				// percent-decoded.
+				log.Untrusted("path", r.URL.Path),
 				zap.Int("status", rec.status),
 				zap.Duration("took", time.Since(started)),
 			)

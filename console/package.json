@@ -9,8 +9,9 @@
     "build": "tsc --noEmit && vite build",
     "types": "go run ../cmd/gen-api-types",
     "lint": "eslint src",
+    "test": "vitest run",
     "precheck": "node scripts/vendor-design.mjs && npm run types",
-    "check": "npm run lint && tsc --noEmit"
+    "check": "npm run lint && tsc --noEmit && npm run test"
   },
   "dependencies": {
     "@tanstack/react-query": "5.102.8",
@@ -29,6 +30,7 @@
     "eslint-plugin-react": "^7.37.5",
     "oxlint": "1.82.0",
     "typescript": "6.0.3",
-    "vite": "8.3.0"
+    "vite": "8.3.0",
+    "vitest": "5.0.0"
   }
 }

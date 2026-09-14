@@ -407,10 +407,13 @@ func (s *Server) handleListAudit(w http.ResponseWriter, r *http.Request) {
 	// and then indexed events[-1] — so every audit filter that found no events
 	// answered 500 instead of an empty page, which is the one answer a search
 	// UI produces most often.
-	page := q.Limit
-	if page <= 0 {
-		page = audit.DefaultLimit
-	}
+	//
+	// The size comes from the reader rather than being worked out again here.
+	// This used to apply only the default, which left the cap out: a request
+	// for 1000 records got the 500 the reader allows, compared them against
+	// 1000, decided the page was not full and sent no cursor — so paging
+	// stopped dead on any limit above the cap.
+	page := audit.PageSize(q.Limit)
 	var next string
 	if len(events) > 0 && len(events) == page {
 		next = strconv.FormatInt(events[len(events)-1].ID, 10)

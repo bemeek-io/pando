@@ -2,6 +2,7 @@ package log_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -59,4 +60,54 @@ func TestNewRejectsBadLevel(t *testing.T) {
 	l, err := log.New("debug", true)
 	require.NoError(t, err)
 	require.NotNil(t, l)
+}
+
+// A request-supplied value cannot forge a line of its own.
+func TestUntrustedStripsWhatWouldForgeALine(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"newline", "/x\nINFO\trequest\t{\"path\": \"/admin\"}", `/x INFO request {"path": "/admin"}`},
+		{"carriage return", "/x\rmasked", "/x masked"},
+		{"crlf", "/x\r\ntwo", "/x  two"},
+		{"tab", "/x\ty", "/x y"},
+		{"ansi escape", "/x\x1b[2J", "/x�[2J"},
+		{"nul", "/x\x00y", "/x�y"},
+		{"an ordinary path is left alone", "/apps/billing?tab=logs", "/apps/billing?tab=logs"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			core, logs := observer.New(zapcore.DebugLevel)
+			zap.New(core).Info("request", log.Untrusted("path", tc.value))
+
+			require.Equal(t, tc.want, logs.All()[0].ContextMap()["path"])
+		})
+	}
+}
+
+// And the encoder writes one line, without having to escape anything.
+//
+// Both encoders are checked because the point of sanitizing at the call site is
+// that the result does not depend on which one is configured. Each would pass
+// this on its own escaping, so the assertion is on the bytes rather than on the
+// line count: the value arrives already free of anything to escape.
+func TestUntrustedNeedsNoEscapingFromEitherEncoder(t *testing.T) {
+	for name, enc := range map[string]zapcore.Encoder{
+		"console": zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig()),
+		"json":    zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+	} {
+		t.Run(name, func(t *testing.T) {
+			buf, err := enc.EncodeEntry(
+				zapcore.Entry{Level: zapcore.InfoLevel, Message: "request"},
+				[]zapcore.Field{log.Untrusted("path", "/x\nINFO\tforged")},
+			)
+			require.NoError(t, err)
+
+			line := strings.TrimSuffix(buf.String(), "\n")
+			require.NotContains(t, line, "\n")
+			require.NotContains(t, line, `\n`)
+			require.Contains(t, line, "/x INFO forged")
+		})
+	}
 }

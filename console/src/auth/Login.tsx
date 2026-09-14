@@ -15,21 +15,7 @@ import { Button, Input, Logo } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 
-/**
- * Where to go after signing in, from the `next` the proxy put in the query.
- *
- * Same-origin paths only, and that is a security check rather than tidiness: a
- * value taken from the address bar and handed to location.assign is an open
- * redirect, which is how a phishing link borrows a real domain. A path starting
- * with "//" is a URL to another host wearing a path's clothes, so it is
- * rejected along with anything carrying a scheme.
- */
-function returnTo(): string | null {
-  const next = new URLSearchParams(window.location.search).get('next');
-  if (!next) return null;
-  if (!next.startsWith('/') || next.startsWith('//')) return null;
-  return next;
-}
+import { returnTo } from './return-to';
 
 export function Login() {
   const [username, setUsername] = useState('');
@@ -43,7 +29,7 @@ export function Login() {
       // page is reachable on an app's own hostname at /.pando/login, and
       // without this the person who was trying to open an app signs in and
       // lands on a page of tiles, one click from where they already were.
-      const next = returnTo();
+      const next = returnTo(window.location.search, window.location.href);
       if (next) {
         window.location.assign(next);
         return;

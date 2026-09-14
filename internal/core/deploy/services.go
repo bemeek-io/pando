@@ -71,7 +71,20 @@ func (r *Runner) provision(ctx context.Context, s *spec.AppSpec, sink io.Writer)
 		}
 
 		serviceID := existing.ID
+
+		// The name a secret is filed under, not the secret — "pando.service.db"
+		// and never a password. "Key" is this codebase's word for the lookup
+		// name throughout state.Secrets (Put, Get and Keys all take one, and
+		// Keys is documented as returning names and never values); the value
+		// itself is only ever a secret.Value, which renders as [redacted] in
+		// every marshaler (R-194).
+		//
+		// Worth saying because a static analyzer reads the name and assumes the
+		// worse meaning: CodeQL's clear-text-logging heuristic treats anything
+		// matching /secretkey/ as key material, so this name reaching an error
+		// message reads to it as a password reaching a log.
 		secretKey := existing.SecretKey
+
 		var prior secret.Value
 		if found {
 			// Reading the stored DSN is what lets the adapter return the same
