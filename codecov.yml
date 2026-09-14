@@ -24,18 +24,20 @@ comment:
   after_n_builds: 2
   require_changes: false
 
+# No `paths` here, deliberately. Both flags measure the whole repository, and
+# constraining them is what broke this file the first time: `paths: - /` became
+# the regex `^/.*`, stored paths are repo-relative with no leading slash, so
+# each flag matched nothing and the commit processed to 0% with state=error.
+# https://codecov.io/validate accepts the syntax without checking that the
+# paths match any file, so it reported the config as valid.
 flags:
   unit:
-    paths:
-      - /
     carryforward: false
 
   # Carried forward because the integration job is the slow one and the only
-  # one that can cover those packages. If a run does not produce it — a
-  # cancelled job, a runner that died — the last known value stands rather than
-  # the project appearing to lose a third of its coverage for a reason that has
-  # nothing to do with the change.
+  # one that can cover the packages needing Postgres or Docker. If a run does
+  # not produce it — a cancelled job, a runner that died — the last known value
+  # stands rather than the project appearing to lose a third of its coverage
+  # for a reason that has nothing to do with the change.
   integration:
-    paths:
-      - /
     carryforward: true
