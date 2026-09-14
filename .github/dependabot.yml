@@ -30,6 +30,42 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
+      # A tool and its plugins move together or not at all.
+      #
+      # Without these, a major bump arrives on its own and cannot even install:
+      # vite 8 was proposed while @vitejs/plugin-react still peered
+      # `^4 || ^5 || ^6 || ^7`, so `npm ci` failed with ERESOLVE before any
+      # check in the workflow ran. The pull request is not reviewable — it is
+      # red for a reason that has nothing to do with the change.
+      #
+      # A dependency joins the FIRST group whose patterns match, so these are
+      # listed before the catch-all below. That ordering is what lets them claim
+      # their packages for every update type, major included, and leaves the
+      # catch-all holding everything else.
+      vite:
+        patterns:
+          - vite
+          - '@vitejs/*'
+      linting-and-types:
+        # eslint, its plugins, TypeScript and the parser that bridges them are
+        # one unit: @typescript-eslint/parser pins a TypeScript range, and the
+        # eslint plugins pin an eslint range. Bumping any one of them alone is
+        # the same failure in a different place.
+        patterns:
+          - eslint
+          - 'eslint-*'
+          - '@typescript-eslint/*'
+          - typescript
+          - oxlint
+      react:
+        patterns:
+          - react
+          - react-dom
+          - '@types/react'
+          - '@types/react-dom'
+      xterm:
+        patterns:
+          - '@xterm/*'
       console-minor-and-patch:
         update-types: [minor, patch]
 
