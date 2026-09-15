@@ -155,13 +155,24 @@ func (j *Job) Run(ctx context.Context, appID string, src spec.Source, view api.S
 }
 
 // statusFor recomputes detection status after the trial run.
+//
+// Low confidence on its own no longer says needs_answers. The threshold exists
+// so that a shaky read is not presented as settled, and while a modest bid
+// always carried a question that was the same thing said twice — but once the
+// buildpack detector stopped asking about a port it already had a default for,
+// a plain Go module came back as "needs_answers" with an empty question list.
+// A status that says answers are needed while asking for none is one somebody
+// has to open the database to understand.
+//
+// Nothing consumed it as a blocker, which is why this is a correction to what
+// the API says rather than to what it does: the console branches on running,
+// failed and blocked, and both the accept handler and the accept button gate on
+// unanswered questions.
 func statusFor(winner Candidate, questions []Question) string {
 	switch {
 	case winner.Strategy == StrategyUnknown:
 		return StatusNeedsAnswers
 	case len(Asked(questions)) > 0:
-		return StatusNeedsAnswers
-	case winner.Confidence < uncertain:
 		return StatusNeedsAnswers
 	default:
 		return StatusReady

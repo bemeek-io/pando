@@ -314,3 +314,38 @@ func TestR168_ThePathRoutingWarningReachesEveryCandidate(t *testing.T) {
 			"and so is every candidate the user could choose instead, here %q", candidate.Detector)
 	}
 }
+
+// R-201: a repository that declares no volume is warned at setup.
+//
+// The trial run only improves that warning (R-202) by naming the directory it
+// watched being written to. It is not what creates it — and attaching the
+// warning inside the trial's branch made it conditional on a trial that, for
+// every strategy built from source, never runs. macscout is the case: a Go
+// server keeping a SQLite database, planned as a buildpack build, deployed with
+// nothing told to persist and no warning that anything was missing.
+//
+// R-203 calls this the worst failure mode in the system, because it works
+// perfectly until the second deploy and then discards everything while
+// reporting healthy.
+func TestR201_TheStorageWarningSurvivesATrialThatCannotRun(t *testing.T) {
+	draft := detect.Draft{
+		Workloads: []spec.Workload{{Name: "web", Primary: true, Exposed: true}},
+	}
+
+	out, _ := detect.ApplyTrial(draft, nil, detect.Trial{Ran: false})
+
+	require.Len(t, out.Warnings, 1,
+		"no volumes declared and no trial to observe writes still means no persistence")
+	require.Equal(t, spec.WarnNoPersistentVolume, out.Warnings[0].Code)
+	require.Contains(t, out.Warnings[0].Message, "No persistent volume found")
+}
+
+// And a repository that did declare one is not nagged about it.
+func TestADeclaredVolumeIsNotWarnedAboutWithoutATrial(t *testing.T) {
+	draft := detect.Draft{
+		Workloads: []spec.Workload{{Name: "web", Primary: true}},
+		Volumes:   []spec.Volume{{Name: "data"}},
+	}
+	out, _ := detect.ApplyTrial(draft, nil, detect.Trial{Ran: false})
+	require.Empty(t, out.Warnings)
+}

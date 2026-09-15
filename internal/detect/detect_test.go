@@ -597,7 +597,9 @@ func (plannerWritingCMD) Plan(context.Context, api.SourceView) (map[string]strin
 	return map[string]string{
 		".nixpacks/Dockerfile": "FROM ubuntu:noble\n" +
 			"ENTRYPOINT [\"/bin/bash\", \"-l\", \"-c\"]\n" +
-			"RUN go build -o out ./cmd/server\n\n" +
+			"RUN nix-env -if .nixpacks/nixpkgs-e89cf1c9.nix && nix-collect-garbage -d\n" +
+			"RUN --mount=type=cache,id=x,target=/root/.cache/go-build go mod download\n" +
+			"RUN --mount=type=cache,id=x,target=/root/.cache/go-build go build -o out ./cmd/server\n\n" +
 			"FROM ubuntu:noble\n" +
 			"ENTRYPOINT [\"/bin/bash\", \"-l\", \"-c\"]\n" +
 			"WORKDIR /app/\n" +
@@ -1039,4 +1041,78 @@ func TestAnAnswerNamingNoCandidateIsIgnored(t *testing.T) {
 
 	out := proposal.WithAnswers(map[string]string{detect.KeyBuildStrategy: "nonsense"})
 	require.Equal(t, result.Winner.Draft.Build.Strategy, out.Build.Strategy)
+}
+
+// plannerRunningMake stands in for the builder once a Makefile has told it what
+// to run: the plan's build step is `make build` rather than a guessed one.
+type plannerRunningMake struct{}
+
+func (plannerRunningMake) Plan(context.Context, api.SourceView) (map[string]string, string, error) {
+	// The shape nixpacks actually emits, taken from a real run rather than
+	// invented: the environment is built first, then the install step, and the
+	// build command is the third RUN. A tidier fixture with one RUN passed
+	// while the real plan did not — buildsWithMake answered from the first RUN
+	// it saw, which is always nix-env.
+	return map[string]string{
+		".nixpacks/Dockerfile": "FROM ubuntu:noble\n" +
+			"ENTRYPOINT [\"/bin/bash\", \"-l\", \"-c\"]\n" +
+			"RUN nix-env -if .nixpacks/nixpkgs-e89cf1c9.nix && nix-collect-garbage -d\n" +
+			"RUN --mount=type=cache,id=x,target=/root/.cache/go-build go mod download\n" +
+			"RUN --mount=type=cache,id=x,target=/root/.cache/go-build make build\n" +
+			"RUN true\n\n" +
+			"FROM ubuntu:noble\n" +
+			"WORKDIR /app/\n" +
+			"CMD [\"./macscout\"]\n",
+	}, ".nixpacks/Dockerfile", nil
+}
+
+// R-094 tier 3: the maintainer's own build commands rank above tier 4's
+// ecosystem manifests, and the proposal says which one it used.
+func TestR094_AMakefileDrivenPlanOutranksConventionMatching(t *testing.T) {
+	src := memSource{
+		"go.mod":           "module example.com/app\n",
+		"Makefile":         "build:\n\tcd web && npm ci && npm run build\n\tgo build -o macscout ./cmd/server\n\nrun: build\n\t./macscout\n",
+		"web/package.json": `{"name":"client"}`,
+	}
+
+	withMake, err := detect.NewAuction(detect.BuildpackDetector{Planner: plannerRunningMake{}}).
+		Run(context.Background(), src)
+	require.NoError(t, err)
+
+	conventional, err := detect.NewAuction(detect.BuildpackDetector{Planner: plannerWritingCMD{}}).
+		Run(context.Background(), src)
+	require.NoError(t, err)
+
+	require.Greater(t, withMake.Winner.Confidence, conventional.Winner.Confidence,
+		"a plan the repository dictated is worth more than one inferred from go.mod")
+	require.Contains(t, strings.Join(withMake.Winner.Evidence, "\n"), "Makefile declares how this app is built",
+		"and the proposal says so, because the difference is the whole point")
+	require.Empty(t, detect.Asked(withMake.Questions))
+}
+
+// The evidence reports what the builder decided, so a Makefile that did not
+// drive the plan does not claim to have.
+func TestAMakefileThatDidNotDriveThePlanIsNotClaimedAsEvidence(t *testing.T) {
+	src := memSource{
+		"go.mod": "module example.com/app\n",
+		// Present, but it declares no build target, so the builder ignored it
+		// and planned by convention.
+		"Makefile": "lint:\n\tgolangci-lint run\n",
+	}
+	result, err := detect.NewAuction(detect.BuildpackDetector{Planner: plannerWritingCMD{}}).
+		Run(context.Background(), src)
+	require.NoError(t, err)
+	require.NotContains(t, strings.Join(result.Winner.Evidence, "\n"), "Makefile")
+}
+
+// A status that says answers are needed while asking for none is one somebody
+// has to open the database to understand.
+func TestStatusIsReadyWhenThereIsNothingToAnswer(t *testing.T) {
+	result, err := detect.NewAuction(detect.BuildpackDetector{Planner: plannerWritingCMD{}}).
+		Run(context.Background(), memSource{"go.mod": "module example.com/app\n"})
+	require.NoError(t, err)
+
+	require.Empty(t, detect.Asked(result.Questions))
+	require.Equal(t, detect.StatusReady, result.Status,
+		"the buildpack detector bids 0.45, and a low bid used to say needs_answers on its own")
 }

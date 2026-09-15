@@ -13,6 +13,10 @@
 - [x] Read-only `SourceView` — no write methods, structurally (R-020)
 - [x] Source allowlist check **before clone** (R-092); a blocked source produces zero disk writes — checked again on re-detection, since the allowlist can change after an app is created
 - [x] Registry check tier (R-094) — ghcr.io only by default; Docker Hub namespaces do not correspond to source owners ([note](../design/notes-registry-tier-namespaces.md))
+- [x] Maintainer's-own-build-commands tier (R-094 tier 3) — a Makefile `build` target drives the plan
+      instead of convention-matching, via nixpacks' own `--build-cmd`/`--start-cmd`/`--pkgs`
+      ([note](../design/notes-the-maintainers-own-build-commands.md)). `.github/workflows`, the other
+      half of the tier, is still unimplemented
 - [x] The detector auction: every builder adapter `Bid()`, ranked (R-093)
 - [x] Confidence ladder; `runners_up` returned so the user can see the auction, not just a verdict
 - [x] Compose import, with rejected constructs raising `PLAN_COMPOSE_CONSTRUCT_REJECTED` (R-099) and
@@ -22,7 +26,9 @@
 - [x] Slot promotion from the trial run — the O-4 fallback (design 01 §2.5), promoting only slots the app itself named
 - [x] Question generation held to R-105, enforced by a validator on every question rather than by review
 - [x] Warnings: `WARN_NO_PERSISTENT_VOLUME` with the observed directory (R-201, R-202),
-      `WARN_PATH_ROUTING_INCOMPATIBLE` (R-168)
+      `WARN_PATH_ROUTING_INCOMPATIBLE` (R-168). R-201's base warning fires whether or not the trial
+      ran — it used to be attached inside the trial's branch, so every source build got neither it
+      nor the improvement ([note](../design/notes-deferring-to-a-trial-that-cannot-run.md))
 - [x] Detection endpoints: get, rerun, diff, answers, accept
 
 ## Requirements in scope
