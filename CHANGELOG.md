@@ -13,17 +13,84 @@ Every release section names, in this order: **Security** (including every public
 fixed in it, with its CVE or GHSA identifier), **Added**, **Changed**, **Deprecated**, **Removed**,
 **Fixed**, and **Upgrade notes** for anything requiring an operator action.
 
+<!-- Rename this heading to the version and date when the next release is cut — the release
+workflow reads the section matching the tag and refuses to release without one — and open a fresh
+Unreleased above it. -->
+
 ## [Unreleased]
+
+## [0.2.0] - 2026-09-15
+
+Detection stops asking for things the repository already told it, and starts reading the build
+instructions an app carries rather than inferring them. If you deploy anything that builds a client
+into a Go binary, or that keeps data on disk, this release changes what Pando proposes for it.
+
+### Security
+
+No new advisories. The six open against `github.com/docker/docker` are unchanged and remain accepted
+with their reasoning in [`.github/govulncheck-allowlist.txt`](.github/govulncheck-allowlist.txt):
+all six are Moby **daemon** vulnerabilities, and `go list -deps` on the runtime adapter resolves to
+`api/…`, `client` and `pkg/stdcopy` with no `daemon/…` or `plugin/…` package in the binary. The
+module has no fixed release and will not get one.
+
+- An open redirect in the console's sign-in page. `returnTo` accepted a `next` parameter after
+  checking it began with one `/` and not two — but `/\evil.example` passes that and the URL parser
+  still reads it as `//evil.example`, because where an authority may begin a backslash and a slash
+  mean the same thing. Following a crafted link, signing in on the real hostname with a real
+  password, and landing on somebody else's site was a working attack. `next` is now resolved against
+  the current document and accepted only when the origins match, which agrees with what the browser
+  will do by construction and turns away `javascript:` and `data:` in the same breath.
+
+### Added
+
+- **Pando builds an app the way its repository says to.** Where a repository states its build — a
+  `.github/workflows` build job, a `Makefile`, `Taskfile.yml` or `justfile` target, a `Procfile`'s
+  web process — the plan runs those commands instead of inferring them from the language. R-094's
+  confidence ladder always ranked "the maintainer's own build commands" above convention-matching;
+  this implements it.
+- **A client that builds into a directory the binary embeds is built first.** Where a bundler config
+  names an output directory and a `//go:embed` directive names the same one, the ordering is stated
+  by the repository rather than guessed, and the client build runs ahead of the binary's. Read from
+  Vite, Astro, Vue CLI, Angular, Next.js (static exports), webpack and SvelteKit, or from an
+  `--outDir`-style flag in the build script.
+- `WARN_NO_PERSISTENT_VOLUME` now appears for apps built from source. It previously required a trial
+  run, which does not happen before an image exists — so an app that kept data on disk and declared
+  no volume got no warning at all.
+
+### Changed
+
+- **Adapter interface:** `BuildPlanner.Plan` returns an `*api.PlanDeclaration` alongside the
+  generated files, naming what in the repository dictated the plan. Nil means convention-matching
+  chose it. Only affects out-of-tree builder adapters, of which there are none; everything ships
+  compiled in (R-253).
+- Detection reports `ready` rather than `needs_answers` when it has nothing to ask. A bid below the
+  confidence threshold used to force `needs_answers` on its own, which became visible — and wrong —
+  once the questions below stopped being asked.
+- The console builds with TypeScript 6.0.3, and its `tsconfig.json` no longer sets `baseUrl`, which
+  TypeScript 6 rejects and 7 removes.
 
 ### Fixed
 
+- **Deploying a repository with no Dockerfile asked two questions it could answer itself.** A plain
+  Go module was asked for a start command that the generated build plan already contained, and for a
+  port that the language's framework default already supplied. Both are gone; the port rides in the
+  proposal as an editable default, marked as the guess it is.
+- A variable named after a target — `build := ./out` — was read as declaring that target, so the plan
+  ran `make build` against something that did not exist.
+- Audit log paging stopped on any `limit` above the cap. The API applied the default page size but
+  not the ceiling, compared a capped page of 500 against the requested 1000, decided the page was not
+  full, and returned no cursor.
 - The `cosign verify-blob` command in [`docs/releasing.md`](docs/releasing.md#verifying-a-download)
   rejected every release cut the normal way. It required a certificate identity ending
   `@refs/tags/v`, but a release dispatched from `main` lets the workflow create the tag, so the run —
   and the certificate — belongs to `refs/heads/main`. Anyone following the instructions on v0.1.1
-  would have concluded a good release was forged. The documented regex now matches both paths. Rename this heading to the version and date when the next release is cut — the release
-workflow reads the section matching the tag and refuses to release without one — and open a fresh
-Unreleased above it.
+  would have concluded a good release was forged. The documented regex now matches both paths.
+
+### Upgrade notes
+
+Nothing to do. Detection does not re-run on its own (R-022), so an app pinned before this release
+keeps the spec it was pinned with. To pick up the new reading for an existing app, re-run detection
+from its page and review the proposal as usual.
 
 ## [0.1.1] - 2026-09-14
 
@@ -72,6 +139,7 @@ Unreleased above it.
 The first release. Its notes were generated from the commit log, which is what this file now exists
 to replace; see the release page for the artifact list.
 
-[Unreleased]: https://github.com/bemeek-io/pando/compare/v0.1.1...main
+[Unreleased]: https://github.com/bemeek-io/pando/compare/v0.2.0...main
+[0.2.0]: https://github.com/bemeek-io/pando/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/bemeek-io/pando/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/bemeek-io/pando/releases/tag/v0.1.0
