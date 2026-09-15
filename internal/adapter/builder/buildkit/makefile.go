@@ -35,6 +35,18 @@ var makefileNames = []string{"GNUmakefile", "makefile", "Makefile"}
 // a directive such as .PHONY.
 var targetPattern = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9_.\-]*)\s*:[^=]?`)
 
+// assignmentPattern matches a variable assignment, which is not a target
+// however much `build := ./out` looks like one.
+//
+// Its own pattern because Go's regexp has no lookahead, so "a colon not
+// followed by =" cannot be spelled inside targetPattern: its trailing `[^=]?`
+// is optional, and an optional match of nothing accepts the `=` it was meant to
+// exclude. A Makefile with a variable named after a target therefore read as
+// declaring that target, and the plan ran `make build` against something that
+// does not exist. Shared with the justfile reader, whose `name := value` has
+// exactly the same shape.
+var assignmentPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.\-]*\s*[:?+!]?=`)
+
 // declaration is what a Makefile says about building and running an app.
 type declaration struct {
 	// File is the Makefile's name, for evidence. Empty when there is none.
@@ -108,6 +120,10 @@ func parseMakefile(r io.Reader) declaration {
 
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if assignmentPattern.MatchString(trimmed) {
+			current = ""
 			continue
 		}
 		if m := targetPattern.FindStringSubmatch(trimmed); m != nil {

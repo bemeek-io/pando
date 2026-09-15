@@ -143,6 +143,12 @@ func parseJustfile(r io.Reader) declaration {
 			}
 			continue
 		}
+		// just spells assignments `name := value`, which shares the blind
+		// spot described on assignmentPattern.
+		if assignmentPattern.MatchString(trimmed) {
+			current = ""
+			continue
+		}
 		if m := justRecipePattern.FindStringSubmatch(trimmed); m != nil {
 			current = m[1]
 			if _, seen := recipes[current]; !seen {

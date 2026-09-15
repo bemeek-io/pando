@@ -126,34 +126,53 @@ const nixpacksBinary = "nixpacks"
 // the source *with* the generated directory inside it. The checkout is a
 // throwaway clone, so nothing anybody keeps is touched.
 func buildpackDockerfile(_ api.BuildRequest, contextDir string) (string, error) {
-	declared := readDeclaredBuild(contextDir)
+	return planTwice(contextDir, readDeclaredBuild(contextDir), runNixpacks)
+}
 
-	name, err := runNixpacks(contextDir, declared.nixpacksArgs(""))
+// planner generates a plan and returns where it was written, relative to the
+// context directory.
+type planner func(contextDir string, args []string) (string, error)
+
+// planTwice asks the planner once, and again when the first answer is what the
+// second question needs.
+//
+// A declaration that names the build replaces what nixpacks would have chosen,
+// and one call settles it. A declaration that names an *ordering* does not:
+// `//go:embed dist` beside a client that builds into that directory says the
+// client comes first and says nothing about what it comes before. So: plan,
+// read the chosen build command back out of the generated Dockerfile, plan
+// again with the client build ahead of it.
+//
+// Two subprocesses rather than one, which is the honest cost of not
+// reimplementing the thing R-095 says to wrap: the alternative to asking
+// nixpacks what it would have chosen is being nixpacks.
+//
+// The planner is a parameter so this can be tested without one. The composition
+// is where the bug was last time — `cd web` outliving the client build — and
+// subprocess plumbing is a poor place to hide logic worth checking.
+func planTwice(contextDir string, declared declaredBuild, plan planner) (string, error) {
+	name, err := plan(contextDir, declared.nixpacksArgs(""))
 	if err != nil {
 		return "", err
 	}
-
-	// A second pass, when the repository declared an ordering rather than a
-	// command. `//go:embed dist` says the client has to exist before the Go
-	// build; it does not say what the Go build is, and nixpacks has just
-	// answered that. So ask again with the client build in front of it.
-	//
-	// Two subprocesses rather than one, which is the honest cost of not
-	// reimplementing the thing R-095 says to wrap: the alternative to asking
-	// nixpacks what it would have chosen is being nixpacks.
-	if declared.needsSecondPass() {
-		body, readErr := os.ReadFile(filepath.Join(contextDir, name))
-		if readErr != nil {
-			return "", errs.Wrap(errs.BuildFailed, "Could not read the build plan.", readErr)
-		}
-		if chosen := planBuildCommand(string(body)); chosen != "" {
-			name, err = runNixpacks(contextDir, declared.nixpacksArgs(chosen))
-			if err != nil {
-				return "", err
-			}
-		}
+	if !declared.needsSecondPass() {
+		return name, nil
 	}
-	return name, nil
+
+	body, readErr := os.ReadFile(filepath.Join(contextDir, name))
+	if readErr != nil {
+		return "", errs.Wrap(errs.BuildFailed, "Could not read the build plan.", readErr)
+	}
+
+	// No build step to come before means there is nothing to wrap, and the
+	// first plan stands. A repository whose build nixpacks could not work out
+	// is one this has nothing to add to.
+	chosen := planBuildCommand(string(body))
+	if chosen == "" {
+		return name, nil
+	}
+
+	return plan(contextDir, declared.nixpacksArgs(chosen))
 }
 
 // runNixpacks generates a plan, and returns where it was written.
