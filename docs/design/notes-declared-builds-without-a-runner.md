@@ -101,6 +101,30 @@ detection re-derived one case by looking for `make` in the plan's RUN lines, and
 [got it wrong](notes-the-maintainers-own-build-commands.md) by answering from the
 first RUN, which in a nixpacks plan is always `nix-env`.
 
+## Which toolchains are read
+
+Every one of these states its output as a literal, and every reader takes the
+literal and declines anything else.
+
+| toolchain | where it says so |
+|---|---|
+| any | an `--outDir`/`--outdir`/`--dist-dir`/`--output-path` flag in the build script |
+| Vite, Astro | `outDir` in the config |
+| Vue CLI | `outputDir` in `vue.config.js` |
+| Angular | `outputPath` in `angular.json`, in either the string or the 17+ object form |
+| Next.js | `distDir`, and only with `output: 'export'` |
+| webpack | `output.path`, as a literal or `path.resolve(__dirname, '…')` |
+| SvelteKit | adapter-static's `pages` |
+
+The build script is read first, because a flag in the command that runs beats a
+config file that may not be the one it reads — and it is the only thing that
+catches esbuild and Parcel, whose output is a flag and nothing else.
+
+Two are conditional rather than absent. Next.js without `output: 'export'`
+produces a server, and SvelteKit without adapter-static does too; a directory of
+server bundles embedded into a Go binary is not something that runs, so both are
+declined rather than paired.
+
 ## Still not done
 
 `.github/workflows` is read only when one job is unambiguously the build. A
@@ -108,5 +132,13 @@ repository that builds in a matrix, or through a composite action, or with the
 version in a `$VERSION`, is planned by convention as it was before — which is a
 large fraction of real workflows.
 
-Only Vite's `outDir` is read for a client's output. Next.js, Create React App,
-webpack and Angular all declare theirs somewhere, and none of them is read yet.
+Create React App is the one that cannot be read, and the claim that "they all
+declare it somewhere" was wrong about it. `react-scripts build` writes to
+`build/` and offers no config key at all — the only way to move it is the
+`BUILD_PATH` environment variable, which is not in the repository. A CRA client
+is therefore paired with an embed only when the build script sets `BUILD_PATH`
+inline, and otherwise falls through to convention like everything else.
+
+Nuxt is unread for a related reason: its output location depends on which Nitro
+preset is in play, and the preset is often set by the deployment environment
+rather than by the config.

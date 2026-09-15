@@ -38,13 +38,6 @@ import (
 // embedPattern matches a go:embed directive and captures its patterns.
 var embedPattern = regexp.MustCompile(`^//go:embed\s+(.+)$`)
 
-// viteOutDirPattern matches an outDir in a Vite config.
-//
-// Deliberately narrow: a literal string, which is what a config that can be
-// read without executing it looks like. `outDir: resolve(__dirname, '../x')` is
-// a program, and a program is not something to evaluate here.
-var viteOutDirPattern = regexp.MustCompile(`outDir\s*:\s*["']([^"']+)["']`)
-
 // readEmbeddedBuild finds a client whose declared output is a directory the Go
 // build embeds.
 func readEmbeddedBuild(contextDir string) declaredBuild {
@@ -159,7 +152,7 @@ func clientProjects(root string) []clientProject {
 		}
 
 		dir := path.Dir(rel)
-		configFile, outDir := declaredOutDir(root, dir)
+		configFile, outDir := declaredOutDir(root, dir, pkg.Scripts)
 		if outDir == "" {
 			return
 		}
@@ -172,37 +165,9 @@ func clientProjects(root string) []clientProject {
 	return found
 }
 
-// viteConfigNames are the config files a Vite project may use.
-var viteConfigNames = []string{
-	"vite.config.ts", "vite.config.js", "vite.config.mts", "vite.config.mjs",
-}
-
-// declaredOutDir reads a bundler config for the directory it writes to,
-// returning the config's name and the path relative to the repository root.
-func declaredOutDir(root, dir string) (string, string) {
-	for _, name := range viteConfigNames {
-		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path.Join(dir, name))))
-		if err != nil {
-			continue
-		}
-		m := viteOutDirPattern.FindSubmatch(body)
-		if m == nil {
-			continue
-		}
-		out := strings.TrimSpace(string(m[1]))
-		if out == "" {
-			continue
-		}
-		// Relative to the config, which is how a bundler reads it.
-		resolved := path.Clean(path.Join(dir, out))
-		if strings.HasPrefix(resolved, "..") {
-			// Outside the repository. Nothing here can be built into that.
-			continue
-		}
-		return name, resolved
-	}
-	return "", ""
-}
+// walkRepository visits the files of a checkout, skipping the directories that
+// hold other people's code and stopping before it descends forever.
+func sortStrings(s []string) { sort.Strings(s) }
 
 // walkRepository visits the files of a checkout, skipping the directories that
 // hold other people's code and stopping before it descends forever.
