@@ -593,7 +593,7 @@ func TestR104_AStartCommandFromTheBuildPlanIsNotAsked(t *testing.T) {
 // `/bin/bash -l -c` as the way to run the app.
 type plannerWritingCMD struct{}
 
-func (plannerWritingCMD) Plan(context.Context, api.SourceView) (map[string]string, string, error) {
+func (plannerWritingCMD) Plan(context.Context, api.SourceView) (map[string]string, string, *api.PlanDeclaration, error) {
 	return map[string]string{
 		".nixpacks/Dockerfile": "FROM ubuntu:noble\n" +
 			"ENTRYPOINT [\"/bin/bash\", \"-l\", \"-c\"]\n" +
@@ -604,7 +604,7 @@ func (plannerWritingCMD) Plan(context.Context, api.SourceView) (map[string]strin
 			"ENTRYPOINT [\"/bin/bash\", \"-l\", \"-c\"]\n" +
 			"WORKDIR /app/\n" +
 			"CMD [\"./out\"]\n",
-	}, ".nixpacks/Dockerfile", nil
+	}, ".nixpacks/Dockerfile", nil, nil
 }
 
 // --- compose import (R-096, R-099) ------------------------------------------
@@ -1047,7 +1047,7 @@ func TestAnAnswerNamingNoCandidateIsIgnored(t *testing.T) {
 // to run: the plan's build step is `make build` rather than a guessed one.
 type plannerRunningMake struct{}
 
-func (plannerRunningMake) Plan(context.Context, api.SourceView) (map[string]string, string, error) {
+func (plannerRunningMake) Plan(context.Context, api.SourceView) (map[string]string, string, *api.PlanDeclaration, error) {
 	// The shape nixpacks actually emits, taken from a real run rather than
 	// invented: the environment is built first, then the install step, and the
 	// build command is the third RUN. A tidier fixture with one RUN passed
@@ -1063,7 +1063,11 @@ func (plannerRunningMake) Plan(context.Context, api.SourceView) (map[string]stri
 			"FROM ubuntu:noble\n" +
 			"WORKDIR /app/\n" +
 			"CMD [\"./macscout\"]\n",
-	}, ".nixpacks/Dockerfile", nil
+	}, ".nixpacks/Dockerfile", &api.PlanDeclaration{
+		Source:     "Makefile",
+		Why:        "Makefile declares how this app is built, and the plan runs it rather than guessing",
+		Confidence: 0.72,
+	}, nil
 }
 
 // R-094 tier 3: the maintainer's own build commands rank above tier 4's

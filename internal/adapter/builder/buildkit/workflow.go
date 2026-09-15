@@ -1,0 +1,205 @@
+package buildkit
+
+import (
+	"bufio"
+	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+// R-094 tier 3 named this first: `.github/workflows` contains the maintainer's
+// own build commands.
+//
+// It ranks at the top of the ladder for a reason that has nothing to do with
+// parsing being easy. A Makefile target is what somebody wrote down; a workflow
+// step is what runs on every push, and has been observed to work by every green
+// check on the repository. When the two disagree, the workflow is the one that
+// is true.
+//
+// The reading is deliberately timid, because the ways to be wrong here are
+// worse than not answering. A workflow file is a program: matrices, conditional
+// steps, reusable workflows, composite actions, and commands assembled from
+// expressions. None of that is interpreted. What is taken is the `run:` steps
+// of a single unambiguous build job, and anything that makes "single" or
+// "unambiguous" false is declined — at which point the repository is planned by
+// whatever the next source down says, exactly as it was before.
+
+// jobPattern matches a job key: two spaces of indent under `jobs:`.
+var jobPattern = regexp.MustCompile(`^  ([A-Za-z0-9][A-Za-z0-9_.\-]*)\s*:\s*$`)
+
+// runStepPattern matches the start of a `run:` step, inline or block.
+var runStepPattern = regexp.MustCompile(`^\s+-?\s*run:\s*(.*)$`)
+
+// usesPattern matches a step that calls an action rather than a command.
+var usesPattern = regexp.MustCompile(`^\s+-?\s*uses:\s*(\S+)`)
+
+// buildJobNames are job names taken to mean "this builds the app", in
+// preference order. A job called `test` or `lint` runs commands too, and
+// running a test suite as an image's build step is a slow way to be wrong.
+var buildJobNames = []string{"build", "release", "package", "publish", "docker"}
+
+// skipCommands are lines that appear in a build job and are not part of
+// building: reporting, uploading, and the checks that belong to CI rather than
+// to the image.
+var skipCommands = []string{
+	"echo ", "cat ", "ls ", "codecov", "coveralls",
+	"git config", "git diff", "git tag", "git push",
+}
+
+func readWorkflowBuild(contextDir string) declaredBuild {
+	dir := filepath.Join(contextDir, ".github", "workflows")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return declaredBuild{}
+	}
+
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if n := e.Name(); strings.HasSuffix(n, ".yml") || strings.HasSuffix(n, ".yaml") {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		f, err := os.Open(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		steps := buildJobSteps(f)
+		_ = f.Close()
+		if len(steps) == 0 {
+			continue
+		}
+
+		command := strings.Join(steps, " && ")
+		if !safeCommand(command) {
+			continue
+		}
+		source := filepath.ToSlash(filepath.Join(".github", "workflows", name))
+		return declaredBuild{
+			Rank:   rankWorkflow,
+			Source: source,
+			Build:  command,
+			Why: source + " builds this app on every push, and the plan runs the same commands" +
+				" rather than guessing",
+			Packages: toolchainPackages(contextDir),
+		}
+	}
+	return declaredBuild{}
+}
+
+// buildJobSteps returns the run commands of the one build job in a workflow.
+//
+// Empty unless the file has a job whose name is in buildJobNames, that job runs
+// no matrix, and its steps are commands rather than actions that would have to
+// be reproduced. `uses:` steps are skipped rather than disqualifying, because
+// actions/checkout and actions/setup-go are in every workflow and describe an
+// environment nixpacks is already providing.
+func buildJobSteps(r io.Reader) []string {
+	type job struct {
+		steps    []string
+		matrix   bool
+		usesCall bool
+	}
+	jobs := map[string]*job{}
+
+	var current *job
+	inJobs := false
+	var pendingBlock bool
+	var blockIndent int
+	var block []string
+
+	flushBlock := func() {
+		if len(block) > 0 && current != nil {
+			current.steps = append(current.steps, strings.Join(block, " && "))
+		}
+		block, pendingBlock = nil, false
+	}
+
+	scanner := bufio.NewScanner(io.LimitReader(r, 512<<10))
+	for scanner.Scan() {
+		raw := strings.TrimRight(scanner.Text(), " \t")
+		trimmed := strings.TrimSpace(raw)
+
+		if pendingBlock {
+			indent := len(raw) - len(strings.TrimLeft(raw, " "))
+			if trimmed != "" && indent >= blockIndent {
+				if step := strings.TrimSpace(raw); step != "" && !skippable(step) {
+					block = append(block, step)
+				}
+				continue
+			}
+			flushBlock()
+		}
+
+		if raw != "" && !strings.HasPrefix(raw, " ") {
+			inJobs = strings.HasPrefix(raw, "jobs:")
+			current = nil
+			continue
+		}
+		if !inJobs || trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		if m := jobPattern.FindStringSubmatch(raw); m != nil {
+			jobs[m[1]] = &job{}
+			current = jobs[m[1]]
+			continue
+		}
+		if current == nil {
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "matrix:") || strings.HasPrefix(trimmed, "strategy:") {
+			current.matrix = true
+			continue
+		}
+		if m := usesPattern.FindStringSubmatch(raw); m != nil {
+			// A reusable workflow — `uses:` at job level rather than step level
+			// — is a whole other file's worth of steps.
+			if strings.HasPrefix(strings.TrimSpace(raw), "uses:") && !strings.Contains(m[1], "@") {
+				current.usesCall = true
+			}
+			continue
+		}
+		if m := runStepPattern.FindStringSubmatch(raw); m != nil {
+			inline := strings.TrimSpace(m[1])
+			switch {
+			case inline == "|" || inline == ">" || inline == "|-" || inline == ">-":
+				pendingBlock = true
+				blockIndent = len(raw) - len(strings.TrimLeft(raw, " ")) + 2
+				block = nil
+			case inline != "" && !skippable(inline):
+				current.steps = append(current.steps, inline)
+			}
+		}
+	}
+	flushBlock()
+
+	for _, name := range buildJobNames {
+		j, ok := jobs[name]
+		if !ok || j == nil || len(j.steps) == 0 || j.matrix || j.usesCall {
+			continue
+		}
+		return j.steps
+	}
+	return nil
+}
+
+// skippable reports whether a step is CI bookkeeping rather than building.
+func skippable(step string) bool {
+	lower := strings.ToLower(strings.TrimLeft(step, "@-+ "))
+	for _, prefix := range skipCommands {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}

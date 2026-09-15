@@ -15,8 +15,12 @@
 - [x] Registry check tier (R-094) — ghcr.io only by default; Docker Hub namespaces do not correspond to source owners ([note](../design/notes-registry-tier-namespaces.md))
 - [x] Maintainer's-own-build-commands tier (R-094 tier 3) — a Makefile `build` target drives the plan
       instead of convention-matching, via nixpacks' own `--build-cmd`/`--start-cmd`/`--pkgs`
-      ([note](../design/notes-the-maintainers-own-build-commands.md)). `.github/workflows`, the other
-      half of the tier, is still unimplemented
+      ([note](../design/notes-the-maintainers-own-build-commands.md))
+- [x] The rest of the ladder: `.github/workflows`, `Taskfile.yml`, `justfile`, `Procfile`, and the
+      embed/output pairing for a repository that names no commands at all
+      ([note](../design/notes-declared-builds-without-a-runner.md)). Workflows are read only when one
+      job is unambiguously the build — a matrix, a composite action or a `$VERSION` is declined — and
+      only Vite's `outDir` is read for a client's output
 - [x] The detector auction: every builder adapter `Bid()`, ranked (R-093)
 - [x] Confidence ladder; `runners_up` returned so the user can see the auction, not just a verdict
 - [x] Compose import, with rejected constructs raising `PLAN_COMPOSE_CONSTRUCT_REJECTED` (R-099) and

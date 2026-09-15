@@ -1,0 +1,213 @@
+package buildkit
+
+import (
+	"sort"
+	"strings"
+
+	"github.com/bemeek-io/pando/internal/adapter/api"
+)
+
+// What a repository says about how it is built, and how much that is worth.
+//
+// R-094's ladder is a ladder of evidence, and everything here sits on it. The
+// bottom rung is convention-matching: nixpacks reads a repository and infers,
+// which is a guess that is usually right. Every source above it is the app's
+// author saying something, and the difference is not confidence in the abstract
+// — it is whether being wrong is a bug in Pando or a mistake in the repository.
+//
+// Ranked, highest first, with the requirement each one answers to:
+//
+//	workflow   .github/workflows — the commands CI actually runs      R-094 tier 3
+//	runner     Makefile, Taskfile.yml, justfile — named commands      R-094 tier 3
+//	procfile   Procfile — the run command                             R-094 tier 2
+//	embedded   two declarations naming one directory                  see below
+//
+// `embedded` is the odd one and the reason this file exists. Nothing in a repo
+// like macscout-without-a-Makefile says "build the client first" — but
+// `web/vite.config.ts` says its output goes to `../cmd/server/dist`, and
+// `cmd/server/main.go` says `//go:embed all:dist`. Two files, written by the
+// same person for different reasons, naming one directory from opposite ends.
+// Reading that pair is not inference; it is joining two declarations. It ranks
+// below the sources that name commands because it says an *ordering* and not a
+// command — it knows the client must be built first, and has to be told by
+// nixpacks what "the build" it comes before actually is.
+
+// rank orders declaration sources. Higher wins.
+type rank int
+
+const (
+	rankNone rank = iota
+	rankEmbedded
+	rankProcfile
+	rankRunner
+	rankWorkflow
+)
+
+func (r rank) String() string {
+	switch r {
+	case rankWorkflow:
+		return "workflow"
+	case rankRunner:
+		return "runner"
+	case rankProcfile:
+		return "procfile"
+	case rankEmbedded:
+		return "embedded"
+	default:
+		return "none"
+	}
+}
+
+// declaredBuild is one reading of what a repository says about its build.
+type declaredBuild struct {
+	Rank rank
+
+	// Source is the file this was read from, for evidence.
+	Source string
+
+	// Build and Start replace what nixpacks would have chosen, when they are
+	// set. Empty means "nixpacks decides this one".
+	Build string
+	Start string
+
+	// Before runs ahead of whatever nixpacks chose as the build command, rather
+	// than instead of it. This is what needs the second planning pass: the
+	// command it precedes is not known until nixpacks has been asked.
+	Before string
+
+	// Packages are toolchains the build needs that the chosen provider will not
+	// bring — make, or Node for a Go module that builds a client.
+	Packages []string
+
+	// Why explains the reading in one line, shown as evidence.
+	Why string
+}
+
+func (d declaredBuild) found() bool { return d.Rank != rankNone }
+
+// needsSecondPass reports whether planning has to run twice: once to learn what
+// nixpacks would build, and again to put something in front of it.
+func (d declaredBuild) needsSecondPass() bool { return d.Before != "" && d.Build == "" }
+
+// readDeclaredBuild asks every source and returns the best-ranked answer.
+//
+// Every source is consulted rather than stopping at the first, because "which
+// of these does this repository have" is cheap and the ranking is the point. A
+// repository with both a CI workflow and a Makefile has said the same thing
+// twice, and the workflow is what actually runs on every push.
+func readDeclaredBuild(contextDir string) declaredBuild {
+	sources := []func(string) declaredBuild{
+		readWorkflowBuild,
+		readRunnerBuild,
+		readProcfileBuild,
+		readEmbeddedBuild,
+	}
+
+	var best declaredBuild
+	for _, read := range sources {
+		if d := read(contextDir); d.Rank > best.Rank {
+			best = d
+		}
+	}
+	return best
+}
+
+// nixpacksArgs turns a reading into nixpacks flags.
+//
+// `chosen` is the build command nixpacks picked on a first pass, and is only
+// needed when the reading wraps rather than replaces. It is empty on the first
+// pass, which is exactly when Before is not yet expressible.
+func (d declaredBuild) nixpacksArgs(chosen string) []string {
+	var args []string
+
+	build := d.Build
+	if build == "" && d.Before != "" && chosen != "" {
+		// The client build, then whatever nixpacks was going to do. `&&` rather
+		// than `;` so a failed client build fails the image instead of shipping
+		// one with a stale bundle in it — which is the failure this whole file
+		// exists to prevent.
+		build = d.Before + " && " + chosen
+	}
+
+	if build != "" {
+		args = append(args, "--build-cmd", build)
+	}
+	if d.Start != "" {
+		args = append(args, "--start-cmd", d.Start)
+	}
+	for _, p := range dedupe(d.Packages) {
+		args = append(args, "--pkgs", p)
+	}
+	return args
+}
+
+func dedupe(in []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range in {
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// safeCommand reports whether a command read out of a repository can be handed
+// to nixpacks as-is.
+//
+// Shared by every source, because they all have the same problem: the string
+// ends up in a Dockerfile, and one that has to be escaped to survive the round
+// trip is one where a mistake is silent. Shell operators are allowed in a build
+// command — `cd web && npm ci` is the normal shape — and quotes, backticks,
+// variables and backslashes are not.
+func safeCommand(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" || len(s) > 512 {
+		return false
+	}
+	return !strings.ContainsAny(s, "\"'`$\\\n\r")
+}
+
+// asPlanDeclaration is what detection is told about this reading.
+//
+// Nil for convention-matching, which is the bottom of R-094's ladder and
+// carries no claim worth showing.
+func (d declaredBuild) asPlanDeclaration() *api.PlanDeclaration {
+	if !d.found() {
+		return nil
+	}
+	return &api.PlanDeclaration{
+		Source:     d.Source,
+		Why:        d.Why,
+		Confidence: d.Rank.confidence(),
+	}
+}
+
+// confidence maps a rung of the ladder to the bid a detector should make.
+//
+// These sit between the buildpack detector's own 0.45, which is
+// convention-matching, and the 0.92 a Dockerfile at the repository root earns.
+// A Dockerfile still outranks every one of them: it is the whole answer, where
+// these are the app's author describing one part of it.
+func (r rank) confidence() float64 {
+	switch r {
+	case rankWorkflow:
+		// What actually runs on every push, observed to work by every green
+		// check on the repository.
+		return 0.80
+	case rankRunner:
+		// Written down, and usually true.
+		return 0.72
+	case rankProcfile:
+		// Says how to run it, and nothing about building it.
+		return 0.62
+	case rankEmbedded:
+		// Says an ordering, and no commands at all.
+		return 0.58
+	default:
+		return 0
+	}
+}

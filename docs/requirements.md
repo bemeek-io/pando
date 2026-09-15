@@ -297,12 +297,21 @@ administrator holds a grant on it like anyone else (R-087).
 **R-094 [D]** Confidence ladder, highest first:
 1. **Already-published image** — check the repo's namespace on ghcr.io and Docker Hub before building anything.
 2. **Explicit deployment artifacts** — Dockerfile, compose file, Procfile, `devcontainer.json`, Nix flake, release binaries.
-3. **The maintainer's own build commands** — `.github/workflows`, or a `Makefile` target that says
-   how the app is built and run. Amended 2026-09-14: this tier said "CI workflows" and named only
-   `.github/workflows`. A Makefile is the same artifact — the build written down by the person who
-   wrote the app — and excluding it sent repositories that have one down to tier 4, where
+3. **The maintainer's own build commands** — `.github/workflows`, or a command runner's target that
+   says how the app is built and run: `Makefile`, `Taskfile.yml`, `justfile`. Ranked among
+   themselves by how load-bearing they are: a workflow is what runs on every push, where a runner
+   target is what somebody wrote down. Amended 2026-09-14: this tier said "CI workflows" and named
+   only `.github/workflows`. The others are the same artifact — the build written down by the person
+   who wrote the app — and excluding them sent repositories that have one down to tier 4, where
    convention-matching reads a Go module, plans `go build`, and silently drops the client the
    Makefile would have built. Nothing about the tier's rank or meaning changed.
+3b. **Two declarations that imply an ordering** — where one file says where it builds to and another
+   says it needs that directory, the build order is stated rather than inferred. `vite.config.ts`
+   with `outDir: "../cmd/server/dist"` and a `//go:embed dist` in `cmd/server` are the case this was
+   added for. Below tier 3 because it is an ordering and not a command: it knows what must happen
+   first, and has to be told by tier 4 what it happens before. Above tier 4 because tier 4 would not
+   notice at all. Added 2026-09-14; see
+   [the design note](design/notes-declared-builds-without-a-runner.md).
 4. **Ecosystem manifests** — `package.json` + lockfile, `go.mod`, `Cargo.toml`, `pyproject.toml` plus framework markers, `pom.xml`, `Gemfile`.
 5. **Static** — `index.html` at root, or a known SSG config.
 

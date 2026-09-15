@@ -848,3 +848,32 @@ type Notification struct {
 	Subject    string
 	Body       string
 }
+
+// PlanDeclaration is what in a repository dictated its build plan.
+//
+// R-094 ranks detection evidence, and the top of that ladder is the app's
+// author saying something rather than Pando inferring it. A builder that
+// planned from a Makefile target, a CI workflow, or a pair of declarations
+// naming one directory knows which it was. Detection wants to say so, and
+// cannot work it out for itself without a second implementation of the same
+// reading — which is the duplication R-027's boundary already prevents by
+// keeping the two packages apart.
+//
+// Nil means convention-matching chose the plan, which is the bottom rung of the
+// ladder and the usual case.
+//
+// A definition rather than a mechanism, which is what belongs in this package:
+// the builder fills it in, core reads it, and neither learns the other's
+// vocabulary (R-251).
+type PlanDeclaration struct {
+	// Source is the file that said it, relative to the repository root.
+	Source string
+
+	// Why explains the reading in one line. It is shown to a person as
+	// evidence, and is held to the same standard as everything else they read.
+	Why string
+
+	// Confidence is where this reading sits on R-094's ladder: the bid a
+	// detector should make when the plan came from it.
+	Confidence float64
+}

@@ -35,6 +35,18 @@ var makefileNames = []string{"GNUmakefile", "makefile", "Makefile"}
 // a directive such as .PHONY.
 var targetPattern = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9_.\-]*)\s*:[^=]?`)
 
+// assignmentPattern matches a variable assignment, which is not a target
+// however much `build := ./out` looks like one.
+//
+// Its own pattern because Go's regexp has no lookahead, so "a colon not
+// followed by =" cannot be spelled inside targetPattern: its trailing `[^=]?`
+// is optional, and an optional match of nothing accepts the `=` it was meant to
+// exclude. A Makefile with a variable named after a target therefore read as
+// declaring that target, and the plan ran `make build` against something that
+// does not exist. Shared with the justfile reader, whose `name := value` has
+// exactly the same shape.
+var assignmentPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.\-]*\s*[:?+!]?=`)
+
 // declaration is what a Makefile says about building and running an app.
 type declaration struct {
 	// File is the Makefile's name, for evidence. Empty when there is none.
@@ -64,8 +76,9 @@ var buildTargets = []string{"build", "all", "compile", "dist"}
 // server.
 var startTargets = []string{"start", "serve", "run"}
 
-// readMakefile parses the Makefile in dir, if there is one.
-func readMakefile(dir string) declaration {
+// readMakefileAt parses the Makefile in dir, if there is one, and says what
+// invokes it.
+func readMakefileAt(dir string) (declaration, string) {
 	for _, name := range makefileNames {
 		f, err := os.Open(filepath.Join(dir, name))
 		if err != nil {
@@ -74,9 +87,9 @@ func readMakefile(dir string) declaration {
 		d := parseMakefile(f)
 		_ = f.Close()
 		d.File = name
-		return d
+		return d, "make"
 	}
-	return declaration{}
+	return declaration{}, "make"
 }
 
 // parseMakefile pulls the targets out of a Makefile.
@@ -109,6 +122,10 @@ func parseMakefile(r io.Reader) declaration {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
+		if assignmentPattern.MatchString(trimmed) {
+			current = ""
+			continue
+		}
 		if m := targetPattern.FindStringSubmatch(trimmed); m != nil {
 			current = m[1]
 			if _, seen := recipes[current]; !seen {
@@ -121,24 +138,7 @@ func parseMakefile(r io.Reader) declaration {
 		current = ""
 	}
 
-	var d declaration
-	for _, name := range buildTargets {
-		if _, ok := recipes[name]; ok {
-			d.BuildTarget = name
-			break
-		}
-	}
-	for _, name := range startTargets {
-		steps, ok := recipes[name]
-		if !ok {
-			continue
-		}
-		if cmd := startCommandFrom(steps); cmd != "" {
-			d.StartCommand = cmd
-			break
-		}
-	}
-	return d
+	return declarationFrom(recipes, "make")
 }
 
 // startCommandFrom picks the command a run target actually runs.
@@ -147,10 +147,10 @@ func parseMakefile(r io.Reader) declaration {
 // `./macscout` is the shape this is for: the dependency does the building and
 // the recipe line is the app. A target whose every line is `make something` is
 // delegating, and delegating to a target this cannot see is not an answer.
-func startCommandFrom(steps []string) string {
+func startCommandFrom(steps []string, invoke string) string {
 	for i := len(steps) - 1; i >= 0; i-- {
 		step := strings.TrimLeft(steps[i], "@-+")
-		if step == "" || strings.HasPrefix(step, "make ") || step == "make" {
+		if step == "" || strings.HasPrefix(step, invoke+" ") || step == invoke {
 			continue
 		}
 		// Multi-command lines, `cd web && npm run dev`, and anything with a
@@ -172,42 +172,63 @@ func startCommandFrom(steps []string) string {
 	return ""
 }
 
-// makefileArgs turns a Makefile's declaration into nixpacks flags.
+// readRunnerBuild reads a file that names the commands: a Makefile today, and
+// Taskfile.yml or a justfile alongside it.
 //
-// Empty when there is no Makefile, or when the one there declares no build
-// target — in which case nixpacks plans exactly as it did before, and a
-// repository carrying a Makefile full of lint and release helpers is not
-// treated as though it had said something about deployment.
-func makefileArgs(contextDir string) []string {
-	d := readMakefile(contextDir)
-	if !d.declares() {
-		return nil
+// Empty when the repository has none, or when the one it has declares no build
+// target — so a Makefile full of lint and release helpers is not mistaken for a
+// deployment instruction.
+func readRunnerBuild(contextDir string) declaredBuild {
+	for _, read := range []func(string) (declaration, string){readMakefileAt, readTaskfileAt, readJustfileAt} {
+		d, invoke := read(contextDir)
+		if !d.declares() {
+			continue
+		}
+
+		build := invoke + " " + d.BuildTarget
+		if !safeCommand(build) {
+			continue
+		}
+
+		out := declaredBuild{
+			Rank:   rankRunner,
+			Source: d.File,
+			Build:  build,
+			Why:    d.File + " declares how this app is built, and the plan runs it rather than guessing",
+		}
+		if d.StartCommand != "" && safeCommand(d.StartCommand) {
+			out.Start = d.StartCommand
+		}
+		out.Packages = append(out.Packages, runnerPackages[invoke])
+		out.Packages = append(out.Packages, toolchainPackages(contextDir)...)
+		return out
 	}
+	return declaredBuild{}
+}
 
-	args := []string{"--build-cmd", "make " + d.BuildTarget}
-	if d.StartCommand != "" {
-		args = append(args, "--start-cmd", d.StartCommand)
-	}
+// runnerPackages is the package each runner needs in the environment. None of
+// nixpacks' providers installs any of them — a language provider has no reason
+// to — so the build command would otherwise be the first thing to fail.
+var runnerPackages = map[string]string{
+	"make": "gnumake",
+	"task": "go-task",
+	"just": "just",
+}
 
-	// make itself is not in the environment nixpacks builds. Its providers
-	// install a language toolchain, and none of them has a reason to include
-	// GNU make — so the build command would be the first thing to fail.
-	pkgs := []string{"gnumake"}
-
-	// And the toolchains the build needs that the chosen provider will not
-	// bring. nixpacks picks one provider from what it finds at the root, so a
-	// Go module whose Makefile builds a client with npm gets Go and not Node.
-	//
-	// This reads the repository rather than the Makefile's text on purpose. A
-	// package.json is the Node project declaring itself; parsing the recipe for
-	// the word "npm" would be reading a shell script and hoping.
+// toolchainPackages are the toolchains a declared build may need that the
+// provider nixpacks picked will not bring.
+//
+// nixpacks chooses one provider from what it finds at the root, so a Go module
+// whose build compiles a client gets Go and not Node. This reads the repository
+// rather than the recipe's text on purpose: a package.json is the client
+// declaring itself, and scanning a shell command for the word "npm" is reading
+// a script and hoping.
+func toolchainPackages(contextDir string) []string {
+	var pkgs []string
 	if hasFileNamed(contextDir, "package.json") {
 		pkgs = append(pkgs, "nodejs")
 	}
-	for _, p := range pkgs {
-		args = append(args, "--pkgs", p)
-	}
-	return args
+	return pkgs
 }
 
 // hasFileNamed reports whether name exists anywhere in the tree.
