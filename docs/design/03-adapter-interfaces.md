@@ -589,6 +589,29 @@ Generation runs with no network and a minimal environment: it reads the reposito
 planner that can reach the internet while reading untrusted source is a wider boundary than this
 needs. Paketo is the opt-in alternative and needs a registry in the install topology (R-095).
 
+**[P] What nixpacks is *told* comes from the repository, when the repository says anything.** R-094's
+ladder ranks evidence, and the rungs above convention-matching are the app's author having stated
+something: a CI workflow's build job, a `Makefile`/`Taskfile.yml`/`justfile` target, a `Procfile`'s
+web process, or a client config and a `go:embed` directive naming one directory. Each becomes
+nixpacks' own `--build-cmd`, `--start-cmd` and `--pkgs`; nothing here synthesizes a Dockerfile or
+picks a base image, which is what keeps R-095's "wrap rather than reimplement" true. Every reader
+takes a literal and declines anything computed — a config that has to be evaluated to find its
+answer is one this does not evaluate.
+
+**[P] The planner runs twice when a declaration is an ordering rather than a command.** `//go:embed
+dist` beside a client that builds into that directory says the client comes first, and says nothing
+about what it comes *before*. So: plan, read the chosen build command back out of the generated
+Dockerfile, plan again with the client build ahead of it. Two subprocesses is the cost of not knowing
+what nixpacks would have chosen without asking it. Only this one case needs the second pass; a
+declaration that names the build replaces nixpacks' choice in a single call.
+
+**[P] `BuildPlanner.Plan` returns a `*api.PlanDeclaration`** — which source dictated the plan, why,
+and the confidence a detector should bid. The builder knows this and detection cannot derive it
+without a second implementation of the same reading, which R-027's import rule exists to prevent from
+drifting apart. It is a definition in `internal/adapter/api`, filled by the builder and read by core,
+so neither learns the other's vocabulary (R-251). Nil means convention-matching chose the plan. See
+[the design note](notes-declared-builds-without-a-runner.md).
+
 **[P] Every image Pando supplies itself is pinned by tag, not digest** — these three and the runtime
 adapter's `busybox:stable` volume helper. This is a real weakness and worth naming rather than
 leaving in a code comment: the bytes behind a tag can change, and the BusyBox one is pulled at

@@ -65,11 +65,10 @@ type declaredBuild struct {
 	// Source is the file this was read from, for evidence.
 	Source string
 
-	// Install, Build and Start replace what nixpacks would have chosen, when
-	// they are set. Empty means "nixpacks decides this one".
-	Install string
-	Build   string
-	Start   string
+	// Build and Start replace what nixpacks would have chosen, when they are
+	// set. Empty means "nixpacks decides this one".
+	Build string
+	Start string
 
 	// Before runs ahead of whatever nixpacks chose as the build command, rather
 	// than instead of it. This is what needs the second planning pass: the
@@ -130,9 +129,6 @@ func (d declaredBuild) nixpacksArgs(chosen string) []string {
 		build = d.Before + " && " + chosen
 	}
 
-	if d.Install != "" {
-		args = append(args, "--install-cmd", d.Install)
-	}
 	if build != "" {
 		args = append(args, "--build-cmd", build)
 	}

@@ -27,27 +27,26 @@ import (
 // outDirReader finds a declared output directory for a client project.
 //
 // dir is relative to the repository root. The returned path is relative to dir,
-// as the tool itself would read it, and the name is the file it was found in.
-type outDirReader struct {
-	Name string
-	Read func(root, dir string, scripts map[string]string) (file string, outDir string)
-}
+// as the tool itself would read it, and the file is where it was found.
+type outDirReader func(root, dir string, scripts map[string]string) (file string, outDir string)
 
+// Ordered. The build script comes first because a flag in the command that runs
+// beats a config file that may not be the one it reads.
 var outDirReaders = []outDirReader{
-	{"build script", readScriptOutDir},
-	{"vite", readViteOutDir},
-	{"astro", readAstroOutDir},
-	{"vue", readVueOutDir},
-	{"angular", readAngularOutDir},
-	{"next", readNextOutDir},
-	{"webpack", readWebpackOutDir},
-	{"sveltekit", readSvelteKitOutDir},
+	readScriptOutDir,
+	readViteOutDir,
+	readAstroOutDir,
+	readVueOutDir,
+	readAngularOutDir,
+	readNextOutDir,
+	readWebpackOutDir,
+	readSvelteKitOutDir,
 }
 
 // declaredOutDir asks each reader in turn.
 func declaredOutDir(root, dir string, scripts map[string]string) (string, string) {
-	for _, reader := range outDirReaders {
-		file, out := reader.Read(root, dir, scripts)
+	for _, read := range outDirReaders {
+		file, out := read(root, dir, scripts)
 		if out == "" {
 			continue
 		}
