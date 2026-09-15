@@ -597,7 +597,9 @@ func (plannerWritingCMD) Plan(context.Context, api.SourceView) (map[string]strin
 	return map[string]string{
 		".nixpacks/Dockerfile": "FROM ubuntu:noble\n" +
 			"ENTRYPOINT [\"/bin/bash\", \"-l\", \"-c\"]\n" +
-			"RUN go build -o out ./cmd/server\n\n" +
+			"RUN nix-env -if .nixpacks/nixpkgs-e89cf1c9.nix && nix-collect-garbage -d\n" +
+			"RUN --mount=type=cache,id=x,target=/root/.cache/go-build go mod download\n" +
+			"RUN --mount=type=cache,id=x,target=/root/.cache/go-build go build -o out ./cmd/server\n\n" +
 			"FROM ubuntu:noble\n" +
 			"ENTRYPOINT [\"/bin/bash\", \"-l\", \"-c\"]\n" +
 			"WORKDIR /app/\n" +
@@ -1046,10 +1048,18 @@ func TestAnAnswerNamingNoCandidateIsIgnored(t *testing.T) {
 type plannerRunningMake struct{}
 
 func (plannerRunningMake) Plan(context.Context, api.SourceView) (map[string]string, string, error) {
+	// The shape nixpacks actually emits, taken from a real run rather than
+	// invented: the environment is built first, then the install step, and the
+	// build command is the third RUN. A tidier fixture with one RUN passed
+	// while the real plan did not — buildsWithMake answered from the first RUN
+	// it saw, which is always nix-env.
 	return map[string]string{
 		".nixpacks/Dockerfile": "FROM ubuntu:noble\n" +
 			"ENTRYPOINT [\"/bin/bash\", \"-l\", \"-c\"]\n" +
-			"RUN --mount=type=cache,id=x,target=/root/.cache make build\n\n" +
+			"RUN nix-env -if .nixpacks/nixpkgs-e89cf1c9.nix && nix-collect-garbage -d\n" +
+			"RUN --mount=type=cache,id=x,target=/root/.cache/go-build go mod download\n" +
+			"RUN --mount=type=cache,id=x,target=/root/.cache/go-build make build\n" +
+			"RUN true\n\n" +
 			"FROM ubuntu:noble\n" +
 			"WORKDIR /app/\n" +
 			"CMD [\"./macscout\"]\n",

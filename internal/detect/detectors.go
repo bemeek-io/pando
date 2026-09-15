@@ -911,7 +911,14 @@ func buildsWithMake(dockerfile string) bool {
 			if strings.HasPrefix(word, "-") {
 				continue
 			}
-			return word == "make"
+			if word == "make" {
+				return true
+			}
+			// Some other command. A nixpacks plan opens with
+			// `RUN nix-env -if ...` to build the environment and runs the
+			// install step before the build one, so the first RUN is never the
+			// interesting one — keep reading rather than answering from it.
+			break
 		}
 	}
 	return false
