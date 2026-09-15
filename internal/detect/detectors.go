@@ -356,7 +356,11 @@ type BuildpackDetector struct {
 // nothing, so it is not a build and R-024's "never on the host" does not bite.
 // What it returns is opaque to core.
 type BuildPlanner interface {
-	Plan(ctx context.Context, src api.SourceView) (files map[string]string, dockerfile string, err error)
+	// declared is what in the repository dictated the plan, or nil when
+	// convention-matching chose it. The builder knows which it was; detection
+	// shows it, and cannot derive it without a second copy of the same reading.
+	Plan(ctx context.Context, src api.SourceView) (
+		files map[string]string, dockerfile string, declared *api.PlanDeclaration, err error)
 }
 
 func (BuildpackDetector) Name() string { return "buildpack" }
@@ -412,7 +416,7 @@ func (d BuildpackDetector) Bid(ctx context.Context, src api.SourceView) (Candida
 	// and the builder will try again at build time with a real error to show.
 	var planned string
 	if d.Planner != nil {
-		if files, dockerfile, err := d.Planner.Plan(ctx, src); err == nil && len(files) > 0 {
+		if files, dockerfile, declared, err := d.Planner.Plan(ctx, src); err == nil && len(files) > 0 {
 			c.Draft.Build.GeneratedFiles = files
 			c.Draft.Build.Dockerfile = dockerfile
 			c.Evidence = append(c.Evidence, "build plan generated, and editable before it runs")
@@ -420,22 +424,24 @@ func (d BuildpackDetector) Bid(ctx context.Context, src api.SourceView) (Candida
 			body := files[dockerfile]
 			_, planned = scanDockerfile(strings.NewReader(body))
 
-			// R-094 tier 3 — the maintainer's own build commands — which ranks
-			// above tier 4's ecosystem manifests, and this is the difference
-			// between them. Convention-matching reads a repository and infers;
-			// a Makefile target is the answer written down by the person who
-			// wrote the app, and a plan built from it is not a guess.
+			// R-094 is a ladder of evidence, and this is where a bid climbs
+			// it. Convention-matching is the bottom rung: nixpacks reads a
+			// repository and infers, which is usually right and is still a
+			// guess. Everything above it is the app's author having said
+			// something — a Makefile target, a CI workflow, a client config and
+			// an embed directive naming one directory — and the difference is
+			// whether being wrong is a bug here or a mistake in the repository.
 			//
-			// Read back out of the plan rather than parsed here a second time.
-			// R-027 stops this package and the builder sharing the parser, and
-			// two Makefile readers that have to agree is how they stop agreeing
-			// — so the one that matters is the builder's, and this reports what
-			// it decided. A plan whose build step invokes make is a plan the
-			// repository dictated.
-			if name, ok := makefileName(src); ok && buildsWithMake(body) {
-				c.Confidence = 0.72
-				c.Evidence = append(c.Evidence,
-					name+" declares how this app is built, and the plan runs it rather than guessing")
+			// The builder decides which reading applied, and says so. Detection
+			// does not re-derive it: R-027 keeps the two packages apart, and two
+			// implementations of the same reading is how they stop agreeing.
+			if declared != nil {
+				if declared.Confidence > c.Confidence {
+					c.Confidence = declared.Confidence
+				}
+				if declared.Why != "" {
+					c.Evidence = append(c.Evidence, declared.Why)
+				}
 			}
 		}
 	}
@@ -879,49 +885,3 @@ func readJSON(src api.SourceView, name string, into any) bool {
 	}
 	return json.Unmarshal(raw, into) == nil
 }
-
-// makefileName returns the Makefile this repository has, if it has one.
-//
-// The names GNU make itself looks for, in its order.
-func makefileName(src api.SourceView) (string, bool) {
-	for _, name := range []string{"GNUmakefile", "makefile", "Makefile"} {
-		if info, err := src.Stat(name); err == nil && !info.IsDir {
-			return name, true
-		}
-	}
-	return "", false
-}
-
-// buildsWithMake reports whether a generated plan's build step invokes make.
-//
-// Evidence, not a decision: the builder decided, and this is detection reading
-// the decision back so the proposal can say which tier of R-094's ladder the
-// plan came from. A RUN line is the only place a nixpacks plan puts the build
-// command, and `make` at the start of one is unambiguous — `cmake` and
-// `makemigrations` both fail the word check.
-func buildsWithMake(dockerfile string) bool {
-	scanner := bufio.NewScanner(strings.NewReader(dockerfile))
-	for _, line := range joinContinuations(scanner) {
-		m := runPattern.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		for _, word := range strings.Fields(m[1]) {
-			// --mount=..., and the other flags a RUN can carry.
-			if strings.HasPrefix(word, "-") {
-				continue
-			}
-			if word == "make" {
-				return true
-			}
-			// Some other command. A nixpacks plan opens with
-			// `RUN nix-env -if ...` to build the environment and runs the
-			// install step before the build one, so the first RUN is never the
-			// interesting one — keep reading rather than answering from it.
-			break
-		}
-	}
-	return false
-}
-
-var runPattern = regexp.MustCompile(`(?i)^\s*RUN\s+(.+)`)

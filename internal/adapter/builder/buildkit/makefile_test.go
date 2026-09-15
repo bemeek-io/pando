@@ -9,6 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// flagsFor is what nixpacks is told for a repository, through whichever
+// declaration ranks highest. The tests below assert the same observable thing
+// they always did: the flags that come out the far end.
+func flagsFor(root string) []string {
+	return readDeclaredBuild(root).nixpacksArgs("")
+}
+
 func withFiles(t *testing.T, files map[string]string) string {
 	t.Helper()
 	root := t.TempDir()
@@ -56,7 +63,7 @@ func TestR094_AMakefileBuildBecomesTheBuildCommand(t *testing.T) {
 		"cmd/server/dist/.gitkeep": "",
 	})
 
-	args := makefileArgs(root)
+	args := flagsFor(root)
 	joined := strings.Join(args, " ")
 
 	require.Contains(t, joined, "--build-cmd make build",
@@ -77,12 +84,12 @@ func TestAMakefileWithoutABuildTargetChangesNothing(t *testing.T) {
 		"Makefile": ".PHONY: lint release\n\nlint:\n\tgolangci-lint run\n\nrelease:\n\tgoreleaser release\n",
 		"go.mod":   "module example.com/app\n",
 	})
-	require.Empty(t, makefileArgs(root),
+	require.Empty(t, flagsFor(root),
 		"lint and release helpers are not a deployment instruction")
 }
 
 func TestNoMakefileChangesNothing(t *testing.T) {
-	require.Empty(t, makefileArgs(withFiles(t, map[string]string{"go.mod": "module x\n"})))
+	require.Empty(t, flagsFor(withFiles(t, map[string]string{"go.mod": "module x\n"})))
 }
 
 func TestTheStartCommandIsReadFromTheRunTarget(t *testing.T) {
@@ -163,20 +170,20 @@ func TestGNUmakefileIsPreferredTheWayMakePrefersIt(t *testing.T) {
 		"GNUmakefile": "build:\n\ttrue\n\nstart:\n\t./from-gnumakefile\n",
 		"Makefile":    "build:\n\ttrue\n\nstart:\n\t./from-makefile\n",
 	})
-	d := readMakefile(root)
+	d, _ := readMakefileAt(root)
 	require.Equal(t, "GNUmakefile", d.File)
 	require.Equal(t, "./from-gnumakefile", d.StartCommand)
 }
 
 func TestNodeIsAddedOnlyWhenAPackageJsonExists(t *testing.T) {
 	withMake := map[string]string{"Makefile": "build:\n\tgo build .\n"}
-	require.NotContains(t, strings.Join(makefileArgs(withFiles(t, withMake)), " "), "nodejs")
+	require.NotContains(t, strings.Join(flagsFor(withFiles(t, withMake)), " "), "nodejs")
 
 	withNode := map[string]string{
 		"Makefile":         "build:\n\tgo build .\n",
 		"web/package.json": "{}",
 	}
-	require.Contains(t, strings.Join(makefileArgs(withFiles(t, withNode)), " "), "nodejs")
+	require.Contains(t, strings.Join(flagsFor(withFiles(t, withNode)), " "), "nodejs")
 }
 
 // node_modules is somebody else's package.json, several thousand times over.
@@ -186,5 +193,5 @@ func TestAVendoredPackageJsonDoesNotCount(t *testing.T) {
 		"node_modules/left-pad/package.json": "{}",
 		"vendor/thing/package.json":          "{}",
 	})
-	require.NotContains(t, strings.Join(makefileArgs(root), " "), "nodejs")
+	require.NotContains(t, strings.Join(flagsFor(root), " "), "nodejs")
 }

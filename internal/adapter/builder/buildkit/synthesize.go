@@ -126,18 +126,48 @@ const nixpacksBinary = "nixpacks"
 // the source *with* the generated directory inside it. The checkout is a
 // throwaway clone, so nothing anybody keeps is touched.
 func buildpackDockerfile(_ api.BuildRequest, contextDir string) (string, error) {
-	args := []string{"build", contextDir, "--out", contextDir}
-	args = append(args, makefileArgs(contextDir)...)
+	declared := readDeclaredBuild(contextDir)
+
+	name, err := runNixpacks(contextDir, declared.nixpacksArgs(""))
+	if err != nil {
+		return "", err
+	}
+
+	// A second pass, when the repository declared an ordering rather than a
+	// command. `//go:embed dist` says the client has to exist before the Go
+	// build; it does not say what the Go build is, and nixpacks has just
+	// answered that. So ask again with the client build in front of it.
+	//
+	// Two subprocesses rather than one, which is the honest cost of not
+	// reimplementing the thing R-095 says to wrap: the alternative to asking
+	// nixpacks what it would have chosen is being nixpacks.
+	if declared.needsSecondPass() {
+		body, readErr := os.ReadFile(filepath.Join(contextDir, name))
+		if readErr != nil {
+			return "", errs.Wrap(errs.BuildFailed, "Could not read the build plan.", readErr)
+		}
+		if chosen := planBuildCommand(string(body)); chosen != "" {
+			name, err = runNixpacks(contextDir, declared.nixpacksArgs(chosen))
+			if err != nil {
+				return "", err
+			}
+		}
+	}
+	return name, nil
+}
+
+// runNixpacks generates a plan, and returns where it was written.
+func runNixpacks(contextDir string, extra []string) (string, error) {
+	args := append([]string{"build", contextDir, "--out", contextDir}, extra...)
 
 	// G204: exec.Command takes an argv, so nothing here reaches a shell on this
-	// host. contextDir is a checkout this process made; the target name is
-	// matched against [A-Za-z0-9][A-Za-z0-9_.-]* and the start command is
-	// filtered by startCommandFrom.
+	// host. contextDir is a checkout this process made, and every command in
+	// `extra` was read out of the repository and passed safeCommand.
 	//
-	// The start command does become the built image's CMD, which nixpacks runs
-	// under `bash -l -c` — so the repository chooses what its own container
-	// runs. That is the same authority a Dockerfile's CMD already has, and the
-	// container is the boundary either way (R-112, R-114).
+	// Those commands do become the built image's build steps and CMD, which
+	// nixpacks runs under `bash -l -c` — so the repository chooses what its own
+	// build and container run. That is the same authority a Dockerfile already
+	// has, and the container is the boundary either way (R-112, R-114).
 	cmd := exec.Command(nixpacksBinary, args...) //nolint:gosec
 
 	// No network. Generation reads the repository and decides; it does not
@@ -167,6 +197,41 @@ func buildpackDockerfile(_ api.BuildRequest, contextDir string) (string, error) 
 	}
 
 	return filepath.Join(".nixpacks", "Dockerfile"), nil
+}
+
+// planBuildCommand pulls the build step out of a generated plan.
+//
+// A nixpacks plan runs its phases as RUN lines in order: the environment first
+// (`nix-env -if ...`), then install, then build. The build is the last RUN in
+// the builder stage that is not one of nixpacks' own bookkeeping lines — the
+// `RUN true` it emits for an empty phase, and the nix-env line.
+func planBuildCommand(dockerfile string) string {
+	var last string
+	for _, line := range strings.Split(dockerfile, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "RUN ") {
+			// A second FROM starts the runtime stage, and nothing after it
+			// builds anything.
+			if strings.HasPrefix(trimmed, "FROM ") && last != "" {
+				break
+			}
+			continue
+		}
+		command := strings.TrimSpace(strings.TrimPrefix(trimmed, "RUN "))
+		for strings.HasPrefix(command, "--") {
+			_, rest, found := strings.Cut(command, " ")
+			if !found {
+				command = ""
+				break
+			}
+			command = strings.TrimSpace(rest)
+		}
+		if command == "" || command == "true" || strings.HasPrefix(command, "nix-env ") {
+			continue
+		}
+		last = command
+	}
+	return last
 }
 
 // writeInto materializes generated build inputs in the checkout.
@@ -208,16 +273,16 @@ func writeInto(contextDir string, files map[string]string) error {
 // The same generator the build path uses, so what somebody reviews is what runs
 // (R-102). It writes into a copy of nothing: the source view's directory is the
 // detection checkout, which is discarded when detection finishes.
-func (a *Adapter) Plan(_ context.Context, src api.SourceView) (map[string]string, string, error) {
+func (a *Adapter) Plan(_ context.Context, src api.SourceView) (map[string]string, string, *api.PlanDeclaration, error) {
 	dir, ok := src.(interface{ Root() string })
 	if !ok {
-		return nil, "", errs.New(errs.BuildFailed, "Planning needs the source on disk.")
+		return nil, "", nil, errs.New(errs.BuildFailed, "Planning needs the source on disk.")
 	}
 	root := dir.Root()
 
 	name, err := buildpackDockerfile(api.BuildRequest{}, root)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
 	// Everything the generator wrote, read back as content. The spec carries
@@ -227,7 +292,7 @@ func (a *Adapter) Plan(_ context.Context, src api.SourceView) (map[string]string
 	planDir := filepath.Join(root, ".nixpacks")
 	entries, err := os.ReadDir(planDir)
 	if err != nil {
-		return nil, "", errs.Wrap(errs.BuildFailed, "Could not read the build plan.", err)
+		return nil, "", nil, errs.Wrap(errs.BuildFailed, "Could not read the build plan.", err)
 	}
 	for _, e := range entries {
 		if e.IsDir() {
@@ -235,11 +300,11 @@ func (a *Adapter) Plan(_ context.Context, src api.SourceView) (map[string]string
 		}
 		body, readErr := os.ReadFile(filepath.Join(planDir, e.Name()))
 		if readErr != nil {
-			return nil, "", errs.Wrap(errs.BuildFailed, "Could not read the build plan.", readErr)
+			return nil, "", nil, errs.Wrap(errs.BuildFailed, "Could not read the build plan.", readErr)
 		}
 		files[path.Join(".nixpacks", e.Name())] = string(body)
 	}
-	return files, name, nil
+	return files, name, readDeclaredBuild(root).asPlanDeclaration(), nil
 }
 
 // trim bounds a subprocess's output so one runaway generator cannot put a

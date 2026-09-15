@@ -174,7 +174,7 @@ func TestSubprocessOutputIsBoundedKeepingTheEnd(t *testing.T) {
 // The same generator the build path uses, so what somebody reviews is what runs
 // (R-102).
 func TestPlanNeedsTheSourceOnDisk(t *testing.T) {
-	_, _, err := New().Plan(context.Background(), viewWithoutRoot{})
+	_, _, _, err := New().Plan(context.Background(), viewWithoutRoot{})
 	require.Equal(t, errs.BuildFailed, errs.CodeOf(err))
 	require.Contains(t, errs.As(err).Message, "on disk")
 }
