@@ -297,7 +297,12 @@ administrator holds a grant on it like anyone else (R-087).
 **R-094 [D]** Confidence ladder, highest first:
 1. **Already-published image** — check the repo's namespace on ghcr.io and Docker Hub before building anything.
 2. **Explicit deployment artifacts** — Dockerfile, compose file, Procfile, `devcontainer.json`, Nix flake, release binaries.
-3. **CI workflows** — `.github/workflows` contains the maintainer's own build commands.
+3. **The maintainer's own build commands** — `.github/workflows`, or a `Makefile` target that says
+   how the app is built and run. Amended 2026-09-14: this tier said "CI workflows" and named only
+   `.github/workflows`. A Makefile is the same artifact — the build written down by the person who
+   wrote the app — and excluding it sent repositories that have one down to tier 4, where
+   convention-matching reads a Go module, plans `go build`, and silently drops the client the
+   Makefile would have built. Nothing about the tier's rank or meaning changed.
 4. **Ecosystem manifests** — `package.json` + lockfile, `go.mod`, `Cargo.toml`, `pyproject.toml` plus framework markers, `pom.xml`, `Gemfile`.
 5. **Static** — `index.html` at root, or a known SSG config.
 

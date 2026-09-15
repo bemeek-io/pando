@@ -416,7 +416,27 @@ func (d BuildpackDetector) Bid(ctx context.Context, src api.SourceView) (Candida
 			c.Draft.Build.GeneratedFiles = files
 			c.Draft.Build.Dockerfile = dockerfile
 			c.Evidence = append(c.Evidence, "build plan generated, and editable before it runs")
-			_, planned = scanDockerfile(strings.NewReader(files[dockerfile]))
+
+			body := files[dockerfile]
+			_, planned = scanDockerfile(strings.NewReader(body))
+
+			// R-094 tier 3 — the maintainer's own build commands — which ranks
+			// above tier 4's ecosystem manifests, and this is the difference
+			// between them. Convention-matching reads a repository and infers;
+			// a Makefile target is the answer written down by the person who
+			// wrote the app, and a plan built from it is not a guess.
+			//
+			// Read back out of the plan rather than parsed here a second time.
+			// R-027 stops this package and the builder sharing the parser, and
+			// two Makefile readers that have to agree is how they stop agreeing
+			// — so the one that matters is the builder's, and this reports what
+			// it decided. A plan whose build step invokes make is a plan the
+			// repository dictated.
+			if name, ok := makefileName(src); ok && buildsWithMake(body) {
+				c.Confidence = 0.72
+				c.Evidence = append(c.Evidence,
+					name+" declares how this app is built, and the plan runs it rather than guessing")
+			}
 		}
 	}
 
@@ -859,3 +879,42 @@ func readJSON(src api.SourceView, name string, into any) bool {
 	}
 	return json.Unmarshal(raw, into) == nil
 }
+
+// makefileName returns the Makefile this repository has, if it has one.
+//
+// The names GNU make itself looks for, in its order.
+func makefileName(src api.SourceView) (string, bool) {
+	for _, name := range []string{"GNUmakefile", "makefile", "Makefile"} {
+		if info, err := src.Stat(name); err == nil && !info.IsDir {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// buildsWithMake reports whether a generated plan's build step invokes make.
+//
+// Evidence, not a decision: the builder decided, and this is detection reading
+// the decision back so the proposal can say which tier of R-094's ladder the
+// plan came from. A RUN line is the only place a nixpacks plan puts the build
+// command, and `make` at the start of one is unambiguous — `cmake` and
+// `makemigrations` both fail the word check.
+func buildsWithMake(dockerfile string) bool {
+	scanner := bufio.NewScanner(strings.NewReader(dockerfile))
+	for _, line := range joinContinuations(scanner) {
+		m := runPattern.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		for _, word := range strings.Fields(m[1]) {
+			// --mount=..., and the other flags a RUN can carry.
+			if strings.HasPrefix(word, "-") {
+				continue
+			}
+			return word == "make"
+		}
+	}
+	return false
+}
+
+var runPattern = regexp.MustCompile(`(?i)^\s*RUN\s+(.+)`)

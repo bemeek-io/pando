@@ -227,16 +227,11 @@ func (a *Auction) Run(ctx context.Context, src api.SourceView) (Result, error) {
 
 	// Only questions a person must answer make a detection incomplete. One the
 	// trial run will resolve leaves detection ready to proceed to it.
-	status := StatusReady
-	if len(Asked(questions)) > 0 {
-		status = StatusNeedsAnswers
-	}
-	if winner.Confidence < uncertain {
-		status = StatusNeedsAnswers
-	}
-	if winner.Strategy == StrategyUnknown {
-		status = StatusNeedsAnswers
-	}
+	//
+	// The same rule the job applies after the trial run, from one function, so
+	// the status a caller sees before the trial and the one it sees after
+	// cannot disagree about what "ready" means.
+	status := statusFor(winner, questions)
 
 	// A blocked winner overrides everything else. There is no point asking
 	// which service is primary in a compose file that cannot be imported.
@@ -259,9 +254,9 @@ const (
 	// auction must not settle on its own.
 	closeEnough = 0.15
 
-	// uncertain is the confidence below which detection asks even if no
-	// detector raised a question.
-	uncertain = 0.5
+	// There was a third rule here: a confidence below 0.5 said needs_answers
+	// even with nothing to ask. It was removed with the port question that made
+	// it invisible — see statusFor.
 )
 
 // tieBreak asks the user to choose between two close readings.

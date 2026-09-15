@@ -126,7 +126,19 @@ const nixpacksBinary = "nixpacks"
 // the source *with* the generated directory inside it. The checkout is a
 // throwaway clone, so nothing anybody keeps is touched.
 func buildpackDockerfile(_ api.BuildRequest, contextDir string) (string, error) {
-	cmd := exec.Command(nixpacksBinary, "build", contextDir, "--out", contextDir)
+	args := []string{"build", contextDir, "--out", contextDir}
+	args = append(args, makefileArgs(contextDir)...)
+
+	// G204: exec.Command takes an argv, so nothing here reaches a shell on this
+	// host. contextDir is a checkout this process made; the target name is
+	// matched against [A-Za-z0-9][A-Za-z0-9_.-]* and the start command is
+	// filtered by startCommandFrom.
+	//
+	// The start command does become the built image's CMD, which nixpacks runs
+	// under `bash -l -c` — so the repository chooses what its own container
+	// runs. That is the same authority a Dockerfile's CMD already has, and the
+	// container is the boundary either way (R-112, R-114).
+	cmd := exec.Command(nixpacksBinary, args...) //nolint:gosec
 
 	// No network. Generation reads the repository and decides; it does not
 	// fetch, and a generator that can reach the internet while reading

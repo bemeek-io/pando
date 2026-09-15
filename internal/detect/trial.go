@@ -61,6 +61,21 @@ func ApplyTrial(draft Draft, questions []Question, t Trial) (Draft, []Question) 
 		// No trial means no answers. Anything that was waiting on one has to be
 		// asked after all — deferring a question to something that never
 		// happened would drop it silently.
+		//
+		// The storage warning is not one of those, and used to be dropped here
+		// by accident. R-201 says a repository that declares no volume gets the
+		// warning "at setup", and R-202 only says the trial *improves* it by
+		// naming the directory it saw written to. Attaching it inside the
+		// trial's branch made the base warning conditional on the improvement,
+		// so every source build — every strategy that has no image to start,
+		// which is dockerfile, buildpack and static — got neither.
+		//
+		// R-203 is explicit that this is the worst failure mode in the system:
+		// an undeclared Postgres fails loudly on first boot, while undeclared
+		// persistence works perfectly until the second deploy and then discards
+		// everything while reporting healthy. It cannot be the one warning that
+		// silently does not fire.
+		draft.Warnings = append(draft.Warnings, persistenceWarnings(draft, t)...)
 		return draft, undefer(questions)
 	}
 
