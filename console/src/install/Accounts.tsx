@@ -261,8 +261,9 @@ export function Screen({
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  // Left-aligned and uncapped: see the note on AppsList in AdminConsole.
   return (
-    <div style={{ maxWidth: 'var(--console-max)' }}>
+    <div>
       <header
         style={{
           display: 'flex',

@@ -9,6 +9,11 @@
 // nothing gets a plain confirmation, because a backup choice over an empty set
 // is a decision that looks consequential and isn't.
 //
+// It lives in the app's header rather than on a tab, because the app most
+// likely to be deleted is the one whose tabs are missing: an app whose source
+// could not be fetched never gets past detection, has no pinned spec, and shows
+// one tab. A delete on the settings tab is a delete that app cannot reach.
+//
 // Nothing here checks a verb. `app.delete` is per-app and is not in any payload
 // the console holds (`GET /me` carries install verbs only), so this follows the
 // rest of the app screen: the action is offered and the server refuses it.
@@ -34,14 +39,17 @@ export function DeleteApp({
   const [open, setOpen] = useState(false);
   const [keepBackup, setKeepBackup] = useState(true);
 
-  // The same query key the Storage section uses, so opening this screen asks
-  // once and both parts of it agree about what the app keeps.
+  // The same query key the Storage section uses, so opening an app asks once
+  // and both places agree about what it keeps.
   const volumes = useQuery({
     queryKey: ['volumes', appID],
     queryFn: () => api.get<{ volumes: Array<{ id: string }> | null }>(`/apps/${appID}/volumes`),
   });
 
-  const hasStorage = (volumes.data?.volumes ?? []).length > 0;
+  // Unknown counts as "ask". This screen is reachable for an app whose own
+  // record would not load, and an unanswered request is not evidence that an
+  // app keeps nothing — treating it as such would quietly discard data.
+  const hasStorage = !volumes.isSuccess || (volumes.data?.volumes ?? []).length > 0;
   const decision: StorageDecision = !hasStorage ? 'none' : keepBackup ? 'backup' : 'discard';
 
   const remove = useMutation({
@@ -57,18 +65,10 @@ export function DeleteApp({
   });
 
   return (
-    <section>
-      <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Delete this app</h4>
-      <Quiet>
-        Deleting stops this app and removes it from Pando. Its storage is backed up first unless you
-        say otherwise, and the backup is kept until you discard it.
-      </Quiet>
-
-      <div style={{ marginTop: 'var(--space-4)' }}>
-        <Button variant="destructive" onClick={() => setOpen(true)}>
-          Delete app
-        </Button>
-      </div>
+    <>
+      <Button variant="destructive" onClick={() => setOpen(true)}>
+        Delete app
+      </Button>
 
       {open && (
         <Dialog
@@ -127,7 +127,7 @@ export function DeleteApp({
                     `force=true`, which is the CLI's way of answering the
                     question the radio above already asks. */}
                 <Banner tone="failed">{messageOf(remove.error)}</Banner>
-                {keepBackup && (
+                {keepBackup && hasStorage && (
                   <p
                     style={{
                       font: 'var(--type-caption)',
@@ -143,6 +143,6 @@ export function DeleteApp({
           </div>
         </Dialog>
       )}
-    </section>
+    </>
   );
 }

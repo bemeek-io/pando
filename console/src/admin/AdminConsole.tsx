@@ -13,13 +13,13 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Button, EmptyState, Logo, SidebarNav, StatusIndicator, Table, Tabs, Tooltip } from '@design';
+import { Badge, Banner, Button, EmptyState, Logo, SidebarNav, StatusIndicator, Table, Tabs, Tooltip } from '@design';
 import type { SidebarItem } from '@design';
 
 import { api } from '@api/client';
 import type { App } from '@api/types.gen';
 import { InstallVerb, useInstallVerb } from '../app/principal';
-import { Accounts } from '../install/Accounts';
+import { Accounts, messageOf } from '../install/Accounts';
 import { Identity } from '../install/Identity';
 import { Backups } from '../install/Backups';
 import { Audit, Installation, Policy } from '../install/Installation';
@@ -29,6 +29,7 @@ import { Sharing } from './Sharing';
 import { AppOverview } from './AppOverview';
 import { Resources } from './Resources';
 import { AddApp } from './AddApp';
+import { DeleteApp } from './DeleteApp';
 import type { Route, Section } from '../app/route';
 import { Terminal } from './Terminal';
 
@@ -104,36 +105,29 @@ export function AdminConsole({
         }
       />
 
-      {/* The content column is centered in whatever is left of the window.
-          The brand spec caps console content at 1280px, and left-aligning that
-          cap against a fixed sidebar puts the whole console in the left third
-          of a wide display with nothing in the rest of it. Every screen below
-          carries the same cap of its own; this is the one that decides where
-          the column sits. */}
-      <main style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center' }}>
-        <div style={{ flex: 1, minWidth: 0, maxWidth: 'var(--console-max)' }}>
-          {section === 'accounts' && <Accounts />}
-          {section === 'identity' && <Identity canEdit={canManageUsers} />}
-          {section === 'installation' && <Installation />}
-          {section === 'policy' && <Policy canEdit={canManagePolicy} />}
-          {section === 'backups' && <Backups />}
-          {section === 'audit' && <Audit />}
-          {section === 'apps' &&
-            (selectedID ? (
-              <AppScreen
-                appID={selectedID}
-                tab={route.tab}
-                onTab={(tab) => go({ view: 'admin', section: 'apps', appID: selectedID, tab }, true)}
-                onBack={() => setSelectedID(null)}
-              />
-            ) : (
-              // Adding an app opens it. Detection is already running by the time
-              // the request returns, and the next thing to do is look at what it
-              // found — landing back on a list with a new row saying "draft"
-              // leaves the person to work that out.
-              <AppsList rows={rows} onOpen={(app) => setSelectedID(app.id)} onAdded={(app) => setSelectedID(app.id)} />
-            ))}
-        </div>
+      <main style={{ flex: 1, minWidth: 0 }}>
+        {section === 'accounts' && <Accounts />}
+        {section === 'identity' && <Identity canEdit={canManageUsers} />}
+        {section === 'installation' && <Installation />}
+        {section === 'policy' && <Policy canEdit={canManagePolicy} />}
+        {section === 'backups' && <Backups />}
+        {section === 'audit' && <Audit />}
+        {section === 'apps' &&
+          (selectedID ? (
+            <AppScreen
+              appID={selectedID}
+              listed={rows.find((a) => a.id === selectedID)}
+              tab={route.tab}
+              onTab={(tab) => go({ view: 'admin', section: 'apps', appID: selectedID, tab }, true)}
+              onBack={() => setSelectedID(null)}
+            />
+          ) : (
+            // Adding an app opens it. Detection is already running by the time
+            // the request returns, and the next thing to do is look at what it
+            // found — landing back on a list with a new row saying "draft"
+            // leaves the person to work that out.
+            <AppsList rows={rows} onOpen={(app) => setSelectedID(app.id)} onAdded={(app) => setSelectedID(app.id)} />
+          ))}
       </main>
     </div>
   );
@@ -150,8 +144,13 @@ function AppsList({
 }) {
   const [adding, setAdding] = useState(false);
 
+  // No width cap. The brand spec's 1280px console column, left-aligned against
+  // the sidebar, left most of a wide display empty — a table with three columns
+  // in the left third of the window and nothing in the other two. Tables and
+  // logs take the window; the things that have a natural reading width — prose,
+  // forms, the audit filter — keep their own `ch` caps where they are written.
   return (
-    <div style={{ maxWidth: 'var(--console-max)' }}>
+    <div>
       <header
         style={{
           display: 'flex',
@@ -228,11 +227,15 @@ function AppsList({
 
 function AppScreen({
   appID,
+  listed,
   tab: routeTab,
   onTab,
   onBack,
 }: {
   appID: string;
+  /** The row from the list, which is all that is left when the app's own
+   *  record will not load. */
+  listed?: App;
   tab?: string;
   onTab: (tab: string) => void;
   onBack: () => void;
@@ -270,11 +273,27 @@ function AppScreen({
 
   if (app.isPending) return null;
   if (app.isError || !app.data) {
+    // An app whose record will not load is exactly the app somebody is trying
+    // to get rid of, and this screen used to offer them a back button and
+    // nothing else — no name, no reason, no way out but the list they came
+    // from. The list's own row carries the name, so the delete still knows what
+    // it is about.
     return (
-      <div style={{ padding: 'var(--space-6) var(--console-padding)' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: 'var(--space-4)',
+          padding: 'var(--space-6) var(--console-padding)',
+        }}
+      >
         <Button variant="ghost" onClick={onBack}>
           Apps
         </Button>
+        {listed && <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{listed.name}</h3>}
+        <Banner tone="failed">{messageOf(app.error)}</Banner>
+        <DeleteApp appID={appID} appName={listed?.name ?? 'this app'} onDeleted={onBack} />
       </div>
     );
   }
@@ -295,7 +314,7 @@ function AppScreen({
       [{ value: 'detection', label: 'Configuration' }];
 
   return (
-    <div style={{ maxWidth: 'var(--console-max)' }}>
+    <div>
       <header
         style={{
           display: 'flex',
@@ -307,9 +326,22 @@ function AppScreen({
         <Button variant="ghost" onClick={onBack} style={{ alignSelf: 'flex-start' }}>
           Apps
         </Button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-          <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
-          <StatusIndicator status={statusSymbol(app.data.state)} label={statusLabel(app.data.state)} />
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 'var(--space-4)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
+            <StatusIndicator status={statusSymbol(app.data.state)} label={statusLabel(app.data.state)} />
+          </div>
+          {/* In the header rather than on Settings: an app whose source could
+              not be fetched has no pinned spec and therefore no Settings tab,
+              and that is the app most likely to be deleted. */}
+          <DeleteApp appID={app.data.id} appName={app.data.name} onDeleted={onBack} />
         </div>
       </header>
 
@@ -321,9 +353,7 @@ function AppScreen({
         {tab === 'detection' && <DetectionReview appID={app.data.id} reviewed={reviewed} />}
         {tab === 'sharing' && <Sharing appID={app.data.id} appName={app.data.name} />}
         {tab === 'overview' && <AppOverview app={app.data} />}
-        {tab === 'resources' && (
-          <Resources appID={app.data.id} appName={app.data.name} onDeleted={onBack} />
-        )}
+        {tab === 'resources' && <Resources appID={app.data.id} />}
         {tab === 'terminal' && <Terminal appID={app.data.id} />}
       </div>
     </div>

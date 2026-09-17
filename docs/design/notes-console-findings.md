@@ -215,28 +215,42 @@ thing that fell out of step. The generated file is committed and CI fails on a
 diff, the same way the traceability index works, so a change to the API's
 surface shows up in review.
 
-## The console could not delete an app, and sat in the left third of the window
+## The console could not delete an app, and the content column was capped
 
 Two gaps found by using the console on a wide display.
 
 **Delete.** `DELETE /apps/{id}` has existed since phase 2, with the CLI calling
 it and tests covering both answers to R-204's question. The console had no
 button for it, so the one surface where R-204's *asks* is literally an ask was
-the one surface that could not delete anything. It is now the last section of an
-app's Settings tab, below Storage: a `destructive` button, then a dialog whose
-two radios are the two answers — keep a final backup, or delete the storage too
-— with keeping selected, the same default R-205 gives the CLI. An app with no
-volumes gets a plain confirmation instead, because a backup choice over an empty
-set is a decision that looks consequential and isn't.
+the one surface that could not delete anything.
+
+It sits in the app's header, beside the name, and not on the settings tab. The
+app most likely to be deleted is the one with no settings tab: an app whose
+source could not be fetched fails detection, never pins a spec, and shows a
+single Configuration tab carrying the reason. A delete on the settings tab is a
+delete that app cannot reach. The same reasoning covers the app whose record
+will not load at all — that screen was a back button and nothing else, and now
+carries the error, the name from the list row, and the delete.
+
+The dialog is R-204's question: two radios, keep a final backup or discard the
+storage, with keeping selected — the default R-205 gives the CLI, so the two
+surfaces do not disagree about what happens when nobody thinks about it. An app
+known to keep nothing gets a plain confirmation instead. *Known* is load-bearing:
+an unanswered volumes request is not evidence that an app keeps nothing, so
+unknown asks the question rather than assuming the empty case and discarding
+data.
 
 The dialog shows the server's message when a delete fails and not its remedy.
 The remedy names `force=true`, which is the CLI's way of answering the question
 the radios already ask; the console answers it with the second radio and says
 so.
 
-**Layout.** The brand spec caps console content at 1280px. The admin console
-left-aligned that cap against the fixed sidebar, so on a 2560px display the
-whole console occupied the left third of the window and the rest was empty
-paper. The content column is now centered in what is left of the window after
-the sidebar. The cap is unchanged — the launcher already centered its own
-column, and this makes the two agree.
+**[P] The brand spec's 1280px console column is overridden in the admin
+console.** Content there is uncapped and stays left-aligned. The spec's number
+was written for a laptop; on a 2560px display it left a three-column table in
+the left third of the window and two thirds of empty paper, and centering the
+column — tried first — only moved the emptiness to both sides. Tables, logs and
+the audit trail take the window. The things with a natural reading width keep
+their own caps where they are written: prose at 68ch, the audit filter at 40ch,
+sharing and deploy settings at the 1280 the spec asks for, because a form that
+spans a wide display is harder to read, not easier. The launcher is unchanged.
