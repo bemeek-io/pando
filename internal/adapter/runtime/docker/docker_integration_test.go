@@ -100,6 +100,47 @@ func TestApplyIsIdempotent(t *testing.T) {
 
 // R-193: a rotated secret changes the resolved environment, and the workload
 // must be recreated rather than left running with the old value.
+// TestR071_LogsArriveWithoutDockerFraming asserts that reading an app's logs
+// gives back what the app printed.
+//
+// Docker frames the output of a container with no TTY: an 8-byte header before
+// every chunk. Pando creates every workload without a TTY, so this stream
+// always carries it, and the logs endpoint copies the adapter's reader straight
+// into the response body — so anything the adapter leaves in shows up in the
+// console, as control bytes at the start of each line. Nothing read this
+// endpoint until the console grew a logs tab, which is why the framing had
+// never been noticed.
+func TestR071_LogsArriveWithoutDockerFraming(t *testing.T) {
+	ctx := context.Background()
+	a := adapter(t)
+	id := "test-logs-" + time.Now().Format("150405")
+	cleanup(t, a, id)
+
+	plan := bundle(id, nil)
+	plan.Workloads[0].Command = []string{"sh", "-c", "echo hello from pando; sleep 3600"}
+
+	_, err := a.Apply(ctx, plan)
+	require.NoError(t, err)
+
+	// The line is printed at startup, and Apply returns once the container is
+	// created rather than once it has said anything.
+	var out []byte
+	require.Eventually(t, func() bool {
+		rc, err := a.Logs(ctx, api.WorkloadRef{BundleID: id, Workload: "web"}, api.LogOptions{Tail: 10})
+		if err != nil {
+			return false
+		}
+		defer func() { _ = rc.Close() }()
+		out, err = io.ReadAll(rc)
+		return err == nil && len(out) > 0
+	}, 20*time.Second, 250*time.Millisecond)
+
+	require.Equal(t, "hello from pando\n", string(out))
+	for _, b := range out {
+		require.Greater(t, b, byte(0x08), "stream framing reached the caller: %q", string(out))
+	}
+}
+
 func TestR193_ChangedEnvironmentCausesRecreate(t *testing.T) {
 	ctx := context.Background()
 	a := adapter(t)

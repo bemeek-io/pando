@@ -27,10 +27,12 @@ import { statusLabel, statusSymbol } from '../ui/status';
 import { DetectionReview } from './DetectionReview';
 import { Sharing } from './Sharing';
 import { AppOverview } from './AppOverview';
+import { Logs } from './Logs';
 import { Resources } from './Resources';
 import { AddApp } from './AddApp';
 import { DeleteApp } from './DeleteApp';
 import type { Route, Section } from '../app/route';
+import { MEASURE } from '../ui/layout';
 import { Terminal } from './Terminal';
 
 export function AdminConsole({
@@ -144,11 +146,11 @@ function AppsList({
 }) {
   const [adding, setAdding] = useState(false);
 
-  // No width cap. The brand spec's 1280px console column, left-aligned against
-  // the sidebar, left most of a wide display empty — a table with three columns
-  // in the left third of the window and nothing in the other two. Tables and
-  // logs take the window; the things that have a natural reading width — prose,
-  // forms, the audit filter — keep their own `ch` caps where they are written.
+  // The page is not capped — a table's rows and rules run to the edge of the
+  // window, which is what a wide display should look like. Its content is: the
+  // columns are sized in `ch` so Status and Updated sit next to the name rather
+  // than two thousand pixels away from it, and this header is capped at the
+  // same measure so Add app stops where the last column does.
   return (
     <div>
       <header
@@ -157,6 +159,8 @@ function AppsList({
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 'var(--space-4)',
+          font: 'var(--type-body-ui)',
+          maxWidth: MEASURE,
           padding: 'var(--space-6) var(--console-padding) var(--space-4)',
         }}
       >
@@ -184,7 +188,7 @@ function AppsList({
             </EmptyState>
           }
           columns={[
-            { key: 'name', header: 'Name', width: 'minmax(0,1.4fr)' },
+            { key: 'name', header: 'Name', width: 'minmax(0,54ch)' },
             {
               key: 'state',
               header: 'Status',
@@ -257,7 +261,16 @@ function AppScreen({
   // rather than push when switching: flicking between tabs should not make the
   // back button walk them one at a time before leaving the app.
   const tab = routeTab ?? (reviewed ? 'overview' : 'detection');
-  const setTab = onTab;
+
+  // Which section of a tab to open at, when something sent you there. A
+  // warning about storage should land on storage, not on the top of a settings
+  // tab with four sections above it. Cleared by any ordinary tab click, so it
+  // only ever applies to the trip it was set for.
+  const [focus, setFocus] = useState<string | undefined>(undefined);
+  const setTab = (next: string, at?: string) => {
+    setFocus(at);
+    onTab(next);
+  };
 
   // Accepting a proposal is the moment `reviewed` flips, and leaving somebody
   // on the setup tab afterwards hides the thing they came for — the deploy
@@ -301,6 +314,7 @@ function AppScreen({
   const tabs = reviewed
     ? [
         { value: 'overview', label: 'Overview' },
+        { value: 'logs', label: 'Logs' },
         { value: 'sharing', label: 'Sharing' },
         { value: 'resources', label: 'Settings' },
         { value: 'terminal', label: 'Terminal' },
@@ -320,6 +334,8 @@ function AppScreen({
           display: 'flex',
           flexDirection: 'column',
           gap: 'var(--space-3)',
+          font: 'var(--type-body-ui)',
+          maxWidth: MEASURE,
           padding: 'var(--space-6) var(--console-padding) var(--space-4)',
         }}
       >
@@ -352,8 +368,9 @@ function AppScreen({
       <div style={{ padding: 'var(--space-5) var(--console-padding) var(--space-7)' }}>
         {tab === 'detection' && <DetectionReview appID={app.data.id} reviewed={reviewed} />}
         {tab === 'sharing' && <Sharing appID={app.data.id} appName={app.data.name} />}
-        {tab === 'overview' && <AppOverview app={app.data} />}
-        {tab === 'resources' && <Resources appID={app.data.id} />}
+        {tab === 'overview' && <AppOverview app={app.data} onGo={setTab} />}
+        {tab === 'logs' && <Logs app={app.data} />}
+        {tab === 'resources' && <Resources appID={app.data.id} focus={focus} />}
         {tab === 'terminal' && <Terminal appID={app.data.id} />}
       </div>
     </div>

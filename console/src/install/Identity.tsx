@@ -87,7 +87,7 @@ function Groups({ canEdit }: { canEdit: boolean }) {
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
           columns={[
-            { key: 'name', header: 'Name', width: 'minmax(0,1fr)' },
+            { key: 'name', header: 'Name', width: 'minmax(0,36ch)' },
             {
               key: 'members',
               header: 'People',
@@ -238,7 +238,7 @@ function Roles({ canEdit }: { canEdit: boolean }) {
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
           columns={[
-            { key: 'name', header: 'Name', width: 'minmax(0,1fr)' },
+            { key: 'name', header: 'Name', width: 'minmax(0,24ch)' },
             {
               key: 'scope',
               header: 'Applies to',
@@ -259,7 +259,7 @@ function Roles({ canEdit }: { canEdit: boolean }) {
             {
               key: 'verbs',
               header: 'Permissions',
-              width: 'minmax(0,2fr)',
+              width: 'minmax(0,28ch)',
               render: (row: Role) => (
                 <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
                   {row.verbs.map((v) => (

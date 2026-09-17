@@ -136,8 +136,8 @@ export function Environment({ appID }: { appID: string }) {
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
           columns={[
-            { key: 'key', header: 'Name', width: 'minmax(0,1fr)', mono: true },
-            { key: 'shown', header: 'Value', width: 'minmax(0,1.4fr)', mono: true, muted: true },
+            { key: 'key', header: 'Name', width: 'minmax(0,26ch)', mono: true },
+            { key: 'shown', header: 'Value', width: 'minmax(0,28ch)', mono: true, muted: true },
             { key: 'workload', header: 'Part of the app', width: '18ch', muted: true },
             {
               key: 'actions',

@@ -527,6 +527,19 @@ type AppWithStorage struct {
 // Only apps with storage. An app with none has nothing a rolling backup would
 // hold that its spec revisions do not already, and taking one anyway would fill
 // the destination with empty bundles nobody wants to page through.
+//
+// The volumes test is jsonb_typeof and not a coalesce. `AppSpec.Volumes` is
+// tagged without omitempty, so an app that declares no storage stores
+// `"volumes": null` — and `->` on a key holding JSON null answers with that
+// null, not SQL NULL, so the coalesce never fired and jsonb_array_length was
+// handed a scalar. Postgres raises 22023, the reconciler logged "could not list
+// apps for rolling backups", and no app on the installation was backed up
+// (R-210).
+//
+// A typeof guard beside it is not enough on its own: AND does not promise an
+// evaluation order, and the planner is free to reach jsonb_array_length first —
+// it did. So the emptiness test is a comparison, which is defined for every
+// input this column can hold.
 func (a *Apps) WithStorage(ctx context.Context) ([]AppWithStorage, error) {
 	rows, err := a.db.Query(ctx, `
 		SELECT a.id, r.body,
@@ -535,7 +548,8 @@ func (a *Apps) WithStorage(ctx context.Context) ([]AppWithStorage, error) {
 		JOIN spec_revisions r ON r.id = a.pinned_spec_id
 		WHERE a.deleted_at IS NULL
 		  AND a.state IN ('running', 'degraded')
-		  AND jsonb_array_length(coalesce(r.body->'volumes', '[]'::jsonb)) > 0
+		  AND jsonb_typeof(r.body->'volumes') = 'array'
+		  AND r.body->'volumes' <> '[]'::jsonb
 		ORDER BY a.id`)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not list apps with storage.", err)

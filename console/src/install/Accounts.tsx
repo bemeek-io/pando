@@ -16,6 +16,7 @@ import { Button, Dialog, Input, Select, StatusIndicator, Table, Tag } from '@des
 
 import { api, RequestFailed } from '@api/client';
 import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
+import { MEASURE } from '../ui/layout';
 
 interface Account {
   id: string;
@@ -65,11 +66,11 @@ export function Accounts() {
 
       <Table
         columns={[
-          { key: 'external_id', header: 'Username', width: 'minmax(0,1.2fr)' },
+          { key: 'external_id', header: 'Username', width: 'minmax(0,24ch)' },
           {
             key: 'display_name',
             header: 'Name',
-            width: 'minmax(0,1fr)',
+            width: 'minmax(0,22ch)',
             muted: true,
             render: (row: Account) => row.display_name || row.email || '—',
           },
@@ -90,7 +91,7 @@ export function Accounts() {
           {
             key: 'install_role_id',
             header: 'Installation role',
-            width: 'minmax(0,1.1fr)',
+            width: 'minmax(0,24ch)',
             render: (row: Account) =>
               manage ? (
                 <RolePicker
@@ -261,7 +262,10 @@ export function Screen({
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  // Left-aligned and uncapped: see the note on AppsList in AdminConsole.
+  // Left-aligned and uncapped: the rules under a table run to the window's
+  // edge. The header is capped at the measure so its action stops where the
+  // table's last column does, and carries the table's font because that is
+  // what `ch` is measured in.
   return (
     <div>
       <header
@@ -270,6 +274,8 @@ export function Screen({
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 'var(--space-4)',
+          font: 'var(--type-body-ui)',
+          maxWidth: MEASURE,
           padding: 'var(--space-6) var(--console-padding) var(--space-4)',
         }}
       >

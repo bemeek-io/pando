@@ -1,17 +1,19 @@
-// One app: what it is, where it is, and its build log.
+// One app: what it is, where it is, and the deploy that put it there.
 //
-// The log streams over EventSource rather than polling, because a deploy log is
-// the one place where a user is watching a thing happen and latency is the
-// whole experience.
+// The log of that deploy is here because this is the screen somebody watches
+// while it happens. Every earlier deploy, and the app's own output, are on the
+// Logs tab — both are histories, and a history on the screen you deploy from is
+// a screen that scrolls forever.
 
-import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Card, CodeBlock, StatusIndicator, Tag } from '@design';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Banner, Button, Card, StatusIndicator, Tag } from '@design';
 
-import { api, base, RequestFailed } from '@api/client';
+import { api, RequestFailed } from '@api/client';
 import type { App, Deployment } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { InlineWarning } from '../ui/InlineWarning';
+import { MEASURE } from '../ui/layout';
+import { DeploymentLog } from './Logs';
 
 interface SpecRevision {
   id: string;
@@ -19,7 +21,14 @@ interface SpecRevision {
   body?: { warnings?: Array<{ code: string; message: string }> };
 }
 
-export function AppOverview({ app }: { app: App }) {
+export function AppOverview({
+  app,
+  onGo,
+}: {
+  app: App;
+  /** Where a warning's fix lives: a tab, and the section on it. */
+  onGo: (tab: string, focus?: string) => void;
+}) {
   const queries = useQueryClient();
 
   const deployments = useQuery({
@@ -104,6 +113,7 @@ export function AppOverview({ app }: { app: App }) {
           gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.25fr)',
           gap: 'var(--space-6)',
           alignItems: 'start',
+          maxWidth: MEASURE,
         }}
       >
         <Card padding="md">
@@ -149,11 +159,28 @@ export function AppOverview({ app }: { app: App }) {
 
       {/* Warnings inline where they apply, never stacked as banners, never
           looking like the failure above. */}
-      {warnings.map((warning) => (
-        <InlineWarning key={warning.code + warning.message} code={warning.code}>
-          {warning.message}
-        </InlineWarning>
-      ))}
+      {warnings.map((warning) => {
+        const fix = FIXES[warning.code];
+        return (
+          <InlineWarning
+            key={warning.code + warning.message}
+            code={warning.code}
+            action={
+              fix && (
+                <Button
+                  variant="secondary"
+                  onClick={() => onGo(fix.tab, fix.focus)}
+                  style={{ alignSelf: 'flex-start' }}
+                >
+                  {fix.label}
+                </Button>
+              )
+            }
+          >
+            {warning.message}
+          </InlineWarning>
+        );
+      })}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
         <Button
@@ -170,23 +197,20 @@ export function AppOverview({ app }: { app: App }) {
   );
 }
 
-function DeploymentLog({ appID, deployment }: { appID: string; deployment: Deployment }) {
-  const [lines, setLines] = useState<string[]>([]);
-
-  useEffect(() => {
-    // EventSource, not polling: the server already streams this and a deploy
-    // log is watched while it happens.
-    const stream = new EventSource(`${base}/apps/${appID}/deployments/${deployment.id}/logs`);
-
-    stream.onmessage = (event) => setLines((previous) => [...previous, event.data as string]);
-    stream.addEventListener('end', () => stream.close());
-    stream.onerror = () => stream.close();
-
-    return () => stream.close();
-  }, [appID, deployment.id]);
-
-  return <CodeBlock title={`Deploy log · ${deployment.status}`} lines={lines} />;
-}
+/**
+ * Where each warning is fixed.
+ *
+ * R-201's persistence warning ends "define one here", and on this screen there
+ * is no here — storage is defined on Settings. A warning a person cannot act on
+ * from where they are reading it is how people learn to dismiss warnings, so
+ * every code the console has a screen for carries the way to it. A code that is
+ * not listed renders as before: text, with nothing claiming to be actionable.
+ */
+const FIXES: Record<string, { label: string; tab: string; focus?: string }> = {
+  WARN_NO_PERSISTENT_VOLUME: { label: 'Add storage', tab: 'resources', focus: 'storage' },
+  WARN_COMPOSE_CONSTRUCT_REWRITTEN: { label: 'Review the configuration', tab: 'detection' },
+  WARN_UNDECLARED_DEPENDENCY_SUSPECTED: { label: 'Open dependencies', tab: 'resources' },
+};
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (

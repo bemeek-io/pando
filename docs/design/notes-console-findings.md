@@ -246,11 +246,117 @@ the radios already ask; the console answers it with the second radio and says
 so.
 
 **[P] The brand spec's 1280px console column is overridden in the admin
-console.** Content there is uncapped and stays left-aligned. The spec's number
-was written for a laptop; on a 2560px display it left a three-column table in
-the left third of the window and two thirds of empty paper, and centering the
-column — tried first — only moved the emptiness to both sides. Tables, logs and
-the audit trail take the window. The things with a natural reading width keep
-their own caps where they are written: prose at 68ch, the audit filter at 40ch,
-sharing and deploy settings at the 1280 the spec asks for, because a form that
-spans a wide display is harder to read, not easier. The launcher is unchanged.
+console.** The page is not capped and stays left-aligned: a table's rows and
+their rules run to the edge of the window. Its *content* is capped, which is a
+different thing and turned out to be the whole of the problem. Three attempts,
+in order:
+
+1. 1280px, left-aligned — the spec as written. On a 2560px display that is a
+   console in the left third of the window and two thirds of empty paper.
+2. 1280px, centered. The emptiness moves to both sides, which is worse: now
+   nothing is anchored.
+3. Uncapped. The rows look right and the content inside them does not — Status
+   and Updated end up two thousand pixels from the name they describe, and Add
+   app sits in the far corner.
+
+What is actually wanted is rules to the window and columns at a measure. So
+every table sizes its columns in `ch` rather than `fr`, summing to 84ch, and
+`ui/layout.ts` carries that measure plus the Table's own gaps and padding for
+the page headers, so a header's action stops where the last column does. A
+header carrying the measure also carries `--type-body-ui`, because `ch` is
+measured in the font of the element it is written on and the tables' font is
+what the number was counted in.
+
+Prose keeps its own caps where they are written — 68ch, the audit filter at
+40ch. Sharing, deploy settings and the terminal take the same measure as
+everything else. The launcher is unchanged.
+
+## Logs: one box, showing one deploy, growing without limit
+
+`GET /apps/{id}/logs` — the running app's own output — existed and nothing
+called it. The console's only log was the newest deployment's build output, on
+Overview, in a box with no height limit: a few thousand lines of build output
+pushed the rest of the screen out of reach, and there was no way back to the
+deploy before it.
+
+There is now a Logs tab holding both, because both are what somebody means by
+"the logs": the app's output, tailed at 500 lines and re-asked every five
+seconds while the app runs, and every deploy with its build log. Overview keeps
+the current deploy's log, since that is the screen a deploy is watched from,
+and every earlier one is a history that belongs with the other history.
+
+Both boxes stop at 60vh and scroll, and follow the end of the stream until the
+reader scrolls up — a log that jumps back to the bottom while somebody is
+reading the failure three screens above cannot be read at all.
+
+**Deploy logs do not survive a restart, and the console now says so.**
+`deploy.LogStore` is in memory, bounded at 2000 lines, and written nowhere. A
+deploy from before the last restart has no log, and `Follow` on an unknown
+deployment ID opens an empty stream rather than reporting that there is
+nothing — so the console would have shown an empty black box, which reads as a
+deploy that printed nothing. It says what is true instead. Logs on disk under a
+size cap are R-222/R-223 and belong to the reconciler's garbage collection;
+they are not implemented.
+
+## A warning that says "define one here", on a screen with no here
+
+R-201's persistence warning ends *"Otherwise define one here"*, and it renders
+on Overview, where nothing can be defined. Storage is on the settings tab, four
+sections down.
+
+Warning text is rendered verbatim (R-105, design 08 §1.3) so the console does
+not get to fix that sentence by rewriting it. It carries a way to the place
+instead: `InlineWarning` takes an action, and Overview maps the warning codes it
+has a screen for — `WARN_NO_PERSISTENT_VOLUME` to storage,
+`WARN_COMPOSE_CONSTRUCT_REWRITTEN` to the configuration,
+`WARN_UNDECLARED_DEPENDENCY_SUSPECTED` to dependencies. The storage one opens
+the settings tab scrolled to Storage rather than at its top, which is what
+"here" was promising. `WARN_PATH_ROUTING_INCOMPATIBLE` has no action, because
+the console has no routing screen to send anyone to; a code with no entry
+renders as text, with nothing claiming to be actionable.
+
+## Deploy settings are unreachable
+
+`DeploySettings.tsx` implements R-145 and R-147 — start-then-swap, auto-rollback
+and deploy-on-push, each explaining itself at the point of enabling, as design
+08 §1.3 requires. Nothing imports it. The component exists, is typed, passes
+lint, and no route or tab renders it, so neither setting can be changed from the
+console. Not fixed here; it needs a decision about where it belongs, and the
+settings tab is already four sections long.
+
+## The app-logs endpoint returned Docker's stream framing
+
+`GET /apps/{id}/logs` copies the runtime adapter's reader into the response
+body. The Docker adapter handed back `ContainerLogs` unchanged, and a container
+with no TTY — which is every workload Pando creates — has its output framed: an
+8-byte header before each chunk saying which stream it came from and how long it
+is. So the endpoint answered with control bytes at the start of every line.
+
+Nothing had read it. The console had no screen for an app's own output, the CLI
+has no `logs` command, and the one place in the codebase that already reads
+container output — the trial run's crash capture — strips the framing itself,
+in `trial.go`, which is where the knowledge stayed. The adapter now unpicks the
+frames as they arrive rather than from a buffer, so a followed log stays live,
+and `TestR071_LogsArriveWithoutDockerFraming` asserts that what comes out is
+what the app printed.
+
+## Rolling backups were failing for the whole installation
+
+Found while watching the log of a restart, not through the console: the
+reconciler logs *"could not list apps for rolling backups: cannot get array
+length of a scalar (SQLSTATE 22023)"* on every pass, and the sweep returns
+before taking any (R-210).
+
+`AppSpec.Volumes` is tagged `json:"volumes"` with no omitempty, so an app that
+declares no storage — most of them — stores `"volumes": null`. The query read it
+with `->`, which answers with that JSON null and not SQL NULL, so the
+`coalesce(…, '[]')` guarding the call never fired and `jsonb_array_length` was
+handed a scalar. One such app failed the query, and the query is the whole
+sweep, so no app on the installation was backed up.
+
+The first fix — a `jsonb_typeof(...) = 'array'` test in front of the length
+call — still failed. `AND` promises no evaluation order and the planner reached
+the length call first. The predicate is now a comparison against `'[]'`, which
+is defined for every value that column can hold, and
+`TestR210_AnAppWithNoVolumesDoesNotStopTheRollingBackupSweep` asserts it against
+a real Postgres.

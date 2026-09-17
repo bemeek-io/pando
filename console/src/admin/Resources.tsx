@@ -5,12 +5,13 @@
 // a slot is a hole the app declared (R-130) and a volume is data the app owns
 // and that outlives it (R-204).
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banner, Button, Dialog, Input, Select, StatusIndicator, Table } from '@design';
 
 import { api } from '@api/client';
 import { Quiet, messageOf } from '../install/Accounts';
+import { MEASURE } from '../ui/layout';
 import { Environment } from './Environment';
 import { BuildPlan } from './BuildPlan';
 
@@ -27,13 +28,16 @@ interface Volume {
   handle: string;
 }
 
-export function Resources({ appID }: { appID: string }) {
+export function Resources({ appID, focus }: { appID: string; focus?: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-7)' }}>
       <Slots appID={appID} />
       <Environment appID={appID} />
       <BuildPlan appID={appID} />
-      <Volumes appID={appID} />
+      {/* `focus` is how the persistence warning on Overview lands somebody on
+          the thing it is talking about rather than on this tab's first
+          section. */}
+      <Volumes appID={appID} focus={focus === 'storage'} />
     </div>
   );
 }
@@ -77,7 +81,7 @@ function Slots({ appID }: { appID: string }) {
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
           columns={[
-            { key: 'key', header: 'Variable', width: 'minmax(0,1fr)', mono: true },
+            { key: 'key', header: 'Variable', width: 'minmax(0,26ch)', mono: true },
             {
               key: 'type',
               header: 'Kind',
@@ -87,7 +91,7 @@ function Slots({ appID }: { appID: string }) {
             {
               key: 'resolution',
               header: 'Filled by',
-              width: 'minmax(0,1.4fr)',
+              width: 'minmax(0,28ch)',
               render: (row: Slot) => describe(row),
             },
             {
@@ -244,9 +248,14 @@ function FillSlot({
 
 // --- volumes ---------------------------------------------------------------
 
-function Volumes({ appID }: { appID: string }) {
+function Volumes({ appID, focus }: { appID: string; focus?: boolean }) {
   const queries = useQueryClient();
   const [adding, setAdding] = useState(false);
+  const heading = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (focus) heading.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [focus]);
   const [name, setName] = useState('');
   const [path, setPath] = useState('');
 
@@ -268,7 +277,7 @@ function Volumes({ appID }: { appID: string }) {
   const rows = volumes.data?.volumes ?? [];
 
   return (
-    <section>
+    <section ref={heading} style={{ maxWidth: MEASURE }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Storage</h4>
         <Button variant="ghost" onClick={() => setAdding(true)}>
@@ -287,8 +296,8 @@ function Volumes({ appID }: { appID: string }) {
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
           columns={[
-            { key: 'id', header: 'Reference', width: 'minmax(0,1fr)', mono: true },
-            { key: 'handle', header: 'Where it is', width: 'minmax(0,1.4fr)', mono: true, muted: true },
+            { key: 'id', header: 'Reference', width: 'minmax(0,28ch)', mono: true },
+            { key: 'handle', header: 'Where it is', width: 'minmax(0,38ch)', mono: true, muted: true },
             { key: 'adapter_ref', header: 'Runtime', width: '18ch', mono: true, muted: true },
           ]}
           rows={rows}

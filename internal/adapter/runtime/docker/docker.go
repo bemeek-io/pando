@@ -17,6 +17,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
@@ -639,7 +640,41 @@ func (a *Adapter) Logs(ctx context.Context, ref api.WorkloadRef, opts api.LogOpt
 	if err != nil {
 		return nil, errs.Wrap(errs.AdapterFailed, "Could not read the app's logs.", err)
 	}
-	return rc, nil
+
+	// Docker frames the output of a container that has no TTY: an 8-byte header
+	// before every chunk, saying which stream it came from and how long it is.
+	// Pando creates every workload without one (see apply), so this stream
+	// always carries that framing, and a caller copying it to a response body —
+	// which is exactly what the logs endpoint does — puts control bytes through
+	// the middle of the log somebody is reading.
+	//
+	// trial.go has a strip-it-from-a-buffer version of this for crash capture.
+	// This is the streaming one: stdcopy unpicks the frames as they arrive, so
+	// a followed log stays live.
+	pr, pw := io.Pipe()
+	go func() {
+		_, err := stdcopy.StdCopy(pw, pw, rc)
+		_ = rc.Close()
+		// A closed reader ends the copy with an error that is not one: the
+		// caller hung up, which is how following a log always ends.
+		_ = pw.CloseWithError(err)
+	}()
+	return demuxed{PipeReader: pr, source: rc}, nil
+}
+
+// demuxed is the unframed stream, and closes the framed one behind it.
+//
+// Closing only the pipe would leave the connection to the daemon open and the
+// goroutine copying into a reader nobody is holding — on a followed log, for as
+// long as the container keeps printing.
+type demuxed struct {
+	*io.PipeReader
+	source io.Closer
+}
+
+func (d demuxed) Close() error {
+	_ = d.source.Close()
+	return d.PipeReader.Close()
 }
 
 // Exec opens a session. Core has already checked app.exec, consulted policy, and

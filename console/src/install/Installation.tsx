@@ -39,8 +39,8 @@ export function Installation() {
       <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>Adapters</h4>
       <Table
         columns={[
-          { key: 'ref', header: 'Reference', width: 'minmax(0,1fr)', mono: true },
-          { key: 'kind', header: 'Kind', width: 'minmax(0,1fr)' },
+          { key: 'ref', header: 'Reference', width: 'minmax(0,28ch)', mono: true },
+          { key: 'kind', header: 'Kind', width: 'minmax(0,24ch)' },
           { key: 'category', header: 'Category', width: '16ch', muted: true },
           {
             key: 'healthy',
@@ -213,8 +213,8 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
                 <Table
                   dense
                   columns={[
-                    { key: 'app_name', header: 'App', width: 'minmax(0,1fr)' },
-                    { key: 'message', header: 'What its next deploy will say', width: 'minmax(0,2fr)' },
+                    { key: 'app_name', header: 'App', width: 'minmax(0,24ch)' },
+                    { key: 'message', header: 'What its next deploy will say', width: 'minmax(0,32ch)' },
                     { key: 'code', header: 'Code', width: '28ch', mono: true, muted: true },
                   ]}
                   rows={preview}
@@ -343,11 +343,11 @@ export function Audit() {
             muted: true,
             render: (row: AuditRecord) => new Date(row.occurred_at).toLocaleString(),
           },
-          { key: 'action', header: 'Action', width: 'minmax(0,1fr)', mono: true },
+          { key: 'action', header: 'Action', width: 'minmax(0,26ch)', mono: true },
           {
             key: 'principal_id',
             header: 'Who',
-            width: 'minmax(0,1fr)',
+            width: 'minmax(0,20ch)',
             mono: true,
             // A delegated token records both itself and the person it acted
             // for (R-229). Showing only one of them is how "who did this"
@@ -360,7 +360,7 @@ export function Audit() {
           {
             key: 'target_id',
             header: 'Target',
-            width: 'minmax(0,1fr)',
+            width: 'minmax(0,18ch)',
             mono: true,
             muted: true,
             render: (row: AuditRecord) => row.target_id || row.app_id || '—',
