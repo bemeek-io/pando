@@ -360,3 +360,48 @@ the length call first. The predicate is now a comparison against `'[]'`, which
 is defined for every value that column can hold, and
 `TestR210_AnAppWithNoVolumesDoesNotStopTheRollingBackupSweep` asserts it against
 a real Postgres.
+
+## Light and dark, and who decides
+
+The design system has shipped both themes from the start — `data-theme="dark"`
+on the root, a full second set of color tokens — and nothing in the console ever
+set the attribute, so an installation was paper-white at three in the morning
+whatever the machine was set to.
+
+`ui/theme.ts` applies it, with three states rather than two. "System" is the
+default and is not a third appearance: it is the absence of a choice, and it
+keeps following the machine when the machine changes. Choosing light or dark
+records that choice in `localStorage` and stops following — per browser, because
+the same account on a bright desk and in a dark room wants different answers and
+neither belongs in the database. It is applied at the root of the app, above the
+sign-in page, which is the screen most likely to be met in the dark.
+
+The control is a ghost button naming what it will do — "Dark" in the light
+theme, "Light" in the dark one — because a toggle labelled with its current
+state reads as a statement and gets clicked by people who wanted the opposite.
+It sits in the launcher's header and the console's sidebar footer. Nothing else
+needed changing: every color in the console already comes from a token, and the
+logo is drawn from `--ink` and `--marker` rather than loaded as artwork.
+
+## Smaller things the same session turned up
+
+**A screen's action belongs beside its heading.** Add app was opposite the
+heading, at the far end of the content measure, which on a wide window is a
+long way from the word it belongs to. Both page headers — the apps list and the
+shared install screen — now put the action directly after the title.
+
+**An empty terminal is not a log.** A finished deploy whose output Pando no
+longer holds rendered on Overview as a black box saying "Deploy log ·
+succeeded", with nothing in it and nothing to scroll. It now shows the deploy's
+result and a way to the Logs tab, and the box is drawn only when there is
+something in it.
+
+**An app opens in its own tab.** The launcher's tiles and the address on an
+app's Overview replaced the console with the app, leaving the browser's back
+button as the way back to what you were doing.
+
+**The console does not explain itself.** "This is the running app's own output,
+kept by the runtime — not by Pando — so it goes when the app is redeployed" was
+written for a reader who asked, and the reader of a log has not asked anything.
+Both section preambles on the Logs tab are gone; what is on the screen says what
+it is.

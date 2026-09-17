@@ -32,7 +32,8 @@ import { Resources } from './Resources';
 import { AddApp } from './AddApp';
 import { DeleteApp } from './DeleteApp';
 import type { Route, Section } from '../app/route';
-import { MEASURE } from '../ui/layout';
+import { ThemeToggle } from '../ui/ThemeToggle';
+import { relative } from '../ui/time';
 import { Terminal } from './Terminal';
 
 export function AdminConsole({
@@ -101,9 +102,12 @@ export function AdminConsole({
         header={<Logo size={20} />}
         items={items}
         footer={
-          <Button variant="ghost" onClick={onLeave}>
-            Back to my apps
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <Button variant="ghost" onClick={onLeave}>
+              Back to my apps
+            </Button>
+            <ThemeToggle />
+          </div>
         }
       />
 
@@ -148,19 +152,20 @@ function AppsList({
 
   // The page is not capped — a table's rows and rules run to the edge of the
   // window, which is what a wide display should look like. Its content is: the
-  // columns are sized in `ch` so Status and Updated sit next to the name rather
-  // than two thousand pixels away from it, and this header is capped at the
-  // same measure so Add app stops where the last column does.
+  // columns are sized in `ch`, so Status and Updated sit next to the name
+  // rather than two thousand pixels away from it.
+  //
+  // The action sits beside the heading rather than opposite it. Pushed to the
+  // far end of a measure it is a long way from the word it belongs to, and on
+  // a wide window the eye has to cross the whole page to find out what a screen
+  // offers.
   return (
     <div>
       <header
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
           gap: 'var(--space-4)',
-          font: 'var(--type-body-ui)',
-          maxWidth: MEASURE,
           padding: 'var(--space-6) var(--console-padding) var(--space-4)',
         }}
       >
@@ -333,23 +338,15 @@ function AppScreen({
         style={{
           display: 'flex',
           flexDirection: 'column',
+          alignItems: 'flex-start',
           gap: 'var(--space-3)',
-          font: 'var(--type-body-ui)',
-          maxWidth: MEASURE,
           padding: 'var(--space-6) var(--console-padding) var(--space-4)',
         }}
       >
         <Button variant="ghost" onClick={onBack} style={{ alignSelf: 'flex-start' }}>
           Apps
         </Button>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 'var(--space-4)',
-          }}
-        >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
             <StatusIndicator status={statusSymbol(app.data.state)} label={statusLabel(app.data.state)} />
@@ -377,17 +374,3 @@ function AppScreen({
   );
 }
 
-/** Relative time in tables, with the exact value in a tooltip. */
-function relative(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return iso;
-
-  const seconds = Math.round((Date.now() - then) / 1000);
-  if (seconds < 45) return 'Just now';
-  if (seconds < 90) return '1 min ago';
-  if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
-  if (seconds < 7200) return '1 hour ago';
-  if (seconds < 86400) return `${Math.round(seconds / 3600)} hours ago`;
-  if (seconds < 172800) return 'Yesterday';
-  return `${Math.round(seconds / 86400)} days ago`;
-}

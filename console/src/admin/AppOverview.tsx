@@ -13,7 +13,8 @@ import type { App, Deployment } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { InlineWarning } from '../ui/InlineWarning';
 import { MEASURE } from '../ui/layout';
-import { DeploymentLog } from './Logs';
+import { relative } from '../ui/time';
+import { DeploymentLog, deployLabel, deployStatus } from './Logs';
 
 interface SpecRevision {
   id: string;
@@ -126,7 +127,12 @@ export function AppOverview({
                 routing (R-261). The old "/" + slug was the path-mode answer
                 shown for every app in every mode. */}
             {app.address ? (
-              <a href={app.address}>{app.address.replace(/^\/\//, '')}</a>
+              // Its own tab: an app is a different place from the console, and
+              // opening it over the top leaves the browser's back button as
+              // the only way back to what you were doing.
+              <a href={app.address} target="_blank" rel="noopener noreferrer">
+                {app.address.replace(/^\/\//, '')}
+              </a>
             ) : (
               <span style={{ color: 'var(--ink-secondary)' }}>
                 This app gets an address when it is first deployed.
@@ -147,7 +153,28 @@ export function AppOverview({
         </Card>
 
         {latest ? (
-          <DeploymentLog appID={app.id} deployment={latest} />
+          <DeploymentLog
+            appID={app.id}
+            deployment={latest}
+            // A finished deploy whose output Pando no longer holds gets its
+            // result, not an empty terminal. The log of every deploy, and the
+            // app's own output, are one tab away.
+            fallback={
+              <Card padding="md">
+                <div
+                  style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', alignItems: 'flex-start' }}
+                >
+                  <StatusIndicator
+                    status={deployStatus(latest.status)}
+                    label={`${deployLabel(latest.status)} ${relative(latest.finished_at ?? latest.started_at)}`}
+                  />
+                  <Button variant="ghost" onClick={() => onGo('logs')}>
+                    Open logs
+                  </Button>
+                </div>
+              </Card>
+            }
+          />
         ) : (
           <Card padding="md">
             <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>

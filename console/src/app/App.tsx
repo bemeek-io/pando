@@ -16,12 +16,18 @@
 // no way to send anybody a link to an app.
 
 import { useAdministrative, usePrincipal } from './principal';
+import { useTheme } from '../ui/theme';
 import { useRoute } from './route';
 import { ChangePassword, Login } from '../auth/Login';
 import { Launcher } from '../launcher/Launcher';
 import { AdminConsole } from '../admin/AdminConsole';
 
 export function App() {
+  // Before anything decides what to render: the sign-in page and the error
+  // states are the console too, and they were the screens most likely to be
+  // met in the dark.
+  useTheme();
+
   const principal = usePrincipal();
   const isAdmin = useAdministrative();
   const [route, go] = useRoute();

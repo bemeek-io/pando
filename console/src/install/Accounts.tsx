@@ -16,7 +16,6 @@ import { Button, Dialog, Input, Select, StatusIndicator, Table, Tag } from '@des
 
 import { api, RequestFailed } from '@api/client';
 import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
-import { MEASURE } from '../ui/layout';
 
 interface Account {
   id: string;
@@ -263,19 +262,15 @@ export function Screen({
   children: React.ReactNode;
 }) {
   // Left-aligned and uncapped: the rules under a table run to the window's
-  // edge. The header is capped at the measure so its action stops where the
-  // table's last column does, and carries the table's font because that is
-  // what `ch` is measured in.
+  // edge, and the screen's action sits beside its heading rather than at the
+  // far end of a measure.
   return (
     <div>
       <header
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
           gap: 'var(--space-4)',
-          font: 'var(--type-body-ui)',
-          maxWidth: MEASURE,
           padding: 'var(--space-6) var(--console-padding) var(--space-4)',
         }}
       >
