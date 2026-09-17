@@ -214,3 +214,29 @@ the drift the requirement forbids, one level removed: the spec would be the
 thing that fell out of step. The generated file is committed and CI fails on a
 diff, the same way the traceability index works, so a change to the API's
 surface shows up in review.
+
+## The console could not delete an app, and sat in the left third of the window
+
+Two gaps found by using the console on a wide display.
+
+**Delete.** `DELETE /apps/{id}` has existed since phase 2, with the CLI calling
+it and tests covering both answers to R-204's question. The console had no
+button for it, so the one surface where R-204's *asks* is literally an ask was
+the one surface that could not delete anything. It is now the last section of an
+app's Settings tab, below Storage: a `destructive` button, then a dialog whose
+two radios are the two answers — keep a final backup, or delete the storage too
+— with keeping selected, the same default R-205 gives the CLI. An app with no
+volumes gets a plain confirmation instead, because a backup choice over an empty
+set is a decision that looks consequential and isn't.
+
+The dialog shows the server's message when a delete fails and not its remedy.
+The remedy names `force=true`, which is the CLI's way of answering the question
+the radios already ask; the console answers it with the second radio and says
+so.
+
+**Layout.** The brand spec caps console content at 1280px. The admin console
+left-aligned that cap against the fixed sidebar, so on a 2560px display the
+whole console occupied the left third of the window and the rest was empty
+paper. The content column is now centered in what is left of the window after
+the sidebar. The cap is unchanged — the launcher already centered its own
+column, and this makes the two agree.

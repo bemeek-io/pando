@@ -13,6 +13,7 @@ import { api } from '@api/client';
 import { Quiet, messageOf } from '../install/Accounts';
 import { Environment } from './Environment';
 import { BuildPlan } from './BuildPlan';
+import { DeleteApp } from './DeleteApp';
 
 interface Slot {
   key: string;
@@ -27,13 +28,24 @@ interface Volume {
   handle: string;
 }
 
-export function Resources({ appID }: { appID: string }) {
+export function Resources({
+  appID,
+  appName,
+  onDeleted,
+}: {
+  appID: string;
+  appName: string;
+  onDeleted: () => void;
+}) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-7)' }}>
       <Slots appID={appID} />
       <Environment appID={appID} />
       <BuildPlan appID={appID} />
       <Volumes appID={appID} />
+      {/* Last, and below Storage on purpose: the sentence about what happens to
+          this app's data is read on the way down to the button that does it. */}
+      <DeleteApp appID={appID} appName={appName} onDeleted={onDeleted} />
     </div>
   );
 }

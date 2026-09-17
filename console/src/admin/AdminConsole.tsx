@@ -104,28 +104,36 @@ export function AdminConsole({
         }
       />
 
-      <main style={{ flex: 1, minWidth: 0 }}>
-        {section === 'accounts' && <Accounts />}
-        {section === 'identity' && <Identity canEdit={canManageUsers} />}
-        {section === 'installation' && <Installation />}
-        {section === 'policy' && <Policy canEdit={canManagePolicy} />}
-        {section === 'backups' && <Backups />}
-        {section === 'audit' && <Audit />}
-        {section === 'apps' &&
-          (selectedID ? (
-            <AppScreen
-              appID={selectedID}
-              tab={route.tab}
-              onTab={(tab) => go({ view: 'admin', section: 'apps', appID: selectedID, tab }, true)}
-              onBack={() => setSelectedID(null)}
-            />
-          ) : (
-            // Adding an app opens it. Detection is already running by the time
-            // the request returns, and the next thing to do is look at what it
-            // found — landing back on a list with a new row saying "draft"
-            // leaves the person to work that out.
-            <AppsList rows={rows} onOpen={(app) => setSelectedID(app.id)} onAdded={(app) => setSelectedID(app.id)} />
-          ))}
+      {/* The content column is centered in whatever is left of the window.
+          The brand spec caps console content at 1280px, and left-aligning that
+          cap against a fixed sidebar puts the whole console in the left third
+          of a wide display with nothing in the rest of it. Every screen below
+          carries the same cap of its own; this is the one that decides where
+          the column sits. */}
+      <main style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center' }}>
+        <div style={{ flex: 1, minWidth: 0, maxWidth: 'var(--console-max)' }}>
+          {section === 'accounts' && <Accounts />}
+          {section === 'identity' && <Identity canEdit={canManageUsers} />}
+          {section === 'installation' && <Installation />}
+          {section === 'policy' && <Policy canEdit={canManagePolicy} />}
+          {section === 'backups' && <Backups />}
+          {section === 'audit' && <Audit />}
+          {section === 'apps' &&
+            (selectedID ? (
+              <AppScreen
+                appID={selectedID}
+                tab={route.tab}
+                onTab={(tab) => go({ view: 'admin', section: 'apps', appID: selectedID, tab }, true)}
+                onBack={() => setSelectedID(null)}
+              />
+            ) : (
+              // Adding an app opens it. Detection is already running by the time
+              // the request returns, and the next thing to do is look at what it
+              // found — landing back on a list with a new row saying "draft"
+              // leaves the person to work that out.
+              <AppsList rows={rows} onOpen={(app) => setSelectedID(app.id)} onAdded={(app) => setSelectedID(app.id)} />
+            ))}
+        </div>
       </main>
     </div>
   );
@@ -313,7 +321,9 @@ function AppScreen({
         {tab === 'detection' && <DetectionReview appID={app.data.id} reviewed={reviewed} />}
         {tab === 'sharing' && <Sharing appID={app.data.id} appName={app.data.name} />}
         {tab === 'overview' && <AppOverview app={app.data} />}
-        {tab === 'resources' && <Resources appID={app.data.id} />}
+        {tab === 'resources' && (
+          <Resources appID={app.data.id} appName={app.data.name} onDeleted={onBack} />
+        )}
         {tab === 'terminal' && <Terminal appID={app.data.id} />}
       </div>
     </div>

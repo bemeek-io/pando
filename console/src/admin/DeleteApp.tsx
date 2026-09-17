@@ -1,0 +1,148 @@
+// Deleting an app (R-204, R-205).
+//
+// The console is the interactive surface, so this is where R-204's question is
+// actually asked: keep a final backup of the app's storage, or discard it. The
+// API takes the answer as a query parameter and refuses to choose on the
+// caller's behalf; the CLI answers with a flag, this asks a person.
+//
+// The question is only worth asking when there is storage. An app that keeps
+// nothing gets a plain confirmation, because a backup choice over an empty set
+// is a decision that looks consequential and isn't.
+//
+// Nothing here checks a verb. `app.delete` is per-app and is not in any payload
+// the console holds (`GET /me` carries install verbs only), so this follows the
+// rest of the app screen: the action is offered and the server refuses it.
+
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Banner, Button, Dialog, Radio } from '@design';
+
+import { api } from '@api/client';
+import { Quiet, messageOf } from '../install/Accounts';
+import { deletePath, type StorageDecision } from './delete-app';
+
+export function DeleteApp({
+  appID,
+  appName,
+  onDeleted,
+}: {
+  appID: string;
+  appName: string;
+  onDeleted: () => void;
+}) {
+  const queries = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [keepBackup, setKeepBackup] = useState(true);
+
+  // The same query key the Storage section uses, so opening this screen asks
+  // once and both parts of it agree about what the app keeps.
+  const volumes = useQuery({
+    queryKey: ['volumes', appID],
+    queryFn: () => api.get<{ volumes: Array<{ id: string }> | null }>(`/apps/${appID}/volumes`),
+  });
+
+  const hasStorage = (volumes.data?.volumes ?? []).length > 0;
+  const decision: StorageDecision = !hasStorage ? 'none' : keepBackup ? 'backup' : 'discard';
+
+  const remove = useMutation({
+    mutationFn: () => api.del(deletePath(appID, decision)),
+    onSuccess: () => {
+      // Exact, then remove. `['apps', appID]` sits under the `['apps']` prefix,
+      // so a plain invalidate refetches the app that was just deleted and puts
+      // a 404 on the screen on the way out of it.
+      void queries.invalidateQueries({ queryKey: ['apps'], exact: true });
+      queries.removeQueries({ queryKey: ['apps', appID] });
+      onDeleted();
+    },
+  });
+
+  return (
+    <section>
+      <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Delete this app</h4>
+      <Quiet>
+        Deleting stops this app and removes it from Pando. Its storage is backed up first unless you
+        say otherwise, and the backup is kept until you discard it.
+      </Quiet>
+
+      <div style={{ marginTop: 'var(--space-4)' }}>
+        <Button variant="destructive" onClick={() => setOpen(true)}>
+          Delete app
+        </Button>
+      </div>
+
+      {open && (
+        <Dialog
+          open
+          onClose={() => setOpen(false)}
+          title={`Delete ${appName}`}
+          description="This stops the app and removes it from Pando. It can’t be undone."
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={remove.isPending}
+                onClick={() => remove.mutate()}
+              >
+                {remove.isPending ? 'Deleting' : 'Delete app'}
+              </Button>
+            </>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            {hasStorage ? (
+              // R-204 in the one place it is decided. Two options, both stated,
+              // with the keeping one selected — the same default the CLI takes
+              // (R-205), so the two surfaces do not disagree about what happens
+              // when nobody thinks about it.
+              <>
+                <Radio
+                  name="app-storage"
+                  value="backup"
+                  checked={keepBackup}
+                  onChange={() => setKeepBackup(true)}
+                  label="Keep a final backup of its storage"
+                  description="Kept until you discard it. It doesn’t age out."
+                />
+                <Radio
+                  name="app-storage"
+                  value="discard"
+                  checked={!keepBackup}
+                  onChange={() => setKeepBackup(false)}
+                  label="Delete its storage too"
+                  description="The data goes with the app and can’t be recovered."
+                />
+              </>
+            ) : (
+              <Quiet>This app keeps no storage, so there is nothing to back up.</Quiet>
+            )}
+
+            {remove.isError && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                {/* The message is the server's, verbatim (R-105): a failed
+                    backup means the app has not been deleted, and that is the
+                    sentence a person needs. Its remedy is not shown — it names
+                    `force=true`, which is the CLI's way of answering the
+                    question the radio above already asks. */}
+                <Banner tone="failed">{messageOf(remove.error)}</Banner>
+                {keepBackup && (
+                  <p
+                    style={{
+                      font: 'var(--type-caption)',
+                      color: 'var(--ink-secondary)',
+                      margin: 0,
+                    }}
+                  >
+                    To delete it without a backup, choose &ldquo;Delete its storage too&rdquo;.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </Dialog>
+      )}
+    </section>
+  );
+}
