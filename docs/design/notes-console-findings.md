@@ -539,3 +539,23 @@ set has ten glyphs and none of them is a shield, so `ScoreBadge` carries the
 path at the brand's 1.5px stroke, filled with its own status tint. When a shield
 is added upstream this becomes an `<Icon name="shield">` and nothing else
 changes — the stroke weight and both colors are the system's already.
+
+## The policy screen is sections now, and covers the whole document
+
+A flat column of switches was fine at four settings and stopped being fine at
+nine. It is five sections separated by rules — where apps come from, who can
+reach them, isolation and egress, tokens and agents, security scanning, data and
+destruction — each with a line saying which question its controls answer. Rules
+rather than cards, which is the system's own answer for settings on one page.
+
+Grouping it turned up the larger problem: the screen carried nine of the
+document's fourteen fields. An installation could not set its isolation floors,
+its egress allowlist, its token lifetime cap, the verbs an agent's token may not
+use, or its log disk budget without calling the API by hand — which is R-261's
+gap in the other direction, a capability the API has and a client does not. All
+five are there now.
+
+One bug fell out of it: `min_build_isolation` and `min_runtime_isolation` were
+typed `string` in the console and are ordered integers on the wire (R-114, gaps
+of ten so a class can be inserted without a migration). Nothing had rendered
+them, so nothing had noticed.
