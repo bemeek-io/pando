@@ -84,6 +84,10 @@ var routeDocs = []reference.Route{
 	{Method: "DELETE", Path: "/api/v1/apps/{appID}/secrets/{key}", Group: "Secrets", Summary: "Remove a secret.", Verb: string(authz.AppSecretsWrite)},
 	{Method: "GET", Path: "/api/v1/apps/{appID}/secrets/{key}/value", Group: "Secrets", Summary: "Read one secret's value. Its own verb, separate from managing the app, and audited every time (R-083).", Verb: string(authz.AppSecretsRead)},
 
+	// --- security ---------------------------------------------------------
+	{Method: "GET", Path: "/api/v1/apps/{appID}/security", Group: "Security", Summary: "The app's security score, what it was taken from, and the findings behind it (R-310).", Verb: string(authz.AppView)},
+	{Method: "POST", Path: "/api/v1/apps/{appID}/security/scan", Group: "Security", Summary: "Scan the app now. A write, not a refresh: the score decides whether the next deploy is allowed (R-312, R-314).", Verb: string(authz.AppDeploy)},
+
 	// --- sharing ----------------------------------------------------------
 	{Method: "GET", Path: "/api/v1/apps/{appID}/grants", Group: "Sharing", Summary: "Who can reach this app, and who can administer it — two planes, listed separately (R-070, R-071).", Verb: string(authz.AppView)},
 	{Method: "POST", Path: "/api/v1/apps/{appID}/grants", Group: "Sharing", Summary: "Share the app with a user, a group, a token, or with everyone. The anonymous grant is a real row, refused where host policy forbids it (R-075, R-076).", Verb: string(authz.AppGrantsManage)},

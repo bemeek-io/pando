@@ -55,10 +55,15 @@ type Server struct {
 	Planner     *planner.Planner
 	Allocations *state.Allocations
 	Deployments *state.Deployments
-	Deployer    *deploy.Runner
-	Logs        *deploy.LogStore
-	Secrets     *state.Secrets
-	Detections  *state.Detections
+
+	// Security scores apps and answers where one stands (R-310). Nil on an
+	// installation with no scanner, where the endpoints say so rather than
+	// returning a zero.
+	Security   Security
+	Deployer   *deploy.Runner
+	Logs       *deploy.LogStore
+	Secrets    *state.Secrets
+	Detections *state.Detections
 
 	// Detector runs detection for an app. Nil on an install with no builder or
 	// runtime configured, in which case the detection endpoints say so rather
@@ -372,6 +377,12 @@ func (s *Server) Routes() http.Handler {
 
 				// Slots and volumes: first-class objects in R-030 that had no
 				// way to be reached.
+				// The security score (R-310). Reading it is app.view;
+				// asking for a new one is app.deploy, because a scan changes
+				// what the next deploy will do.
+				r.Get("/security", s.handleAppSecurity)
+				r.Post("/security/scan", s.handleScanApp)
+
 				r.Get("/slots", s.handleListSlots)
 				r.Put("/slots/{key}", s.handleSetSlot)
 				r.Get("/volumes", s.handleListVolumes)

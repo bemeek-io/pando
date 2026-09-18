@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bemeek-io/pando/internal/core/policy"
+	"github.com/bemeek-io/pando/internal/core/security"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/detect"
@@ -57,6 +59,12 @@ var exported = []any{
 	// documentation of the API rather than the API.
 	reference.Document{},
 	state.Token{},
+
+	// The security score (R-310). The console renders the report the API
+	// serves, and a hand-written interface for it would drift the moment a
+	// finding gains a field.
+	security.Report{},
+	policy.Document{},
 }
 
 func main() {

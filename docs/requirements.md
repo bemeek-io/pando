@@ -13,7 +13,7 @@ Each requirement is tagged so its authority is unambiguous.
 |---|---|
 | **[D]** | Decided. Settled in design discussion. Changing it changes the product. |
 | **[P]** | Proposed. A default filled in to make the system buildable. Override freely. |
-| **[O]** | Open. Explicitly unresolved; listed in §23. |
+| **[O]** | Open. Explicitly unresolved; listed in §24. |
 | **[V1]** | In the first release. |
 | **[LATER]** | Designed for, deliberately deferred. |
 
@@ -687,7 +687,61 @@ assertion. A `Destination` interface would have had to grow one anyway, under a 
 
 ---
 
-## 23. Open Decisions
+## 23. Security Scanning
+
+**R-310 [D]** **Every app has a security score: a whole number from 0 to 100.** It is Pando's answer
+to "is this app safe to run here", in one number a non-technical deployer can act on (R-005), with
+the findings behind it available to anyone who can view the app.
+
+**R-311 [D]** The score comes from **scanning what the app actually deploys** — the image that was
+built and the source it was built from — not from a questionnaire and not from the repository's
+reputation.
+
+**R-312 [D]** **An app is scanned whenever what it runs changes**, which means on every deploy, and
+**on demand** from the app's settings at any time. A score describes a specific spec revision and
+the image built from it.
+
+**R-313 [P]** **The score is derived from findings by severity**, starting at 100 and deducting per
+finding: critical 25, high 10, medium 3, low 1, floored at 0. The weights are a proposal — the
+property that matters is that one critical finding cannot hide behind fifty low ones, and that the
+number is stable enough to set a threshold against.
+
+**R-314 [D]** **Host policy may set a minimum score, 0 to 100.** Below it, **a deploy is refused at
+plan time** with a `PLAN_*` error naming the score, the threshold and the findings that cost the
+most — the same contract as every other plan-time refusal (R-024, R-132): fail before anything is
+created, and say what to do.
+
+**R-315 [D]** **An app that is already running when it falls below the threshold is not stopped on
+the spot.** It is marked insecure, warned about in the console wherever it appears, and its owner is
+notified. A running app is somebody's working service, and a policy change or a newly published CVE
+is not a reason to take it away without warning.
+
+**R-316 [D]** **Host policy may say that insecure apps are stopped**, with a **grace period** stated
+in the policy. The grace starts when the app is first found below the threshold, and the owner is
+told at that moment what will happen and when. Stopping is `desired_state = stopped`, which is
+reversible and survives a restart — never a delete, and never a change to the app's configuration.
+
+**R-317 [D]** **Scanning is an adapter category** (§18). Pando does not implement a scanner; it
+translates one's findings into the score and the policy decision. An installation with no scanner
+adapter configured has no scores, and a threshold set on it is inert and says so — a policy that
+silently blocks every deploy because a component is missing is worse than one that is visibly off.
+
+**R-318 [P]** **A scanner that fails does not block a deploy.** The previous score stands, the
+failure is recorded and shown, and the app is not treated as insecure because Pando could not look.
+An app that has *never* been scanned while a threshold is set is refused, with the remedy naming the
+scan — the difference is between "we know nothing" and "we know it was fine and cannot check today".
+
+**R-319 [D]** **Scans, score changes, policy-driven warnings and policy-driven stops are audited**
+(R-227), with the score, the threshold and the scanner recorded. "Why did my app stop" must be
+answerable from the audit log alone.
+
+**R-320 [P]** The score is **not** shown as a grade, a badge, or a color alone. It is a number and a
+sentence about what is behind it, in the console's own status vocabulary — a red pill saying "F"
+tells a deployer nothing they can act on.
+
+---
+
+## 24. Open Decisions
 
 | ID | Question | Notes |
 |---|---|---|
@@ -701,10 +755,12 @@ assertion. A `Destination` interface would have had to grow one anyway, under a 
 | **O-8** | ~~Runtime adapter swap under a running app~~ | **Resolved.** Neither: a destructive spec change with the existing keep-or-discard volume flow. R-257, design 01 §4. |
 | **O-9** | ~~Share notifications~~ | **Resolved.** No message; the launcher tile is the notification. R-266, design 08 §1.1. |
 | **O-10** | ~~Retroactive policy application~~ | **Resolved.** Running apps are untouched; the next deploy fails at plan time with `POLICY_*`. Report now, block on next deploy. Design 05 §3. |
+| **O-19** | What "bad code practice" covers | The first scanner reports vulnerable dependencies, leaked secrets and misconfiguration. Static analysis of the app's own code — a different class of tool, per-language, and noisy — is not in the score yet. R-311, design 09 §2. |
+| **O-20** | Whether a score ages | A scan from three weeks ago describes three-week-old vulnerability data, and nothing rescans an app that has not been deployed since. A scheduled rescan is the obvious answer and needs a decision about what it costs on a small host. Design 09 §5. |
 
 ---
 
-## 24. v1 Scope
+## 25. v1 Scope
 
 Confirmed for the first release:
 
@@ -726,7 +782,7 @@ Explicitly deferred: per-user instances, SCIM, external identity adapters, priva
 
 ---
 
-## 25. Licensing and Governance
+## 26. Licensing and Governance
 
 **R-300 [D]** **AGPL, dual-licensed with commercial exceptions available.** All functionality is available to everyone under the AGPL; nothing is paywalled. Companies that cannot accept AGPL terms purchase an exception. What is sold is a license, never a feature.
 

@@ -43,6 +43,7 @@ var meanings = map[Code]string{
 	PlanCapabilityUnsupported:    "The spec asks for something the chosen adapter does not do (R-254).",
 	PlanAdapterNotConfigured:     "The spec names an adapter this installation does not have.",
 	PlanComposeConstructRejected: "The compose file uses a construct Pando will not translate (R-099).",
+	PlanSecurityBelowThreshold:   "This installation requires a security score, and this app is below it or has never been scanned (R-314).",
 
 	StateInvalid:                "The object is in a state this action does not apply to.",
 	StateBackupDecisionRequired: "The app has storage and the request did not say whether to keep a final backup of it (R-204, R-205).",

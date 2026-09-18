@@ -34,6 +34,9 @@ const (
 	IdentityAdpt Kind = "idp"
 	Request      Kind = "req"
 
+	// Scan is a security scan of one spec revision (R-310).
+	Scan Kind = "scan"
+
 	// Adapter configs are prefixed by category, so a log line naming one says
 	// which kind of adapter it is (design 02 §2.5).
 	AdapterRuntime  Kind = "rt"
@@ -42,6 +45,7 @@ const (
 	AdapterSecrets  Kind = "sek"
 	AdapterServices Kind = "svcs"
 	AdapterNotify   Kind = "ntf"
+	AdapterScanner  Kind = "scn"
 )
 
 const sep = "_"

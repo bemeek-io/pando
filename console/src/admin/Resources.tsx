@@ -13,6 +13,7 @@ import { api } from '@api/client';
 import { Quiet, messageOf } from '../install/Accounts';
 import { MEASURE } from '../ui/layout';
 import { Environment } from './Environment';
+import { Security } from './Security';
 import { BuildPlan } from './BuildPlan';
 
 interface Slot {
@@ -38,6 +39,7 @@ export function Resources({ appID, focus }: { appID: string; focus?: string }) {
           the thing it is talking about rather than on this tab's first
           section. */}
       <Volumes appID={appID} focus={focus === 'storage'} />
+      <Security appID={appID} />
     </div>
   );
 }

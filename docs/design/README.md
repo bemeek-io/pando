@@ -20,6 +20,7 @@ Tags carry the same meaning throughout: **[D]** decided, **[P]** proposed, **[O]
 | 06 | `06-authorization-and-proxy.md` | Evaluation order, the proxy request path, assertion minting |
 | 07 | `07-sequences.md` | Four end-to-end flows = integration acceptance criteria |
 | 08 | `08-console-and-plan.md` | Console architecture, build order, risk register |
+| 09 | `09-security-scanning.md` | The security score: the scanner adapter, the arithmetic, and the two places policy enforces it |
 
 ## Reading order
 

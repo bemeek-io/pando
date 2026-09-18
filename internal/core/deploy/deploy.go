@@ -17,7 +17,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/planner"
+	"github.com/bemeek-io/pando/internal/core/security"
 	"github.com/bemeek-io/pando/internal/core/source"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
@@ -71,6 +73,11 @@ type Runner struct {
 	// not something every Runner caller should be able to hand in a stub for.
 	secretStore *state.Secrets
 
+	// security scores what was built, before it is applied (R-312, R-314).
+	// Nil on an installation with no scanner, where nothing is scored and
+	// nothing is enforced.
+	security Security
+
 	// ProxyUpstream is where routing adapters must send traffic (R-023). It is
 	// Pando's proxy, always, and it is passed to every Ensure so that no adapter
 	// has to work it out.
@@ -110,6 +117,24 @@ func NewRunner(registry *api.Registry, p *planner.Planner, apps *state.Apps, dep
 		secrets: secrets, reconciles: reconciles, logs: logs, volumes: volumes,
 		ProxyUpstream: proxyUpstream,
 	}
+}
+
+// WithSecurity enables the security score (R-310 – R-314).
+//
+// Optional in the same way WithServices is: a Runner without it deploys exactly
+// as before. An installation with no scanner configured has no scores and no
+// threshold to enforce, which is the shipped posture (R-317).
+func (r *Runner) WithSecurity(s Security) *Runner {
+	r.security = s
+	return r
+}
+
+// Security is what a deploy needs from the security service, narrowed to two
+// calls so the deploy path cannot reach for anything else.
+type Security interface {
+	Scan(ctx context.Context, req api.ScanRequest, principal audit.Event) (state.Scan, error)
+	Allows(ctx context.Context, appID, specID string) (security.Standing, error)
+	Configured() (string, bool)
 }
 
 // WithServices enables provisioned slots (R-131).
@@ -200,6 +225,22 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 			return err
 		}
 		image = built
+	}
+
+	// Step 10: scan what was built, and refuse to apply it if this
+	// installation's threshold says so (R-312, R-314).
+	//
+	// Here rather than before the build because the image is what there is to
+	// look at, and before `applying` because a refusal must leave the running
+	// app untouched — the same contract a failed build has (R-146).
+	if err := r.scan(ctx, dep, appSpec, image, checkout.Dir, sink); err != nil {
+		fmt.Fprintf(sink, "\n!! %s\n", messageOf(err))
+		if detail := detailOf(err); detail != "" {
+			fmt.Fprintf(sink, "   %s\n", detail)
+		}
+		fmt.Fprintf(sink, "   The running version of this app was not touched.\n")
+		_ = r.deploys.Finish(ctx, dep.ID, state.DeployFailed, string(errs.CodeOf(err)), messageOf(err))
+		return err
 	}
 
 	if err := r.deploys.SetStatus(ctx, dep.ID, state.DeployApplying); err != nil {

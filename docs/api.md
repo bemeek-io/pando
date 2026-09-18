@@ -113,6 +113,13 @@ one verb says nothing about another (R-082).
 | `DELETE /api/v1/apps/{appID}/secrets/{key}` | `app.secrets.write` | Remove a secret. |
 | `GET /api/v1/apps/{appID}/secrets/{key}/value` | `app.secrets.read` | Read one secret's value. Its own verb, separate from managing the app, and audited every time (R-083). |
 
+### Security
+
+| Endpoint | Verb | What it does |
+| --- | --- | --- |
+| `GET /api/v1/apps/{appID}/security` | `app.view` | The app's security score, what it was taken from, and the findings behind it (R-310). |
+| `POST /api/v1/apps/{appID}/security/scan` | `app.deploy` | Scan the app now. A write, not a refresh: the score decides whether the next deploy is allowed (R-312, R-314). |
+
 ### Sharing
 
 | Endpoint | Verb | What it does |
@@ -193,6 +200,7 @@ that finds the log line. Branch on the code; the message may be reworded.
 | `PLAN_CAPABILITY_UNSUPPORTED` | 409 | The spec asks for something the chosen adapter does not do (R-254). |
 | `PLAN_COMPOSE_CONSTRUCT_REJECTED` | 409 | The compose file uses a construct Pando will not translate (R-099). |
 | `PLAN_NO_ADAPTER_MEETS_POLICY` | 409 | No configured adapter can satisfy this spec under host policy (R-024, R-114). |
+| `PLAN_SECURITY_BELOW_THRESHOLD` | 409 | This installation requires a security score, and this app is below it or has never been scanned (R-314). |
 | `PLAN_SLOT_UNFILLED` | 409 | A required dependency has nothing filling it, so the deploy would start an app that cannot connect (R-132). |
 | `STATE_BACKUP_DECISION_REQUIRED` | 409 | The app has storage and the request did not say whether to keep a final backup of it (R-204, R-205). |
 | `STATE_INVALID` | 409 | The object is in a state this action does not apply to. |

@@ -190,3 +190,29 @@ func (d *Deployments) SetImageRef(ctx context.Context, deploymentID, imageRef, d
 	}
 	return nil
 }
+
+// LastImage returns the image the app's newest successful deploy shipped.
+//
+// What a rescan looks at (R-312): the image that is running, not one derived
+// from the app's name. Empty for an app that has never deployed, or one whose
+// deploys never carried an image — an app that runs somebody else's published
+// image has one, and an app that has never been built does not.
+func (d *Deployments) LastImage(ctx context.Context, appID string) (string, error) {
+	var ref *string
+	err := d.db.QueryRow(ctx, `
+		SELECT image_ref
+		FROM deployments
+		WHERE app_id = $1 AND status = $2 AND image_ref IS NOT NULL
+		ORDER BY started_at DESC
+		LIMIT 1`, appID, DeploySucceeded).Scan(&ref)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", errs.Wrap(errs.Internal, "Could not read the app's deploys.", err)
+	}
+	if ref == nil {
+		return "", nil
+	}
+	return *ref, nil
+}

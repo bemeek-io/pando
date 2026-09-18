@@ -91,6 +91,11 @@ interface PolicyDoc {
   max_token_lifetime_days?: number;
   min_build_isolation?: string;
   min_runtime_isolation?: string;
+
+  // The security score (R-314 – R-316).
+  min_security_score?: number;
+  insecure_action?: string;
+  insecure_grace_hours?: number;
 }
 
 interface Violation {
@@ -279,6 +284,46 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
           }
         />
 
+        {/* The security score (R-314 – R-316). The consequence is written at
+            the point of setting it, not in a tooltip: this is the setting that
+            can stop somebody's working service. */}
+        <Input
+          label="Minimum security score"
+          type="number"
+          disabled={!canEdit}
+          value={String(current.min_security_score ?? 0)}
+          helper="0 to 100. Zero is off. An app below this is refused at deploy, with the findings that cost it the most."
+          onChange={(e) => edit({ min_security_score: clamp(Number(e.target.value)) })}
+        />
+
+        {(current.min_security_score ?? 0) > 0 && (
+          <>
+            <Switch
+              checked={current.insecure_action === 'stop'}
+              disabled={!canEdit}
+              label="Stop apps that fall below it while running"
+              // R-315: a policy change or a newly published CVE is not a
+              // reason to take a working service away without notice, so this
+              // is opt-in and grace comes with it.
+              description="An app that is already running is never stopped on the spot. Its owner is told, and the grace period below starts."
+              onChange={(e) => edit({ insecure_action: e.target.checked ? 'stop' : 'warn' })}
+            />
+
+            {current.insecure_action === 'stop' && (
+              <Input
+                label="Grace period, in hours"
+                type="number"
+                disabled={!canEdit}
+                value={String(current.insecure_grace_hours ?? 24)}
+                helper="How long an app has after it is first found below the score. The deadline is in the message its owner gets."
+                onChange={(e) =>
+                  edit({ insecure_grace_hours: Math.max(1, Number(e.target.value) || 24) })
+                }
+              />
+            )}
+          </>
+        )}
+
         {current.disabled_verbs && current.disabled_verbs.length > 0 && (
           <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
             {current.disabled_verbs.map((v) => (
@@ -291,6 +336,13 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
       </div>
     </Screen>
   );
+}
+
+/** 0 to 100, because a threshold outside it is a threshold nothing can meet. */
+function clamp(n: number): number {
+  if (Number.isNaN(n) || n < 0) return 0;
+  if (n > 100) return 100;
+  return Math.round(n);
 }
 
 interface AuditRecord {

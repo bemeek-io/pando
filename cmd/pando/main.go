@@ -27,6 +27,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/routing/loopback"
 	"github.com/bemeek-io/pando/internal/adapter/routing/traefik"
 	dockerruntime "github.com/bemeek-io/pando/internal/adapter/runtime/docker"
+	trivyscanner "github.com/bemeek-io/pando/internal/adapter/scanner/trivy"
 	secretslocal "github.com/bemeek-io/pando/internal/adapter/secrets/local"
 	servicesdocker "github.com/bemeek-io/pando/internal/adapter/services/docker"
 	"github.com/bemeek-io/pando/internal/cli"
@@ -43,6 +44,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/planner"
 	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
 	"github.com/bemeek-io/pando/internal/core/reconciler"
+	"github.com/bemeek-io/pando/internal/core/security"
 	"github.com/bemeek-io/pando/internal/core/source"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
@@ -304,8 +306,22 @@ func serve(ctx context.Context, configPath string) error {
 		proxyUpstream = "http://pando:8080"
 	}
 	reconciles := state.NewReconciles(db)
+	// The security score (R-310). One service, three readers: the deploy path
+	// scores what it built, the API serves the number, and the GC places every
+	// app against the threshold.
+	scans := state.NewScans(db)
+	securityService := &security.Service{
+		Scans:       scans,
+		Deployments: deployments,
+		Registry:    registry,
+		Policy:      hostPolicy,
+		Auditor:     auditor,
+		Logger:      logger,
+	}
+
 	deployer := deploy.NewRunner(registry, appPlanner, apps, deployments, secrets, reconciles, logStore, volumes, proxyUpstream).
-		WithServices(state.NewServices(db), secrets)
+		WithServices(state.NewServices(db), secrets).
+		WithSecurity(securityService)
 
 	// Detection (Sequence A). Every detector bids; the runtime supplies the
 	// trial run (R-097), and a registry probe would supply R-094's top tier.
@@ -408,6 +424,7 @@ func serve(ctx context.Context, configPath string) error {
 	// app's own listener falls back to for Pando's reserved path (R-172).
 	apiHandler := (&httpapi.Server{
 		Logger:   logger,
+		Security: securityService,
 		DB:       db,
 		Identity: identity,
 		Users:    users,
@@ -601,6 +618,14 @@ func serve(ctx context.Context, configPath string) error {
 		Backups:      backups,
 		Backup:       backupService,
 		BundleSource: bundleSource,
+
+		// The security pass (R-315, R-316): mark, warn, and stop when the
+		// grace has run out. Inert until an administrator sets a threshold.
+		Security:      securityService,
+		SecurityState: scans,
+		PolicyStore:   hostPolicy,
+		Desired:       apps,
+		Notifier:      securityNotifier{notifications},
 	}).Run(loopCtx)
 
 	errCh := make(chan error, 1)
@@ -662,6 +687,8 @@ func registerAdapters(ctx context.Context, store *state.Adapters, notifications 
 			adapter = servicesdocker.New()
 		case c.Category == string(adapterapi.CategoryRouting) && c.Kind == traefik.Kind:
 			adapter = traefik.New()
+		case c.Category == string(adapterapi.CategoryScanner) && c.Kind == trivyscanner.Kind:
+			adapter = trivyscanner.New()
 		case c.Category == string(adapterapi.CategoryNotify) && c.Kind == notifyconsole.Kind:
 			// The sink is supplied by core. The adapter stores nothing itself,
 			// which is R-027 — an adapter never touches state.
@@ -743,6 +770,13 @@ func seedDefaultAdapters(ctx context.Context, store *state.Adapters) error {
 		// message waits in Pando for the next time the recipient looks.
 		{ID: "ntf_console", Category: string(adapterapi.CategoryNotify), Kind: notifyconsole.Kind,
 			Name: "In the console", IsDefault: true, Enabled: true},
+
+		// The security score (R-310). Seeded on, because a score nobody has is
+		// a score nobody acts on — and seeded *permissive*: scanning happens,
+		// the number is shown, and nothing is enforced until an administrator
+		// sets a threshold (R-270, R-314).
+		{ID: "scn_trivy", Category: string(adapterapi.CategoryScanner), Kind: trivyscanner.Kind,
+			Name: "Trivy", IsDefault: true, Enabled: true},
 	} {
 		if filled[c.Category] {
 			continue
@@ -912,4 +946,26 @@ func consoleHandler(logger *zap.Logger) http.Handler {
 		return nil
 	}
 	return handler
+}
+
+// securityNotifier tells an app's owner that it is below the installation's
+// security requirement, and what happens next (R-315).
+//
+// A shim rather than the notify adapter directly: the reconciler's pass knows a
+// user ID and two strings, and nothing about recipients, retention or
+// notification kinds. `policy_violation` is the kind, because that is what this
+// is — the app did not fail and the deploy did not fail.
+type securityNotifier struct{ store *state.Notifications }
+
+func (n securityNotifier) Notify(ctx context.Context, userID, appID, subject, body string) {
+	if n.store == nil {
+		return
+	}
+	_ = n.store.Record(ctx, adapterapi.Notification{
+		Kind:       adapterapi.NotifyPolicyViolation,
+		AppID:      appID,
+		Recipients: []adapterapi.Recipient{{UserID: userID}},
+		Subject:    subject,
+		Body:       body,
+	}, 0)
 }
