@@ -758,3 +758,40 @@ value somebody typed is kept: that is an answer.
 Never a blocker. Which of an app's forty variables actually matter is what the
 trial run is for (R-133, O-4), and a warning that blocks is an error wearing a
 warning's clothes.
+
+## Two databases, and an app connected to neither
+
+`crewmate: DATABASE_URL is required`, on repeat, from an app whose compose file
+set `DATABASE_URL` and whose deploy log said it had provisioned a PostgreSQL.
+Three separate faults, stacked.
+
+**The compose import ran the database and asked Pando for a second one.** A
+`db: image: postgres:16` service became a workload *and* a slot, and the slot
+was resolved `provisioned` — so the deploy started the compose container and
+provisioned a Pando-managed PostgreSQL beside it. Nothing connected the app to
+either: the slot filled no variable, and the app's own `DATABASE_URL` still read
+`postgres://crewmate:${POSTGRES_PASSWORD}@db:5432/crewmate`, interpolated from a
+shell that does not exist here.
+
+A recognized backing service is now the slot and not a workload. Pando
+provisions it, manages its storage, backs it up with the app — and the variables
+whose value pointed at that service are rewired to the slot, so the app is wired
+the way its author wired it. The slot takes the variable's name: `DATABASE_URL`,
+not the invented `DB_URL`, because a name somebody reading the app will
+recognize beats one Pando made up. The compose volume that belonged to the
+dropped container goes with it; the provisioned service brings its own.
+
+**And the app Pando actually deployed was not the compose file at all.** The
+repository has a Dockerfile too. A Dockerfile that declares a port bids 0.95,
+compose bids 0.88, so when the compose file was refused for its single-file bind
+mount, the refusal lost the auction quietly and the app was imported as the
+Dockerfile alone — no database, no second service, and nothing anywhere saying a
+compose file had been read and rejected. A refused compose file now wins the
+auction it would otherwise have lost: it is the author's complete statement of
+what the app is (R-096), and R-099 says the reason is shown, not filed away
+under a reading that discards it.
+
+**The refusal also names a proxy as one.** A mounted config file usually belongs
+to a reverse proxy in front of the app, and under Pando that service has no work
+left to do (R-023). When the image is a known proxy the refusal says so, which
+turns a file somebody has to relocate into a service they can delete.

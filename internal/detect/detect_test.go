@@ -698,12 +698,16 @@ func TestR096_AComposeFileIsImportedNotInterpreted(t *testing.T) {
 	require.Equal(t, spec.BuildCompose, result.Winner.Strategy)
 
 	draft := result.Winner.Draft
-	require.Len(t, draft.Workloads, 2)
 
-	web := draft.Workloads[1]
+	// One workload, not two: the `db` service is a PostgreSQL, which Pando
+	// supplies rather than runs (see TestR131_AComposeDatabaseBecomesTheOneP\
+	// andoProvisions below).
+	require.Len(t, draft.Workloads, 1)
+
+	web := draft.Workloads[0]
 	require.Equal(t, "web", web.Name)
 	require.Equal(t, "nginx:alpine", web.Image)
-	require.Equal(t, []string{"db"}, web.DependsOn, "depends_on ordering is imported")
+	require.Empty(t, web.DependsOn, "nothing to wait for that Pando does not start first")
 
 	require.NotNil(t, web.Health, "healthchecks are imported")
 	require.Equal(t, []string{"curl", "-f", "http://localhost/health"}, web.Health.Command,
@@ -712,12 +716,63 @@ func TestR096_AComposeFileIsImportedNotInterpreted(t *testing.T) {
 	require.Equal(t, 5, web.Health.TimeoutSeconds)
 	require.Equal(t, 3, web.Health.Retries)
 
-	require.Len(t, draft.Volumes, 1)
-	require.Equal(t, "dbdata", draft.Volumes[0].Name)
-	require.Equal(t, spec.VolumeFromCompose, draft.Volumes[0].Declared)
+	// `dbdata` belonged to the database Pando now provisions, and the
+	// provisioned service brings its own storage. An empty volume nothing
+	// writes to is still a volume somebody has to answer for at delete time
+	// (R-204).
+	require.Empty(t, draft.Volumes)
 
 	// R-131: a service running postgres is a dependency the app declares.
 	require.True(t, hasSlot(draft.Slots, spec.SlotPostgres))
+}
+
+// TestR131_AComposeDatabaseBecomesTheOnePandoProvisions asserts R-131.
+//
+// `db: image: postgres:16` says this app needs a PostgreSQL beside it, and
+// `DATABASE_URL: postgres://db:5432/app` says which variable reaches it. Pando
+// provisions the database, fills that variable from it, and does not also run
+// the compose container.
+//
+// Importing both was two databases: the compose one, which the app connected to
+// with whatever password the file interpolated from a shell that does not exist
+// here, and the one Pando provisioned for the slot it had also created. The
+// app's logs were `DATABASE_URL is required`, and the fix for that was
+// nowhere on the screen.
+func TestR131_AComposeDatabaseBecomesTheOnePandoProvisions(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{"compose.yaml": composeStack})
+	require.NoError(t, err)
+
+	draft := result.Winner.Draft
+	for _, w := range draft.Workloads {
+		require.NotEqual(t, "db", w.Name, "Pando runs this one itself")
+	}
+
+	require.Len(t, draft.Slots, 1)
+	slot := draft.Slots[0]
+
+	// Named for the variable the app reads, not for the compose service: a
+	// name somebody will recognize beats one Pando made up.
+	require.Equal(t, "DATABASE_URL", slot.Key)
+	require.Equal(t, spec.SlotPostgres, slot.Type)
+	require.NotNil(t, slot.Resolution)
+	require.Equal(t, spec.ResolutionProvisioned, slot.Resolution.Mode)
+
+	// And the variable is filled from it rather than pointing at a host that
+	// is no longer there.
+	var wired bool
+	for _, e := range draft.Workloads[0].Env {
+		if e.Key != "DATABASE_URL" {
+			continue
+		}
+		wired = true
+		require.Nil(t, e.Value, "the compose literal is gone")
+		require.NotNil(t, e.SlotRef)
+		require.Equal(t, "DATABASE_URL", *e.SlotRef)
+	}
+	require.True(t, wired)
+
+	// Said out loud, because it is a change to how the app runs (R-102).
+	require.True(t, hasWarning(draft.Warnings, spec.WarnComposeConstructRewritten, "DATABASE_URL"))
 }
 
 // The container's port is kept; the host's is replaced by Pando's routing.
@@ -725,7 +780,7 @@ func TestR099_APublishedHostPortIsRewrittenNotHonored(t *testing.T) {
 	result, err := auction().Run(context.Background(), memSource{"compose.yaml": composeStack})
 	require.NoError(t, err)
 
-	web := result.Winner.Draft.Workloads[1]
+	web := result.Winner.Draft.Workloads[0]
 	require.Equal(t, []spec.Port{{Number: 80, Protocol: "http", Source: spec.PortCompose}}, web.Ports,
 		"80 is what the service listens on; 8080 is a host publishing Pando replaces")
 
@@ -780,11 +835,38 @@ func TestR099_ARejectedComposeFileDoesNotSilentlyBecomeABuildpackGuess(t *testin
 		"there is nothing to ask about a compose file that cannot be imported")
 }
 
+// TestR099_ARefusedComposeFileIsNotOutbidByTheDockerfile asserts R-099.
+//
+// A repository with both files bids twice, and the Dockerfile bids higher when
+// it declares a port. So a compose file refused for one construct lost quietly
+// and the app was imported as the Dockerfile alone — losing the database beside
+// it, the variable that reached it, and every other service. The result built,
+// deployed, and logged `DATABASE_URL is required` forever, with nothing on any
+// screen about a compose file or why it had not been used.
+func TestR099_ARefusedComposeFileIsNotOutbidByTheDockerfile(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"Dockerfile": "FROM node:20\nEXPOSE 8080\nCMD [\"node\", \"server.js\"]\n",
+		"compose.yaml": "services:\n  app:\n    build: .\n    privileged: true\n" +
+			"  db:\n    image: postgres:16\n",
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, detect.StatusBlocked, result.Status)
+	require.Equal(t, spec.BuildCompose, result.Winner.Strategy)
+
+	e := errs.As(result.Blocked)
+	require.NotNil(t, e)
+	require.Equal(t, errs.PlanComposeConstructRejected, e.Code)
+	require.Contains(t, e.Message, "privileged")
+}
+
 // A relative bind mount is data until proven otherwise (R-203).
 func TestARelativeBindMountBecomesAManagedVolume(t *testing.T) {
 	result, err := auction().Run(context.Background(), memSource{
-		"compose.yaml": "services:\n  db:\n    image: postgres:16\n" +
-			"    volumes:\n      - ./pgdata:/var/lib/postgresql/data\n",
+		// Not a database: that one is provisioned, and brings its own
+		// storage.
+		"compose.yaml": "services:\n  app:\n    image: nginx\n" +
+			"    volumes:\n      - ./uploads:/var/lib/app/uploads\n",
 	})
 	require.NoError(t, err)
 	require.NotEqual(t, detect.StatusBlocked, result.Status,
@@ -793,8 +875,8 @@ func TestARelativeBindMountBecomesAManagedVolume(t *testing.T) {
 	draft := result.Winner.Draft
 	require.Len(t, draft.Volumes, 1)
 	require.Len(t, draft.Workloads[0].Mounts, 1)
-	require.Equal(t, "/var/lib/postgresql/data", draft.Workloads[0].Mounts[0].Path)
-	require.True(t, hasWarning(draft.Warnings, spec.WarnComposeConstructRewritten, "./pgdata"),
+	require.Equal(t, "/var/lib/app/uploads", draft.Workloads[0].Mounts[0].Path)
+	require.True(t, hasWarning(draft.Warnings, spec.WarnComposeConstructRewritten, "./uploads"),
 		"the rewrite names the path, so the user can see what moved")
 }
 
@@ -832,6 +914,24 @@ func TestR099_ASingleFileBindMountIsRefusedAtImport(t *testing.T) {
 		"the line to change, by name")
 	require.Contains(t, rejected[0]["reason"], "COPY",
 		"and what to do instead, since the file still has to reach the container")
+}
+
+// A proxy in front of the app is doing work Pando does (R-023), so the refusal
+// says so: one of the two ways out is deleting the service.
+func TestR099_ARefusedProxyServiceIsNamedAsOne(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yaml": "services:\n  app:\n    image: nginx\n  proxy:\n    image: caddy:2-alpine\n" +
+			"    volumes:\n      - ./Caddyfile:/etc/caddy/Caddyfile:ro\n",
+		"Caddyfile": ":80 {\n  respond \"ok\"\n}\n",
+	})
+	require.NoError(t, err)
+	require.Equal(t, detect.StatusBlocked, result.Status)
+
+	e := errs.As(result.Blocked)
+	rejected, ok := e.Details["rejected"].([]map[string]any)
+	require.True(t, ok)
+	require.Len(t, rejected, 1)
+	require.Contains(t, rejected[0]["reason"], "Pando is already one")
 }
 
 // The same mount, with no such file in the repository, is the ordinary case:

@@ -580,49 +580,34 @@ func joinContinuations(scanner *bufio.Scanner) []string {
 	return lines
 }
 
-// slotsFromComposeServices turns recognizable backing services into slots.
+// backingService reports whether a compose service is one Pando supplies.
 //
 // A service whose image is postgres or redis is a dependency the app declares,
 // which is exactly what a slot is for (R-131). Anything unrecognized stays a
 // workload — Pando does not guess at what an unfamiliar image is.
-func slotsFromComposeServices(services []string, images map[string]string) []spec.Slot {
+func backingService(service, image string) (spec.SlotType, bool) {
 	known := map[string]spec.SlotType{
 		"postgres": spec.SlotPostgres, "postgis": spec.SlotPostgres,
 		"mysql": spec.SlotMySQL, "mariadb": spec.SlotMySQL,
 		"redis": spec.SlotRedis, "valkey": spec.SlotRedis,
 	}
 
-	var slots []spec.Slot
-	for _, service := range services {
-		image := strings.ToLower(images[service])
-		for prefix, slotType := range known {
-			if !strings.Contains(image, prefix) && !strings.Contains(strings.ToLower(service), prefix) {
-				continue
-			}
-			slots = append(slots, spec.Slot{
-				Key:      strings.ToUpper(service) + "_URL",
-				Type:     slotType,
-				Required: true,
-				Evidence: []string{fmt.Sprintf("compose service %q runs %s", service, orUnknownImage(images[service]))},
+	// Sorted, because two of these can match one service — a `postgres`
+	// service running `mariadb` is nonsense, but map iteration order deciding
+	// which nonsense wins is worse than nonsense.
+	prefixes := make([]string, 0, len(known))
+	for prefix := range known {
+		prefixes = append(prefixes, prefix)
+	}
+	sort.Strings(prefixes)
 
-				// Filled, because the compose file already answered it: it runs
-				// a database in a container beside the app, and "Pando runs one
-				// inside this app" is that same sentence in Pando's vocabulary
-				// (R-131). Leaving it empty turned an app that worked under
-				// `docker compose up` into one that was accepted and then
-				// refused at deploy — asking a question whose answer was in the
-				// file being imported.
-				//
-				// A slot read from a `.env.example` is deliberately not filled
-				// this way: a variable named DATABASE_URL is evidence that the
-				// app wants a database, not that its author meant Pando to run
-				// one (R-133, O-4).
-				Resolution: &spec.Resolution{Mode: spec.ResolutionProvisioned},
-			})
-			break
+	for _, prefix := range prefixes {
+		if strings.Contains(strings.ToLower(image), prefix) ||
+			strings.Contains(strings.ToLower(service), prefix) {
+			return known[prefix], true
 		}
 	}
-	return slots
+	return "", false
 }
 
 var envAssignment = regexp.MustCompile(`^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.*)$`)
