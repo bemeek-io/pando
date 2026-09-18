@@ -144,6 +144,7 @@ export interface Document {
   mcp: (ToolDoc[] | null);
   errors: (CodeDoc[] | null);
   connect: Connect;
+  install: Install;
 }
 
 export interface Token {
@@ -311,6 +312,16 @@ export interface Connect {
   token_env: string;
   login_cmd: string;
   mcp_cmd: string;
+}
+
+export interface Install {
+  repo: string;
+  module: string;
+  homebrew: string;
+  packages: (string[] | null);
+  archive: string;
+  platforms: (string[] | null);
+  in_container: string;
 }
 
 export interface KV {

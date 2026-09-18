@@ -476,3 +476,22 @@ of them reads as one solid block with hairlines through it, and a wrapped row of
 permission tags had nothing between it and the rule underneath. The Table sets a
 minimum row height rather than a height, so the fix is padding on the cell and
 the row grows to fit.
+
+## Installing the CLI, without a second copy of the truth
+
+The reference told people how to connect the CLI and not how to get it. The
+facts are in `.goreleaser.yaml` — a Homebrew cask in `bemeek-io/homebrew-tap`,
+`.deb`, `.rpm` and `.apk` packages, tarballs for four platforms, the module path
+for `go install` — and the server has no release config beside it at runtime, so
+it cannot read them when it serves the page.
+
+They are constants in `internal/reference/install.go`, and
+`TestInstallInstructionsMatchWhatATagPublishes` reads `.goreleaser.yaml` and
+`go.mod` and fails when the two disagree: a renamed tap, a dropped package
+format, an added architecture, a moved module. A second test does the same for
+the README's install section, which is prose and stays prose but contains four
+strings a release can invalidate.
+
+Install instructions are the first thing anybody reads and the last thing anybody
+checks. They are correct the day they are written and nobody notices when they
+stop being, because the person they are wrong for is not on the team.

@@ -7,6 +7,41 @@ Every command here is a wrapper over an endpoint in [the API](api.md). It reads
 repetitively on purpose: a command that did something the API cannot do would be
 a capability the console and MCP could never have (R-261).
 
+## Installing
+
+The CLI is the same binary as the server (R-253), pointed at an installation over
+its API. It goes on your own machine rather than on the host, and everything it
+does can also be done in the console.
+
+**macOS, and Linux with Homebrew:**
+
+```
+brew install bemeek-io/tap/pando
+```
+
+**Debian, Ubuntu, Fedora, Alpine:** each release attaches `.deb`, `.rpm` and `.apk` packages for
+every architecture. From the [releases page](https://github.com/bemeek-io/pando/releases):
+
+```
+sudo apt install ./pando_<version>_<arch>.deb
+```
+
+**Anything else:** plain tarballs, named `pando_<version>_<os>_<arch>.tar.gz`, for `darwin/amd64`, `darwin/arm64`, `linux/amd64` and `linux/arm64`.
+Unpack one and put `pando` on your PATH. Every release is published with a signed
+checksum file; verifying it is described in [releasing.md](releasing.md).
+
+**From source**, with a Go toolchain:
+
+```
+go install github.com/bemeek-io/pando/cmd/pando@latest
+```
+
+**Or install nothing.** A Compose installation already has the binary in it:
+
+```
+docker compose exec pando pando app list
+```
+
 ## Connecting
 
 ```

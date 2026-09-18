@@ -110,7 +110,8 @@ sudo apt install ./pando_<version>_linux_amd64.deb
 ```
 
 The same page has `.rpm` and `.apk` packages, and plain tarballs for macOS and Linux on both
-architectures. To build it from source instead:
+architectures. Every command and flag: [`docs/cli.md`](docs/cli.md). To build it from source
+instead:
 
 ```bash
 go install github.com/bemeek-io/pando/cmd/pando@latest

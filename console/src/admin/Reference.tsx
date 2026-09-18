@@ -90,7 +90,41 @@ function Connect({ doc }: { doc?: Document }) {
       </section>
 
       <section>
-        <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>The CLI</h4>
+        <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>Install the CLI</h4>
+        <Quiet>
+          The same binary as the server, on your machine, talking to this installation over its API.
+        </Quiet>
+        <div style={{ marginTop: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <CodeBlock title="macOS, and Linux with Homebrew" lines={[`brew install ${doc.install.homebrew}`]} prompt />
+          <CodeBlock
+            title={`Debian and Ubuntu — also ${(doc.install.packages ?? [])
+              .filter((p) => p !== 'deb')
+              .map((p) => `.${p}`)
+              .join(' and ')}, from the releases page`}
+            lines={['sudo apt install ./pando_<version>_<arch>.deb']}
+            prompt
+          />
+          <CodeBlock title="From source" lines={[`go install ${doc.install.module}@latest`]} prompt />
+          <CodeBlock
+            title="Or nothing at all — the installation already has it"
+            lines={[`${doc.install.in_container} app list`]}
+            prompt
+          />
+        </div>
+        <div style={{ marginTop: 'var(--space-3)' }}>
+          <Quiet>
+            Tarballs named <code style={{ font: 'var(--type-code-sm)' }}>{doc.install.archive}</code>{' '}
+            are on the{' '}
+            <a href={`${doc.install.repo}/releases`} target="_blank" rel="noopener noreferrer">
+              releases page
+            </a>{' '}
+            for {(doc.install.platforms ?? []).join(', ')}.
+          </Quiet>
+        </div>
+      </section>
+
+      <section>
+        <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>Sign the CLI in</h4>
         <CodeBlock lines={[doc.connect.login_cmd.replace('<server-url>', origin)]} prompt />
         <div style={{ marginTop: 'var(--space-4)' }}>
           <Quiet>

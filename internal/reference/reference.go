@@ -38,6 +38,7 @@ type Document struct {
 	MCP     []mcp.ToolDoc  `json:"mcp"`
 	Errors  []errs.CodeDoc `json:"errors"`
 	Connect Connect        `json:"connect"`
+	Install Install        `json:"install"`
 }
 
 // Connect is how a machine authenticates, named from the constants the code
@@ -127,6 +128,7 @@ func Build(routes []Route) Document {
 			LoginCmd:  "pando login <server-url>",
 			MCPCmd:    "pando mcp",
 		},
+		Install: install(),
 	}
 }
 

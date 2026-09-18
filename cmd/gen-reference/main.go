@@ -100,6 +100,25 @@ func cliDoc(doc reference.Document) string {
 	b.WriteString("Every command here is a wrapper over an endpoint in [the API](api.md). It reads\n")
 	b.WriteString("repetitively on purpose: a command that did something the API cannot do would be\n")
 	b.WriteString("a capability the console and MCP could never have (R-261).\n\n")
+	b.WriteString("## Installing\n\n")
+	b.WriteString("The CLI is the same binary as the server (R-253), pointed at an installation over\n")
+	b.WriteString("its API. It goes on your own machine rather than on the host, and everything it\n")
+	b.WriteString("does can also be done in the console.\n\n")
+	b.WriteString("**macOS, and Linux with Homebrew:**\n\n")
+	b.WriteString("```\nbrew install " + doc.Install.Homebrew + "\n```\n\n")
+	b.WriteString("**Debian, Ubuntu, Fedora, Alpine:** each release attaches " +
+		list(doc.Install.Packages, "`.%s`") + " packages for\n")
+	b.WriteString("every architecture. From the [releases page](" + doc.Install.Repo + "/releases):\n\n")
+	b.WriteString("```\nsudo apt install ./pando_<version>_<arch>.deb\n```\n\n")
+	b.WriteString("**Anything else:** plain tarballs, named `" + doc.Install.Archive + "`, for " +
+		list(doc.Install.Platforms, "`%s`") + ".\n")
+	b.WriteString("Unpack one and put `pando` on your PATH. Every release is published with a signed\n")
+	b.WriteString("checksum file; verifying it is described in [releasing.md](releasing.md).\n\n")
+	b.WriteString("**From source**, with a Go toolchain:\n\n")
+	b.WriteString("```\ngo install " + doc.Install.Module + "@latest\n```\n\n")
+	b.WriteString("**Or install nothing.** A Compose installation already has the binary in it:\n\n")
+	b.WriteString("```\n" + doc.Install.InContainer + " app list\n```\n\n")
+
 	b.WriteString("## Connecting\n\n")
 	b.WriteString("```\n" + strings.Replace(doc.Connect.LoginCmd, "<server-url>", "https://pando.example.com", 1) + "\n```\n\n")
 	b.WriteString("`pando login` stores a delegated token under your home directory, which is right\n")
@@ -203,6 +222,22 @@ func arguments(schema map[string]any) string {
 		out = append(out, "`"+name+"` (optional)")
 	}
 	return strings.Join(out, ", ")
+}
+
+// list renders a slice as prose: "`a`, `b` and `c`".
+func list(items []string, format string) string {
+	quoted := make([]string, 0, len(items))
+	for _, item := range items {
+		quoted = append(quoted, fmt.Sprintf(format, item))
+	}
+	switch len(quoted) {
+	case 0:
+		return ""
+	case 1:
+		return quoted[0]
+	default:
+		return strings.Join(quoted[:len(quoted)-1], ", ") + " and " + quoted[len(quoted)-1]
+	}
 }
 
 func groups(routes []reference.Route) []string {

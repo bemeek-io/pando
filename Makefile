@@ -157,9 +157,20 @@ reference: ## Regenerate docs/api.md, docs/cli.md and docs/mcp.md from the code
 
 .PHONY: reference-check
 reference-check: ## Fail if the generated reference is out of date
-	@$(GO) run ./cmd/gen-reference docs > /dev/null
-	@git diff --exit-code docs/api.md docs/cli.md docs/mcp.md \
-		|| { echo "docs/api.md, docs/cli.md or docs/mcp.md is out of date. Run 'make reference' and commit the result."; exit 1; }
+	@# Generated into a temporary directory and compared, rather than written
+	@# over the checked-in files and diffed against the index: the question is
+	@# whether what is on disk matches what the code produces, which is a
+	@# different question from whether it has been committed yet. Comparing
+	@# against the index failed in any tree where the reference had legitimately
+	@# changed and not yet been committed — which is every tree that just added
+	@# a route.
+	@tmp=$$(mktemp -d); \
+	$(GO) run ./cmd/gen-reference $$tmp > /dev/null; \
+	for f in api.md cli.md mcp.md; do \
+		diff -u docs/$$f $$tmp/$$f > /dev/null \
+			|| { echo "docs/$$f is out of date. Run 'make reference' and commit the result."; rm -rf $$tmp; exit 1; }; \
+	done; \
+	rm -rf $$tmp
 
 .PHONY: requirements-index
 requirements-index: ## Regenerate docs/traceability/requirements-index.md
