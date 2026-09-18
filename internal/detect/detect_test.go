@@ -287,7 +287,7 @@ func TestR021_SlotsComeFromWhatTheRepoDeclares(t *testing.T) {
 func TestO4_UnrecognizedEnvKeysStartOptional(t *testing.T) {
 	result, err := auction().Run(context.Background(), memSource{
 		"package.json": `{"name":"app"}`,
-		".env.example": "DATABASE_URL=\nLOG_LEVEL=info\nFEATURE_X=\nREDIS_URL=\n",
+		".env.example": "DATABASE_URL=\nREDIS_URL=redis://localhost:6379\n",
 	})
 	require.NoError(t, err)
 
@@ -296,11 +296,68 @@ func TestO4_UnrecognizedEnvKeysStartOptional(t *testing.T) {
 		byKey[s.Key] = s
 	}
 
-	require.True(t, byKey["DATABASE_URL"].Required, "a key naming a known service is required")
-	require.True(t, byKey["REDIS_URL"].Required)
-	require.False(t, byKey["LOG_LEVEL"].Required, "a key with a default is not required")
-	require.False(t, byKey["FEATURE_X"].Required,
-		"an unrecognized key starts optional — the trial run promotes it if its absence breaks the app")
+	require.True(t, byKey["DATABASE_URL"].Required, "a dependency the file gives no value for")
+	require.False(t, byKey["REDIS_URL"].Required,
+		"one with a sample value starts optional — the trial run promotes it if its absence breaks the app")
+}
+
+// TestR130_AValueIsNotADependency asserts R-130.
+//
+// A variable in `.env.example` is a hole with a type, and the type says what
+// kind of hole. `REDIS_URL` names a Redis somewhere, which is a dependency:
+// Pando can run one, connect to one, or take a connection string (R-131).
+// `VAPID_PRIVATE_KEY` names a value. There is nothing to connect it to.
+//
+// Every key became a slot, so an app arrived declaring its push-notification
+// keys as dependencies of type unknown, each offering "connect to one that
+// already exists" — and `POSTGRES_PASSWORD` offered to connect a password to a
+// database, because the name contains the word postgres.
+func TestR130_AValueIsNotADependency(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"package.json": `{"name":"app"}`,
+		".env.example": "DATABASE_URL=\n" +
+			"POSTGRES_PASSWORD=changeme\n" +
+			"VAPID_PUBLIC_KEY=\n" +
+			"VAPID_PRIVATE_KEY=\n" +
+			"LOG_LEVEL=info\n" +
+			"UPGRADE_URL=https://example.test/upgrade\n" +
+			"CACHE=redis://localhost:6379\n",
+	})
+	require.NoError(t, err)
+
+	draft := result.Winner.Draft
+
+	slots := map[string]spec.SlotType{}
+	for _, slot := range draft.Slots {
+		slots[slot.Key] = slot.Type
+	}
+	require.Equal(t, map[string]spec.SlotType{
+		"DATABASE_URL": spec.SlotPostgres,
+		// Typed by its value, not its name: a URL scheme is direct evidence.
+		"CACHE": spec.SlotRedis,
+	}, slots)
+
+	// Everything else is a variable, declared with nothing in it, where a
+	// person fills it in.
+	env := map[string]string{}
+	for _, e := range draft.Workloads[0].Env {
+		require.NotNil(t, e.Value)
+		env[e.Key] = *e.Value
+		require.Equal(t, spec.EnvFromDetection, e.Source)
+	}
+	require.Equal(t, map[string]string{
+		"POSTGRES_PASSWORD": "",
+		"VAPID_PUBLIC_KEY":  "",
+		"VAPID_PRIVATE_KEY": "",
+		"LOG_LEVEL":         "",
+		// A URL, and nothing Pando runs. "UPGRADE" contains "PG" and is not a
+		// database.
+		"UPGRADE_URL": "",
+	}, env)
+
+	// The sample value is not carried in: `POSTGRES_PASSWORD=changeme` filled
+	// in is worse than empty, because it looks answered.
+	require.Empty(t, env["POSTGRES_PASSWORD"])
 }
 
 // R-102 at its most tempting: a repository with almost nothing in it.

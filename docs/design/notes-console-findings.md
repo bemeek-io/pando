@@ -694,3 +694,35 @@ compose substitution arrived at the container as its own twenty-four characters.
 They are resolved the same way now. One with no default has no value to resolve
 to: it keeps its spelling and raises a warning naming the variable, because an
 empty string would be an app misconfigured with nothing to show for it (R-102).
+
+## Eleven dependencies, none of which were dependencies
+
+An app's dependencies listed `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and
+`POSTGRES_PASSWORD`, and filling one offered "connect to one that already
+exists" with a box for a connection string. A push-notification key is a value.
+There is nothing to connect it to.
+
+`slotsFromEnvExample` made a slot of every assignment in `.env.example`, typed by
+substring: anything matching a service word got that type, everything else got
+`unknown`. So `POSTGRES_PASSWORD` was a database — it contains the word postgres
+— and a password was offered a connection string. `UPGRADE_URL` would have been
+one too: "UPGRADE" contains "PG".
+
+R-130 already says what to do. A variable is a hole *with a type*, and the type
+comes from the URL scheme in the sample value, the variable name, or a compose
+image name. Read that way it sorts itself: a name types a variable only when the
+name says *connection* — `DATABASE_URL`, `REDIS_URI`, `PG_DSN` — and a value
+types it whenever it carries a scheme Pando knows, so `CACHE=redis://…` is a
+Redis whatever it is called. Words are matched whole rather than as substrings.
+
+Everything else is a variable, and lands on the app's variables declared with
+nothing in it. The sample value is deliberately not carried across:
+`POSTGRES_PASSWORD=changeme` filled in is worse than empty, because it looks
+answered.
+
+`HOST` is not in the connection list, though `POSTGRES_HOST` is a connection
+target in the ordinary sense. An app spelling it that way pairs it with a port, a
+user and a password, and no slot resolution fills four variables from one answer.
+
+Apps pinned before this still carry unknown-typed slots. The console reads one as
+what it is — "a value" — and its dialog says nothing about connecting.

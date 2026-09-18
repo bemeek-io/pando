@@ -385,6 +385,7 @@ const SLOT_NAMES: Record<string, string> = {
   redis: 'Redis',
   s3: 'object storage',
   smtp: 'email',
+  unknown: 'a value',
 };
 
 /** The same sentences the settings screen uses, so one app reads one way. */

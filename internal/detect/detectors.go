@@ -149,7 +149,7 @@ func (d DockerfileDetector) bidForRoot(src api.SourceView) (Candidate, error) {
 	}
 
 	c.Draft.Workloads = []spec.Workload{workload}
-	c.Draft.Slots = slotsFromEnvExample(src)
+	c.Draft.Slots, c.Draft.Workloads[0].Env = readEnvExample(src)
 	return c, nil
 }
 
@@ -489,7 +489,7 @@ func (d BuildpackDetector) Bid(ctx context.Context, src api.SourceView) (Candida
 		"assumed to serve HTTP on %d, the usual port for a %s app — change it below if it does not",
 		signal.port, signal.language))
 
-	c.Draft.Slots = slotsFromEnvExample(src)
+	c.Draft.Slots, c.Draft.Workloads[0].Env = readEnvExample(src)
 	return c, nil
 }
 
@@ -627,14 +627,27 @@ func slotsFromComposeServices(services []string, images map[string]string) []spe
 
 var envAssignment = regexp.MustCompile(`^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.*)$`)
 
-// slotsFromEnvExample reads .env.example for declared configuration.
+// readEnvExample reads .env.example for declared configuration, and splits it
+// into the two things it actually holds.
 //
-// O-4 is unresolved: which of forty keys actually matter has no reliable
-// derivation. The [P] fallback is to default everything not typed to a known
-// service to optional, and let the trial run promote what actually breaks
-// (design 01 §2.5). That turns an unanswerable question into an observation.
-func slotsFromEnvExample(src api.SourceView) []spec.Slot {
+// R-130: a variable there is a hole with a type. `REDIS_URL` says the app needs
+// a Redis — that is a dependency, and a dependency is a slot, resolved by
+// running one, connecting to one, or pasting a connection string (R-131).
+// `VAPID_PRIVATE_KEY` says the app needs a value. There is nothing to connect it
+// to, and offering to is an interface asking a question with no true answer.
+//
+// Everything in the file used to become a slot, so an app with a `.env.example`
+// arrived declaring eleven "dependencies" of type unknown, each offering to
+// connect to something that already exists. Untyped keys are variables now, and
+// land on the app's variables with nothing in them — which is what a hole is.
+//
+// O-4 is the remaining open question and it is narrower than it was: of the
+// keys that are dependencies, which are required. The [P] fallback stands —
+// default to optional and let the trial run promote what actually breaks
+// (design 01 §2.5).
+func readEnvExample(src api.SourceView) ([]spec.Slot, []spec.EnvEntry) {
 	var slots []spec.Slot
+	var env []spec.EnvEntry
 
 	for _, name := range []string{".env.example", ".env.sample", ".env.template"} {
 		f, err := src.Open(name)
@@ -650,36 +663,110 @@ func slotsFromEnvExample(src api.SourceView) []spec.Slot {
 			}
 			key, value := m[1], strings.TrimSpace(m[2])
 
-			slotType := slotTypeFor(key)
+			slotType := slotTypeFor(key, value)
+			if slotType == spec.SlotUnknown {
+				// A variable, declared with no value. The sample is not
+				// carried: `POSTGRES_PASSWORD=changeme` filled in is worse
+				// than empty, because it looks answered.
+				empty := ""
+				env = append(env, spec.EnvEntry{
+					Key: key, Value: &empty, Source: spec.EnvFromDetection,
+				})
+				continue
+			}
+
 			slots = append(slots, spec.Slot{
 				Key:  key,
 				Type: slotType,
-				// Required only when the key names a service Pando recognizes.
-				// Everything else starts optional and is promoted by the trial
-				// run if its absence actually breaks the app.
-				Required: slotType != spec.SlotUnknown && value == "",
+				// Required when the key names a service and the file gives no
+				// value for it. A key with a sample value starts optional and
+				// is promoted by the trial run if its absence breaks the app.
+				Required: value == "",
 				Evidence: []string{"declared in " + name},
 			})
 		}
 		_ = f.Close()
 		break
 	}
-	return slots
+	return slots, env
 }
 
-func slotTypeFor(key string) spec.SlotType {
+// slotTypeFor types a declared variable, or reports that it is not a dependency
+// at all.
+//
+// R-130 names the three sources of a type, and this is two of them — the URL
+// scheme in the sample value, and the variable name. (The third, a compose image
+// name, is slotsFromComposeServices.) The value goes first because it is the
+// direct evidence: `STORE=redis://localhost:6379` is a Redis whatever it is
+// called.
+//
+// The name only types a variable that names a *connection*: `DATABASE_URL`,
+// `REDIS_URI`, `PG_DSN`. `POSTGRES_PASSWORD` contains the word postgres and is
+// not a database — it is a string, and treating it as one half of a connection
+// produced a dialog offering to connect the password to a database. Matching on
+// whole words rather than substrings is the other half of the same fix:
+// `UPGRADE_URL` contains "PG".
+func slotTypeFor(key, value string) spec.SlotType {
+	if t := schemeType(value); t != spec.SlotUnknown {
+		return t
+	}
+	if !namesAConnection(key) {
+		return spec.SlotUnknown
+	}
+	return wordType(key)
+}
+
+// connectionSuffixes are the words that make a variable a place rather than a
+// value. Deliberately short: a suffix that is merely often a connection, like
+// HOST, is one an app pairs with a separate port, user and password, and no
+// slot resolution can fill four variables from one answer.
+var connectionSuffixes = []string{"URL", "URI", "DSN", "CONNECTION_STRING", "ENDPOINT"}
+
+func namesAConnection(key string) bool {
 	upper := strings.ToUpper(key)
-	switch {
-	case strings.Contains(upper, "POSTGRES"), strings.Contains(upper, "DATABASE_URL"),
-		strings.Contains(upper, "PG"):
+	for _, suffix := range connectionSuffixes {
+		if upper == suffix || strings.HasSuffix(upper, "_"+suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// wordType reads the service out of a variable's name, word by word.
+func wordType(key string) spec.SlotType {
+	for _, word := range strings.Split(strings.ToUpper(key), "_") {
+		switch word {
+		case "POSTGRES", "POSTGRESQL", "PG", "DATABASE", "DB":
+			return spec.SlotPostgres
+		case "MYSQL", "MARIADB":
+			return spec.SlotMySQL
+		case "REDIS", "VALKEY":
+			return spec.SlotRedis
+		case "S3", "MINIO":
+			return spec.SlotS3
+		case "SMTP", "MAIL", "MAILER":
+			return spec.SlotSMTP
+		}
+	}
+	return spec.SlotUnknown
+}
+
+// schemeType reads the service out of a sample value's URL scheme.
+func schemeType(value string) spec.SlotType {
+	scheme, _, found := strings.Cut(value, "://")
+	if !found {
+		return spec.SlotUnknown
+	}
+	switch strings.ToLower(scheme) {
+	case "postgres", "postgresql":
 		return spec.SlotPostgres
-	case strings.Contains(upper, "MYSQL"):
+	case "mysql", "mariadb":
 		return spec.SlotMySQL
-	case strings.Contains(upper, "REDIS"):
+	case "redis", "rediss":
 		return spec.SlotRedis
-	case strings.Contains(upper, "S3"), strings.Contains(upper, "BUCKET"):
+	case "s3":
 		return spec.SlotS3
-	case strings.Contains(upper, "SMTP"), strings.Contains(upper, "MAIL"):
+	case "smtp", "smtps":
 		return spec.SlotSMTP
 	default:
 		return spec.SlotUnknown

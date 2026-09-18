@@ -49,6 +49,11 @@ const TYPE_NAMES: Record<string, string> = {
   redis: 'Redis',
   s3: 'object storage',
   smtp: 'email',
+
+  // Apps pinned before detection stopped calling every variable a dependency
+  // still carry these. Nothing about such a slot says what it connects to,
+  // because there was never anything to connect it to — it is a value.
+  unknown: 'a value',
 };
 
 /** Pando can stand these up itself. The rest are bound or given a value. */
@@ -158,7 +163,10 @@ function FillSlot({
 }) {
   const queries = useQueryClient();
   const canProvision = PROVISIONABLE.has(slot.type);
-  const [mode, setMode] = useState(slot.resolution?.mode ?? (canProvision ? 'provisioned' : 'bound'));
+  const isValue = slot.type === 'unknown';
+  const [mode, setMode] = useState(
+    slot.resolution?.mode ?? (canProvision ? 'provisioned' : isValue ? 'literal' : 'bound'),
+  );
   const [target, setTarget] = useState(slot.resolution?.target ?? '');
   const [value, setValue] = useState('');
 
@@ -202,11 +210,18 @@ function FillSlot({
         {/* R-010: Pando does not run infrastructure it cannot stand up in a
             container. Saying which kinds it can is better than offering the
             option and failing at deploy. */}
-        {!canProvision && (
+        {isValue ? (
           <Banner tone="info">
-            Pando doesn&rsquo;t stand up {TYPE_NAMES[slot.type] ?? slot.type} itself. Connect this to
-            something you already run, or paste a value.
+            Nothing about {slot.key} says what it connects to, so there is nothing for Pando to run
+            or to point it at. Paste the value it should have.
           </Banner>
+        ) : (
+          !canProvision && (
+            <Banner tone="info">
+              Pando doesn&rsquo;t stand up {TYPE_NAMES[slot.type] ?? slot.type} itself. Connect this
+              to something you already run, or paste a value.
+            </Banner>
+          )
         )}
 
         <Select
