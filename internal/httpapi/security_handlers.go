@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	"go.uber.org/zap"
+
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
@@ -98,9 +100,43 @@ func (s *Server) lastDeployedImage(ctx context.Context, appID string) (string, e
 	return s.Deployments.LastImage(ctx, appID)
 }
 
-// Security is what the API needs from the security service. Two calls, so a
+// Security is what the API needs from the security service. Three calls, so a
 // handler cannot reach past them into policy or the scan store.
 type Security interface {
 	Report(ctx context.Context, appID, specID string) (security.Report, error)
 	Scan(ctx context.Context, req api.ScanRequest, principal audit.Event) (state.Scan, error)
+	Place(ctx context.Context, scores map[string]*int) (map[string]security.Verdict, error)
+}
+
+// withVerdicts places each app's score against host policy.
+//
+// Here rather than in the store for the same reason addresses are: it depends
+// on a policy document and on whether a scanner is configured, and neither is
+// the store's to know. One policy load for the whole list.
+//
+// A failure is not fatal. The verdict decides what color a badge is; the list
+// of apps is what the caller asked for, and losing the second is a worse answer
+// than losing the first.
+func (s *Server) withVerdicts(ctx context.Context, apps []state.App) []state.App {
+	if s.Security == nil || len(apps) == 0 {
+		return apps
+	}
+
+	scores := make(map[string]*int, len(apps))
+	for _, app := range apps {
+		scores[app.ID] = app.SecurityScore
+	}
+
+	verdicts, err := s.Security.Place(ctx, scores)
+	if err != nil {
+		if s.Logger != nil {
+			s.Logger.Warn("could not place apps against the security threshold", zap.Error(err))
+		}
+		return apps
+	}
+
+	for i := range apps {
+		apps[i].SecurityVerdict = string(verdicts[apps[i].ID])
+	}
+	return apps
 }

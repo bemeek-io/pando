@@ -21,6 +21,8 @@ export interface App {
   deleted_at?: string;
   routing: Routing;
   address?: string;
+  security_score?: number;
+  security_verdict?: string;
 }
 
 export interface Revision {

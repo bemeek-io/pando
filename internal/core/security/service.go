@@ -149,6 +149,25 @@ func (s *Service) Report(ctx context.Context, appID, specID string) (Report, err
 	return report, nil
 }
 
+// Place puts a set of already-fetched scores against policy, in one pass.
+//
+// For a list: the alternative is a policy load and a scanner lookup per row,
+// which is the shape that turns a page of twenty apps into forty queries. The
+// scores come from the caller because the list query already fetched them.
+func (s *Service) Place(ctx context.Context, scores map[string]*int) (map[string]Verdict, error) {
+	doc, err := s.Policy.Document(ctx)
+	if err != nil {
+		return nil, err
+	}
+	_, configured := s.Configured()
+
+	out := make(map[string]Verdict, len(scores))
+	for appID, score := range scores {
+		out[appID] = Evaluate(doc, score, time.Time{}, configured, nil).Verdict
+	}
+	return out, nil
+}
+
 // Allows reports whether this revision may be deployed (R-314).
 //
 // Called from the deploy path with the score of the image that was just built,

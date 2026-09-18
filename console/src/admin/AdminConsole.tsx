@@ -35,6 +35,7 @@ import { DeleteApp } from './DeleteApp';
 import type { Route, Section } from '../app/route';
 import { ThemeToggle } from '../ui/ThemeToggle';
 import { relative } from '../ui/time';
+import { ScoreBadge } from '../ui/ScoreBadge';
 import { Terminal } from './Terminal';
 
 export function AdminConsole({
@@ -210,7 +211,7 @@ function AppsList({
             </EmptyState>
           }
           columns={[
-            { key: 'name', header: 'Name', width: 'minmax(0,54ch)' },
+            { key: 'name', header: 'Name', width: 'minmax(0,40ch)' },
             {
               key: 'state',
               header: 'Status',
@@ -220,6 +221,14 @@ function AppsList({
                   status={statusSymbol(row.state)}
                   label={statusLabel(row.state)}
                 />
+              ),
+            },
+            {
+              key: 'security_score',
+              header: 'Security',
+              width: '14ch',
+              render: (row: App) => (
+                <ScoreBadge score={row.security_score} verdict={row.security_verdict as never} full />
               ),
             },
             {

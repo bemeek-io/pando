@@ -1,8 +1,13 @@
 // The security score (R-310 – R-320, design 09 §6).
 //
-// A number and a sentence about what is behind it, never a grade or a colored
-// badge on its own (R-320): "F" tells a deployer nothing they can act on, and
-// this screen is read by the person who has to fix it.
+// On the app's overview, with its status, address and deploy log: the score is a
+// property of what is running, and the person who has to act on it is the one
+// reading this page rather than somebody three tabs away in settings.
+//
+// A badge carrying the number, never a grade or a color standing alone (R-320).
+// "F" tells a deployer nothing they can act on and a red pill tells somebody who
+// cannot see red nothing at all — so the color is the second signal and the
+// number is the first.
 //
 // The findings are the app's, so anyone who can view the app can read them. Only
 // somebody who can deploy can ask for a new scan, because the score decides
@@ -16,6 +21,7 @@ import type { Finding, Report } from '@api/types.gen';
 import { Quiet, messageOf } from '../install/Accounts';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
+import { ScoreBadge } from '../ui/ScoreBadge';
 
 export function Security({ appID }: { appID: string }) {
   const queries = useQueryClient();
@@ -124,9 +130,8 @@ function Verdict({ report }: { report: Report }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)' }}>
-        <span style={{ font: 'var(--type-h2)', color: 'var(--ink)' }}>{score}</span>
-        <span style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)' }}>out of 100</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+        <ScoreBadge score={score} verdict={standing.verdict as never} threshold={standing.threshold} full />
         <StatusIndicator
           status={standing.verdict === 'insecure' ? 'failed' : 'running'}
           label={

@@ -15,6 +15,7 @@ import { InlineWarning } from '../ui/InlineWarning';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { DeploymentLog, deployLabel, deployStatus } from './Logs';
+import { Security } from './Security';
 
 interface SpecRevision {
   id: string;
@@ -208,6 +209,11 @@ export function AppOverview({
           </InlineWarning>
         );
       })}
+
+      {/* The security score, with the app's other facts rather than three tabs
+          away in settings: it is a property of what is running, and the person
+          who has to act on it is the person looking at this page. */}
+      <Security appID={app.id} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
         <Button

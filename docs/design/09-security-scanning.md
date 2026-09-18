@@ -155,10 +155,22 @@ and needs a decision about what it costs on a small host.
 
 ## 6. Surfaces
 
-**Console.** The score sits on the app's overview beside its status, as a number and a sentence
-(R-320). The app's settings carry a Security section: the score, when it was taken, what was found,
-and **Scan now**. Host policy's screen carries the three fields, with the consequence written at the
-point of setting them.
+**Console.** The score lives on the app's **overview**, with its status, address and deploy log — the
+score is a property of what is running, and the person who has to act on it is the one reading that
+page. The section carries the badge, the counts, when it was taken, every finding, and **Scan now**.
+It is not in settings: settings is where an app is configured, and a score is not a setting.
+
+The **apps list** carries the badge too, at `score / 100`, beside status — which is the question a
+list is for: which of these needs me.
+
+**[D] The badge always contains the number** (R-320). Color is the second signal, never the only one:
+"F" tells a deployer nothing they can act on, and a red pill tells somebody who cannot see red
+nothing at all. The color says what the number means *here* — against the installation's threshold
+where one is set, and against bands where none is, because a score of 20 is worth noticing on an
+installation that enforces nothing.
+
+Host policy's screen carries the three fields, with the consequence written at the point of setting
+them.
 
 **API.** `GET /apps/{id}/security` for the current score and findings, `POST /apps/{id}/security/scan`
 to take a new one. Both behind `app.view` and `app.deploy` respectively — asking for a scan changes

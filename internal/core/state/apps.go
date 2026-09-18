@@ -56,6 +56,17 @@ type App struct {
 	// Filled in by the API layer, which is the only place that knows what host
 	// the caller reached Pando on. See spec.Address.
 	Address string `json:"address,omitempty"`
+
+	// SecurityScore is the newest score of the revision this app is running
+	// (R-310). Nil for an app that has never been scanned, which is not a score
+	// of zero (R-318) — the list shows the difference.
+	SecurityScore *int `json:"security_score,omitempty"`
+
+	// SecurityVerdict is that score placed against host policy: ok, insecure,
+	// unscanned or inert. Filled in by the API layer, because it depends on a
+	// policy document and on whether a scanner is configured, and neither is
+	// the store's to know.
+	SecurityVerdict string `json:"security_verdict,omitempty"`
 }
 
 // Apps stores apps and their spec revisions.
@@ -134,12 +145,19 @@ func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 	var routing []byte
 	err := a.db.QueryRow(ctx, `
 		SELECT a.id, a.name, a.slug, a.owner_user_id, a.state, a.desired_state, a.pinned_spec_id,
-		       a.source, a.created_at, a.updated_at, a.deleted_at, r.body->'routing'
+		       a.source, a.created_at, a.updated_at, a.deleted_at, r.body->'routing', s.score
 		FROM apps a
 		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
+		LEFT JOIN LATERAL (
+		    SELECT sc.score
+		    FROM app_scans sc
+		    WHERE sc.app_id = a.id AND sc.spec_id = a.pinned_spec_id AND sc.score IS NOT NULL
+		    ORDER BY sc.ran_at DESC
+		    LIMIT 1
+		) s ON true
 		WHERE a.id = $1 AND a.deleted_at IS NULL`, appID).
 		Scan(&app.ID, &app.Name, &app.Slug, &owner, &app.State, &app.DesiredState, &pinned,
-			&source, &app.CreatedAt, &app.UpdatedAt, &app.DeletedAt, &routing)
+			&source, &app.CreatedAt, &app.UpdatedAt, &app.DeletedAt, &routing, &app.SecurityScore)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return App{}, false, nil
 	}
@@ -169,9 +187,19 @@ func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, error) {
 	rows, err := a.db.Query(ctx, `
 		SELECT DISTINCT a.id, a.name, a.slug, a.owner_user_id, a.state, a.desired_state,
-		       a.pinned_spec_id, a.created_at, a.updated_at, r.body->'routing'
+		       a.pinned_spec_id, a.created_at, a.updated_at, r.body->'routing', s.score
 		FROM apps a
 		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
+		-- The newest scan of the revision this app is running, not the newest
+		-- scan of the app: a score for a revision it is not running is not a
+		-- score of what is deployed (design 09 §3).
+		LEFT JOIN LATERAL (
+		    SELECT sc.score
+		    FROM app_scans sc
+		    WHERE sc.app_id = a.id AND sc.spec_id = a.pinned_spec_id AND sc.score IS NOT NULL
+		    ORDER BY sc.ran_at DESC
+		    LIMIT 1
+		) s ON true
 		JOIN grants g ON g.app_id = a.id AND g.plane = 'control'
 		WHERE a.deleted_at IS NULL
 		  AND (
@@ -193,7 +221,7 @@ func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, 
 		var owner, pinned *string
 		var routing []byte
 		if err := rows.Scan(&app.ID, &app.Name, &app.Slug, &owner, &app.State, &app.DesiredState,
-			&pinned, &app.CreatedAt, &app.UpdatedAt, &routing); err != nil {
+			&pinned, &app.CreatedAt, &app.UpdatedAt, &routing, &app.SecurityScore); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list apps.", err)
 		}
 		if len(routing) > 0 {
