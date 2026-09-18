@@ -222,6 +222,11 @@ function Verdict({ report }: { report: Report }) {
         {counts.critical} critical, {counts.high} high, {counts.medium} medium,{' '}
         {counts.low + counts.unknown} low
         {taken ? ` · scanned ${taken.toLowerCase()}` : ''}
+        {/* A scan with no revision is the one detection took of the source,
+            before there was a configuration to attach it to. Saying so is the
+            difference between a number somebody trusts and one they wonder
+            about. */}
+        {report.scan && !report.scan.spec_id ? ' · from the source, before this configuration' : ''}
       </Quiet>
 
       {standing.verdict === 'insecure' && standing.stop_at && (

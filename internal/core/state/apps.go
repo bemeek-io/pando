@@ -159,8 +159,9 @@ func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 		LEFT JOIN LATERAL (
 		    SELECT sc.score, sc.score_fixable
 		    FROM app_scans sc
-		    WHERE sc.app_id = a.id AND sc.spec_id = a.pinned_spec_id AND sc.score IS NOT NULL
-		    ORDER BY sc.ran_at DESC
+		    WHERE sc.app_id = a.id AND sc.score IS NOT NULL
+		      AND (sc.spec_id = a.pinned_spec_id OR sc.spec_id IS NULL)
+		    ORDER BY (sc.spec_id IS NOT NULL) DESC, sc.ran_at DESC
 		    LIMIT 1
 		) s ON true
 		WHERE a.id = $1 AND a.deleted_at IS NULL`, appID).
@@ -199,14 +200,17 @@ func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, 
 		       a.pinned_spec_id, a.created_at, a.updated_at, r.body->'routing', s.score, s.score_fixable
 		FROM apps a
 		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
-		-- The newest scan of the revision this app is running, not the newest
-		-- scan of the app: a score for a revision it is not running is not a
-		-- score of what is deployed (design 09 §3).
+		-- The newest scan of the revision this app is running, and failing that
+		-- the newest that belongs to no revision — which is what detection
+		-- produces, from the source, before a revision exists. Never another
+		-- revision's: a score for a spec the app is not running is not a score
+		-- of what is deployed (design 09 §3).
 		LEFT JOIN LATERAL (
 		    SELECT sc.score, sc.score_fixable
 		    FROM app_scans sc
-		    WHERE sc.app_id = a.id AND sc.spec_id = a.pinned_spec_id AND sc.score IS NOT NULL
-		    ORDER BY sc.ran_at DESC
+		    WHERE sc.app_id = a.id AND sc.score IS NOT NULL
+		      AND (sc.spec_id = a.pinned_spec_id OR sc.spec_id IS NULL)
+		    ORDER BY (sc.spec_id IS NOT NULL) DESC, sc.ran_at DESC
 		    LIMIT 1
 		) s ON true
 		JOIN grants g ON g.app_id = a.id AND g.plane = 'control'

@@ -73,18 +73,24 @@ func (s *Scans) Record(ctx context.Context, scan Scan) (Scan, error) {
 	return scan, nil
 }
 
-// Latest returns the newest scan of a revision, or of the app when specID is
-// empty.
+// Latest returns the scan that describes what this app is running.
 //
-// Newest of *that revision*, not newest overall: an app whose newest scan is of
-// a revision it is not running has not been scanned in the sense that matters.
+// The newest scan of that revision, and failing that the newest scan that
+// belongs to no revision — which is what detection produces, from the source,
+// before there is a revision to attach it to. Never another revision's: a score
+// for a spec the app is not running is not a score of what is deployed.
+//
+// The fallback is the difference between "scanned at discovery" meaning
+// something and meaning nothing: accepting a proposal pins a revision, and
+// without this the scan taken of that very source a minute earlier disappeared
+// behind "this app has not been scanned yet".
 func (s *Scans) Latest(ctx context.Context, appID, specID string) (Scan, bool, error) {
 	query := `
 		SELECT id, app_id, coalesce(spec_id, ''), scanner_ref, scanner, score, score_fixable,
 		       findings, error, ran_at
 		FROM app_scans
-		WHERE app_id = $1 AND ($2 = '' OR spec_id = $2)
-		ORDER BY ran_at DESC
+		WHERE app_id = $1 AND ($2 = '' OR spec_id = $2 OR spec_id IS NULL)
+		ORDER BY (spec_id IS NOT NULL) DESC, ran_at DESC
 		LIMIT 1`
 
 	var scan Scan

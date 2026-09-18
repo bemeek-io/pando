@@ -85,6 +85,13 @@ score = max(0, 100 − 25·critical − 10·high − 3·medium − 1·(low + unk
 Deliberately not an average, a ratio, or a curve: one critical finding costs more than fifty low
 ones, and the number a threshold is set against does not move because an app grew.
 
+**[D] A scan taken before there was a revision still belongs to the app.** Detection scans the
+checkout before a spec exists, so that scan has no revision — and accepting the proposal pins one. A
+lookup that insisted on the pinned revision answered "this app has not been scanned yet" a minute
+after scanning the very source that revision was written from. So the rule is: the newest scan of
+this revision, and failing that the newest scan of no revision, and never another revision's. The
+console says which of the two it is showing.
+
 **[D] A score belongs to a revision, not to an app.** `app_scans` is append-only, keyed by
 `(app_id, spec_id, scanner_ref, ran_at)`, and the app's current score is the newest scan of its
 pinned revision. A rollback therefore restores the score of what it rolled back to, with no rescan
