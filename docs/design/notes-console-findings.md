@@ -621,3 +621,33 @@ the header's action cluster; it is three sentences, so it widened the row and
 shoved Deploy and Delete sideways. It is a banner under the header now, where
 the app's other banners are — the button reports the refusal upward rather than
 drawing it.
+
+## The compose file answered the question Pando then asked
+
+crewmate's compose file runs `db: image: postgres:16-alpine`. The importer read
+that, correctly created a required `DB_URL` slot of type postgres — and left it
+unfilled, so an app that worked under `docker compose up` was accepted and then
+refused at deploy: "this app needs a PostgreSQL database, and one hasn't been
+chosen yet."
+
+The answer was in the file being imported. `services: db: image: postgres` says
+the app runs a database beside itself, and "Pando runs one inside this app" is
+that same sentence in Pando's vocabulary (R-131). Compose-derived slots now
+arrive resolved to `provisioned`, with the evidence still naming the service, and
+somebody who wants a different answer changes it on the settings tab.
+
+Slots read from a `.env.example` are deliberately not filled this way: a variable
+named `DATABASE_URL` is evidence that the app wants a database, not that its
+author meant Pando to run one (R-133, O-4).
+
+**And the review screen now says what an app needs before anybody accepts it.**
+The first anybody heard of a required slot was the deploy refusal — after
+accepting, from a button on another screen. It belongs on the page where
+somebody reads how their app will run: "it needs a PostgreSQL database, and Pando
+will run one inside it" is part of how it will run.
+
+**Refusals carry the way to their fix**, the same as the warnings on the
+overview: `PLAN_SLOT_UNFILLED` offers dependencies, `VALID_PRIMARY_WORKLOAD`
+offers the configuration, `PLAN_SECURITY_BELOW_THRESHOLD` offers the findings. A
+code with no screen keeps a plain dismissal — nothing claims to be actionable
+when it is not.

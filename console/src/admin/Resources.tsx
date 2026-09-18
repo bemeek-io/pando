@@ -30,7 +30,7 @@ interface Volume {
 export function Resources({ appID, focus }: { appID: string; focus?: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-7)' }}>
-      <Slots appID={appID} />
+      <Slots appID={appID} focus={focus === 'dependencies'} />
       <Environment appID={appID} />
       <BuildPlan appID={appID} />
       {/* `focus` is how the persistence warning on Overview lands somebody on
@@ -54,8 +54,13 @@ const TYPE_NAMES: Record<string, string> = {
 /** Pando can stand these up itself. The rest are bound or given a value. */
 const PROVISIONABLE = new Set(['postgres', 'mysql', 'redis']);
 
-function Slots({ appID }: { appID: string }) {
+function Slots({ appID, focus }: { appID: string; focus?: boolean }) {
   const [editing, setEditing] = useState<Slot | null>(null);
+  const heading = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (focus) heading.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [focus]);
 
   const slots = useQuery({
     queryKey: ['slots', appID],
@@ -65,7 +70,7 @@ function Slots({ appID }: { appID: string }) {
   const rows = slots.data?.slots ?? [];
 
   return (
-    <section>
+    <section ref={heading}>
       <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Dependencies</h4>
       {/* R-132, said once here rather than repeated per row: an unfilled
           required dependency refuses the deploy instead of starting something

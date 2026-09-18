@@ -32,7 +32,7 @@ export function DeployButton({
 }: {
   app: App;
   /** The refusal to show, or an empty message to clear one. */
-  onRefused: (message: string, remedy?: string) => void;
+  onRefused: (message: string, remedy?: string, code?: string) => void;
 }) {
   const queries = useQueryClient();
 
@@ -70,12 +70,16 @@ export function DeployButton({
   // where the app's other banners are: across the page, under the header.
   useEffect(() => {
     if (deploy.isError) {
-      onRefused(failed?.message ?? 'Pando couldn’t start a deploy. Try again.', failed?.remedy);
+      onRefused(
+        failed?.message ?? 'Pando couldn’t start a deploy. Try again.',
+        failed?.remedy,
+        failed?.code,
+      );
     }
     if (deploy.isSuccess) {
-      onRefused('', undefined);
+      onRefused('', undefined, undefined);
     }
-  }, [deploy.isError, deploy.isSuccess, failed?.message, failed?.remedy]);
+  }, [deploy.isError, deploy.isSuccess, failed?.message, failed?.remedy, failed?.code]);
 
   return (
     <Button

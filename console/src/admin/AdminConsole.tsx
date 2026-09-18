@@ -278,6 +278,23 @@ function AppsList({
   );
 }
 
+/**
+ * Where each plan-time refusal is fixed.
+ *
+ * The same idea as the warnings on the overview: an error that says "choose how
+ * to fill the DB_URL slot" on a screen with no slots on it is an error somebody
+ * has to go looking for the answer to. A code with no entry keeps the plain
+ * dismissal — nothing here claims to be actionable when it is not.
+ */
+const REFUSALS: Record<string, { label: string; tab: string; focus?: string }> = {
+  PLAN_SLOT_UNFILLED: { label: 'Fill it in', tab: 'resources', focus: 'dependencies' },
+  PLAN_CAPABILITY_UNSUPPORTED: { label: 'Open settings', tab: 'resources' },
+  PLAN_SECURITY_BELOW_THRESHOLD: { label: 'See the findings', tab: 'overview' },
+  VALID_PRIMARY_WORKLOAD: { label: 'Open configuration', tab: 'detection' },
+  VALID_DANGLING_MOUNT: { label: 'Open storage', tab: 'resources', focus: 'storage' },
+  VALID_DANGLING_SLOT_REF: { label: 'Open dependencies', tab: 'resources', focus: 'dependencies' },
+};
+
 function AppScreen({
   appID,
   listed,
@@ -320,7 +337,9 @@ function AppScreen({
   // A refused deploy, rendered under the header rather than inside it: the
   // message is a sentence or three, and a paragraph in a row of buttons moves
   // the buttons.
-  const [refusal, setRefusal] = useState<{ message: string; remedy?: string } | null>(null);
+  const [refusal, setRefusal] = useState<{ message: string; remedy?: string; code?: string } | null>(
+    null,
+  );
   const setTab = (next: string, at?: string) => {
     setFocus(at);
     onTab(next);
@@ -408,7 +427,9 @@ function AppScreen({
             {app.data.pinned_spec_id && (
               <DeployButton
                 app={app.data}
-                onRefused={(message, remedy) => setRefusal(message ? { message, remedy } : null)}
+                onRefused={(message, remedy, code) =>
+                  setRefusal(message ? { message, remedy, code } : null)
+                }
               />
             )}
 
@@ -422,12 +443,31 @@ function AppScreen({
 
       {refusal && (
         <div style={{ padding: '0 var(--console-padding) var(--space-4)', maxWidth: MEASURE }}>
-          {/* The server's words, which are written to be acted on (R-105). */}
-          <Banner tone="failed" action={
-            <Button variant="ghost" onClick={() => setRefusal(null)}>
-              Dismiss
-            </Button>
-          }>
+          {/* The server's words, which are written to be acted on (R-105) —
+              and, where the console has the screen that acts on them, the way
+              there. A refusal that names a remedy on a page with no control
+              for it is a remedy nobody can take. */}
+          <Banner
+            tone="failed"
+            action={
+              REFUSALS[refusal.code ?? ''] ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const fix = REFUSALS[refusal.code ?? ''];
+                    if (fix) setTab(fix.tab, fix.focus);
+                    setRefusal(null);
+                  }}
+                >
+                  {REFUSALS[refusal.code ?? '']?.label}
+                </Button>
+              ) : (
+                <Button variant="ghost" onClick={() => setRefusal(null)}>
+                  Dismiss
+                </Button>
+              )
+            }
+          >
             {refusal.message}
             {refusal.remedy ? ` ${refusal.remedy}` : ''}
           </Banner>

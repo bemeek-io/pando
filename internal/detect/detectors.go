@@ -604,6 +604,20 @@ func slotsFromComposeServices(services []string, images map[string]string) []spe
 				Type:     slotType,
 				Required: true,
 				Evidence: []string{fmt.Sprintf("compose service %q runs %s", service, orUnknownImage(images[service]))},
+
+				// Filled, because the compose file already answered it: it runs
+				// a database in a container beside the app, and "Pando runs one
+				// inside this app" is that same sentence in Pando's vocabulary
+				// (R-131). Leaving it empty turned an app that worked under
+				// `docker compose up` into one that was accepted and then
+				// refused at deploy — asking a question whose answer was in the
+				// file being imported.
+				//
+				// A slot read from a `.env.example` is deliberately not filled
+				// this way: a variable named DATABASE_URL is evidence that the
+				// app wants a database, not that its author meant Pando to run
+				// one (R-133, O-4).
+				Resolution: &spec.Resolution{Mode: spec.ResolutionProvisioned},
 			})
 			break
 		}

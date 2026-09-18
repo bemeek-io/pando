@@ -92,3 +92,40 @@ func TestR026_ASingleWorkloadIsThePrimaryOne(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "web", primary.Name)
 }
+
+// TestR131_AComposeDatabaseArrivesAlreadyFilled asserts that importing a compose
+// file answers its own question.
+//
+// `services: db: image: postgres:16` says this app runs a PostgreSQL beside
+// itself. Pando's sentence for that is "run one inside this app" (R-131), and
+// leaving the slot empty instead turned an app that worked under
+// `docker compose up` into one that was accepted and then refused at deploy —
+// asking a question whose answer was in the file being imported.
+func TestR131_AComposeDatabaseArrivesAlreadyFilled(t *testing.T) {
+	const file = `
+services:
+  app:
+    build: .
+    ports: ["8080:8080"]
+    depends_on: [db]
+  db:
+    image: postgres:16-alpine
+`
+
+	draft, err := detect.ImportCompose(memSource{"docker-compose.yml": file}, "docker-compose.yml")
+	require.NoError(t, err)
+
+	require.Len(t, draft.Slots, 1)
+	slot := draft.Slots[0]
+	require.Equal(t, "DB_URL", slot.Key)
+	require.Equal(t, spec.SlotPostgres, slot.Type)
+	require.True(t, slot.Required)
+
+	require.NotNil(t, slot.Resolution, "the compose file already said what fills this")
+	require.Equal(t, spec.ResolutionProvisioned, slot.Resolution.Mode)
+
+	// And the evidence still says where it came from, because somebody
+	// changing it is entitled to know what Pando read.
+	require.NotEmpty(t, slot.Evidence)
+	require.Contains(t, slot.Evidence[0], "db")
+}
