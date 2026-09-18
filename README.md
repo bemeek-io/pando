@@ -102,11 +102,14 @@ macOS, and Linux with Homebrew 4.5 or newer:
 brew install bemeek-io/tap/pando
 ```
 
-Debian and Ubuntu: download the `.deb` for your architecture from the
-[releases page](https://github.com/bemeek-io/pando/releases), then
+Debian and Ubuntu: take a version from the
+[releases page](https://github.com/bemeek-io/pando/releases) and download the `.deb` for your
+architecture.
 
 ```bash
-sudo apt install ./pando_<version>_linux_amd64.deb
+VERSION=0.2.0   # the release you want
+curl -LO https://github.com/bemeek-io/pando/releases/download/v${VERSION}/pando_${VERSION}_linux_amd64.deb
+sudo apt install ./pando_${VERSION}_linux_amd64.deb
 ```
 
 The same page has `.rpm` and `.apk` packages, and plain tarballs for macOS and Linux on both

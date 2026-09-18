@@ -46,7 +46,9 @@ func TestInstallInstructionsMatchWhatATagPublishes(t *testing.T) {
 			} `yaml:"repository"`
 		} `yaml:"homebrew_casks"`
 		NFPMs []struct {
-			Formats []string `yaml:"formats"`
+			Formats          []string `yaml:"formats"`
+			PackageName      string   `yaml:"package_name"`
+			FileNameTemplate string   `yaml:"file_name_template"`
 		} `yaml:"nfpms"`
 		Release struct {
 			GitHub struct {
@@ -83,9 +85,23 @@ func TestInstallInstructionsMatchWhatATagPublishes(t *testing.T) {
 	require.Equal(t, cask.Repository.Owner+"/"+strings.TrimPrefix(cask.Repository.Name, "homebrew-")+"/"+cask.Name,
 		got.Homebrew)
 
-	// The package formats.
+	// The package formats, and the name a download line has to spell. Pinned in
+	// the release config rather than left to each packager's convention, so
+	// there is one documented name instead of one per format.
 	require.Len(t, release.NFPMs, 1)
 	require.ElementsMatch(t, release.NFPMs[0].Formats, got.Packages)
+	require.Equal(t,
+		expand(release.NFPMs[0].FileNameTemplate, map[string]string{
+			"{{ .PackageName }}": release.NFPMs[0].PackageName,
+			"{{ .Version }}":     "<version>",
+			"{{ .Os }}":          "linux",
+			"{{ .Arch }}":        "<arch>",
+		})+".<format>",
+		got.Package,
+		"the documented package name is the one a tag publishes")
+
+	// Where a release's files are.
+	require.Equal(t, got.Repo+"/releases/download/v<version>/", got.Download)
 
 	// Every platform built is a platform offered.
 	var platforms []string
@@ -101,16 +117,22 @@ func TestInstallInstructionsMatchWhatATagPublishes(t *testing.T) {
 	require.Len(t, release.Archives, 1)
 	require.ElementsMatch(t, []string{"tar.gz"}, release.Archives[0].Formats,
 		"the documented archive is a tarball")
-	expanded := release.Archives[0].NameTemplate
-	for from, to := range map[string]string{
-		"{{ .ProjectName }}": "pando",
-		"{{ .Version }}":     "<version>",
-		"{{ .Os }}":          "<os>",
-		"{{ .Arch }}":        "<arch>",
-	} {
-		expanded = strings.ReplaceAll(expanded, from, to)
+	require.Equal(t,
+		expand(release.Archives[0].NameTemplate, map[string]string{
+			"{{ .ProjectName }}": "pando",
+			"{{ .Version }}":     "<version>",
+			"{{ .Os }}":          "<os>",
+			"{{ .Arch }}":        "<arch>",
+		})+".tar.gz",
+		got.Archive)
+}
+
+// expand fills a goreleaser name template with what a person substitutes.
+func expand(template string, values map[string]string) string {
+	for from, to := range values {
+		template = strings.ReplaceAll(template, from, to)
 	}
-	require.Equal(t, expanded+".tar.gz", got.Archive)
+	return template
 }
 
 // The README installs the CLI too, for somebody who is reading the repository
@@ -129,4 +151,8 @@ func TestTheREADMEInstallsTheSameCLI(t *testing.T) {
 	require.Contains(t, text, "go install "+got.Module+"@latest")
 	require.Contains(t, text, got.Repo+"/releases")
 	require.Contains(t, text, got.InContainer)
+	// The README writes the version as a shell variable, the way somebody
+	// copying the block wants it. Same constant, one substitution.
+	require.Contains(t, text, strings.ReplaceAll(got.Download, "<version>", "${VERSION}"),
+		"the README says where to download a package from")
 }

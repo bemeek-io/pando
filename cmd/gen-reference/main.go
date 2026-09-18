@@ -106,14 +106,19 @@ func cliDoc(doc reference.Document) string {
 	b.WriteString("does can also be done in the console.\n\n")
 	b.WriteString("**macOS, and Linux with Homebrew:**\n\n")
 	b.WriteString("```\nbrew install " + doc.Install.Homebrew + "\n```\n\n")
-	b.WriteString("**Debian, Ubuntu, Fedora, Alpine:** each release attaches " +
-		list(doc.Install.Packages, "`.%s`") + " packages for\n")
-	b.WriteString("every architecture. From the [releases page](" + doc.Install.Repo + "/releases):\n\n")
-	b.WriteString("```\nsudo apt install ./pando_<version>_<arch>.deb\n```\n\n")
+	b.WriteString("**Debian, Ubuntu, Fedora, Alpine:** every release attaches " +
+		list(doc.Install.Packages, "`.%s`") + " packages, named\n")
+	b.WriteString("`" + doc.Install.Package + "`. Take a version from the\n")
+	b.WriteString("[releases page](" + doc.Install.Repo + "/releases) and download it:\n\n")
+	b.WriteString("```\n" + packageRecipe(doc.Install, "deb", "amd64") + "\n```\n\n")
+	b.WriteString("For `.rpm`, `dnf install` the same file; for `.apk`,\n")
+	b.WriteString("`apk add --allow-untrusted`. On an ARM machine, `arm64` in place of `amd64`.\n\n")
+
 	b.WriteString("**Anything else:** plain tarballs, named `" + doc.Install.Archive + "`, for " +
-		list(doc.Install.Platforms, "`%s`") + ".\n")
-	b.WriteString("Unpack one and put `pando` on your PATH. Every release is published with a signed\n")
-	b.WriteString("checksum file; verifying it is described in [releasing.md](releasing.md).\n\n")
+		list(doc.Install.Platforms, "`%s`") + ":\n\n")
+	b.WriteString("```\n" + archiveRecipe(doc.Install, "darwin", "arm64") + "\n```\n\n")
+	b.WriteString("Every release is published with a checksum file signed by the release workflow;\n")
+	b.WriteString("verifying it is described in [releasing.md](releasing.md).\n\n")
 	b.WriteString("**From source**, with a Go toolchain:\n\n")
 	b.WriteString("```\ngo install " + doc.Install.Module + "@latest\n```\n\n")
 	b.WriteString("**Or install nothing.** A Compose installation already has the binary in it:\n\n")
@@ -223,6 +228,39 @@ func arguments(schema map[string]any) string {
 	}
 	return strings.Join(out, ", ")
 }
+
+// packageRecipe is the download-and-install lines for one package format.
+//
+// Written out for a real format and architecture rather than left as
+// placeholders: an instruction with three angle brackets in it is an
+// instruction somebody has to assemble before they can run it, and assembling
+// it is where they get it wrong.
+func packageRecipe(in reference.Install, format, arch string) string {
+	file := strings.NewReplacer("<format>", format, "<arch>", arch).Replace(in.Package)
+	url := in.Download + file
+	return strings.Join([]string{
+		"VERSION=" + exampleVersion + "   # the release you want",
+		"curl -LO " + strings.ReplaceAll(url, "<version>", "${VERSION}"),
+		"sudo apt install ./" + strings.ReplaceAll(file, "<version>", "${VERSION}"),
+	}, "\n")
+}
+
+// archiveRecipe is the same for a tarball.
+func archiveRecipe(in reference.Install, os, arch string) string {
+	file := strings.NewReplacer("<os>", os, "<arch>", arch).Replace(in.Archive)
+	url := in.Download + file
+	return strings.Join([]string{
+		"VERSION=" + exampleVersion + "   # the release you want",
+		"curl -LO " + strings.ReplaceAll(url, "<version>", "${VERSION}"),
+		"tar xzf " + strings.ReplaceAll(file, "<version>", "${VERSION}"),
+		"sudo mv pando /usr/local/bin/",
+	}, "\n")
+}
+
+// exampleVersion stands in for whatever is current. It is a placeholder in a
+// shell variable rather than a version number in every line, so a reader
+// changes one thing and the rest of the block is correct.
+const exampleVersion = "0.2.0"
 
 // list renders a slice as prose: "`a`, `b` and `c`".
 func list(items []string, format string) string {

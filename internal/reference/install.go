@@ -24,6 +24,11 @@ type Install struct {
 	Packages []string `json:"packages"`
 	// Archive is how a tarball is named, with the parts a person substitutes.
 	Archive string `json:"archive"`
+	// Package is how a Linux package is named. Same shape as Archive, so one
+	// download line covers every format.
+	Package string `json:"package"`
+	// Download is where a release's files are, with the version substituted.
+	Download string `json:"download"`
 	// Platforms are the os/arch pairs built.
 	Platforms []string `json:"platforms"`
 	// InContainer runs the copy already inside a Compose installation, for
@@ -38,6 +43,8 @@ func install() Install {
 		Homebrew:    "bemeek-io/tap/pando",
 		Packages:    []string{"deb", "rpm", "apk"},
 		Archive:     "pando_<version>_<os>_<arch>.tar.gz",
+		Package:     "pando_<version>_linux_<arch>.<format>",
+		Download:    "https://github.com/bemeek-io/pando/releases/download/v<version>/",
 		Platforms:   []string{"darwin/amd64", "darwin/arm64", "linux/amd64", "linux/arm64"},
 		InContainer: "docker compose exec pando pando",
 	}

@@ -320,6 +320,8 @@ export interface Install {
   homebrew: string;
   packages: (string[] | null);
   archive: string;
+  package: string;
+  download: string;
   platforms: (string[] | null);
   in_container: string;
 }

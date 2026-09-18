@@ -97,11 +97,11 @@ function Connect({ doc }: { doc?: Document }) {
         <div style={{ marginTop: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           <CodeBlock title="macOS, and Linux with Homebrew" lines={[`brew install ${doc.install.homebrew}`]} prompt />
           <CodeBlock
-            title={`Debian and Ubuntu — also ${(doc.install.packages ?? [])
+            title={`Debian and Ubuntu — ${(doc.install.packages ?? [])
               .filter((p) => p !== 'deb')
               .map((p) => `.${p}`)
-              .join(' and ')}, from the releases page`}
-            lines={['sudo apt install ./pando_<version>_<arch>.deb']}
+              .join(' and ')} are published the same way`}
+            lines={packageLines(doc)}
             prompt
           />
           <CodeBlock title="From source" lines={[`go install ${doc.install.module}@latest`]} prompt />
@@ -114,11 +114,12 @@ function Connect({ doc }: { doc?: Document }) {
         <div style={{ marginTop: 'var(--space-3)' }}>
           <Quiet>
             Tarballs named <code style={{ font: 'var(--type-code-sm)' }}>{doc.install.archive}</code>{' '}
-            are on the{' '}
+            are published for {(doc.install.platforms ?? []).join(', ')}. Every release, with its
+            signed checksums, is on the{' '}
             <a href={`${doc.install.repo}/releases`} target="_blank" rel="noopener noreferrer">
               releases page
-            </a>{' '}
-            for {(doc.install.platforms ?? []).join(', ')}.
+            </a>
+            .
           </Quiet>
         </div>
       </section>
@@ -175,6 +176,26 @@ function Connect({ doc }: { doc?: Document }) {
       </section>
     </div>
   );
+}
+
+/**
+ * The download-and-install lines, spelled out.
+ *
+ * An instruction with three angle brackets in it is one somebody has to
+ * assemble before they can run it, and assembling it is where they get it
+ * wrong. The version is the one variable, at the top.
+ */
+function packageLines(doc: Document): string[] {
+  const file = doc.install.package
+    .replace('<format>', 'deb')
+    .replace('<arch>', 'amd64')
+    .replace('<version>', '${VERSION}');
+  const url = doc.install.download.replace('<version>', '${VERSION}') + file;
+  return [
+    'VERSION=0.2.0   # the release you want',
+    `curl -LO ${url}`,
+    `sudo apt install ./${file}`,
+  ];
 }
 
 // --- tokens ----------------------------------------------------------------

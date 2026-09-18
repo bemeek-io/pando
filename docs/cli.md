@@ -19,16 +19,30 @@ does can also be done in the console.
 brew install bemeek-io/tap/pando
 ```
 
-**Debian, Ubuntu, Fedora, Alpine:** each release attaches `.deb`, `.rpm` and `.apk` packages for
-every architecture. From the [releases page](https://github.com/bemeek-io/pando/releases):
+**Debian, Ubuntu, Fedora, Alpine:** every release attaches `.deb`, `.rpm` and `.apk` packages, named
+`pando_<version>_linux_<arch>.<format>`. Take a version from the
+[releases page](https://github.com/bemeek-io/pando/releases) and download it:
 
 ```
-sudo apt install ./pando_<version>_<arch>.deb
+VERSION=0.2.0   # the release you want
+curl -LO https://github.com/bemeek-io/pando/releases/download/v${VERSION}/pando_${VERSION}_linux_amd64.deb
+sudo apt install ./pando_${VERSION}_linux_amd64.deb
 ```
 
-**Anything else:** plain tarballs, named `pando_<version>_<os>_<arch>.tar.gz`, for `darwin/amd64`, `darwin/arm64`, `linux/amd64` and `linux/arm64`.
-Unpack one and put `pando` on your PATH. Every release is published with a signed
-checksum file; verifying it is described in [releasing.md](releasing.md).
+For `.rpm`, `dnf install` the same file; for `.apk`,
+`apk add --allow-untrusted`. On an ARM machine, `arm64` in place of `amd64`.
+
+**Anything else:** plain tarballs, named `pando_<version>_<os>_<arch>.tar.gz`, for `darwin/amd64`, `darwin/arm64`, `linux/amd64` and `linux/arm64`:
+
+```
+VERSION=0.2.0   # the release you want
+curl -LO https://github.com/bemeek-io/pando/releases/download/v${VERSION}/pando_${VERSION}_darwin_arm64.tar.gz
+tar xzf pando_${VERSION}_darwin_arm64.tar.gz
+sudo mv pando /usr/local/bin/
+```
+
+Every release is published with a checksum file signed by the release workflow;
+verifying it is described in [releasing.md](releasing.md).
 
 **From source**, with a Go toolchain:
 
