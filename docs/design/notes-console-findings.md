@@ -518,3 +518,18 @@ lives where the app's other histories are.
 
 The server side is worth fixing too — `Follow` could report that it holds
 nothing rather than opening an empty stream — and is not fixed here.
+
+## A style object whose keys were not CSS
+
+The score badge rendered as plain text. Its tones were written
+`{ fg, bg, border }` and spread onto the element: React drops `fg` and `bg`
+because they are not properties, and `border` — spread after the `border:
+"1px solid"` shorthand — replaced it with a bare color, which is not a valid
+shorthand, so the browser dropped the border too. Three colors, none of them
+applied, and nothing anywhere reports it: an unknown style key is silently
+ignored, which is the one thing about inline styles that makes them worse than a
+stylesheet.
+
+They are `color`, `background` and `borderColor` now, with `borderWidth` and
+`borderStyle` separate so a spread cannot take the shorthand with it. Verified by
+reading the computed style out of a live page rather than by looking at it.

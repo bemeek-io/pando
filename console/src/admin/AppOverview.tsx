@@ -109,15 +109,7 @@ export function AppOverview({
         </Banner>
       )}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.25fr)',
-          gap: 'var(--space-6)',
-          alignItems: 'start',
-          maxWidth: MEASURE,
-        }}
-      >
+      <div style={{ maxWidth: MEASURE }}>
         <Card padding="md">
           <Row label="Status">
             <StatusIndicator status={statusSymbol(app.state)} label={statusLabel(app.state)} />
@@ -168,13 +160,14 @@ export function AppOverview({
           </Row>
         </Card>
 
-        {/* The security score, in the column a terminal used to occupy.
-            The log was the wrong thing to put on this page: it is a history,
-            it belongs with the other histories on the Logs tab, and the
-            version of it that was here showed a black box with nothing in it
-            whenever Pando no longer held the output. */}
-        <Security appID={app.id} />
       </div>
+
+      {/* The security score, where the deploy log used to be — and across the
+          measure rather than in the column that held it. A log is a column of
+          short lines and a findings table is not: at 1.25fr, "Incorrect
+          certificate validation during TLS session resumption" wrapped one
+          word to a line and the section ran off the bottom of the page. */}
+      <Security appID={app.id} />
 
       {/* Warnings inline where they apply, never stacked as banners, never
           looking like the failure above. */}

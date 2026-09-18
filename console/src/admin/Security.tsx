@@ -93,7 +93,7 @@ export function Security({ appID }: { appID: string }) {
           >
           <Table
             columns={[
-              { key: 'id', header: 'Finding', width: 'minmax(0,24ch)', mono: true },
+              { key: 'id', header: 'Finding', width: 'minmax(0,22ch)', mono: true },
               {
                 key: 'severity',
                 header: 'Severity',
@@ -105,9 +105,25 @@ export function Security({ appID }: { appID: string }) {
               {
                 key: 'title',
                 header: 'What it is',
-                width: 'minmax(0,40ch)',
+                // The one column that takes what is left, because it is the
+                // one carrying a sentence.
+                width: 'minmax(0,1fr)',
                 render: (row: Finding) => (
-                  <span style={{ whiteSpace: 'normal', display: 'block', padding: 'var(--space-2) 0' }}>
+                  <span
+                    style={{
+                      whiteSpace: 'normal',
+                      padding: 'var(--space-2) 0',
+                      // Three lines at most. A CVE description runs to a
+                      // paragraph, and a table where one row is eight lines
+                      // tall is a table nobody can scan. The whole of it is in
+                      // the tooltip.
+                      display: '-webkit-box',
+                      WebkitBoxOrient: 'vertical',
+                      WebkitLineClamp: 3,
+                      overflow: 'hidden',
+                    }}
+                    title={row.title}
+                  >
                     {row.title}
                   </span>
                 ),
@@ -115,9 +131,22 @@ export function Security({ appID }: { appID: string }) {
               {
                 key: 'fix',
                 header: 'Fixed in',
-                width: '18ch',
+                width: '22ch',
                 muted: true,
-                render: (row: Finding) => (row.fix ? <Tag mono>{row.fix}</Tag> : 'No fix yet'),
+                render: (row: Finding) => (
+                  // A fix is often a list of branches — "1.24.13, 1.25.7,
+                  // 1.26.0" — and the whole list in a tag is a tag as wide as
+                  // the table. The first one is the answer to "what do I move
+                  // to"; the rest are in the tooltip.
+                  row.fix ? (
+                    <span title={row.fix}>
+                      <Tag mono>{(row.fix.split(',')[0] ?? row.fix).trim()}</Tag>
+                      {row.fix.includes(',') ? ' …' : ''}
+                    </span>
+                  ) : (
+                    'No fix yet'
+                  )
+                ),
               },
             ]}
             rows={shown}

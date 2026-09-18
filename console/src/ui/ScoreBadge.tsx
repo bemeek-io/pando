@@ -12,10 +12,26 @@
 // score of 20 is worth noticing even where nothing is enforced.
 
 const TONES = {
-  bad: { fg: 'var(--marker-deep)', bg: 'var(--status-failed-tint)', border: 'var(--marker)' },
-  warn: { fg: 'var(--contour-text)', bg: 'var(--status-building-tint)', border: 'var(--contour)' },
-  good: { fg: 'var(--vegetation-deep)', bg: 'var(--status-running-tint)', border: 'var(--vegetation-deep)' },
-  none: { fg: 'var(--ink-secondary)', bg: 'var(--paper-sunken)', border: 'var(--rule-strong)' },
+  bad: {
+    color: 'var(--marker-deep)',
+    background: 'var(--status-failed-tint)',
+    borderColor: 'var(--marker)',
+  },
+  warn: {
+    color: 'var(--contour-text)',
+    background: 'var(--status-building-tint)',
+    borderColor: 'var(--contour)',
+  },
+  good: {
+    color: 'var(--vegetation-deep)',
+    background: 'var(--status-running-tint)',
+    borderColor: 'var(--vegetation-deep)',
+  },
+  none: {
+    color: 'var(--ink-secondary)',
+    background: 'var(--paper-sunken)',
+    borderColor: 'var(--rule-strong)',
+  },
 } as const;
 
 export type Verdict = 'ok' | 'insecure' | 'unscanned' | 'inert' | '';
@@ -78,9 +94,10 @@ const base = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 'var(--space-1)',
-  padding: '0 var(--space-2)',
+  padding: 'var(--space-1) var(--space-2)',
   font: 'var(--type-code-sm)',
   borderRadius: 'var(--radius-xs)',
-  border: 'var(--border-width) solid',
+  borderWidth: 'var(--border-width)',
+  borderStyle: 'solid',
   whiteSpace: 'nowrap',
 } as const;
