@@ -30,6 +30,7 @@ import { AppOverview } from './AppOverview';
 import { Logs } from './Logs';
 import { Resources } from './Resources';
 import { AddApp } from './AddApp';
+import { Reference } from './Reference';
 import { DeleteApp } from './DeleteApp';
 import type { Route, Section } from '../app/route';
 import { ThemeToggle } from '../ui/ThemeToggle';
@@ -40,10 +41,14 @@ export function AdminConsole({
   route,
   go,
   onLeave,
+  administrative,
 }: {
   route: Route;
   go: (next: Route, replace?: boolean) => void;
   onLeave: () => void;
+  /** Whether this person administers anything. False for somebody who came
+   *  here for the API screen, which is open to everyone. */
+  administrative: boolean;
 }) {
   // Where we are comes from the address bar, so a reload lands back here and a
   // link to an app is a link to an app.
@@ -70,13 +75,18 @@ export function AdminConsole({
   const apps = useQuery({
     queryKey: ['apps'],
     queryFn: () => api.get<{ apps: App[] | null }>('/apps'),
+    enabled: administrative,
   });
 
   const rows = apps.data?.apps ?? [];
 
-  const items: SidebarItem[] = [
-    { value: 'apps', label: 'Apps', trailing: <Badge count={rows.length} /> },
-  ];
+  // Apps only for somebody who administers one. A person who reached this
+  // console for the API screen alone has no apps to manage, and a list of none
+  // offering to add one they cannot create is a screen that answers 403.
+  const items: SidebarItem[] = [];
+  if (administrative) {
+    items.push({ value: 'apps', label: 'Apps', trailing: <Badge count={rows.length} /> });
+  }
   // Reading accounts needs install.view; changing one needs
   // install.users.manage. Either is a reason to see the screen, and the screen
   // itself is read-only without the second.
@@ -90,6 +100,12 @@ export function AdminConsole({
   if (canView || canManagePolicy) items.push({ value: 'policy', label: 'Policy' });
   if (canManageBackups) items.push({ value: 'backups', label: 'Backups' });
   if (canReadAudit) items.push({ value: 'audit', label: 'Audit log' });
+
+  // Last, and for everyone. The API is the product (R-261) and an agent holding
+  // a token is an ordinary principal (R-262), so the manual and the way to mint
+  // a token are not administration — a developer with one app shared with them
+  // needs both.
+  items.push({ value: 'api', label: 'API and tools' });
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--paper)' }}>
@@ -118,6 +134,7 @@ export function AdminConsole({
         {section === 'policy' && <Policy canEdit={canManagePolicy} />}
         {section === 'backups' && <Backups />}
         {section === 'audit' && <Audit />}
+        {section === 'api' && <Reference />}
         {section === 'apps' &&
           (selectedID ? (
             <AppScreen

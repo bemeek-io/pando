@@ -184,7 +184,16 @@ pando export notes                          # the app's full spec, as JSON
 ```
 
 Also `pando backup`, `pando policy` and `pando token`. Run `pando <command> --help` for details, and
-`--server` to talk to an installation other than the one you logged into.
+`--server` to talk to an installation other than the one you logged into. Every command, with its
+flags: [`docs/cli.md`](docs/cli.md).
+
+For CI, a container or anything else with no home directory to store a login in, set a token in the
+environment instead:
+
+```bash
+export PANDO_SERVER=https://pando.example.com
+export PANDO_TOKEN=tok_…      # from the console, under API and tools
+```
 
 ## MCP server
 
@@ -214,9 +223,8 @@ claude mcp add pando -- pando mcp
 }
 ```
 
-Tools: `pando_list_apps`, `pando_get_app`, `pando_create_app`, `pando_get_detection`,
-`pando_answer_detection`, `pando_accept_proposal`, `pando_plan`, `pando_deploy`, `pando_get_logs`,
-`pando_get_status`.
+The tools, with their arguments: [`docs/mcp.md`](docs/mcp.md). An MCP client that runs `pando mcp`
+without a login of its own takes `PANDO_SERVER` and `PANDO_TOKEN` from its `env` block.
 
 An agent's token carries the same permissions you do and no more, and everything it does appears in
 the audit log under your name. Running commands inside apps, reading secret values and changing who
@@ -238,7 +246,10 @@ suggested fix:
 }
 ```
 
-Reference: [`docs/design/04-api.md`](docs/design/04-api.md).
+Every endpoint, the verb it asks for and every error code: [`docs/api.md`](docs/api.md) — generated
+from the running code, so it cannot describe a version of Pando that no longer exists. The same
+document is in the console under **API and tools**, which is also where you mint a token, and at
+`GET /api/v1/reference` for anything that would rather read it as JSON.
 
 ## Configuration
 

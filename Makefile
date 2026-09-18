@@ -82,7 +82,7 @@ lint: ## golangci-lint, including the R-027 adapter import rule
 	$(LINT) run
 
 .PHONY: check
-check: vet lint test ## Everything CI runs on a pull request
+check: vet lint test reference-check ## Everything CI runs on a pull request
 
 # Fuzz targets, and how long each one runs. One list so that adding a target
 # means adding a line here, rather than adding a line here and remembering to
@@ -150,6 +150,16 @@ detection-corpus: ## Run detection against the corpus of real repositories (netw
 # ---------------------------------------------------------------------------
 # Requirement traceability (design 00 §4)
 # ---------------------------------------------------------------------------
+
+.PHONY: reference
+reference: ## Regenerate docs/api.md, docs/cli.md and docs/mcp.md from the code
+	$(GO) run ./cmd/gen-reference docs
+
+.PHONY: reference-check
+reference-check: ## Fail if the generated reference is out of date
+	@$(GO) run ./cmd/gen-reference docs > /dev/null
+	@git diff --exit-code docs/api.md docs/cli.md docs/mcp.md \
+		|| { echo "docs/api.md, docs/cli.md or docs/mcp.md is out of date. Run 'make reference' and commit the result."; exit 1; }
 
 .PHONY: requirements-index
 requirements-index: ## Regenerate docs/traceability/requirements-index.md

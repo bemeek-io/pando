@@ -202,3 +202,12 @@ Do not skip ahead to a later phase without saying so in your report.
   not just an engineering one.
 - **Cite requirement IDs** in commit messages and comments where a non-obvious choice traces to one.
   `R-151` in a comment explains an absent code path better than three sentences will.
+- **The reference is generated; keep it that way.** `docs/api.md`, `docs/cli.md` and `docs/mcp.md`
+  are written by `make reference` from the router, the cobra tree and the MCP tool list, and the
+  console's **API and tools** screen renders the same document live from
+  `GET /api/v1/reference`. Adding an endpoint means adding a row to `routeDocs` in
+  `internal/httpapi/reference.go` — `TestR261_EveryRouteIsDocumented` fails the build otherwise, in
+  both directions. Adding an error code means adding its meaning to `meanings` in
+  `internal/errs/catalog.go`. Then run `make reference` and commit the result; `make check` and CI
+  both fail on a stale one. Never hand-edit those three files, and never describe a surface in prose
+  somewhere else when it could be generated from the thing itself.

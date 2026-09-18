@@ -57,8 +57,19 @@ export function App() {
   // back button does not bounce them between a page they cannot see and one
   // they can. The server refuses the requests underneath regardless; this is
   // only about not showing a shell that answers 403 to everything (R-265).
-  if (route.view === 'admin' && isAdmin) {
-    return <AdminConsole route={route} go={go} onLeave={() => go({ view: 'launcher', section: 'apps' })} />;
+  // The API screen is open to anyone signed in, so the console's shell is too
+  // — with everything else in it hidden, which is what the sidebar already does
+  // per verb. Somebody who lands on /admin with no verbs still goes back to the
+  // launcher; only /admin/api lets them stay.
+  if (route.view === 'admin' && (isAdmin || route.section === 'api')) {
+    return (
+      <AdminConsole
+        route={route}
+        go={go}
+        administrative={isAdmin}
+        onLeave={() => go({ view: 'launcher', section: 'apps' })}
+      />
+    );
   }
   if (route.view === 'admin' && !isAdmin && !principal.isPending) {
     go({ view: 'launcher', section: 'apps' }, true);
@@ -67,6 +78,7 @@ export function App() {
   return (
     <Launcher
       onAdmin={isAdmin ? () => go({ view: 'admin', section: 'apps' }) : undefined}
+      onReference={() => go({ view: 'admin', section: 'api' })}
     />
   );
 }

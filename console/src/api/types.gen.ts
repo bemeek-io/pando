@@ -138,6 +138,24 @@ export interface Error {
   request_id?: string;
 }
 
+export interface Document {
+  api: API;
+  cli: (Command[] | null);
+  mcp: (ToolDoc[] | null);
+  errors: (CodeDoc[] | null);
+  connect: Connect;
+}
+
+export interface Token {
+  id: string;
+  kind: string;
+  name: string;
+  owner_user_id?: string;
+  expires_at?: string;
+  last_used_at?: string;
+  revoked_at?: string;
+}
+
 export interface Source {
   type: string;
   url?: string;
@@ -261,6 +279,40 @@ export interface Warning {
   dismissed_by?: string;
 }
 
+export interface API {
+  base_path: string;
+  auth: (Auth[] | null);
+  routes: (Route[] | null);
+}
+
+export interface Command {
+  name: string;
+  use: string;
+  summary: string;
+  details?: string;
+  flags?: (Flag[] | null);
+  children?: (Command[] | null);
+}
+
+export interface ToolDoc {
+  name: string;
+  description: string;
+  schema: (Record<string, unknown> | null);
+}
+
+export interface CodeDoc {
+  code: string;
+  status: number;
+  meaning: string;
+}
+
+export interface Connect {
+  server_env: string;
+  token_env: string;
+  login_cmd: string;
+  mcp_cmd: string;
+}
+
 export interface KV {
   key: string;
   value: string;
@@ -317,5 +369,26 @@ export interface AutoDeploy {
   enabled: boolean;
   trigger?: string;
   branch?: string;
+}
+
+export interface Auth {
+  name: string;
+  how: string;
+  description: string;
+}
+
+export interface Route {
+  method: string;
+  path: string;
+  group: string;
+  summary: string;
+  verb?: string;
+}
+
+export interface Flag {
+  name: string;
+  shorthand?: string;
+  description: string;
+  default?: string;
 }
 

@@ -21,7 +21,14 @@ import { api } from '@api/client';
 import type { App } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
 
-export function Launcher({ onAdmin }: { onAdmin?: () => void }) {
+export function Launcher({
+  onAdmin,
+  onReference,
+}: {
+  onAdmin?: () => void;
+  /** The API screen, which everyone can reach (R-261, R-262). */
+  onReference?: () => void;
+}) {
   const apps = useQuery({
     queryKey: ['me', 'apps'],
     queryFn: () => api.get<{ apps: App[] | null }>('/me/apps'),
@@ -41,6 +48,21 @@ export function Launcher({ onAdmin }: { onAdmin?: () => void }) {
         <Logo size={20} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
         <ThemeToggle />
+        {onReference && (
+          <button
+            onClick={onReference}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              cursor: 'pointer',
+              font: 'var(--type-body-ui)',
+              color: 'var(--ink-secondary)',
+            }}
+          >
+            API and tools
+          </button>
+        )}
         {onAdmin && (
           <button
             onClick={onAdmin}

@@ -261,7 +261,14 @@ function Roles({ canEdit }: { canEdit: boolean }) {
               header: 'Permissions',
               width: 'minmax(0,28ch)',
               render: (row: Role) => (
-                <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 'var(--space-2)',
+                    flexWrap: 'wrap',
+                    padding: 'var(--space-2) 0',
+                  }}
+                >
                   {row.verbs.map((v) => (
                     <Tag key={v} mono>
                       {v}

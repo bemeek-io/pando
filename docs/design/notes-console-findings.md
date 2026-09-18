@@ -405,3 +405,74 @@ kept by the runtime — not by Pando — so it goes when the app is redeployed" 
 written for a reader who asked, and the reader of a log has not asked anything.
 Both section preambles on the Logs tab are gone; what is on the screen says what
 it is.
+
+## The manual is now built from the thing it describes
+
+Pando ships three surfaces — the API, the CLI, MCP — and documented none of
+them in a way that could stay true. `GET /api/v1/logs` existed with no client;
+the README listed the MCP tool names by hand; `docs/reference.md` pointed at a
+design document, which describes intent rather than what the binary serves. All
+three are the same failure: a description maintained by remembering.
+
+`internal/reference` assembles a document from the things themselves. The CLI
+half is walked out of the cobra tree `pando` actually runs, so a new command or
+flag appears with no further step. The MCP half is the tool list the MCP server
+actually announces. The error codes are `errs.Catalog()`, which
+`TestEveryCodeIsInTheCatalog` checks against this package's own parsed source —
+Go cannot enumerate constants at runtime, so a new code with no documented
+meaning fails the build.
+
+The API half cannot be read the same way: chi knows a route's method and pattern
+and nothing about what it is for. So `internal/httpapi/reference.go` keeps a
+table of summaries beside the router, and `TestR261_EveryRouteIsDocumented`
+walks the real router and fails **in both directions** — an endpoint with no row,
+or a row with no endpoint. It caught its first drift immediately: the reference
+endpoint was documented before it was routed.
+
+Three readers, one document:
+
+- `GET /api/v1/reference`, which the console's **API and tools** screen renders.
+- `make reference`, which writes `docs/api.md`, `docs/cli.md` and `docs/mcp.md`.
+- `make check` and CI, which fail on a stale one — the same shape as the
+  generated API types and the requirements index.
+
+**The screen is open to anyone signed in, and the endpoint to anyone at all.**
+The document holds nothing about the installation — no app, no account, no
+policy — and the same text is in the repository. A client that must authenticate
+before it can read how to authenticate is a product with one client.
+
+**One thing the generator caught in the code rather than in the docs.** The
+first draft of `docs/cli.md` said to set `PANDO_SERVER` and `PANDO_TOKEN`, which
+is the obvious way to give CI a token — and the CLI read neither. It read a file
+under the user's home directory and nothing else, so a token minted for a
+container could only be used by writing that file by hand. Rather than document
+the gap, `cli.New` now reads both, the environment beating the stored file and
+`--server` beating both, with the names exported as constants so the generated
+page quotes what the code reads.
+
+## Service tokens had a schema, a store and no endpoint
+
+R-060 has been implemented everywhere except where somebody could reach it:
+`state.TokenAccount` exists, the tokens table takes it, `grants.principal_kind`
+includes `token`, and `authz` resolves one as its own principal. There was no
+route, so an installation could not have a service token at all.
+
+`POST /tokens/service` mints one, behind `install.users.manage`. The verb is the
+one that creates and deletes accounts, because a service token is something that
+acts like one — its own principal, in the audit log under its own name,
+outliving whoever created it. No new verb: a verb that only ever travels with
+another is a list to maintain and nothing to enforce.
+
+A token still cannot mint a token, the same rule delegated tokens have and for
+the same reason — a stolen one that can renew itself makes revoking the original
+pointless. And a fresh service token holds nothing at all; it reaches an app when
+somebody shares one with it, which is the R-060 shape rather than an
+administrator's second credential.
+
+## Controls in a table row need their own padding
+
+A 36px `Select` in a 40px row leaves two pixels above and below it, so a column
+of them reads as one solid block with hairlines through it, and a wrapped row of
+permission tags had nothing between it and the rule underneath. The Table sets a
+minimum row height rather than a height, so the fix is padding on the cell and
+the row grows to fit.

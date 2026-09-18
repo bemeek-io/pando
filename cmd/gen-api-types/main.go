@@ -29,6 +29,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/detect"
 	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/bemeek-io/pando/internal/reference"
 )
 
 // exported are the types that cross the API boundary.
@@ -49,6 +50,13 @@ var exported = []any{
 	detect.Question{},
 	spec.AppSpec{},
 	errs.Error{},
+
+	// The API's own description. The console's API screen renders this, and a
+	// hand-written interface for it would be the second opinion this generator
+	// exists to prevent — the one place where a stale type would describe the
+	// documentation of the API rather than the API.
+	reference.Document{},
+	state.Token{},
 }
 
 func main() {

@@ -91,19 +91,22 @@ export function Accounts() {
             key: 'install_role_id',
             header: 'Installation role',
             width: 'minmax(0,24ch)',
-            render: (row: Account) =>
-              manage ? (
-                <RolePicker
-                  account={row}
-                  roles={roles.data?.roles ?? []}
-                  // You can demote yourself when somebody else can still
-                  // administer — the server refuses the last one. What the
-                  // console will not do is make that look like a normal edit.
-                  isSelf={row.id === me.data?.user_id}
-                />
-              ) : (
-                <RoleLabel roleID={row.install_role_id} roles={roles.data?.roles ?? []} />
-              ),
+            render: (row: Account) => (
+              <div style={{ padding: 'var(--space-2) 0' }}>
+                {manage ? (
+                  <RolePicker
+                    account={row}
+                    roles={roles.data?.roles ?? []}
+                    // You can demote yourself when somebody else can still
+                    // administer — the server refuses the last one. What the
+                    // console will not do is make that look like a normal edit.
+                    isSelf={row.id === me.data?.user_id}
+                  />
+                ) : (
+                  <RoleLabel roleID={row.install_role_id} roles={roles.data?.roles ?? []} />
+                )}
+              </div>
+            ),
           },
           {
             key: 'actions',
