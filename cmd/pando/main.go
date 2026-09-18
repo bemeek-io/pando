@@ -335,6 +335,9 @@ func serve(ctx context.Context, configPath string) error {
 
 	detections := state.NewDetections(db)
 	detector := &detection.Runner{
+		// The score of what was proposed, before anybody decides whether to
+		// deploy it (R-312).
+		Scanner:    sourceScanner{service: securityService, logger: logger},
 		Apps:       apps,
 		Detections: detections,
 		Policy:     hostPolicy,
@@ -968,4 +971,36 @@ func (n securityNotifier) Notify(ctx context.Context, userID, appID, subject, bo
 		Subject:    subject,
 		Body:       body,
 	}, 0)
+}
+
+// sourceScanner scores a checkout during detection (R-312).
+//
+// A shim rather than the security service directly: detection knows an app ID
+// and a directory, and nothing about scan requests, audit events or who is
+// asking — which here is nobody. Detection runs in the background after an app
+// is created, so the principal is the system, recorded as such.
+type sourceScanner struct {
+	service *security.Service
+	logger  *zap.Logger
+}
+
+func (s sourceScanner) ScanSource(ctx context.Context, appID, dir string) {
+	if s.service == nil {
+		return
+	}
+	if _, configured := s.service.Configured(); !configured {
+		return
+	}
+
+	// No spec ID: there is no revision yet, and there may never be one — this
+	// is a scan of what was proposed, which is exactly the thing somebody is
+	// deciding about.
+	if _, err := s.service.Scan(ctx, adapterapi.ScanRequest{AppID: appID, SourceDir: dir},
+		audit.Event{PrincipalKind: audit.KindSystem, PrincipalID: "detection"}); err != nil {
+		// Never fatal. The proposal is what this run is producing, and a
+		// scanner that could not read a checkout is recorded as a failed scan
+		// on the app already.
+		s.logger.Info("could not scan an app's source during detection",
+			zap.String("app_id", appID), zap.Error(err))
+	}
 }

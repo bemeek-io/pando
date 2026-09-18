@@ -199,13 +199,23 @@ because an agent asking Pando to rescan until it passes is a loop nobody wants.
 
 ## 7. What the first implementation does, and does not
 
-**Deploy-time scans read the image and the checkout.** Both are in hand at that
-point: the image was just built, and the source is still on disk. **An on-demand
-rescan reads the image only** — the one the app's newest successful deploy
-shipped, recorded on the deployment row. Re-fetching a repository to rescan its
-tree is a clone per rescan, and the findings that only appear in a tree
-(committed secrets, misconfiguration) do not change without a commit, which is
-a deploy. Revisit if that turns out to be wrong.
+**Three moments, and each scans what exists at it.**
+
+- **Detection**, while the checkout is still on disk. An app that has been added
+  and not yet deployed has no image, and waiting for one means the first thing
+  anybody sees about a new app is "not scanned yet" — when a committed key or a
+  vulnerable lockfile is exactly what they want to know before deciding to
+  deploy it. The scan has no spec revision, because there is no revision yet.
+  Never fatal: the proposal is what that run is producing.
+- **Deploy**, after the build: the image and the checkout together, against the
+  revision being deployed.
+- **On demand**, against whatever the app has. A deployed app's newest
+  successful image, and for one that has never been built, a fresh checkout —
+  fetched for the scan and dropped after it, because a copy of somebody's code
+  held between scans is a copy Pando is responsible for, and a clone on a button
+  press is a cost the person pressing it chose. Host policy's source allowlist
+  is checked again before the clone (R-092), because it can change between
+  creation and now.
 
 **The scanner is seeded on and enforces nothing.** A fresh installation gets
 Trivy as its default scanner, so every deploy produces a score — and

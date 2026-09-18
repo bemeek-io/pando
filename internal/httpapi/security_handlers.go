@@ -10,6 +10,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/security"
+	"github.com/bemeek-io/pando/internal/core/source"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
 )
@@ -56,19 +57,44 @@ func (s *Server) handleScanApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// What is running, which is what somebody rescanning wants to know about.
-	// An app that has never deployed has no image, and the scanner says so
-	// rather than this endpoint guessing at one.
 	image, err := s.lastDeployedImage(r.Context(), app.ID)
 	if err != nil {
 		Error(w, r, err)
 		return
 	}
 
+	// An app that has never been built has no image, and the thing somebody is
+	// deciding about is its source — which is the same thing detection scans
+	// when the app is added. Fetched here rather than kept: a checkout held
+	// between scans is a copy of somebody's code Pando is responsible for, and
+	// a clone on a button press is a cost the person pressing it chose.
+	var sourceDir string
+	if image == "" && app.Source.Type != "" {
+		// Policy again, not only at creation: the allowlist can change between
+		// the two, and a source that is no longer allowed must not be cloned
+		// (R-092).
+		if s.Policy != nil {
+			if err := s.Policy.AllowsSource(r.Context(), app.Source.URL); err != nil {
+				Error(w, r, err)
+				return
+			}
+		}
+
+		checkout, err := source.Fetch(r.Context(), app.Source)
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		defer checkout.Close()
+		sourceDir = checkout.Dir
+	}
+
 	p := PrincipalFrom(r.Context())
 	scan, err := s.Security.Scan(r.Context(), api.ScanRequest{
-		AppID:  app.ID,
-		SpecID: app.PinnedSpecID,
-		Image:  image,
+		AppID:     app.ID,
+		SpecID:    app.PinnedSpecID,
+		Image:     image,
+		SourceDir: sourceDir,
 	}, audit.Event{
 		PrincipalKind: audit.PrincipalKind(p.Kind),
 		PrincipalID:   p.ID,

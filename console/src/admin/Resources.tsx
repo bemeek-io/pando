@@ -11,7 +11,6 @@ import { Banner, Button, Dialog, Input, Select, StatusIndicator, Table } from '@
 
 import { api } from '@api/client';
 import { Quiet, messageOf } from '../install/Accounts';
-import { MEASURE } from '../ui/layout';
 import { Environment } from './Environment';
 import { BuildPlan } from './BuildPlan';
 
@@ -277,7 +276,11 @@ function Volumes({ appID, focus }: { appID: string; focus?: boolean }) {
   const rows = volumes.data?.volumes ?? [];
 
   return (
-    <section ref={heading} style={{ maxWidth: MEASURE }}>
+    // No width of its own: the cap arrived with the scroll-into-view ref and
+    // made this the one narrow section on a page of wide ones. Every section
+    // here is bounded by its table's own columns, which is what keeps them
+    // agreeing with each other.
+    <section ref={heading}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Storage</h4>
         <Button variant="ghost" onClick={() => setAdding(true)}>
