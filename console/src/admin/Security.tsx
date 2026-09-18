@@ -13,6 +13,7 @@
 // somebody who can deploy can ask for a new scan, because the score decides
 // whether the next deploy is allowed.
 
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banner, Button, StatusIndicator, Table, Tag } from '@design';
 
@@ -36,9 +37,19 @@ export function Security({ appID }: { appID: string }) {
     onSuccess: () => queries.invalidateQueries({ queryKey: ['apps', appID, 'security'] }),
   });
 
+  const [all, setAll] = useState(false);
+
   const standing = report.data?.standing;
   const counts = report.data?.counts;
   const findings = report.data?.scan?.findings ?? [];
+
+  // The five that cost the most, ranked by the server. A base image can carry
+  // two hundred findings, and a list of two hundred on the page somebody
+  // deploys from is a list nobody reads and a Deploy button nobody can find.
+  // The rest are one click away, in a box with a bottom to it.
+  const worst = report.data?.worst ?? findings.slice(0, 5);
+  const shown = all ? findings : worst;
+  const hidden = findings.length - worst.length;
 
   return (
     <section style={{ maxWidth: MEASURE }}>
@@ -66,6 +77,20 @@ export function Security({ appID }: { appID: string }) {
 
       {counts && findings.length > 0 && (
         <div style={{ marginTop: 'var(--space-5)' }}>
+          <div
+            style={
+              all
+                ? {
+                    // Bounded and scrolling, for the same reason the log is:
+                    // a page that grows with its content pushes everything
+                    // below it out of reach.
+                    maxHeight: '50vh',
+                    overflowY: 'auto',
+                    overscrollBehavior: 'contain',
+                  }
+                : undefined
+            }
+          >
           <Table
             columns={[
               { key: 'id', header: 'Finding', width: 'minmax(0,24ch)', mono: true },
@@ -95,8 +120,17 @@ export function Security({ appID }: { appID: string }) {
                 render: (row: Finding) => (row.fix ? <Tag mono>{row.fix}</Tag> : 'No fix yet'),
               },
             ]}
-            rows={findings}
+            rows={shown}
           />
+          </div>
+
+          {hidden > 0 && (
+            <div style={{ marginTop: 'var(--space-3)' }}>
+              <Button variant="ghost" onClick={() => setAll(!all)}>
+                {all ? 'Show the five worst' : `Show all ${findings.length} findings`}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </section>
