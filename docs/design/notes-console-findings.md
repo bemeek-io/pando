@@ -591,3 +591,33 @@ own query of the app's revisions rather than taking one as a prop — passing th
 revision down is how a button ends up shipping a spec that changed while
 somebody was reading the page. It appears only once an app has a configuration
 to deploy; before that the thing to do is accept one.
+
+## An app that could be accepted and could not be deployed
+
+crewmate imported a compose file with two services, was accepted, and then
+refused every deploy: "none of this app's workloads is marked as the primary
+one". The message was correct and there was nothing anywhere to act on it —
+Deploy raised it, the decision belongs to the configuration tab, and no screen
+has a control for marking a workload primary.
+
+Three things were wrong, and each is fixed where it went wrong.
+
+**Nobody elected one.** Design 01 says the detector asks rather than picking,
+and it does — but the question rides on the *compose candidate*, and this
+repository had a Dockerfile as well, so the tie-break was the question a person
+saw. Answering it adopts the compose reading, whose own question was never put.
+`WithAnswers` now elects a primary when no answer names one: the workload that
+serves HTTP and that nothing depends on, which is the shape of a web service in
+every ordinary compose file. **[P] overriding that [D]** — it still asks, and
+now it also picks, and it says which it picked in a warning (R-102, R-104).
+
+**Accept pinned it anyway.** The spec was never validated before being written,
+so a spec that could not deploy was accepted quietly and refused later, by a
+different button, on a different screen. Accept validates now, and the refusal
+arrives where the answer is.
+
+**And the refusal moved the header around.** The deploy error rendered inside
+the header's action cluster; it is three sentences, so it widened the row and
+shoved Deploy and Delete sideways. It is a banner under the header now, where
+the app's other banners are — the button reports the refusal upward rather than
+drawing it.

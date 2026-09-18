@@ -35,6 +35,7 @@ import { DeleteApp } from './DeleteApp';
 import { DeployButton } from './DeployButton';
 import type { Route, Section } from '../app/route';
 import { ThemeToggle } from '../ui/ThemeToggle';
+import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { ScoreBadge } from '../ui/ScoreBadge';
 import { Terminal } from './Terminal';
@@ -315,6 +316,11 @@ function AppScreen({
   // tab with four sections above it. Cleared by any ordinary tab click, so it
   // only ever applies to the trip it was set for.
   const [focus, setFocus] = useState<string | undefined>(undefined);
+
+  // A refused deploy, rendered under the header rather than inside it: the
+  // message is a sentence or three, and a paragraph in a row of buttons moves
+  // the buttons.
+  const [refusal, setRefusal] = useState<{ message: string; remedy?: string } | null>(null);
   const setTab = (next: string, at?: string) => {
     setFocus(at);
     onTab(next);
@@ -399,7 +405,12 @@ function AppScreen({
                 tab, rather than under everything on the overview. Only for an
                 app that has a configuration to deploy: before that, the thing
                 to do is accept one. */}
-            {app.data.pinned_spec_id && <DeployButton app={app.data} />}
+            {app.data.pinned_spec_id && (
+              <DeployButton
+                app={app.data}
+                onRefused={(message, remedy) => setRefusal(message ? { message, remedy } : null)}
+              />
+            )}
 
             {/* In the header rather than on Settings: an app whose source could
                 not be fetched has no pinned spec and therefore no Settings tab,
@@ -408,6 +419,20 @@ function AppScreen({
           </div>
         </div>
       </header>
+
+      {refusal && (
+        <div style={{ padding: '0 var(--console-padding) var(--space-4)', maxWidth: MEASURE }}>
+          {/* The server's words, which are written to be acted on (R-105). */}
+          <Banner tone="failed" action={
+            <Button variant="ghost" onClick={() => setRefusal(null)}>
+              Dismiss
+            </Button>
+          }>
+            {refusal.message}
+            {refusal.remedy ? ` ${refusal.remedy}` : ''}
+          </Banner>
+        </div>
+      )}
 
       <div style={{ padding: '0 var(--console-padding)' }}>
         <Tabs value={tab} onChange={setTab} items={tabs} />

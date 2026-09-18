@@ -14,6 +14,7 @@
 // request, and the alternative — passing the revision down — is how a button
 // ends up shipping a spec that changed while somebody was reading the page.
 
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@design';
 
@@ -25,7 +26,14 @@ interface SpecRevision {
   revision: number;
 }
 
-export function DeployButton({ app }: { app: App }) {
+export function DeployButton({
+  app,
+  onRefused,
+}: {
+  app: App;
+  /** The refusal to show, or an empty message to clear one. */
+  onRefused: (message: string, remedy?: string) => void;
+}) {
   const queries = useQueryClient();
 
   const specs = useQuery({
@@ -54,30 +62,28 @@ export function DeployButton({ app }: { app: App }) {
 
   const failed = deploy.error instanceof RequestFailed ? deploy.error : null;
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-1)' }}>
-      <Button
-        variant="primary"
-        onClick={() => deploy.mutate()}
-        disabled={deploy.isPending || app.state === 'deploying'}
-      >
-        {app.state === 'deploying' ? 'Deploying' : 'Deploy'}
-      </Button>
+  // The refusal is handed to the caller rather than drawn under the button.
+  //
+  // A deploy is refused with a paragraph — "none of this app's workloads is
+  // marked as the primary one…" — and a paragraph inside a row of buttons
+  // widens the row and shoves them around, which is what happened. It belongs
+  // where the app's other banners are: across the page, under the header.
+  useEffect(() => {
+    if (deploy.isError) {
+      onRefused(failed?.message ?? 'Pando couldn’t start a deploy. Try again.', failed?.remedy);
+    }
+    if (deploy.isSuccess) {
+      onRefused('', undefined);
+    }
+  }, [deploy.isError, deploy.isSuccess, failed?.message, failed?.remedy]);
 
-      {deploy.isError && (
-        // Beside the button that caused it rather than at the foot of the
-        // page: the message is the server's, written to be acted on (R-105).
-        <div style={{ textAlign: 'right', maxWidth: '48ch' }}>
-          <p style={{ font: 'var(--type-caption)', color: 'var(--marker-deep)', margin: 0 }}>
-            {failed?.message ?? 'Pando couldn’t start a deploy. Try again.'}
-          </p>
-          {failed?.remedy && (
-            <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
-              {failed.remedy}
-            </p>
-          )}
-        </div>
-      )}
-    </div>
+  return (
+    <Button
+      variant="primary"
+      onClick={() => deploy.mutate()}
+      disabled={deploy.isPending || app.state === 'deploying'}
+    >
+      {app.state === 'deploying' ? 'Deploying' : 'Deploy'}
+    </Button>
   );
 }
