@@ -1,37 +1,26 @@
-// The security score, as a badge (R-310, R-320).
+// The security score: a shield, colored, with the number beside it (R-310,
+// R-320).
 //
-// The number is always in it. R-320 rules out a grade or a color standing on
-// its own — "F" tells a deployer nothing they can act on, and a red pill tells
-// somebody who cannot see red nothing at all — so the badge is the score, out
-// of 100, with color as the second signal rather than the only one. The design
-// system's own rule is the same shape: status is a symbol plus a word, never a
-// colored pill.
+// The shield carries the color and the number carries the fact. R-320 rules out
+// a grade or a color standing on its own — "F" tells a deployer nothing they can
+// act on, and a red mark tells somebody who cannot see red nothing at all — so
+// the two always travel together, which is the design system's own rule for
+// status: a symbol plus a word, never a colored pill.
+//
+// The shape is drawn here rather than taken from the design system because its
+// vendored icon set has no shield. When one is added upstream this becomes an
+// `<Icon name="shield">` and nothing else changes; the stroke weight and the
+// colors are the system's already.
 //
 // The color says what the number means *here*. An installation with a threshold
 // colors against the threshold; one without colors against bands, because a
 // score of 20 is worth noticing even where nothing is enforced.
 
 const TONES = {
-  bad: {
-    color: 'var(--marker-deep)',
-    background: 'var(--status-failed-tint)',
-    borderColor: 'var(--marker)',
-  },
-  warn: {
-    color: 'var(--contour-text)',
-    background: 'var(--status-building-tint)',
-    borderColor: 'var(--contour)',
-  },
-  good: {
-    color: 'var(--vegetation-deep)',
-    background: 'var(--status-running-tint)',
-    borderColor: 'var(--vegetation-deep)',
-  },
-  none: {
-    color: 'var(--ink-secondary)',
-    background: 'var(--paper-sunken)',
-    borderColor: 'var(--rule-strong)',
-  },
+  bad: { ink: 'var(--marker)', fill: 'var(--status-failed-tint)' },
+  warn: { ink: 'var(--contour)', fill: 'var(--status-building-tint)' },
+  good: { ink: 'var(--vegetation-deep)', fill: 'var(--status-running-tint)' },
+  none: { ink: 'var(--ink-muted)', fill: 'var(--paper-sunken)' },
 } as const;
 
 export type Verdict = 'ok' | 'insecure' | 'unscanned' | 'inert' | '';
@@ -55,49 +44,59 @@ export function ScoreBadge({
   verdict,
   threshold = 0,
   full = false,
+  size = 18,
 }: {
   score?: number | null;
   verdict?: Verdict;
   /** The installation's minimum, when the reader is allowed to know it. */
   threshold?: number;
-  /** Show "/ 100". On in a table, where the bare number is ambiguous. */
+  /** Show "/ 100". On in a table, where a bare number is ambiguous. */
   full?: boolean;
+  size?: number;
 }) {
   const colors = TONES[tone(score, verdict, threshold)];
-
-  if (score === null || score === undefined) {
-    return (
-      <span style={{ ...base, ...colors }} title="This app has not been scanned yet.">
-        Not scanned
-      </span>
-    );
-  }
+  const unscanned = score === null || score === undefined;
 
   return (
     <span
-      style={{ ...base, ...colors }}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 'var(--space-2)',
+        whiteSpace: 'nowrap',
+      }}
       title={
-        verdict === 'insecure'
-          ? `Below this installation's requirement of ${threshold}`
-          : 'Security score, out of 100'
+        unscanned
+          ? 'This app has not been scanned yet.'
+          : verdict === 'insecure'
+            ? `Below this installation's requirement of ${threshold}`
+            : 'Security score, out of 100'
       }
     >
-      {score}
-      {full ? ' / 100' : ''}
+      <Shield color={colors.ink} fill={colors.fill} size={size} />
+      <span style={{ font: 'var(--type-code-sm)', color: unscanned ? 'var(--ink-secondary)' : colors.ink }}>
+        {unscanned ? 'Not scanned' : full ? `${score} / 100` : score}
+      </span>
     </span>
   );
 }
 
-// 2px, the radius the system gives a tag: this is a label on an object, not an
-// object of its own, and a pill is reserved for status dots and the switch.
-const base = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 'var(--space-1)',
-  padding: 'var(--space-1) var(--space-2)',
-  font: 'var(--type-code-sm)',
-  borderRadius: 'var(--radius-xs)',
-  borderWidth: 'var(--border-width)',
-  borderStyle: 'solid',
-  whiteSpace: 'nowrap',
-} as const;
+/** A shield at the brand's 1.5px stroke, filled with its own tint. */
+function Shield({ color, fill, size }: { color: string; fill: string; size: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={fill}
+      stroke={color}
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={{ flex: '0 0 auto' }}
+    >
+      <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+    </svg>
+  );
+}

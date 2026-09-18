@@ -533,3 +533,9 @@ stylesheet.
 They are `color`, `background` and `borderColor` now, with `borderWidth` and
 `borderStyle` separate so a spread cannot take the shorthand with it. Verified by
 reading the computed style out of a live page rather than by looking at it.
+
+**And the shield is drawn in the console.** The design system's vendored icon
+set has ten glyphs and none of them is a shield, so `ScoreBadge` carries the
+path at the brand's 1.5px stroke, filled with its own status tint. When a shield
+is added upstream this becomes an `<Icon name="shield">` and nothing else
+changes — the stroke weight and both colors are the system's already.

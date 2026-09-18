@@ -158,13 +158,15 @@ and needs a decision about what it costs on a small host.
 **Console.** The score lives on the app's **overview**, beside the card carrying its status, address
 and last deploy — in the column a deploy log used to occupy. The score is a property of what is
 running, and the person who has to act on it is the one reading that page; a log is a history and
-belongs with the other histories on the Logs tab. The section carries the badge, the counts, when it was taken, every finding, and **Scan now**.
+belongs with the other histories on the Logs tab. The section carries the mark, the counts, when it was taken, every finding, and **Scan now**.
 It is not in settings: settings is where an app is configured, and a score is not a setting.
 
-The **apps list** carries the badge too, at `score / 100`, beside status — which is the question a
+The **apps list** carries the same mark, at `score / 100`, beside status — which is the question a
 list is for: which of these needs me.
 
-**[D] The badge always contains the number** (R-320). Color is the second signal, never the only one:
+**[D] The score is a shield and a number, together** (R-320). The shield carries the color and the
+number carries the fact; neither appears without the other. Color is the second signal, never the
+only one:
 "F" tells a deployer nothing they can act on, and a red pill tells somebody who cannot see red
 nothing at all. The color says what the number means *here* — against the installation's threshold
 where one is set, and against bands where none is, because a score of 20 is worth noticing on an
