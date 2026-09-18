@@ -79,6 +79,16 @@ export function AdminConsole({
     enabled: administrative,
   });
 
+  // The same query key the accounts screen uses, so the sidebar's count and
+  // that screen's table are one request and cannot disagree. Only asked for by
+  // somebody who may read it — the endpoint refuses the rest, and a sidebar
+  // that fires a 403 on every load is a sidebar that fills the log.
+  const accounts = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.get<{ users: unknown[] | null }>('/users'),
+    enabled: canView || canManageUsers,
+  });
+
   const rows = apps.data?.apps ?? [];
 
   // Apps only for somebody who administers one. A person who reached this
@@ -91,7 +101,13 @@ export function AdminConsole({
   // Reading accounts needs install.view; changing one needs
   // install.users.manage. Either is a reason to see the screen, and the screen
   // itself is read-only without the second.
-  if (canView || canManageUsers) items.push({ value: 'accounts', label: 'Accounts' });
+  if (canView || canManageUsers) {
+    items.push({
+      value: 'accounts',
+      label: 'Accounts',
+      trailing: <Badge count={accounts.data?.users?.length ?? 0} />,
+    });
+  }
   // Groups and roles are the same verb pair as accounts, and a separate screen:
   // who someone is and what a role can do are different questions, and one
   // screen answering both is how an authorization model turns into a list of
