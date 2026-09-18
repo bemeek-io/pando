@@ -17,6 +17,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
@@ -313,12 +314,50 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 
 	created, err := a.cli.ContainerCreate(ctx, cfg, hostCfg, netCfg, nil, name)
 	if err != nil {
-		return errs.Wrap(errs.AdapterFailed, fmt.Sprintf("Could not create %q.", w.Name), err)
+		return createFailure(w, err)
 	}
 	if err := a.cli.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
 		return errs.Wrap(errs.AdapterFailed, fmt.Sprintf("Could not start %q.", w.Name), err)
 	}
 	return nil
+}
+
+// createFailure says why the daemon refused, in the app's own terms.
+//
+// One refusal is worth naming. Storage Pando manages is a directory, and Docker
+// will not mount a directory over a file that exists in the image, so a mount
+// whose path inside the container is a file fails at create with
+// "source /var/lib/docker/rootfs/overlayfs/a083.../etc/caddy/Caddyfile is not
+// directory" — a path on the host that appears in nothing the person
+// configured. Naming the mount instead gives them the line to remove (R-105).
+//
+// The compose importer now refuses such a mount at discovery, which is where it
+// belongs. This is for the apps that already carry one, and for a mount typed
+// in by hand.
+func createFailure(w api.WorkloadPlan, err error) error {
+	if text := err.Error(); strings.Contains(text, "not directory") ||
+		strings.Contains(text, "not a directory") {
+		// Which mount, read out of the daemon's own path: it is the
+		// container's rootfs with the mount's path on the end, so the mount
+		// that appears in it is the one that failed. Guessing from the path's
+		// shape instead does not work — "Caddyfile" has no extension.
+		var files []string
+		for _, m := range w.Mounts {
+			if strings.Contains(text, m.Path) {
+				files = append(files, m.Path)
+			}
+		}
+		if len(files) > 0 {
+			return errs.Wrap(errs.AdapterFailed, fmt.Sprintf(
+				"Could not create %q: its storage is mounted at %s, which is a file inside the image.",
+				w.Name, strings.Join(files, " and ")), err).
+				WithRemedy("Storage Pando manages is a directory and cannot stand in for a single " +
+					"file. Remove that mount in the app's storage settings, and copy the file into " +
+					"the image in its Dockerfile instead.")
+		}
+	}
+
+	return errs.Wrap(errs.AdapterFailed, fmt.Sprintf("Could not create %q.", w.Name), err)
 }
 
 // Observe reports what exists. It never remediates (design 05 §2.1).
@@ -639,7 +678,41 @@ func (a *Adapter) Logs(ctx context.Context, ref api.WorkloadRef, opts api.LogOpt
 	if err != nil {
 		return nil, errs.Wrap(errs.AdapterFailed, "Could not read the app's logs.", err)
 	}
-	return rc, nil
+
+	// Docker frames the output of a container that has no TTY: an 8-byte header
+	// before every chunk, saying which stream it came from and how long it is.
+	// Pando creates every workload without one (see apply), so this stream
+	// always carries that framing, and a caller copying it to a response body —
+	// which is exactly what the logs endpoint does — puts control bytes through
+	// the middle of the log somebody is reading.
+	//
+	// trial.go has a strip-it-from-a-buffer version of this for crash capture.
+	// This is the streaming one: stdcopy unpicks the frames as they arrive, so
+	// a followed log stays live.
+	pr, pw := io.Pipe()
+	go func() {
+		_, err := stdcopy.StdCopy(pw, pw, rc)
+		_ = rc.Close()
+		// A closed reader ends the copy with an error that is not one: the
+		// caller hung up, which is how following a log always ends.
+		_ = pw.CloseWithError(err)
+	}()
+	return demuxed{PipeReader: pr, source: rc}, nil
+}
+
+// demuxed is the unframed stream, and closes the framed one behind it.
+//
+// Closing only the pipe would leave the connection to the daemon open and the
+// goroutine copying into a reader nobody is holding — on a followed log, for as
+// long as the container keeps printing.
+type demuxed struct {
+	*io.PipeReader
+	source io.Closer
+}
+
+func (d demuxed) Close() error {
+	_ = d.source.Close()
+	return d.PipeReader.Close()
 }
 
 // Exec opens a session. Core has already checked app.exec, consulted policy, and

@@ -25,6 +25,11 @@ const (
 	// carries the reversal and the reasoning, rather than the change being
 	// visible only here.
 	CategoryBackup Category = "backup"
+
+	// CategoryScanner is the ninth (R-317), added with the security score.
+	// Pando translates a scanner's findings into a number and a policy
+	// decision; it does not implement one. See design 09.
+	CategoryScanner Category = "scanner"
 )
 
 // Adapter is implemented by every adapter in every category.

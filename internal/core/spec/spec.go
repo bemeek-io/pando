@@ -520,6 +520,12 @@ const (
 	WarnPathRoutingIncompatible   = "WARN_PATH_ROUTING_INCOMPATIBLE"
 	WarnComposeConstructRewritten = "WARN_COMPOSE_CONSTRUCT_REWRITTEN"
 	WarnUndeclaredDependency      = "WARN_UNDECLARED_DEPENDENCY_SUSPECTED"
+
+	// WarnPrimaryWorkloadAssumed is R-026 with the question unanswered: a
+	// compose file with several services does not say which one a person opens
+	// in a browser, so Pando picks the likeliest and says so rather than
+	// producing a spec that cannot deploy.
+	WarnPrimaryWorkloadAssumed = "WARN_PRIMARY_WORKLOAD_ASSUMED"
 )
 
 // Warning is advisory. It lives in the spec and survives revisions until

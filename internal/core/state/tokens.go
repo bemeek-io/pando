@@ -198,6 +198,36 @@ func (t *Tokens) ListForUser(ctx context.Context, userID string) ([]Token, error
 	return out, rows.Err()
 }
 
+// ListAccounts lists account-level tokens (R-060).
+//
+// Separate from ListForUser because these have no owner: an account token is
+// its own principal, appears in grants under its own ID, and outlives whoever
+// created it. "Every token in the install" is not a list anyone needs and is
+// not offered — a delegated token belongs to the person who made it, and
+// showing all of them to an administrator would make a screen out of other
+// people's credentials.
+func (t *Tokens) ListAccounts(ctx context.Context) ([]Token, error) {
+	rows, err := t.db.Query(ctx, `
+		SELECT id, kind, name, expires_at, last_used_at, revoked_at
+		FROM tokens
+		WHERE kind = $1 AND revoked_at IS NULL
+		ORDER BY id`, TokenAccount)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not list service tokens.", err)
+	}
+	defer rows.Close()
+
+	out := make([]Token, 0)
+	for rows.Next() {
+		var tok Token
+		if err := rows.Scan(&tok.ID, &tok.Kind, &tok.Name, &tok.ExpiresAt, &tok.LastUsedAt, &tok.RevokedAt); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not list service tokens.", err)
+		}
+		out = append(out, tok)
+	}
+	return out, rows.Err()
+}
+
 // Owner returns a token's owner, for checking who may revoke it.
 func (t *Tokens) Owner(ctx context.Context, tokenID string) (string, bool, error) {
 	var owner *string

@@ -65,7 +65,7 @@ export function Backups() {
               <Tag>{row.kind === 'dr_bundle' ? 'Whole installation' : row.kind}</Tag>
             ),
           },
-          { key: 'adapter_ref', header: 'Destination', width: 'minmax(0,1fr)', mono: true },
+          { key: 'adapter_ref', header: 'Destination', width: 'minmax(0,18ch)', mono: true },
           {
             key: 'size_bytes',
             header: 'Size',

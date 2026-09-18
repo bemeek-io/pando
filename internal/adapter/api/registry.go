@@ -96,6 +96,8 @@ func satisfiesCategory(a Adapter) error {
 		_, ok = a.(NotifyAdapter)
 	case CategoryBackup:
 		_, ok = a.(BackupAdapter)
+	case CategoryScanner:
+		_, ok = a.(ScannerAdapter)
 	default:
 		return fmt.Errorf("unknown category %q", a.Category())
 	}
@@ -173,6 +175,38 @@ func (r *Registry) Builder(ref string) (BuilderAdapter, bool) {
 	}
 	b, ok := a.(BuilderAdapter)
 	return b, ok
+}
+
+// Scanner returns a scanner adapter by reference (R-317).
+func (r *Registry) Scanner(ref string) (ScannerAdapter, bool) {
+	a, ok := r.Get(ref)
+	if !ok {
+		return nil, false
+	}
+	s, ok := a.(ScannerAdapter)
+	return s, ok
+}
+
+// DefaultScanner returns the configured scanner, if there is one.
+//
+// An installation with none has no scores, and a security threshold set on it
+// is inert (R-317). That is a state the console has to be able to report, so
+// "is there a scanner" is a question with an answer rather than a nil check at
+// every call site.
+func (r *Registry) DefaultScanner() (ScannerAdapter, string, bool) {
+	ref, ok := r.Default(CategoryScanner)
+	if !ok {
+		refs := r.ByCategory(CategoryScanner)
+		if len(refs) == 0 {
+			return nil, "", false
+		}
+		ref = refs[0]
+	}
+	s, ok := r.Scanner(ref)
+	if !ok {
+		return nil, "", false
+	}
+	return s, ref, true
 }
 
 // Secrets returns a secrets adapter by reference.

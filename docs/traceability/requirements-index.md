@@ -9,10 +9,10 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 
 | | Count | Of total |
 |---|---:|---:|
-| Requirements | 211 | — |
-| Specified in a design doc | 156 | 73% |
-| Assigned to a phase | 125 | 59% |
-| Covered by a named test | 109 | 51% |
+| Requirements | 222 | — |
+| Specified in a design doc | 164 | 73% |
+| Assigned to a phase | 125 | 56% |
+| Covered by a named test | 118 | 53% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -66,12 +66,12 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-057** | P | Signing keys are published at a JWKS endpoint. | 5.4 Identity assertion to apps | 00, 04, 06 | 05 | `TestR057_RotationOverlapsRatherThanCutsOver`, `TestR057_TheJWKSEndpointIsUnauthenticatedAndCacheable` |
 | **R-058** | D | Delegated tokens. | 5.5 Tokens (non-human principals) | 02, 04, 06 | 01 | `TestR058_ATokenActsAsItsOwner`, `TestR058_LoginExchangesASessionForAStoredToken` |
 | **R-059** | D | A delegated token's access is continuously derived from its owner's live grants, never frozen… | 5.5 Tokens (non-human principals) | 02, 06 | 01 | `TestR059_DelegatedTokenIsOrphanedByItsOwnersDeletion`, `TestR059_OrphanedDelegatedTokenEndToEnd` |
-| **R-060** | D | Account-level tokens. | 5.5 Tokens (non-human principals) | 02, 06 | 01 | `TestR060_AccountTokenHoldsItsOwnInstallGrant`, `TestR060_AccountTokenIsItsOwnPrincipal` |
+| **R-060** | D | Account-level tokens. | 5.5 Tokens (non-human principals) | 02, 06 | 01 | `TestR060_AServiceTokenCannotMintAnotherToken`, `TestR060_AServiceTokenIsItsOwnPrincipalAndTakesAnInstallVerbToMint`, `TestR060_AccountTokenHoldsItsOwnInstallGrant`, `TestR060_AccountTokenIsItsOwnPrincipal` |
 | **R-061** | D | Account-level tokens have an expiry. | 5.5 Tokens (non-human principals) | 02 | — | — |
 | **R-062** | P | Tokens record a last-used timestamp so stale credentials are reviewable. | 5.5 Tokens (non-human principals) | 02 | — | — |
 | **R-063** | P | Token secrets are displayed once at creation and never retrievable afterward. | 5.5 Tokens (non-human principals) | 02, 04 | 01 | `TestR063_TokenSecretIsShownOnceAndStoredHashed` |
 | **R-070** | D | Data plane — permission to use an app. | 6.1 Two planes | 02, 04, 06 | 01 | — |
-| **R-071** | D | Control plane — permission to administer an app: deploy, configure, read logs, exec, share,… | 6.1 Two planes | 02, 04 | — | — |
+| **R-071** | D | Control plane — permission to administer an app: deploy, configure, read logs, exec, share,… | 6.1 Two planes | 02, 04 | — | `TestR071_LogsArriveWithoutDockerFraming` |
 | **R-072** | D | The planes are separate grants, with one implication only: an app's owner has data-plane… | 6.1 Two planes | 06, 07 | 01, 05 | `TestR072_OwnershipGrantsUse` |
 | **R-073** | D | At app creation the creator receives both grants, recorded as two separate records. | 6.1 Two planes | 02, 07 | 01, 02 | `TestR073_AppCreationWritesTwoGrants`, `TestR073_TwoPlanesAreTwoIndependentlyRevocableRows` |
 | **R-074** | D | Grants may be issued to: a user, a group, or anonymous. | 6.2 Subjects | 02 | — | — |
@@ -135,7 +135,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-148** | D | Reconcile when possible; report when not. | 10.4 Failure handling | 03, 05 | 09 | `TestR148_AKilledContainerIsRestored`, `TestR148_AKilledProvisionedServiceIsRestored`, `TestR148_AProvisionedServiceIsPartOfWhatShouldBeRunning`, `TestR148_EverythingReconcilableIsACreationOrAStart`, `TestR148_UnreconcilableDriftIsReportedAndNothingIsApplied` |
 | **R-149** | P | Restart backoff: immediate, then 5s, 15s, 60s, capped at 5 minutes. | 10.4 Failure handling | 00, 05 | 07 | `TestR149_AFastRetryScheduleIsWarnedAboutRatherThanRefused`, `TestR149_TheDefaultBackoffStartsImmediateAndCapsAtFiveMinutes` |
 | **R-150** | P | Ten failures within 30 minutes marks the app `failed`. | 10.4 Failure handling | 05 | 07 | `TestR150_ACrashLoopingAppReachesFailed`, `TestR150_RepeatedFailureReachesFailedAndStops`, `TestR150_TheDefaultGiveUpRuleAppliesWhenNothingIsConfigured` |
-| **R-151** | D | A `failed` app stays failed until a human intervenes. | 10.4 Failure handling | 05 | 07 | `TestR151_ACrashLoopingAppReachesFailedAndStaysThere`, `TestR151_AFailedAppIsNeverTouched` |
+| **R-151** | D | A `failed` app stays failed until a human intervenes. | 10.4 Failure handling | 05, 09 | 07 | `TestR151_ACrashLoopingAppReachesFailedAndStaysThere`, `TestR151_AFailedAppIsNeverTouched` |
 | **R-152** | P | Revision history retains the last 10 pinned specs for rollback. | 10.4 Failure handling | 01, 02, 04 | 02, 07, 10 | `TestR152_ANewAppHasNoSpecRevisionsYet`, `TestR152_PinningMarksARevisionEverPinned`, `TestR152_PruningNeverRemovesARevisionThatWasEverPinned`, `TestR152_RevisionsAreNumberedMonotonically`, `TestR152_SpecRevisionsAccumulateAndAreNumbered`, `TestR152_SpecRevisionsCannotBeEdited` |
 | **R-153** | D | One app, one place (R-010). | 10.5 Scale | — | — | — |
 | **R-160** | D | Routing is an adapter category. | 11. Networking and Routing | — | — | — |
@@ -170,7 +170,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-204** | D | On delete, Pando asks whether to keep a final backup or discard it. | 14. Persistence and Volumes | 01, 02, 03, 04, 05 | 02, 09 | `TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes`, `TestR204_DeletingAnAppKeepsAFinalBackup`, `TestR204_DeletingAnAppTearsDownItsBundleButKeepsVolumes`, `TestR204_DestroyKeepsVolumesByDefault`, `TestR204_DiscardingABackupThatIsAlreadyGoneIsNotAnError`, `TestR204_TearingDownAnAppKeepsItsVolumes`, `TestR204_VolumesAreListedPerApp` |
 | **R-205** | D | Non-interactive delete (CLI, API, MCP) backs up by default. | 14. Persistence and Volumes | 04 | 02, 09 | `TestR205_ADeleteWithNoDecisionIsAnsweredRatherThanAssumed`, `TestR205_DeleteBacksUpByDefaultAndDiscardsOnlyWhenAsked`, `TestR205_DeletingAnAppTakesTheBackupDecisionExplicitly` |
 | **R-206** | D | Restore is in-place only. | 14. Persistence and Volumes | 01, 02, 04 | 09 | `TestR206_ABackupRestoresOnlyToItsOwnApp`, `TestR206_AnAppIsRestoredFromItsOwnBackup`, `TestR206_RestoringOneAppsDataIsGatedOnTheAppNotTheInstall` |
-| **R-210** | D | Per-app rolling backups of app data. | 15. Backup and Disaster Recovery | 04 | — | — |
+| **R-210** | D | Per-app rolling backups of app data. | 15. Backup and Disaster Recovery | 04 | — | `TestR210_AnAppWithNoVolumesDoesNotStopTheRollingBackupSweep` |
 | **R-211** | P | Default: daily, 7 retained. | 15. Backup and Disaster Recovery | 01, 03, 05 | 07, 09 | `TestR211_AnAppsRetentionIsCarriedOnItsBackups`, `TestR211_CapabilitiesSayPandoOwnsRetention` |
 | **R-212** | D | Full-host DR bundle. | 15. Backup and Disaster Recovery | 01, 03, 07 | 09 | `TestR212_ADRBundleContainsWhatItPromises`, `TestR212_AVolumeRoundTripsThroughSnapshotAndRestore`, `TestR212_AnEmptyVolumeSnapshotsCleanly`, `TestR212_BackupEndpointsAreInstallAdministration`, `TestR212_RestoreReplacesRatherThanMerges`, `TestR212_RestoreReturnsTheInstallToItsBackedUpState` |
 | **R-213** | D | The DR bundle is encrypted under a separate passphrase or key supplied at backup time, never… | 15. Backup and Disaster Recovery | 01, 02, 04, 07 | 09 | `TestR213_ADowngradedHeaderIsRejected`, `TestR213_AShortPassphraseIsRefused`, `TestR213_AnEncryptedBundleVerifiesAfterDecryption`, `TestR213_BundleRoundTripsAtEveryChunkBoundary`, `TestR213_ReorderedChunksAreRejected`, `TestR213_TheWrongPassphraseRevealsNothing` |
@@ -205,15 +205,15 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-256** | P | Multi-machine capability comes entirely from adapters that span machines (e.g. | 18. Adapters | 02 | — | — |
 | **R-257** | D | A runtime adapter may be swapped under an existing app, and it is neither a migration nor a… | 18. Adapters | — | 02 | `TestR257_RuntimeSwapSaysStorageDoesNotMove` |
 | **R-260** | D | Four first-class administrative surfaces, all shipping: API, CLI, MCP, web console. | 19. Surfaces | — | 10 | — |
-| **R-261** | D | The API is the product. | 19. Surfaces | 04, 08 | 02, 08, 10 | `TestR261_EveryCommandIsPresentAndDocumented`, `TestR261_EveryToolIsOneEndpointAndIsDescribed`, `TestR261_TheRealAPITypesGenerateWithoutAGap` |
-| **R-262** | D | MCP is a real deliverable, so an agent can deploy directly. | 19. Surfaces | 04 | 10 | `TestR262_ARetriedCreateReplaysRatherThanCreatingASecondApp`, `TestR262_AnUploadIsStoredThenExpandedIntoACheckout`, `TestR262_DeployingADirectoryCreatesUploadsDetectsAndDeploys`, `TestR262_UploadingSourceIsBehindTheSpecEditVerb` |
+| **R-261** | D | The API is the product. | 19. Surfaces | 04, 08, 09 | 02, 08, 10 | `TestR261_EveryCommandIsPresentAndDocumented`, `TestR261_EveryRouteIsDocumented`, `TestR261_EveryToolIsOneEndpointAndIsDescribed`, `TestR261_TheRealAPITypesGenerateWithoutAGap`, `TestR261_TheReferenceIsServedToAnyoneSignedIn` |
+| **R-262** | D | MCP is a real deliverable, so an agent can deploy directly. | 19. Surfaces | 04 | 10 | `TestR262_AMachineCanAuthenticateFromTheEnvironment`, `TestR262_ARetriedCreateReplaysRatherThanCreatingASecondApp`, `TestR262_AnUploadIsStoredThenExpandedIntoACheckout`, `TestR262_DeployingADirectoryCreatesUploadsDetectsAndDeploys`, `TestR262_UploadingSourceIsBehindTheSpecEditVerb` |
 | **R-263** | D | End users — people who were granted use of an app and nothing else — do not need the console. | 19. Surfaces | — | — | — |
 | **R-264** | D | The console is an Okta-style launcher. | 19. Surfaces | 04, 08 | 08 | `TestR264_LauncherListIsDataPlaneScoped`, `TestR264_TheLauncherIsADifferentListFromTheManagementOne` |
 | **R-265** | D | Users holding any administrative verb see an Admin entry point from the launcher, exposing the… | 19. Surfaces | 04, 08 | 08 | `TestR265_TheServerReportsWhatTheConsoleScopesOn` |
 | **R-266** | D | Sharing an app sends no message. | 19. Surfaces | — | — | — |
-| **R-270** | D | Pando ships permissive defaults. | 20. Configuration and Policy | — | — | `TestR270_AFreshInstallShipsPermissive`, `TestR270_BuildEgressStartsPermissiveAndAppEgressInherits`, `TestR270_TheDefaultDocumentIsPermissive` |
+| **R-270** | D | Pando ships permissive defaults. | 20. Configuration and Policy | 09 | — | `TestR270_AFreshInstallShipsPermissive`, `TestR270_BuildEgressStartsPermissiveAndAppEgressInherits`, `TestR270_TheDefaultDocumentIsPermissive` |
 | **R-271** | D | Configuration may be supplied by: a YAML file loaded at startup, environment variables, the… | 20. Configuration and Policy | 00 | 00 | — |
-| **R-272** | D | The general pattern, applied throughout: a setting has a permissive default; host policy can… | 20. Configuration and Policy | 04, 06 | 01, 06 | `TestR272_AVerbNoRuleMentionsIsUntouched`, `TestR272_HostPolicyIsAFloorForAdministratorsToo`, `TestR272_PolicyIsAFloorAndDeniesTheOwnerToo` |
+| **R-272** | D | The general pattern, applied throughout: a setting has a permissive default; host policy can… | 20. Configuration and Policy | 04, 06, 09 | 01, 06 | `TestR272_AVerbNoRuleMentionsIsUntouched`, `TestR272_HostPolicyIsAFloorForAdministratorsToo`, `TestR272_PolicyIsAFloorAndDeniesTheOwnerToo` |
 | **R-273** | D LATER | Premade setting profiles for common postures (hobbyist, hardened, regulated), usable as-is or… | 20. Configuration and Policy | — | — | — |
 | **R-274** | D | Host policy may be applied to an install with running apps. | 20. Configuration and Policy | 01, 02, 03, 04, 05 | 02, 03 | `TestR274_PolicyIsReadableAndWritableBehindItsOwnVerbs`, `TestR274_ReadingPolicyAndChangingItAreDifferentPrivileges`, `TestR274_TheDocumentIsReloadedForEveryEvaluation` |
 | **R-280** | D | Losing access to an app destroys that user's per-app data (relevant to per-user instances, §22). | 21. Data Destruction | 02 | — | — |
@@ -228,11 +228,22 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-294** | D | Data destruction on revoke follows §21. | 22. Per-User Instances [LATER] | — | — | — |
 | **R-295** | P | The cold-start path needs specification: a first request arrives with nothing running, and… | 22. Per-User Instances [LATER] | — | — | — |
 | **R-296** | D | This does not violate R-010. | 22. Per-User Instances [LATER] | — | — | — |
-| **R-300** | D | AGPL, dual-licensed with commercial exceptions available. | 25. Licensing and Governance | — | — | — |
-| **R-301** | D | A CLA is required from the first outside contribution, implemented with CLA Assistant as a… | 25. Licensing and Governance | — | — | — |
-| **R-302** | D | Rationale for starting here: AGPL → MIT is reversible; MIT → AGPL is not. | 25. Licensing and Governance | — | — | — |
-| **R-303** | D | Accepted cost: some enterprises decline AGPL on blanket policy rather than analysis, which… | 25. Licensing and Governance | — | — | — |
-| **R-304** | D LATER | MIT may be reconsidered if adoption proves more valuable than the revenue path. | 25. Licensing and Governance | — | — | — |
+| **R-310** | D | Every app has a security score: a whole number from 0 to 100. | 23. Security Scanning | 09 | — | `TestR310_TheScoreIsReadableByAnyoneWhoCanSeeTheApp` |
+| **R-311** | D | The score comes from scanning what the app actually deploys — the image that was | 23. Security Scanning | — | — | `TestR311_ScanningAnImageReportsWhatIsInIt`, `TestR311_ScanningSourceFindsWhatNeverReachesAnImage` |
+| **R-312** | D | An app is scanned whenever what it runs changes, which means on every deploy, and | 23. Security Scanning | — | — | — |
+| **R-313** | P | The score is derived from findings by severity, starting at 100 and deducting per | 23. Security Scanning | 09 | — | `TestR313_OneCriticalCostsMoreThanFiftyLows`, `TestR313_PolicyMayCountOnlyWhatCanBeFixed` |
+| **R-314** | D | Host policy may set a minimum score, 0 to 100. | 23. Security Scanning | 09 | — | `TestR314_ATresholdOnlyBitesWhenThereIsSomethingToEnforceIt` |
+| **R-315** | D | **An app that is already running when it falls below the threshold is not stopped on | 23. Security Scanning | 09 | — | `TestR315_AnAppThatFallsBelowIsWarnedAndNotStopped`, `TestR315_WarnOnlyNeverStops` |
+| **R-316** | D | Host policy may say that insecure apps are stopped, with a grace period stated | 23. Security Scanning | 09 | — | `TestR316_AZeroGraceIsTheDefaultNotImmediately`, `TestR316_AnAppPandoStoppedStartsAgainAndOneItsOwnerStoppedDoesNot`, `TestR316_StoppingWaitsForTheGraceAndThenStops`, `TestR316_TheGraceIsMeasuredFromWhenItWasFirstFound` |
+| **R-317** | D | Scanning is an adapter category (§18). | 23. Security Scanning | 09 | — | `TestR317_WithNoScannerThePassDoesNothing` |
+| **R-318** | P | A scanner that fails does not block a deploy. | 23. Security Scanning | 09 | — | — |
+| **R-319** | D | Scans, score changes, policy-driven warnings and policy-driven stops are audited | 23. Security Scanning | — | — | — |
+| **R-320** | P | The score is not shown as a grade, a badge, or a color alone. | 23. Security Scanning | 09 | — | — |
+| **R-300** | D | AGPL, dual-licensed with commercial exceptions available. | 26. Licensing and Governance | — | — | — |
+| **R-301** | D | A CLA is required from the first outside contribution, implemented with CLA Assistant as a… | 26. Licensing and Governance | — | — | — |
+| **R-302** | D | Rationale for starting here: AGPL → MIT is reversible; MIT → AGPL is not. | 26. Licensing and Governance | — | — | — |
+| **R-303** | D | Accepted cost: some enterprises decline AGPL on blanket policy rather than analysis, which… | 26. Licensing and Governance | — | — | — |
+| **R-304** | D LATER | MIT may be reconsidered if adoption proves more valuable than the revenue path. | 26. Licensing and Governance | — | — | — |
 
 ## Requirements with no design reference
 
@@ -288,8 +299,11 @@ Check each against the categories above before treating it as a gap.
 - **R-294** (22. Per-User Instances [LATER]) — Data destruction on revoke follows §21.
 - **R-295** (22. Per-User Instances [LATER]) — The cold-start path needs specification: a first request arrives with nothing running, and…
 - **R-296** (22. Per-User Instances [LATER]) — This does not violate R-010.
-- **R-300** (25. Licensing and Governance) — AGPL, dual-licensed with commercial exceptions available.
-- **R-301** (25. Licensing and Governance) — A CLA is required from the first outside contribution, implemented with CLA Assistant as a…
-- **R-302** (25. Licensing and Governance) — Rationale for starting here: AGPL → MIT is reversible; MIT → AGPL is not.
-- **R-303** (25. Licensing and Governance) — Accepted cost: some enterprises decline AGPL on blanket policy rather than analysis, which…
-- **R-304** (25. Licensing and Governance) — MIT may be reconsidered if adoption proves more valuable than the revenue path.
+- **R-311** (23. Security Scanning) — The score comes from scanning what the app actually deploys — the image that was
+- **R-312** (23. Security Scanning) — An app is scanned whenever what it runs changes, which means on every deploy, and
+- **R-319** (23. Security Scanning) — Scans, score changes, policy-driven warnings and policy-driven stops are audited
+- **R-300** (26. Licensing and Governance) — AGPL, dual-licensed with commercial exceptions available.
+- **R-301** (26. Licensing and Governance) — A CLA is required from the first outside contribution, implemented with CLA Assistant as a…
+- **R-302** (26. Licensing and Governance) — Rationale for starting here: AGPL → MIT is reversible; MIT → AGPL is not.
+- **R-303** (26. Licensing and Governance) — Accepted cost: some enterprises decline AGPL on blanket policy rather than analysis, which…
+- **R-304** (26. Licensing and Governance) — MIT may be reconsidered if adoption proves more valuable than the revenue path.

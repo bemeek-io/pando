@@ -13,13 +13,13 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Button, EmptyState, Logo, SidebarNav, StatusIndicator, Table, Tabs, Tooltip } from '@design';
+import { Badge, Banner, Button, EmptyState, Logo, SidebarNav, StatusIndicator, Table, Tabs, Tooltip } from '@design';
 import type { SidebarItem } from '@design';
 
 import { api } from '@api/client';
 import type { App } from '@api/types.gen';
 import { InstallVerb, useInstallVerb } from '../app/principal';
-import { Accounts } from '../install/Accounts';
+import { Accounts, messageOf } from '../install/Accounts';
 import { Identity } from '../install/Identity';
 import { Backups } from '../install/Backups';
 import { Audit, Installation, Policy } from '../install/Installation';
@@ -27,19 +27,31 @@ import { statusLabel, statusSymbol } from '../ui/status';
 import { DetectionReview } from './DetectionReview';
 import { Sharing } from './Sharing';
 import { AppOverview } from './AppOverview';
+import { Logs } from './Logs';
 import { Resources } from './Resources';
 import { AddApp } from './AddApp';
+import { Reference } from './Reference';
+import { DeleteApp } from './DeleteApp';
+import { DeployButton } from './DeployButton';
 import type { Route, Section } from '../app/route';
+import { ThemeToggle } from '../ui/ThemeToggle';
+import { MEASURE } from '../ui/layout';
+import { relative } from '../ui/time';
+import { ScoreBadge } from '../ui/ScoreBadge';
 import { Terminal } from './Terminal';
 
 export function AdminConsole({
   route,
   go,
   onLeave,
+  administrative,
 }: {
   route: Route;
   go: (next: Route, replace?: boolean) => void;
   onLeave: () => void;
+  /** Whether this person administers anything. False for somebody who came
+   *  here for the API screen, which is open to everyone. */
+  administrative: boolean;
 }) {
   // Where we are comes from the address bar, so a reload lands back here and a
   // link to an app is a link to an app.
@@ -66,17 +78,38 @@ export function AdminConsole({
   const apps = useQuery({
     queryKey: ['apps'],
     queryFn: () => api.get<{ apps: App[] | null }>('/apps'),
+    enabled: administrative,
+  });
+
+  // The same query key the accounts screen uses, so the sidebar's count and
+  // that screen's table are one request and cannot disagree. Only asked for by
+  // somebody who may read it — the endpoint refuses the rest, and a sidebar
+  // that fires a 403 on every load is a sidebar that fills the log.
+  const accounts = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.get<{ users: unknown[] | null }>('/users'),
+    enabled: canView || canManageUsers,
   });
 
   const rows = apps.data?.apps ?? [];
 
-  const items: SidebarItem[] = [
-    { value: 'apps', label: 'Apps', trailing: <Badge count={rows.length} /> },
-  ];
+  // Apps only for somebody who administers one. A person who reached this
+  // console for the API screen alone has no apps to manage, and a list of none
+  // offering to add one they cannot create is a screen that answers 403.
+  const items: SidebarItem[] = [];
+  if (administrative) {
+    items.push({ value: 'apps', label: 'Apps', trailing: <Badge count={rows.length} /> });
+  }
   // Reading accounts needs install.view; changing one needs
   // install.users.manage. Either is a reason to see the screen, and the screen
   // itself is read-only without the second.
-  if (canView || canManageUsers) items.push({ value: 'accounts', label: 'Accounts' });
+  if (canView || canManageUsers) {
+    items.push({
+      value: 'accounts',
+      label: 'Accounts',
+      trailing: <Badge count={accounts.data?.users?.length ?? 0} />,
+    });
+  }
   // Groups and roles are the same verb pair as accounts, and a separate screen:
   // who someone is and what a role can do are different questions, and one
   // screen answering both is how an authorization model turns into a list of
@@ -86,6 +119,12 @@ export function AdminConsole({
   if (canView || canManagePolicy) items.push({ value: 'policy', label: 'Policy' });
   if (canManageBackups) items.push({ value: 'backups', label: 'Backups' });
   if (canReadAudit) items.push({ value: 'audit', label: 'Audit log' });
+
+  // Last, and for everyone. The API is the product (R-261) and an agent holding
+  // a token is an ordinary principal (R-262), so the manual and the way to mint
+  // a token are not administration — a developer with one app shared with them
+  // needs both.
+  items.push({ value: 'api', label: 'API and tools' });
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--paper)' }}>
@@ -98,9 +137,12 @@ export function AdminConsole({
         header={<Logo size={20} />}
         items={items}
         footer={
-          <Button variant="ghost" onClick={onLeave}>
-            Back to my apps
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <Button variant="ghost" onClick={onLeave}>
+              Back to my apps
+            </Button>
+            <ThemeToggle />
+          </div>
         }
       />
 
@@ -111,10 +153,12 @@ export function AdminConsole({
         {section === 'policy' && <Policy canEdit={canManagePolicy} />}
         {section === 'backups' && <Backups />}
         {section === 'audit' && <Audit />}
+        {section === 'api' && <Reference />}
         {section === 'apps' &&
           (selectedID ? (
             <AppScreen
               appID={selectedID}
+              listed={rows.find((a) => a.id === selectedID)}
               tab={route.tab}
               onTab={(tab) => go({ view: 'admin', section: 'apps', appID: selectedID, tab }, true)}
               onBack={() => setSelectedID(null)}
@@ -142,13 +186,21 @@ function AppsList({
 }) {
   const [adding, setAdding] = useState(false);
 
+  // The page is not capped — a table's rows and rules run to the edge of the
+  // window, which is what a wide display should look like. Its content is: the
+  // columns are sized in `ch`, so Status and Updated sit next to the name
+  // rather than two thousand pixels away from it.
+  //
+  // The action sits beside the heading rather than opposite it. Pushed to the
+  // far end of a measure it is a long way from the word it belongs to, and on
+  // a wide window the eye has to cross the whole page to find out what a screen
+  // offers.
   return (
-    <div style={{ maxWidth: 'var(--console-max)' }}>
+    <div>
       <header
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
           gap: 'var(--space-4)',
           padding: 'var(--space-6) var(--console-padding) var(--space-4)',
         }}
@@ -177,7 +229,7 @@ function AppsList({
             </EmptyState>
           }
           columns={[
-            { key: 'name', header: 'Name', width: 'minmax(0,1.4fr)' },
+            { key: 'name', header: 'Name', width: 'minmax(0,40ch)' },
             {
               key: 'state',
               header: 'Status',
@@ -187,6 +239,14 @@ function AppsList({
                   status={statusSymbol(row.state)}
                   label={statusLabel(row.state)}
                 />
+              ),
+            },
+            {
+              key: 'security_score',
+              header: 'Security',
+              width: '14ch',
+              render: (row: App) => (
+                <ScoreBadge score={row.security_score} verdict={row.security_verdict as never} full />
               ),
             },
             {
@@ -218,13 +278,34 @@ function AppsList({
   );
 }
 
+/**
+ * Where each plan-time refusal is fixed.
+ *
+ * The same idea as the warnings on the overview: an error that says "choose how
+ * to fill the DB_URL slot" on a screen with no slots on it is an error somebody
+ * has to go looking for the answer to. A code with no entry keeps the plain
+ * dismissal — nothing here claims to be actionable when it is not.
+ */
+const REFUSALS: Record<string, { label: string; tab: string; focus?: string }> = {
+  PLAN_SLOT_UNFILLED: { label: 'Fill it in', tab: 'resources', focus: 'dependencies' },
+  PLAN_CAPABILITY_UNSUPPORTED: { label: 'Open settings', tab: 'resources' },
+  PLAN_SECURITY_BELOW_THRESHOLD: { label: 'See the findings', tab: 'overview' },
+  VALID_PRIMARY_WORKLOAD: { label: 'Open configuration', tab: 'detection' },
+  VALID_DANGLING_MOUNT: { label: 'Open storage', tab: 'resources', focus: 'storage' },
+  VALID_DANGLING_SLOT_REF: { label: 'Open dependencies', tab: 'resources', focus: 'dependencies' },
+};
+
 function AppScreen({
   appID,
+  listed,
   tab: routeTab,
   onTab,
   onBack,
 }: {
   appID: string;
+  /** The row from the list, which is all that is left when the app's own
+   *  record will not load. */
+  listed?: App;
   tab?: string;
   onTab: (tab: string) => void;
   onBack: () => void;
@@ -246,7 +327,23 @@ function AppScreen({
   // rather than push when switching: flicking between tabs should not make the
   // back button walk them one at a time before leaving the app.
   const tab = routeTab ?? (reviewed ? 'overview' : 'detection');
-  const setTab = onTab;
+
+  // Which section of a tab to open at, when something sent you there. A
+  // warning about storage should land on storage, not on the top of a settings
+  // tab with four sections above it. Cleared by any ordinary tab click, so it
+  // only ever applies to the trip it was set for.
+  const [focus, setFocus] = useState<string | undefined>(undefined);
+
+  // A refused deploy, rendered under the header rather than inside it: the
+  // message is a sentence or three, and a paragraph in a row of buttons moves
+  // the buttons.
+  const [refusal, setRefusal] = useState<{ message: string; remedy?: string; code?: string } | null>(
+    null,
+  );
+  const setTab = (next: string, at?: string) => {
+    setFocus(at);
+    onTab(next);
+  };
 
   // Accepting a proposal is the moment `reviewed` flips, and leaving somebody
   // on the setup tab afterwards hides the thing they came for — the deploy
@@ -262,11 +359,27 @@ function AppScreen({
 
   if (app.isPending) return null;
   if (app.isError || !app.data) {
+    // An app whose record will not load is exactly the app somebody is trying
+    // to get rid of, and this screen used to offer them a back button and
+    // nothing else — no name, no reason, no way out but the list they came
+    // from. The list's own row carries the name, so the delete still knows what
+    // it is about.
     return (
-      <div style={{ padding: 'var(--space-6) var(--console-padding)' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: 'var(--space-4)',
+          padding: 'var(--space-6) var(--console-padding)',
+        }}
+      >
         <Button variant="ghost" onClick={onBack}>
           Apps
         </Button>
+        {listed && <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{listed.name}</h3>}
+        <Banner tone="failed">{messageOf(app.error)}</Banner>
+        <DeleteApp appID={appID} appName={listed?.name ?? 'this app'} onDeleted={onBack} />
       </div>
     );
   }
@@ -274,6 +387,7 @@ function AppScreen({
   const tabs = reviewed
     ? [
         { value: 'overview', label: 'Overview' },
+        { value: 'logs', label: 'Logs' },
         { value: 'sharing', label: 'Sharing' },
         { value: 'resources', label: 'Settings' },
         { value: 'terminal', label: 'Terminal' },
@@ -287,11 +401,12 @@ function AppScreen({
       [{ value: 'detection', label: 'Configuration' }];
 
   return (
-    <div style={{ maxWidth: 'var(--console-max)' }}>
+    <div>
       <header
         style={{
           display: 'flex',
           flexDirection: 'column',
+          alignItems: 'flex-start',
           gap: 'var(--space-3)',
           padding: 'var(--space-6) var(--console-padding) var(--space-4)',
         }}
@@ -299,11 +414,65 @@ function AppScreen({
         <Button variant="ghost" onClick={onBack} style={{ alignSelf: 'flex-start' }}>
           Apps
         </Button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-          <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
-          <StatusIndicator status={statusSymbol(app.data.state)} label={statusLabel(app.data.state)} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
+            <StatusIndicator status={statusSymbol(app.data.state)} label={statusLabel(app.data.state)} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+            {/* Deploy where somebody looking at an app can reach it, from any
+                tab, rather than under everything on the overview. Only for an
+                app that has a configuration to deploy: before that, the thing
+                to do is accept one. */}
+            {app.data.pinned_spec_id && (
+              <DeployButton
+                app={app.data}
+                onRefused={(message, remedy, code) =>
+                  setRefusal(message ? { message, remedy, code } : null)
+                }
+              />
+            )}
+
+            {/* In the header rather than on Settings: an app whose source could
+                not be fetched has no pinned spec and therefore no Settings tab,
+                and that is the app most likely to be deleted. */}
+            <DeleteApp appID={app.data.id} appName={app.data.name} onDeleted={onBack} />
+          </div>
         </div>
       </header>
+
+      {refusal && (
+        <div style={{ padding: '0 var(--console-padding) var(--space-4)', maxWidth: MEASURE }}>
+          {/* The server's words, which are written to be acted on (R-105) —
+              and, where the console has the screen that acts on them, the way
+              there. A refusal that names a remedy on a page with no control
+              for it is a remedy nobody can take. */}
+          <Banner
+            tone="failed"
+            action={
+              REFUSALS[refusal.code ?? ''] ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const fix = REFUSALS[refusal.code ?? ''];
+                    if (fix) setTab(fix.tab, fix.focus);
+                    setRefusal(null);
+                  }}
+                >
+                  {REFUSALS[refusal.code ?? '']?.label}
+                </Button>
+              ) : (
+                <Button variant="ghost" onClick={() => setRefusal(null)}>
+                  Dismiss
+                </Button>
+              )
+            }
+          >
+            {refusal.message}
+            {refusal.remedy ? ` ${refusal.remedy}` : ''}
+          </Banner>
+        </div>
+      )}
 
       <div style={{ padding: '0 var(--console-padding)' }}>
         <Tabs value={tab} onChange={setTab} items={tabs} />
@@ -312,25 +481,12 @@ function AppScreen({
       <div style={{ padding: 'var(--space-5) var(--console-padding) var(--space-7)' }}>
         {tab === 'detection' && <DetectionReview appID={app.data.id} reviewed={reviewed} />}
         {tab === 'sharing' && <Sharing appID={app.data.id} appName={app.data.name} />}
-        {tab === 'overview' && <AppOverview app={app.data} />}
-        {tab === 'resources' && <Resources appID={app.data.id} />}
+        {tab === 'overview' && <AppOverview app={app.data} onGo={setTab} />}
+        {tab === 'logs' && <Logs app={app.data} />}
+        {tab === 'resources' && <Resources appID={app.data.id} focus={focus} />}
         {tab === 'terminal' && <Terminal appID={app.data.id} />}
       </div>
     </div>
   );
 }
 
-/** Relative time in tables, with the exact value in a tooltip. */
-function relative(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return iso;
-
-  const seconds = Math.round((Date.now() - then) / 1000);
-  if (seconds < 45) return 'Just now';
-  if (seconds < 90) return '1 min ago';
-  if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
-  if (seconds < 7200) return '1 hour ago';
-  if (seconds < 86400) return `${Math.round(seconds / 3600)} hours ago`;
-  if (seconds < 172800) return 'Yesterday';
-  return `${Math.round(seconds / 86400)} days ago`;
-}

@@ -11,13 +11,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/planner"
+	"github.com/bemeek-io/pando/internal/core/security"
 	"github.com/bemeek-io/pando/internal/core/source"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
@@ -71,6 +74,11 @@ type Runner struct {
 	// not something every Runner caller should be able to hand in a stub for.
 	secretStore *state.Secrets
 
+	// security scores what was built, before it is applied (R-312, R-314).
+	// Nil on an installation with no scanner, where nothing is scored and
+	// nothing is enforced.
+	security Security
+
 	// ProxyUpstream is where routing adapters must send traffic (R-023). It is
 	// Pando's proxy, always, and it is passed to every Ensure so that no adapter
 	// has to work it out.
@@ -112,6 +120,24 @@ func NewRunner(registry *api.Registry, p *planner.Planner, apps *state.Apps, dep
 	}
 }
 
+// WithSecurity enables the security score (R-310 – R-314).
+//
+// Optional in the same way WithServices is: a Runner without it deploys exactly
+// as before. An installation with no scanner configured has no scores and no
+// threshold to enforce, which is the shipped posture (R-317).
+func (r *Runner) WithSecurity(s Security) *Runner {
+	r.security = s
+	return r
+}
+
+// Security is what a deploy needs from the security service, narrowed to two
+// calls so the deploy path cannot reach for anything else.
+type Security interface {
+	Scan(ctx context.Context, req api.ScanRequest, principal audit.Event) (state.Scan, error)
+	Allows(ctx context.Context, appID, specID string) (security.Standing, error)
+	Configured() (string, bool)
+}
+
 // WithServices enables provisioned slots (R-131).
 //
 // Optional rather than a constructor argument because a Runner without it is
@@ -140,7 +166,7 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 		if e := errs.As(err); e != nil {
 			message = e.Message
 		}
-		fmt.Fprintf(sink, "\n!! %s failed: %s\n", step, message)
+		writeFailure(sink, step+" failed: "+message, err)
 		l.Warn("deployment failed", zap.String("step", step), zap.Error(err))
 		_ = r.deploys.Finish(ctx, dep.ID, state.DeployFailed, code, message)
 		return err
@@ -190,16 +216,26 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 			// The reason goes into the log the user is watching, not only into
 			// the server's own log. A build that fails without saying why is
 			// the failure mode R-105 exists to prevent.
-			fmt.Fprintf(sink, "\n!! %s\n", messageOf(err))
-			if detail := detailOf(err); detail != "" {
-				fmt.Fprintf(sink, "   %s\n", detail)
-			}
+			writeFailure(sink, messageOf(err), err)
 			fmt.Fprintf(sink, "   The running version of this app was not touched.\n")
 			_ = r.deploys.Finish(ctx, dep.ID, state.DeployFailed, string(errs.CodeOf(err)), messageOf(err))
 			l.Warn("build failed; app state unchanged (R-146)", zap.Error(err))
 			return err
 		}
 		image = built
+	}
+
+	// Step 10: scan what was built, and refuse to apply it if this
+	// installation's threshold says so (R-312, R-314).
+	//
+	// Here rather than before the build because the image is what there is to
+	// look at, and before `applying` because a refusal must leave the running
+	// app untouched — the same contract a failed build has (R-146).
+	if err := r.scan(ctx, dep, appSpec, image, checkout.Dir, sink); err != nil {
+		writeFailure(sink, messageOf(err), err)
+		fmt.Fprintf(sink, "   The running version of this app was not touched.\n")
+		_ = r.deploys.Finish(ctx, dep.ID, state.DeployFailed, string(errs.CodeOf(err)), messageOf(err))
+		return err
 	}
 
 	if err := r.deploys.SetStatus(ctx, dep.ID, state.DeployApplying); err != nil {
@@ -313,7 +349,9 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 	// restores a missing workload from the recorded image rather than
 	// rebuilding, and it detects a rotated secret (R-193) by comparing this
 	// fingerprint, because Observe returns no environment and never will.
-	if err := r.deploys.SetImageRef(ctx, dep.ID, image, primaryDigest(ctx, runtime, dep.AppID)); err != nil {
+	if err := r.deploys.SetImageRef(ctx, dep.ID,
+		firstNonEmpty(image, primaryImage(appSpec, perWorkload)),
+		primaryDigest(ctx, runtime, dep.AppID)); err != nil {
 		return fail("commit", err)
 	}
 	if r.reconciles != nil {
@@ -582,6 +620,15 @@ func resolveEnv(s *spec.AppSpec, w spec.Workload, secrets map[string]secret.Valu
 	for _, e := range w.Env {
 		switch {
 		case e.Value != nil:
+			// A variable detection read out of `.env.example` and nobody
+			// filled in is a name, not a value. Setting it empty is a
+			// different thing from leaving it unset, and the difference
+			// decides what many apps do: `process.env.PORT || 3000` takes the
+			// default either way, `if "APP_BASE_URL" in os.environ` does not.
+			// An empty value somebody typed is kept — that is an answer.
+			if *e.Value == "" && e.Source == spec.EnvFromDetection {
+				continue
+			}
 			env[e.Key] = secret.New(*e.Value)
 
 		case e.SecretRef != nil:
@@ -708,6 +755,30 @@ func needsBuild(s *spec.AppSpec) bool {
 	return s.Source.Type != spec.SourceImage
 }
 
+// writeFailure puts a failure into the log the person is watching: the
+// headline, then why, then what to do.
+//
+// The build step always printed the cause; the steps after it did not, and an
+// adapter's message names only what it could not do. So a deploy that got all
+// the way to starting the app ended:
+//
+//	!! apply failed: Could not create "proxy".
+//
+// while the reason — a mount the daemon refused — sat in the server's log where
+// the person deploying cannot see it. An error nobody can act on is the failure
+// R-105 exists to prevent, and the last line of a deploy is the worst place for
+// one.
+func writeFailure(sink io.Writer, headline string, err error) {
+	fmt.Fprintf(sink, "\n!! %s\n", headline)
+
+	if detail := detailOf(err); detail != "" && !strings.Contains(headline, detail) {
+		fmt.Fprintf(sink, "   %s\n", detail)
+	}
+	if e := errs.As(err); e != nil && e.Remedy != "" {
+		fmt.Fprintf(sink, "   %s\n", e.Remedy)
+	}
+}
+
 // detailOf returns the underlying cause for the build log.
 //
 // Build failures are the one place an internal cause is worth showing: the
@@ -802,4 +873,30 @@ func (r *Runner) recordVolumes(ctx context.Context, runtime api.RuntimeAdapter, 
 		})
 	}
 	return r.volumes.RecordFromRuntime(ctx, s.AppID, s.Runtime.AdapterRef, records)
+}
+
+// primaryImage is the image the app's primary workload runs.
+//
+// A compose app builds one image per service and leaves the spec's top-level
+// image empty, so "what is this app running" appears to have no single answer —
+// except that it does: the primary workload is the one the proxy sends traffic
+// to (R-030), and it is the one a scanner, a rollback and a person all mean.
+func primaryImage(s *spec.AppSpec, perWorkload map[string]string) string {
+	if s == nil {
+		return ""
+	}
+	if primary, ok := s.PrimaryWorkload(); ok {
+		if built, have := perWorkload[primary.Name]; have && built != "" {
+			return built
+		}
+		if primary.Image != "" {
+			return primary.Image
+		}
+	}
+	for _, w := range s.Workloads {
+		if built, have := perWorkload[w.Name]; have && built != "" {
+			return built
+		}
+	}
+	return ""
 }

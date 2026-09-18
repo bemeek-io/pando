@@ -20,11 +20,19 @@ resolution both here and in the requirements or design doc that owns it.
 | **O-4** | Required vs optional slot detection — the forty-key `.env.example` problem | Has a `[P]` answer that needs measuring, not deciding | Phase 6 |
 | **O-18** | Where a signed apt repository is hosted, so `apt install pando` works without downloading a file first | Costs money or custody of a signing key; neither is an engineering call | Not blocking — the `.deb` is already published |
 
-**O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything not typed to
-a known service, and let the trial run settle it — a slot whose absence crashes the trial run is
-promoted to required with the crash log as evidence. This turns an unanswerable question into an
+**O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything the file
+gives a sample value for, and let the trial run settle it — a slot whose absence crashes the trial run
+is promoted to required with the crash log as evidence. This turns an unanswerable question into an
 observation. It is open because it needs a false-block rate measured against the detection corpus, not
 because nobody has decided.
+
+The question is narrower than "forty keys" now, and the reason is R-130 rather than a decision about
+O-4. A variable is a hole *with a type*, and only the typed ones are dependencies: `REDIS_URL` names a
+Redis, `VAPID_PRIVATE_KEY` names a value with nothing to connect it to. Every key used to become a
+slot, so a `.env.example` with eleven variables produced eleven "dependencies" of type unknown, each
+offering to connect to something that already exists. Untyped keys are variables now, declared empty
+on the app, and O-4 applies to what is left: of the keys that really are dependencies, which are
+required.
 
 **O-18** exists because a `.deb` attached to a release and an apt repository are different products.
 The release build publishes `.deb`, `.rpm` and `.apk` packages, which install with

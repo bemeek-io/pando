@@ -157,7 +157,7 @@ The remaining surfaces and the second routing adapter.
 
 ## 4. Open decisions added during design
 
-These extend §23 of the requirements document.
+These extend §24 of the requirements document.
 
 | ID | Question | Where |
 |---|---|---|
@@ -166,7 +166,7 @@ These extend §23 of the requirements document.
 | **O-13** | ~~Session revocation mid-websocket~~ — **resolved:** re-authorize on the assertion lifetime, close on failure; falls out of the single revocation window in §06 3.1 | §06 4.2 |
 | **O-14** | ~~DR restore bootstrap ordering~~ — **largely dissolved** by O-11; confirm sequencing in phase 9 | §07 D |
 
-**All four are resolved.** Of the ten in requirements §23, three remain open: O-4 (slot detection,
+**All four are resolved.** Of the ten in requirements §24, three remain open: O-4 (slot detection,
 awaiting measurement rather than decision), O-5 (TLS issuance, genuinely per-adapter), and O-6 (which
 backup destinations ship — provider-shaped; that a destination is *not* an adapter category is settled
 in §03 8.1). None blocks any phase.

@@ -15,11 +15,20 @@
 import { useQuery } from '@tanstack/react-query';
 import { Card, EmptyState, Logo, StatusIndicator } from '@design';
 
+import { ThemeToggle } from '../ui/ThemeToggle';
+
 import { api } from '@api/client';
 import type { App } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
 
-export function Launcher({ onAdmin }: { onAdmin?: () => void }) {
+export function Launcher({
+  onAdmin,
+  onReference,
+}: {
+  onAdmin?: () => void;
+  /** The API screen, which everyone can reach (R-261, R-262). */
+  onReference?: () => void;
+}) {
   const apps = useQuery({
     queryKey: ['me', 'apps'],
     queryFn: () => api.get<{ apps: App[] | null }>('/me/apps'),
@@ -37,6 +46,23 @@ export function Launcher({ onAdmin }: { onAdmin?: () => void }) {
         }}
       >
         <Logo size={20} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+        <ThemeToggle />
+        {onReference && (
+          <button
+            onClick={onReference}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              cursor: 'pointer',
+              font: 'var(--type-body-ui)',
+              color: 'var(--ink-secondary)',
+            }}
+          >
+            API and tools
+          </button>
+        )}
         {onAdmin && (
           <button
             onClick={onAdmin}
@@ -52,6 +78,7 @@ export function Launcher({ onAdmin }: { onAdmin?: () => void }) {
             Admin
           </button>
         )}
+        </div>
       </header>
 
       <main
@@ -127,7 +154,11 @@ function Tile({ app }: { app: App }) {
       as="a"
       interactive
       padding="md"
-      {...({ href: app.address } as object)}
+      // An app is a different place from the console. Opening it over the top
+      // of Pando means the way back is the browser's history, and for someone
+      // who came to the launcher to open two apps it means coming back here
+      // every time.
+      {...({ href: app.address, target: '_blank', rel: 'noopener noreferrer' } as object)}
       style={{ textDecoration: 'none' }}
     >
       {body}

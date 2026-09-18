@@ -62,6 +62,26 @@ type Runner struct {
 	// PortRange bounds that allocation.
 	PortRangeStart int
 	PortRangeEnd   int
+
+	// Scanner scores the checkout while it is still on disk (R-312).
+	//
+	// Detection is the first and, for a while, the only moment Pando holds an
+	// app's source: an app that has been added and not yet deployed has no
+	// image to look at, and waiting for one means the first thing anybody sees
+	// about a new app is "not scanned yet". A committed key or a vulnerable
+	// lockfile is exactly what somebody wants to know *before* deciding to
+	// deploy it.
+	//
+	// Optional, and never fatal. An installation with no scanner detects
+	// exactly as before, and a scanner that fails does not fail a detection —
+	// the proposal is the thing being produced here.
+	Scanner SourceScanner
+}
+
+// SourceScanner scans a checkout. One method, so detection cannot reach into
+// the rest of the security service.
+type SourceScanner interface {
+	ScanSource(ctx context.Context, appID, dir string)
 }
 
 // PortAllocator hands out host ports for port-mode routing.
@@ -135,6 +155,12 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 	proposal, err := r.Job.Run(ctx, appID, src, checkout.View(src.Subdir))
 	if err != nil {
 		return detect.Proposal{}, err
+	}
+
+	// While the checkout exists, and after the proposal is in hand: a scan is
+	// worth having and is not worth failing a detection for.
+	if r.Scanner != nil {
+		r.Scanner.ScanSource(ctx, appID, checkout.Dir)
 	}
 
 	// Fill in the install's own answers before the proposal is shown, not when
