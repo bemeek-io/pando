@@ -559,3 +559,21 @@ One bug fell out of it: `min_build_isolation` and `min_runtime_isolation` were
 typed `string` in the console and are ordered integers on the wire (R-114, gaps
 of ten so a class can be inserted without a migration). Nothing had rendered
 them, so nothing had noticed.
+
+## A deleted app kept its name
+
+Delete `crewmate`, add `crewmate` again, and Pando answered "an app named
+crewmate already exists" — pointing at a row the person had just deleted and
+can no longer see anywhere in the console.
+
+`apps.slug` was `UNIQUE` across every row, and a deleted app keeps its row on
+purpose: the archive is what a backup taken on delete refers to (R-204), what an
+audit event's target resolves against (R-227), and what the reconciler tears the
+bundle down from. None of that needs the name.
+
+The constraint is a partial unique index on live rows now. Two live apps still
+cannot share a slug — a slug is an address (design 03 §4.2), and two apps at one
+address is what it was for — and an archived app is at no address at all: its
+routing is removed, its bundle destroyed, and the proxy's own lookup has always
+filtered `deleted_at IS NULL`, so a reused slug cannot reach the old app even in
+the window before the janitor runs.
