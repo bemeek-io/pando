@@ -651,3 +651,46 @@ overview: `PLAN_SLOT_UNFILLED` offers dependencies, `VALID_PRIMARY_WORKLOAD`
 offers the configuration, `PLAN_SECURITY_BELOW_THRESHOLD` offers the findings. A
 code with no screen keeps a plain dismissal — nothing claims to be actionable
 when it is not.
+
+## A mount the daemon refused, at the last step, without saying why
+
+The deploy log ended:
+
+```
+=> Starting the app
+!! apply failed: Could not create "proxy".
+```
+
+Two separate failures, one after the other.
+
+**The log did not say why.** The build and scan steps print the cause of a
+failure; every step after them printed only the adapter's message, and an
+adapter's message names what it could not do, not why. The reason was in the
+error that message wrapped and went to the server's log, where the person
+deploying cannot see it. All three steps share one writer now — headline, cause,
+remedy — so the last line of a deploy is never a dead end (R-105).
+
+**And the cause was a mount that could never have worked.** crewmate's compose
+file has `./Caddyfile:/etc/caddy/Caddyfile`. The importer turned every relative
+bind mount into a volume Pando manages, which is right for `./pgdata` and wrong
+for a single file, twice over: nothing is read from the repository at deploy time
+(R-020), so the volume comes up empty, and Docker will not mount a directory over
+a file that exists in the image at all — `source /var/lib/docker/rootfs/…/etc/
+caddy/Caddyfile is not directory`.
+
+A file bind mount is now an R-099 rejection, named at discovery with the line to
+change and what to do instead: `COPY Caddyfile /etc/caddy/Caddyfile` in the
+service's Dockerfile does what the mount was doing. A path the repository does
+not hold is still read as a directory — compose creates those on first run, and
+refusing on the shape of the path alone would refuse most real stacks.
+
+The Docker adapter names the mount too, for the apps that already carry one and
+for a mount typed in by hand. The daemon's path is the container's rootfs with
+the mount on the end, so the mount that appears in it is the one that failed.
+
+**And the same app's environment held `${APP_DOMAIN:-localhost}` verbatim.**
+Mount sources were interpolated at import; environment values were not, so a
+compose substitution arrived at the container as its own twenty-four characters.
+They are resolved the same way now. One with no default has no value to resolve
+to: it keeps its spelling and raises a warning naming the variable, because an
+empty string would be an app misconfigured with nothing to show for it (R-102).

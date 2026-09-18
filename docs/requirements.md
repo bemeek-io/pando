@@ -328,7 +328,7 @@ itself, to a registry or a daemon, and the daemon is forbidden.
 
 **R-098 [D]** The user reviews the proposal, then it **pins**. Detection does not re-run implicitly (R-022).
 
-**R-099 [D]** Compose constructs incompatible with the boundary are rejected or rewritten, with the reason shown: `network_mode: host`, `privileged: true`, bind mounts to host paths, `deploy.replicas`. Host policy governs whether an admin may override (R-190).
+**R-099 [D]** Compose constructs incompatible with the boundary are rejected or rewritten, with the reason shown: `network_mode: host`, `privileged: true`, bind mounts to host paths, a bind mount of a single file out of the repository, `deploy.replicas`. Host policy governs whether an admin may override (R-190).
 
 **R-100 [D]** A user may **promote** a compose-declared service to a Pando-managed one — e.g. binding an ad-hoc Postgres to a real one. Shown as an explicit diff, never automatic.
 

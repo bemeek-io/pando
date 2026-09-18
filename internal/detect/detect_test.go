@@ -741,6 +741,86 @@ func TestARelativeBindMountBecomesAManagedVolume(t *testing.T) {
 		"the rewrite names the path, so the user can see what moved")
 }
 
+// TestR099_ASingleFileBindMountIsRefusedAtImport asserts R-099.
+//
+// `./Caddyfile:/etc/caddy/Caddyfile` is not the same construct as
+// `./pgdata:/var/lib/postgresql/data`, though compose writes them the same way.
+// A directory of data becomes a volume Pando manages. A single file cannot:
+// nothing is read from the repository at deploy time (R-020), so the volume
+// would come up empty, and Docker will not mount a directory over a file that
+// exists in the image regardless.
+//
+// It used to import clean and fail at the last step of the deploy, after the
+// build and the scan, with `apply failed: Could not create "proxy".` — about a
+// line in a file Pando had read minutes earlier.
+func TestR099_ASingleFileBindMountIsRefusedAtImport(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yaml": "services:\n  proxy:\n    image: caddy:2\n" +
+			"    volumes:\n      - ./Caddyfile:/etc/caddy/Caddyfile:ro\n",
+		"Caddyfile": ":80 {\n  respond \"ok\"\n}\n",
+	})
+	require.NoError(t, err, "a rejection is a result, not a failure of detection")
+
+	require.Equal(t, detect.StatusBlocked, result.Status)
+	require.Error(t, result.Blocked)
+
+	e := errs.As(result.Blocked)
+	require.Equal(t, errs.PlanComposeConstructRejected, e.Code)
+
+	rejected, ok := e.Details["rejected"].([]map[string]any)
+	require.True(t, ok)
+	require.Len(t, rejected, 1)
+	require.Equal(t, "proxy", rejected[0]["service"])
+	require.Contains(t, rejected[0]["reason"], "./Caddyfile",
+		"the line to change, by name")
+	require.Contains(t, rejected[0]["reason"], "COPY",
+		"and what to do instead, since the file still has to reach the container")
+}
+
+// The same mount, with no such file in the repository, is the ordinary case:
+// compose creates the directory on first run, and Pando manages it as a volume.
+// Refusing on the shape of the path alone would refuse those too.
+func TestAPathTheRepositoryDoesNotHoldIsStillADirectory(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yaml": "services:\n  app:\n    image: nginx\n" +
+			"    volumes:\n      - ./config:/etc/nginx/conf.d\n",
+	})
+	require.NoError(t, err)
+
+	require.NotEqual(t, detect.StatusBlocked, result.Status)
+	require.Len(t, result.Winner.Draft.Workloads[0].Mounts, 1)
+}
+
+// TestR096_AComposeSubstitutionIsResolvedToItsDefault asserts R-096.
+//
+// `APP_DOMAIN: ${APP_DOMAIN:-localhost}` reached a running container as those
+// twenty-four characters. Compose's own semantics say an unset variable takes
+// its default, and Pando is reading the file out of a repository, so the
+// default is the only value there is — the same reading mount sources already
+// got.
+func TestR096_AComposeSubstitutionIsResolvedToItsDefault(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yaml": "services:\n  web:\n    image: nginx\n    environment:\n" +
+			"      APP_DOMAIN: ${APP_DOMAIN:-localhost}\n" +
+			"      APP_BASE_URL: ${APP_BASE_URL}\n",
+	})
+	require.NoError(t, err)
+
+	env := map[string]string{}
+	for _, e := range result.Winner.Draft.Workloads[0].Env {
+		require.NotNil(t, e.Value)
+		env[e.Key] = *e.Value
+	}
+	require.Equal(t, "localhost", env["APP_DOMAIN"])
+
+	// One with no default has no value to resolve to. It keeps its spelling —
+	// an empty string would be an app misconfigured with nothing to show for
+	// it — and says so, so somebody sets it (R-102).
+	require.Equal(t, "${APP_BASE_URL}", env["APP_BASE_URL"])
+	require.True(t, hasWarning(result.Winner.Draft.Warnings,
+		spec.WarnComposeConstructRewritten, "APP_BASE_URL"))
+}
+
 // Compose services live in a map, and Go randomizes map iteration.
 func TestComposeImportIsStableAcrossRuns(t *testing.T) {
 	src := memSource{"compose.yaml": composeStack}

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -165,7 +166,7 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 		if e := errs.As(err); e != nil {
 			message = e.Message
 		}
-		fmt.Fprintf(sink, "\n!! %s failed: %s\n", step, message)
+		writeFailure(sink, step+" failed: "+message, err)
 		l.Warn("deployment failed", zap.String("step", step), zap.Error(err))
 		_ = r.deploys.Finish(ctx, dep.ID, state.DeployFailed, code, message)
 		return err
@@ -215,10 +216,7 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 			// The reason goes into the log the user is watching, not only into
 			// the server's own log. A build that fails without saying why is
 			// the failure mode R-105 exists to prevent.
-			fmt.Fprintf(sink, "\n!! %s\n", messageOf(err))
-			if detail := detailOf(err); detail != "" {
-				fmt.Fprintf(sink, "   %s\n", detail)
-			}
+			writeFailure(sink, messageOf(err), err)
 			fmt.Fprintf(sink, "   The running version of this app was not touched.\n")
 			_ = r.deploys.Finish(ctx, dep.ID, state.DeployFailed, string(errs.CodeOf(err)), messageOf(err))
 			l.Warn("build failed; app state unchanged (R-146)", zap.Error(err))
@@ -234,10 +232,7 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 	// look at, and before `applying` because a refusal must leave the running
 	// app untouched — the same contract a failed build has (R-146).
 	if err := r.scan(ctx, dep, appSpec, image, checkout.Dir, sink); err != nil {
-		fmt.Fprintf(sink, "\n!! %s\n", messageOf(err))
-		if detail := detailOf(err); detail != "" {
-			fmt.Fprintf(sink, "   %s\n", detail)
-		}
+		writeFailure(sink, messageOf(err), err)
 		fmt.Fprintf(sink, "   The running version of this app was not touched.\n")
 		_ = r.deploys.Finish(ctx, dep.ID, state.DeployFailed, string(errs.CodeOf(err)), messageOf(err))
 		return err
@@ -749,6 +744,30 @@ func needsBuild(s *spec.AppSpec) bool {
 		return false
 	}
 	return s.Source.Type != spec.SourceImage
+}
+
+// writeFailure puts a failure into the log the person is watching: the
+// headline, then why, then what to do.
+//
+// The build step always printed the cause; the steps after it did not, and an
+// adapter's message names only what it could not do. So a deploy that got all
+// the way to starting the app ended:
+//
+//	!! apply failed: Could not create "proxy".
+//
+// while the reason — a mount the daemon refused — sat in the server's log where
+// the person deploying cannot see it. An error nobody can act on is the failure
+// R-105 exists to prevent, and the last line of a deploy is the worst place for
+// one.
+func writeFailure(sink io.Writer, headline string, err error) {
+	fmt.Fprintf(sink, "\n!! %s\n", headline)
+
+	if detail := detailOf(err); detail != "" && !strings.Contains(headline, detail) {
+		fmt.Fprintf(sink, "   %s\n", detail)
+	}
+	if e := errs.As(err); e != nil && e.Remedy != "" {
+		fmt.Fprintf(sink, "   %s\n", e.Remedy)
+	}
 }
 
 // detailOf returns the underlying cause for the build log.

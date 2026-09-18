@@ -3,6 +3,7 @@ package deploy
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -177,4 +178,35 @@ func TestAnUnobservableRuntimeYieldsNoDigestRatherThanAWrongOne(t *testing.T) {
 	require.Empty(t, primaryDigest(ctx, observing{bundle: api.ObservedBundle{
 		Workloads: []api.ObservedWorkload{{Name: "web", Present: true, Running: true}},
 	}}, "app_01HQ8"))
+}
+
+// TestR105_AFailedStepSaysWhyInTheLogSomebodyIsWatching asserts R-105.
+//
+// `!! apply failed: Could not create "proxy".` was the whole of what a real
+// deploy said. The reason — a mount the Docker daemon refused — was in the
+// error that message wrapped, and went only to the server's log. The person
+// deploying has the deploy log and nothing else.
+func TestR105_AFailedStepSaysWhyInTheLogSomebodyIsWatching(t *testing.T) {
+	err := errs.Wrap(errs.AdapterFailed, `Could not create "proxy".`,
+		errors.New("Error response from daemon: source /var/lib/docker/x is not directory")).
+		WithRemedy("Remove that mount in the app's storage settings.")
+
+	var log strings.Builder
+	writeFailure(&log, "apply failed: "+messageOf(err), err)
+
+	out := log.String()
+	require.Contains(t, out, `!! apply failed: Could not create "proxy".`)
+	require.Contains(t, out, "is not directory", "why")
+	require.Contains(t, out, "storage settings", "and what to do")
+}
+
+// A cause already contained in the headline is not repeated. Two lines saying
+// the same thing read as two problems.
+func TestAFailureDoesNotSayTheSameThingTwice(t *testing.T) {
+	err := errs.Newf(errs.PlanSlotUnfilled, "This app needs a PostgreSQL database.")
+
+	var log strings.Builder
+	writeFailure(&log, messageOf(err), err)
+
+	require.Equal(t, "\n!! This app needs a PostgreSQL database.\n", log.String())
 }
