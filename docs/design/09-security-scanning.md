@@ -155,9 +155,10 @@ and needs a decision about what it costs on a small host.
 
 ## 6. Surfaces
 
-**Console.** The score lives on the app's **overview**, with its status, address and deploy log — the
-score is a property of what is running, and the person who has to act on it is the one reading that
-page. The section carries the badge, the counts, when it was taken, every finding, and **Scan now**.
+**Console.** The score lives on the app's **overview**, beside the card carrying its status, address
+and last deploy — in the column a deploy log used to occupy. The score is a property of what is
+running, and the person who has to act on it is the one reading that page; a log is a history and
+belongs with the other histories on the Logs tab. The section carries the badge, the counts, when it was taken, every finding, and **Scan now**.
 It is not in settings: settings is where an app is configured, and a score is not a setting.
 
 The **apps list** carries the badge too, at `score / 100`, beside status — which is the question a

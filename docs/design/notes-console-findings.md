@@ -495,3 +495,26 @@ strings a release can invalidate.
 Install instructions are the first thing anybody reads and the last thing anybody
 checks. They are correct the day they are written and nobody notices when they
 stop being, because the person they are wrong for is not on the team.
+
+## A log stream that never ends, twice
+
+The overview's deploy log rendered as a black box with a title and nothing in
+it. It was fixed once, by showing the deploy's result instead when the stream
+ended with no lines — and it came back, because for the case that produces it
+the stream does not end.
+
+`deploy.LogStore.Follow` on a deployment ID it has never heard of does not say
+so: it creates an empty stream, returns an open channel, and the handler holds
+the connection waiting for lines that will never arrive. That is precisely the
+state of every deploy from before the last restart, which is the state that
+shows the empty box. The first fix listened for `end` and `error`, and neither
+fires.
+
+Two changes. The console treats four seconds of silence on a *finished* deploy
+as the end, which is the only signal available to it. And the overview no longer
+carries a log at all: the security score is in that column, the deploy's result
+is a row on the card beside it with a way to the Logs tab, and the log itself
+lives where the app's other histories are.
+
+The server side is worth fixing too — `Follow` could report that it holds
+nothing rather than opening an empty stream — and is not fixed here.

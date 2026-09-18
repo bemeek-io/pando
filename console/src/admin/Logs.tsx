@@ -112,18 +112,36 @@ export function DeploymentLog({
 
     const stream = new EventSource(`${base}/apps/${appID}/deployments/${deployment.id}/logs`);
 
-    stream.onmessage = (event) => setLines((previous) => [...previous, event.data as string]);
-    stream.addEventListener('end', () => {
+    let silent: number | undefined;
+    const done = () => {
       setEnded(true);
       stream.close();
-    });
-    stream.onerror = () => {
-      setEnded(true);
-      stream.close();
+      window.clearTimeout(silent);
     };
 
-    return () => stream.close();
-  }, [appID, deployment.id]);
+    stream.onmessage = (event) => {
+      window.clearTimeout(silent);
+      setLines((previous) => [...previous, event.data as string]);
+    };
+    stream.addEventListener('end', done);
+    stream.onerror = done;
+
+    // A deploy whose output Pando no longer holds never ends: the server's log
+    // store has no stream for that ID, opens an empty one, and holds the
+    // connection waiting for lines that will never come. Without this the box
+    // stays black and empty forever — which is the bug this whole fallback
+    // exists for, and the version that only listened for `end` did not catch
+    // it. A finished deploy that has said nothing for four seconds has nothing
+    // to say.
+    if (deployment.status !== 'running') {
+      silent = window.setTimeout(done, 4_000);
+    }
+
+    return () => {
+      window.clearTimeout(silent);
+      stream.close();
+    };
+  }, [appID, deployment.id, deployment.status]);
 
   // Deploy output lives in memory (`deploy.LogStore`) and is written nowhere,
   // so a deploy from before the last restart has none. An empty black box is

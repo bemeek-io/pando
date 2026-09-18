@@ -14,7 +14,7 @@ import { statusLabel, statusSymbol } from '../ui/status';
 import { InlineWarning } from '../ui/InlineWarning';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
-import { DeploymentLog, deployLabel, deployStatus } from './Logs';
+import { deployLabel, deployStatus } from './Logs';
 import { Security } from './Security';
 
 interface SpecRevision {
@@ -151,38 +151,29 @@ export function AppOverview({
               <span style={{ font: 'var(--type-code-sm)' }}>{app.source.commit.slice(0, 12)}</span>
             </Row>
           )}
+          <Row label="Last deploy">
+            {latest ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                <StatusIndicator
+                  status={deployStatus(latest.status)}
+                  label={`${deployLabel(latest.status)} ${relative(latest.finished_at ?? latest.started_at)}`}
+                />
+                <Button variant="ghost" onClick={() => onGo('logs')}>
+                  Open logs
+                </Button>
+              </span>
+            ) : (
+              <span style={{ color: 'var(--ink-secondary)' }}>Not deployed yet.</span>
+            )}
+          </Row>
         </Card>
 
-        {latest ? (
-          <DeploymentLog
-            appID={app.id}
-            deployment={latest}
-            // A finished deploy whose output Pando no longer holds gets its
-            // result, not an empty terminal. The log of every deploy, and the
-            // app's own output, are one tab away.
-            fallback={
-              <Card padding="md">
-                <div
-                  style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', alignItems: 'flex-start' }}
-                >
-                  <StatusIndicator
-                    status={deployStatus(latest.status)}
-                    label={`${deployLabel(latest.status)} ${relative(latest.finished_at ?? latest.started_at)}`}
-                  />
-                  <Button variant="ghost" onClick={() => onGo('logs')}>
-                    Open logs
-                  </Button>
-                </div>
-              </Card>
-            }
-          />
-        ) : (
-          <Card padding="md">
-            <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
-              This app hasn&rsquo;t been deployed yet.
-            </p>
-          </Card>
-        )}
+        {/* The security score, in the column a terminal used to occupy.
+            The log was the wrong thing to put on this page: it is a history,
+            it belongs with the other histories on the Logs tab, and the
+            version of it that was here showed a black box with nothing in it
+            whenever Pando no longer held the output. */}
+        <Security appID={app.id} />
       </div>
 
       {/* Warnings inline where they apply, never stacked as banners, never
@@ -209,11 +200,6 @@ export function AppOverview({
           </InlineWarning>
         );
       })}
-
-      {/* The security score, with the app's other facts rather than three tabs
-          away in settings: it is a property of what is running, and the person
-          who has to act on it is the person looking at this page. */}
-      <Security appID={app.id} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
         <Button
