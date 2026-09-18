@@ -20,7 +20,10 @@ import { Security } from './Security';
 interface SpecRevision {
   id: string;
   revision: number;
-  body?: { warnings?: Array<{ code: string; message: string }> };
+  body?: {
+    warnings?: Array<{ code: string; message: string }>;
+    workloads?: Array<{ env?: Array<{ key: string; value?: string; secret_ref?: string; slot_ref?: string }> }>;
+  };
 }
 
 export function AppOverview({
@@ -73,6 +76,15 @@ export function AppOverview({
 
   const latest = (deployments.data?.deployments ?? [])[0];
   const warnings = pinnedSpec.data?.body?.warnings ?? [];
+
+  // Counted from the spec rather than carried in it. Detection reads the names
+  // of an app's variables out of `.env.example` and cannot know the values, so
+  // an accepted app arrives with a list of empty ones and nothing said about
+  // it. A warning stored at detection would still be here after they were
+  // filled; this one answers the question every time it is asked.
+  const unset = (pinnedSpec.data?.body?.workloads ?? []).flatMap((w) =>
+    (w.env ?? []).filter((e) => !e.secret_ref && !e.slot_ref && (e.value ?? '') === ''),
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
@@ -156,6 +168,22 @@ export function AppOverview({
           word to a line and the section ran off the bottom of the page. */}
       <Security appID={app.id} />
 
+      {unset.length > 0 && (
+        <InlineWarning
+          action={
+            <Button
+              variant="secondary"
+              onClick={() => onGo('resources', 'variables')}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              Fill them in
+            </Button>
+          }
+        >
+          {unsetMessage(unset.map((e) => e.key))}
+        </InlineWarning>
+      )}
+
       {/* Warnings inline where they apply, never stacked as banners, never
           looking like the failure above. */}
       {warnings.map((warning) => {
@@ -183,6 +211,23 @@ export function AppOverview({
 
     </div>
   );
+}
+
+/**
+ * What to say about variables nobody has filled in.
+ *
+ * Names first, because the person reading knows their own app: seeing
+ * ANTHROPIC_API_KEY in the sentence is what makes it obvious which of them
+ * matter. Four of them, then a count — a list of thirty is a wall.
+ */
+function unsetMessage(keys: string[]): string {
+  const known = 'Pando read the names from this app’s own configuration and cannot know what they should be.';
+  if (keys.length === 1) {
+    return `${keys[0]} is declared with no value. ${known}`;
+  }
+  const shown = keys.slice(0, 4).join(', ');
+  const rest = keys.length > 4 ? `, and ${keys.length - 4} more` : '';
+  return `${keys.length} variables are declared with no value: ${shown}${rest}. ${known}`;
 }
 
 /**

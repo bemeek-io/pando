@@ -726,3 +726,35 @@ user and a password, and no slot resolution fills four variables from one answer
 
 Apps pinned before this still carry unknown-typed slots. The console reads one as
 what it is — "a value" — and its dialog says nothing about connecting.
+
+## A list of everything the app reads, and no way to say what it reads
+
+Moving untyped variables off the dependencies list put them on the environment
+list, where the only action on one was Remove. Eight names, no values, and a
+delete button.
+
+**A variable can be given a value now**, through the same dialog that adds one:
+the name fixed, the kind — an ordinary setting or a secret — chosen, the value
+typed. The kind defaults to secret when the name reads like a credential, and
+says so when it does not: a plain value lives in the spec, and the spec is
+exportable and meant to be safe to hand to somebody (R-190, R-191). PUBLIC wins
+over KEY, because a VAPID public key is published to browsers by design. It is a
+default and a sentence, never a refusal — which variables are credentials is the
+person's knowledge, not Pando's.
+
+**And nothing had said they were there.** Accepting a configuration produced the
+list and no mention of it. The review screen lists them before anybody accepts,
+under "Variables with no value", and the overview carries a warning naming the
+first few with the way to the screen that fills them. Counted from the spec each
+time rather than stored in it: a warning written at detection would still be
+there after they were filled.
+
+**An unfilled one no longer reaches the container as an empty string.** Setting a
+variable to nothing is a different thing from leaving it unset, and the
+difference decides what an app does — `if "APP_BASE_URL" in os.environ` is true
+for an empty one. A variable Pando has no value for is not set at all. An empty
+value somebody typed is kept: that is an answer.
+
+Never a blocker. Which of an app's forty variables actually matter is what the
+trial run is for (R-133, O-4), and a warning that blocks is an error wearing a
+warning's clothes.

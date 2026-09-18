@@ -31,7 +31,7 @@ export function Resources({ appID, focus }: { appID: string; focus?: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-7)' }}>
       <Slots appID={appID} focus={focus === 'dependencies'} />
-      <Environment appID={appID} />
+      <Environment appID={appID} focus={focus === 'variables'} />
       <BuildPlan appID={appID} />
       {/* `focus` is how the persistence warning on Overview lands somebody on
           the thing it is talking about rather than on this tab's first

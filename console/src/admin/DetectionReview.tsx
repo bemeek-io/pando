@@ -161,6 +161,8 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
 
       <Dependencies proposal={proposal} />
 
+      <Variables proposal={proposal} />
+
       <Warnings proposal={proposal} />
 
       <RunnersUp candidates={proposal.runners_up ?? []} />
@@ -414,6 +416,47 @@ interface Slot {
   type: string;
   required?: boolean;
   resolution?: { mode: string; target?: string };
+}
+
+/**
+ * The variables this app reads, which Pando read the names of and not the
+ * values.
+ *
+ * `.env.example` is a list of names: an app's own author writing down what it
+ * reads. The values are that app's keys and passwords, and Pando has none of
+ * them. Saying so here, before anybody accepts, is the difference between
+ * knowing what is left to do and finding eight empty rows later.
+ */
+function Variables({ proposal }: { proposal: Proposal }) {
+  const rows = (proposal.draft_spec?.workloads ?? []).flatMap((w) =>
+    (w.env ?? [])
+      .filter((e) => !e.secret_ref && !e.slot_ref && (e.value ?? '') === '')
+      .map((e) => ({ key: e.key, workload: w.name })),
+  );
+  if (rows.length === 0) return null;
+
+  return (
+    <section>
+      <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>
+        Variables with no value
+      </h4>
+      <Quiet>
+        Declared by the app and not filled in. Pando reads the names from the repository and cannot
+        know the values. Set them under Settings, on the app&rsquo;s environment, after accepting —
+        a key or a password is stored as a secret and never appears in an exported configuration.
+      </Quiet>
+
+      <div style={{ marginTop: 'var(--space-4)' }}>
+        <Table
+          columns={[
+            { key: 'key', header: 'Name', width: 'minmax(0,30ch)', mono: true },
+            { key: 'workload', header: 'Part of the app', width: '18ch', muted: true },
+          ]}
+          rows={rows}
+        />
+      </div>
+    </section>
+  );
 }
 
 function Warnings({ proposal }: { proposal: Proposal }) {

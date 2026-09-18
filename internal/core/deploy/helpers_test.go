@@ -210,3 +210,36 @@ func TestAFailureDoesNotSayTheSameThingTwice(t *testing.T) {
 
 	require.Equal(t, "\n!! This app needs a PostgreSQL database.\n", log.String())
 }
+
+// TestR130_AVariableNobodyFilledInIsNotSetToNothing asserts that a declared
+// hole stays a hole.
+//
+// Detection reads the names of an app's variables out of `.env.example` and has
+// no values to put in them. Passing those through as empty strings is not the
+// same as leaving them unset, and the difference decides what the app does:
+// `if "APP_BASE_URL" in os.environ` is true for an empty one. An empty value a
+// person typed is an answer and is kept.
+func TestR130_AVariableNobodyFilledInIsNotSetToNothing(t *testing.T) {
+	empty := ""
+	filled := "info"
+
+	w := spec.Workload{
+		Name: "web",
+		Env: []spec.EnvEntry{
+			{Key: "APP_BASE_URL", Value: &empty, Source: spec.EnvFromDetection},
+			{Key: "LOG_LEVEL", Value: &filled, Source: spec.EnvFromDetection},
+			{Key: "EMPTY_ON_PURPOSE", Value: &empty, Source: spec.EnvFromUser},
+		},
+	}
+
+	env, err := resolveEnv(&spec.AppSpec{Workloads: []spec.Workload{w}}, w, nil, provisioned{})
+	require.NoError(t, err)
+
+	_, declared := env["APP_BASE_URL"]
+	require.False(t, declared, "a name with no value never reaches the container")
+	require.Equal(t, "info", env["LOG_LEVEL"].Reveal())
+
+	set, ok := env["EMPTY_ON_PURPOSE"]
+	require.True(t, ok, "somebody chose this")
+	require.Equal(t, "", set.Reveal())
+}

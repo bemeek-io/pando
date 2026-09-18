@@ -620,6 +620,15 @@ func resolveEnv(s *spec.AppSpec, w spec.Workload, secrets map[string]secret.Valu
 	for _, e := range w.Env {
 		switch {
 		case e.Value != nil:
+			// A variable detection read out of `.env.example` and nobody
+			// filled in is a name, not a value. Setting it empty is a
+			// different thing from leaving it unset, and the difference
+			// decides what many apps do: `process.env.PORT || 3000` takes the
+			// default either way, `if "APP_BASE_URL" in os.environ` does not.
+			// An empty value somebody typed is kept — that is an answer.
+			if *e.Value == "" && e.Source == spec.EnvFromDetection {
+				continue
+			}
 			env[e.Key] = secret.New(*e.Value)
 
 		case e.SecretRef != nil:
