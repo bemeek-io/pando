@@ -75,6 +75,17 @@ export function Security({ appID }: { appID: string }) {
         </div>
       )}
 
+      {report.data?.ignoring_unfixable && (
+        <div style={{ marginTop: 'var(--space-2)' }}>
+          {/* Said, not implied. A list somebody cannot explain the length of is
+              a list they stop trusting. */}
+          <Quiet>
+            This installation leaves out findings with no fix available, from the score and from
+            this list.
+          </Quiet>
+        </div>
+      )}
+
       {counts && findings.length > 0 && (
         <div style={{ marginTop: 'var(--space-5)' }}>
           <div

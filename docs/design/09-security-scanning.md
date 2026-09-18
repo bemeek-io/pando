@@ -93,6 +93,18 @@ and no lag.
 **[D] No score is not a score of zero.** Unscanned, unscannable and "scanned and found nothing" are
 three different states and the model keeps them apart (R-318).
 
+**[P] A scan stores two numbers** (R-313a): every finding, and only the findings with a fix. Which of
+them an installation means is `ignore_unfixable_findings` in host policy, and policy changes without
+rescanning — so deriving the second on read would mean re-deriving it for every row of every list.
+Both are written when the findings are in hand. A scan from before the second column existed derives
+it from its own stored findings, which is exact.
+
+**[D] The filter drives the list as well as the number.** An installation that ignores unfixable
+findings does not see them, and the console says why the list is shorter than the scanner's output.
+
+**[D] Findings are stored and served worst first** (R-313b), by severity and then by ID, so the same
+scan orders the same way twice.
+
 ---
 
 ## 4. Enforcement
@@ -146,6 +158,7 @@ raise:
 | `min_security_score` | `0` | Below this, a deploy is refused. `0` is off. |
 | `insecure_action` | `warn` | `warn` or `stop`. |
 | `insecure_grace_hours` | `24` | How long an app has after it is first found insecure, before `stop` applies. |
+| `ignore_unfixable_findings` | `false` | Leave findings with no published fix out of the score and out of the list. |
 
 **O-20** is whether a score ages: nothing rescans an app that has not been deployed since, so a
 clean score can describe three-week-old vulnerability data. A scheduled rescan is the obvious answer

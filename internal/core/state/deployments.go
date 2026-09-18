@@ -199,10 +199,15 @@ func (d *Deployments) SetImageRef(ctx context.Context, deploymentID, imageRef, d
 // image has one, and an app that has never been built does not.
 func (d *Deployments) LastImage(ctx context.Context, appID string) (string, error) {
 	var ref *string
+	// The digest when there is no reference. A deploy from before the
+	// reference was recorded correctly still names what ran — a digest is a
+	// perfectly good thing to hand a scanner, and is in fact the more exact of
+	// the two.
 	err := d.db.QueryRow(ctx, `
-		SELECT image_ref
+		SELECT coalesce(image_ref, image_digest)
 		FROM deployments
-		WHERE app_id = $1 AND status = $2 AND image_ref IS NOT NULL
+		WHERE app_id = $1 AND status = $2
+		  AND (image_ref IS NOT NULL OR image_digest IS NOT NULL)
 		ORDER BY started_at DESC
 		LIMIT 1`, appID, DeploySucceeded).Scan(&ref)
 	if errors.Is(err, pgx.ErrNoRows) {

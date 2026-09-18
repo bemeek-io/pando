@@ -211,7 +211,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-264** | D | The console is an Okta-style launcher. | 19. Surfaces | 04, 08 | 08 | `TestR264_LauncherListIsDataPlaneScoped`, `TestR264_TheLauncherIsADifferentListFromTheManagementOne` |
 | **R-265** | D | Users holding any administrative verb see an Admin entry point from the launcher, exposing the… | 19. Surfaces | 04, 08 | 08 | `TestR265_TheServerReportsWhatTheConsoleScopesOn` |
 | **R-266** | D | Sharing an app sends no message. | 19. Surfaces | — | — | — |
-| **R-270** | D | Pando ships permissive defaults. | 20. Configuration and Policy | — | — | `TestR270_AFreshInstallShipsPermissive`, `TestR270_BuildEgressStartsPermissiveAndAppEgressInherits`, `TestR270_TheDefaultDocumentIsPermissive` |
+| **R-270** | D | Pando ships permissive defaults. | 20. Configuration and Policy | 09 | — | `TestR270_AFreshInstallShipsPermissive`, `TestR270_BuildEgressStartsPermissiveAndAppEgressInherits`, `TestR270_TheDefaultDocumentIsPermissive` |
 | **R-271** | D | Configuration may be supplied by: a YAML file loaded at startup, environment variables, the… | 20. Configuration and Policy | 00 | 00 | — |
 | **R-272** | D | The general pattern, applied throughout: a setting has a permissive default; host policy can… | 20. Configuration and Policy | 04, 06, 09 | 01, 06 | `TestR272_AVerbNoRuleMentionsIsUntouched`, `TestR272_HostPolicyIsAFloorForAdministratorsToo`, `TestR272_PolicyIsAFloorAndDeniesTheOwnerToo` |
 | **R-273** | D LATER | Premade setting profiles for common postures (hobbyist, hardened, regulated), usable as-is or… | 20. Configuration and Policy | — | — | — |
@@ -231,7 +231,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-310** | D | Every app has a security score: a whole number from 0 to 100. | 23. Security Scanning | 09 | — | `TestR310_TheScoreIsReadableByAnyoneWhoCanSeeTheApp` |
 | **R-311** | D | The score comes from scanning what the app actually deploys — the image that was | 23. Security Scanning | — | — | `TestR311_ScanningAnImageReportsWhatIsInIt`, `TestR311_ScanningSourceFindsWhatNeverReachesAnImage` |
 | **R-312** | D | An app is scanned whenever what it runs changes, which means on every deploy, and | 23. Security Scanning | — | — | — |
-| **R-313** | P | The score is derived from findings by severity, starting at 100 and deducting per | 23. Security Scanning | 09 | — | `TestR313_OneCriticalCostsMoreThanFiftyLows` |
+| **R-313** | P | The score is derived from findings by severity, starting at 100 and deducting per | 23. Security Scanning | 09 | — | `TestR313_OneCriticalCostsMoreThanFiftyLows`, `TestR313_PolicyMayCountOnlyWhatCanBeFixed` |
 | **R-314** | D | Host policy may set a minimum score, 0 to 100. | 23. Security Scanning | 09 | — | `TestR314_ATresholdOnlyBitesWhenThereIsSomethingToEnforceIt` |
 | **R-315** | D | **An app that is already running when it falls below the threshold is not stopped on | 23. Security Scanning | 09 | — | `TestR315_AnAppThatFallsBelowIsWarnedAndNotStopped`, `TestR315_WarnOnlyNeverStops` |
 | **R-316** | D | Host policy may say that insecure apps are stopped, with a grace period stated | 23. Security Scanning | 09 | — | `TestR316_AZeroGraceIsTheDefaultNotImmediately`, `TestR316_AnAppPandoStoppedStartsAgainAndOneItsOwnerStoppedDoesNot`, `TestR316_StoppingWaitsForTheGraceAndThenStops`, `TestR316_TheGraceIsMeasuredFromWhenItWasFirstFound` |

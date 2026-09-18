@@ -354,7 +354,9 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 	// restores a missing workload from the recorded image rather than
 	// rebuilding, and it detects a rotated secret (R-193) by comparing this
 	// fingerprint, because Observe returns no environment and never will.
-	if err := r.deploys.SetImageRef(ctx, dep.ID, image, primaryDigest(ctx, runtime, dep.AppID)); err != nil {
+	if err := r.deploys.SetImageRef(ctx, dep.ID,
+		firstNonEmpty(image, primaryImage(appSpec, perWorkload)),
+		primaryDigest(ctx, runtime, dep.AppID)); err != nil {
 		return fail("commit", err)
 	}
 	if r.reconciles != nil {
@@ -843,4 +845,30 @@ func (r *Runner) recordVolumes(ctx context.Context, runtime api.RuntimeAdapter, 
 		})
 	}
 	return r.volumes.RecordFromRuntime(ctx, s.AppID, s.Runtime.AdapterRef, records)
+}
+
+// primaryImage is the image the app's primary workload runs.
+//
+// A compose app builds one image per service and leaves the spec's top-level
+// image empty, so "what is this app running" appears to have no single answer —
+// except that it does: the primary workload is the one the proxy sends traffic
+// to (R-030), and it is the one a scanner, a rollback and a person all mean.
+func primaryImage(s *spec.AppSpec, perWorkload map[string]string) string {
+	if s == nil {
+		return ""
+	}
+	if primary, ok := s.PrimaryWorkload(); ok {
+		if built, have := perWorkload[primary.Name]; have && built != "" {
+			return built
+		}
+		if primary.Image != "" {
+			return primary.Image
+		}
+	}
+	for _, w := range s.Workloads {
+		if built, have := perWorkload[w.Name]; have && built != "" {
+			return built
+		}
+	}
+	return ""
 }

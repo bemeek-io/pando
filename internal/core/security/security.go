@@ -59,6 +59,33 @@ func Score(findings []api.Finding) int {
 	return score
 }
 
+// Fixable returns the findings a fix exists for.
+//
+// The distinction host policy may act on (R-313): "what is wrong with this app"
+// and "what could its owner do about it today" are different questions, and an
+// installation that only acts on the second should not be scored on the first.
+// A finding with no fix is still real — it is hidden only where policy says the
+// number should not count it, and the two agree because the same filter drives
+// both.
+func Fixable(findings []api.Finding) []api.Finding {
+	out := make([]api.Finding, 0, len(findings))
+	for _, f := range findings {
+		if f.Fix != "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// Ranked returns the findings worst-first.
+//
+// Severity, then ID, so the same scan orders the same way twice — a list whose
+// order depends on the scanner's output order changes under the reader for no
+// reason.
+func Ranked(findings []api.Finding) []api.Finding {
+	return Worst(findings, len(findings))
+}
+
 // Worst returns the findings that cost the most, for an error or a summary.
 //
 // Sorted by severity and then by ID, so the same scan produces the same list

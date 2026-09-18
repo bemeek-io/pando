@@ -706,6 +706,15 @@ finding: critical 25, high 10, medium 3, low 1, floored at 0. The weights are a 
 property that matters is that one critical finding cannot hide behind fifty low ones, and that the
 number is stable enough to set a threshold against.
 
+**R-313a [P]** **Host policy may say that a finding with no fix available does not count.** Off by
+default, so the score answers "what is wrong with this app" rather than "what could its owner do
+about it today" — and an upgrade does not silently move every score. Where it is on, the same filter
+drives the number and the list: what is counted is what is shown, because a score that ignored a
+finding the list displayed would leave somebody working out why fixing one changed nothing.
+
+**R-313b [D]** **Findings are shown worst first**, and the same scan orders the same way twice. A
+list in the scanner's output order changes under the reader for no reason.
+
 **R-314 [D]** **Host policy may set a minimum score, 0 to 100.** Below it, **a deploy is refused at
 plan time** with a `PLAN_*` error naming the score, the threshold and the findings that cost the
 most — the same contract as every other plan-time refusal (R-024, R-132): fail before anything is

@@ -92,10 +92,11 @@ interface PolicyDoc {
   min_build_isolation?: string;
   min_runtime_isolation?: string;
 
-  // The security score (R-314 – R-316).
+  // The security score (R-313 – R-316).
   min_security_score?: number;
   insecure_action?: string;
   insecure_grace_hours?: number;
+  ignore_unfixable_findings?: boolean;
 }
 
 interface Violation {
@@ -294,6 +295,17 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
           value={String(current.min_security_score ?? 0)}
           helper="0 to 100. Zero is off. An app below this is refused at deploy, with the findings that cost it the most."
           onChange={(e) => edit({ min_security_score: clamp(Number(e.target.value)) })}
+        />
+
+        <Switch
+          checked={current.ignore_unfixable_findings ?? false}
+          disabled={!canEdit}
+          label="Ignore findings with no fix available"
+          // R-313: what is counted is what is shown, both ways round. A score
+          // that ignored them while the list showed them would leave somebody
+          // working out why fixing one changed nothing.
+          description="A vulnerability nobody has published a fix for is left out of the score and out of the findings list. Off by default, so the score says what is wrong rather than what is fixable today."
+          onChange={(e) => edit({ ignore_unfixable_findings: e.target.checked })}
         />
 
         {(current.min_security_score ?? 0) > 0 && (

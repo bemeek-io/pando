@@ -105,7 +105,7 @@ func (s *Server) lastDeployedImage(ctx context.Context, appID string) (string, e
 type Security interface {
 	Report(ctx context.Context, appID, specID string) (security.Report, error)
 	Scan(ctx context.Context, req api.ScanRequest, principal audit.Event) (state.Scan, error)
-	Place(ctx context.Context, scores map[string]*int) (map[string]security.Verdict, error)
+	Place(ctx context.Context, scores map[string]security.Scores) (map[string]security.Placed, error)
 }
 
 // withVerdicts places each app's score against host policy.
@@ -122,12 +122,12 @@ func (s *Server) withVerdicts(ctx context.Context, apps []state.App) []state.App
 		return apps
 	}
 
-	scores := make(map[string]*int, len(apps))
+	scores := make(map[string]security.Scores, len(apps))
 	for _, app := range apps {
-		scores[app.ID] = app.SecurityScore
+		scores[app.ID] = security.Scores{All: app.SecurityScore, Fixable: app.SecurityScoreFixable}
 	}
 
-	verdicts, err := s.Security.Place(ctx, scores)
+	placed, err := s.Security.Place(ctx, scores)
 	if err != nil {
 		if s.Logger != nil {
 			s.Logger.Warn("could not place apps against the security threshold", zap.Error(err))
@@ -136,7 +136,11 @@ func (s *Server) withVerdicts(ctx context.Context, apps []state.App) []state.App
 	}
 
 	for i := range apps {
-		apps[i].SecurityVerdict = string(verdicts[apps[i].ID])
+		p := placed[apps[i].ID]
+		// The score this installation means, which is not always the one the
+		// row carried: policy decides whether findings with no fix count.
+		apps[i].SecurityScore = p.Score
+		apps[i].SecurityVerdict = string(p.Verdict)
 	}
 	return apps
 }

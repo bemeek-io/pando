@@ -165,6 +165,7 @@ export interface Report {
   counts: Counts;
   worst?: (Finding[] | null);
   scanner?: string;
+  ignoring_unfixable: boolean;
 }
 
 export interface Document {
@@ -181,6 +182,7 @@ export interface Document {
   min_security_score?: number;
   insecure_action?: string;
   insecure_grace_hours?: number;
+  ignore_unfixable_findings?: boolean;
 }
 
 export interface Source {
@@ -367,6 +369,7 @@ export interface Scan {
   scanner_ref: string;
   scanner?: string;
   score?: number;
+  score_fixable?: number;
   findings: (Finding[] | null);
   error?: string;
   ran_at: string;

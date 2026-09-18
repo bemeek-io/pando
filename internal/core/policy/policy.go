@@ -98,6 +98,16 @@ type Document struct {
 	// the default below, not "immediately" — an accidental zero must not empty
 	// a host.
 	InsecureGraceHours int `json:"insecure_grace_hours,omitempty"`
+
+	// IgnoreUnfixableFindings drops findings with no fix available from both
+	// the score and the list.
+	//
+	// Off by default, so the number means "what is wrong with this app" rather
+	// than "what could this app's owner do about it today" — and an upgrade
+	// does not silently move every score. An installation that has decided it
+	// only acts on what it can fix turns it on, and the two agree again: what
+	// is counted is what is shown.
+	IgnoreUnfixableFindings bool `json:"ignore_unfixable_findings,omitempty"`
 }
 
 // What InsecureAction may say.

@@ -134,3 +134,53 @@ type fixedClock time.Time
 func (c fixedClock) Now() time.Time { return time.Time(c) }
 
 func at(t time.Time) fixedClock { return fixedClock(t) }
+
+// TestR313_PolicyMayCountOnlyWhatCanBeFixed asserts the second question a score
+// can answer.
+//
+// "What is wrong with this app" and "what could its owner do about it today" are
+// different, and an installation that only acts on the second should not be
+// scored on the first. What matters is that one filter drives both the number
+// and the list: a score that ignored a finding while the list showed it would
+// leave somebody working out why fixing one changed nothing.
+func TestR313_PolicyMayCountOnlyWhatCanBeFixed(t *testing.T) {
+	findings := []api.Finding{
+		{ID: "CVE-1", Severity: api.SeverityCritical, Fix: "1.2.4"},
+		{ID: "CVE-2", Severity: api.SeverityHigh},
+		{ID: "CVE-3", Severity: api.SeverityHigh, Fix: "2.0.1"},
+		{ID: "CVE-4", Severity: api.SeverityMedium},
+	}
+
+	require.Equal(t, 100-25-10-10-3, security.Score(findings))
+
+	fixable := security.Fixable(findings)
+	require.Len(t, fixable, 2)
+	require.Equal(t, []string{"CVE-1", "CVE-3"}, ids(fixable))
+	require.Equal(t, 100-25-10, security.Score(fixable))
+}
+
+// Findings come back worst first, and the same scan orders the same way twice.
+// A list whose order is the scanner's output order changes under the reader for
+// no reason.
+func TestFindingsAreRankedBySeverity(t *testing.T) {
+	findings := []api.Finding{
+		{ID: "d", Severity: api.SeverityLow},
+		{ID: "b", Severity: api.SeverityCritical},
+		{ID: "c", Severity: api.SeverityMedium},
+		{ID: "a", Severity: api.SeverityCritical},
+		{ID: "e", Severity: api.SeverityHigh},
+	}
+
+	ranked := security.Ranked(findings)
+	require.Equal(t, []string{"a", "b", "e", "c", "d"}, ids(ranked))
+	require.Equal(t, ids(ranked), ids(security.Ranked(findings)))
+	require.Len(t, ranked, len(findings), "ranking drops nothing")
+}
+
+func ids(findings []api.Finding) []string {
+	out := make([]string, 0, len(findings))
+	for _, f := range findings {
+		out = append(out, f.ID)
+	}
+	return out
+}

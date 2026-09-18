@@ -47,6 +47,12 @@ type Report struct {
 	// Scanner is what would run, or what did. Empty when the installation has
 	// none configured, which is what makes a threshold inert (R-317).
 	Scanner string `json:"scanner,omitempty"`
+
+	// IgnoringUnfixable says the score and the list above leave out findings
+	// with no fix, because host policy says so (R-313). Said rather than
+	// implied: a list somebody cannot explain the length of is a list they
+	// stop trusting.
+	IgnoringUnfixable bool `json:"ignoring_unfixable"`
 }
 
 // Configured reports whether this installation can scan at all.
@@ -86,15 +92,23 @@ func (s *Service) Scan(ctx context.Context, req api.ScanRequest, principal audit
 		return recorded, err
 	}
 
-	score := Score(result.Findings)
+	// Both numbers, at the moment the findings are in hand. Which one an
+	// installation means is policy's, and policy changes without rescanning —
+	// so deriving the second later would mean either a rescan or re-deriving it
+	// on every read of every row in a list.
+	findings := Ranked(result.Findings)
+	score := Score(findings)
+	fixable := Score(Fixable(findings))
+
 	recorded, err := s.Scans.Record(ctx, state.Scan{
-		AppID:      req.AppID,
-		SpecID:     req.SpecID,
-		ScannerRef: ref,
-		Scanner:    result.Scanner,
-		Score:      &score,
-		Findings:   result.Findings,
-		RanAt:      result.Ran,
+		AppID:        req.AppID,
+		SpecID:       req.SpecID,
+		ScannerRef:   ref,
+		Scanner:      result.Scanner,
+		Score:        &score,
+		ScoreFixable: &fixable,
+		Findings:     findings,
+		RanAt:        result.Ran,
 	})
 	if err != nil {
 		return state.Scan{}, err
@@ -138,10 +152,16 @@ func (s *Service) Report(ctx context.Context, appID, specID string) (Report, err
 
 	report := Report{Scanner: ref}
 	if found {
-		report.Scan = &scan
-		report.Counts = Count(scan.Findings)
-		report.Worst = Worst(scan.Findings, 5)
-		report.Standing = Evaluate(doc, scan.Score, scan.RanAt, configured, security.InsecureSince)
+		// What policy counts is what the reader sees. An installation that
+		// ignores findings with no fix gets a score and a list that agree —
+		// showing findings that did not count would leave somebody trying to
+		// work out why fixing one changed nothing.
+		applied := effective(doc, scan)
+		report.Scan = &applied
+		report.Counts = Count(applied.Findings)
+		report.Worst = Worst(applied.Findings, 5)
+		report.IgnoringUnfixable = doc.IgnoreUnfixableFindings
+		report.Standing = Evaluate(doc, applied.Score, applied.RanAt, configured, security.InsecureSince)
 		return report, nil
 	}
 
@@ -154,18 +174,37 @@ func (s *Service) Report(ctx context.Context, appID, specID string) (Report, err
 // For a list: the alternative is a policy load and a scanner lookup per row,
 // which is the shape that turns a page of twenty apps into forty queries. The
 // scores come from the caller because the list query already fetched them.
-func (s *Service) Place(ctx context.Context, scores map[string]*int) (map[string]Verdict, error) {
+func (s *Service) Place(ctx context.Context, scores map[string]Scores) (map[string]Placed, error) {
 	doc, err := s.Policy.Document(ctx)
 	if err != nil {
 		return nil, err
 	}
 	_, configured := s.Configured()
 
-	out := make(map[string]Verdict, len(scores))
-	for appID, score := range scores {
-		out[appID] = Evaluate(doc, score, time.Time{}, configured, nil).Verdict
+	out := make(map[string]Placed, len(scores))
+	for appID, pair := range scores {
+		score := pair.All
+		if doc.IgnoreUnfixableFindings && pair.Fixable != nil {
+			score = pair.Fixable
+		}
+		out[appID] = Placed{
+			Score:   score,
+			Verdict: Evaluate(doc, score, time.Time{}, configured, nil).Verdict,
+		}
 	}
 	return out, nil
+}
+
+// Scores is one app's two numbers, as the list query returns them.
+type Scores struct {
+	All     *int
+	Fixable *int
+}
+
+// Placed is the number this installation means, and what it means.
+type Placed struct {
+	Score   *int
+	Verdict Verdict
 }
 
 // Allows reports whether this revision may be deployed (R-314).
@@ -186,7 +225,35 @@ func (s *Service) Allows(ctx context.Context, appID, specID string) (Standing, e
 	if !found {
 		return Evaluate(doc, nil, time.Time{}, configured, nil), nil
 	}
-	return Evaluate(doc, scan.Score, scan.RanAt, configured, nil), nil
+	applied := effective(doc, scan)
+	return Evaluate(doc, applied.Score, applied.RanAt, configured, nil), nil
+}
+
+// effective is the scan as this installation's policy counts it.
+//
+// A scan carries both numbers and every finding; policy decides which number is
+// the score and which findings are shown. The pair moves together on purpose.
+func effective(doc policy.Document, scan state.Scan) state.Scan {
+	// Ranked on the way out as well as on the way in: a scan recorded before
+	// findings were ordered is still read worst-first (R-313b), and ordering a
+	// list that is already ordered costs nothing.
+	scan.Findings = Ranked(scan.Findings)
+
+	if !doc.IgnoreUnfixableFindings {
+		return scan
+	}
+
+	scan.Findings = Fixable(scan.Findings)
+	if scan.ScoreFixable != nil {
+		scan.Score = scan.ScoreFixable
+		return scan
+	}
+
+	// A scan written before the second number existed. Deriving it from the
+	// findings is exact — they are all here — and costs one pass.
+	derived := Score(scan.Findings)
+	scan.Score = &derived
+	return scan
 }
 
 // Refusal is the plan-time error for an app that may not be deployed.

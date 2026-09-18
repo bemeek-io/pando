@@ -21,15 +21,20 @@ import (
 
 // Scan is one scanner's answer about one revision.
 type Scan struct {
-	ID         string        `json:"id"`
-	AppID      string        `json:"app_id"`
-	SpecID     string        `json:"spec_id,omitempty"`
-	ScannerRef string        `json:"scanner_ref"`
-	Scanner    string        `json:"scanner,omitempty"`
-	Score      *int          `json:"score"`
-	Findings   []api.Finding `json:"findings"`
-	Error      string        `json:"error,omitempty"`
-	RanAt      time.Time     `json:"ran_at"`
+	ID         string `json:"id"`
+	AppID      string `json:"app_id"`
+	SpecID     string `json:"spec_id,omitempty"`
+	ScannerRef string `json:"scanner_ref"`
+	Scanner    string `json:"scanner,omitempty"`
+	Score      *int   `json:"score"`
+
+	// ScoreFixable counts only findings with a fix available. Which of the two
+	// an installation means is host policy's (R-313); both are stored because
+	// policy changes without rescanning.
+	ScoreFixable *int          `json:"score_fixable,omitempty"`
+	Findings     []api.Finding `json:"findings"`
+	Error        string        `json:"error,omitempty"`
+	RanAt        time.Time     `json:"ran_at"`
 }
 
 // Scans stores them.
@@ -57,10 +62,11 @@ func (s *Scans) Record(ctx context.Context, scan Scan) (Scan, error) {
 	}
 
 	_, err = s.db.Exec(ctx, `
-		INSERT INTO app_scans (id, app_id, spec_id, scanner_ref, scanner, score, findings, error, ran_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		INSERT INTO app_scans (id, app_id, spec_id, scanner_ref, scanner, score, score_fixable,
+		                       findings, error, ran_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		scan.ID, scan.AppID, nullable(scan.SpecID), scan.ScannerRef, scan.Scanner,
-		scan.Score, body, scan.Error, scan.RanAt)
+		scan.Score, scan.ScoreFixable, body, scan.Error, scan.RanAt)
 	if err != nil {
 		return Scan{}, errs.Wrap(errs.Internal, "Could not record the scan.", err)
 	}
@@ -74,7 +80,8 @@ func (s *Scans) Record(ctx context.Context, scan Scan) (Scan, error) {
 // a revision it is not running has not been scanned in the sense that matters.
 func (s *Scans) Latest(ctx context.Context, appID, specID string) (Scan, bool, error) {
 	query := `
-		SELECT id, app_id, coalesce(spec_id, ''), scanner_ref, scanner, score, findings, error, ran_at
+		SELECT id, app_id, coalesce(spec_id, ''), scanner_ref, scanner, score, score_fixable,
+		       findings, error, ran_at
 		FROM app_scans
 		WHERE app_id = $1 AND ($2 = '' OR spec_id = $2)
 		ORDER BY ran_at DESC
@@ -84,7 +91,7 @@ func (s *Scans) Latest(ctx context.Context, appID, specID string) (Scan, bool, e
 	var findings []byte
 	err := s.db.QueryRow(ctx, query, appID, specID).Scan(
 		&scan.ID, &scan.AppID, &scan.SpecID, &scan.ScannerRef, &scan.Scanner,
-		&scan.Score, &findings, &scan.Error, &scan.RanAt)
+		&scan.Score, &scan.ScoreFixable, &findings, &scan.Error, &scan.RanAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Scan{}, false, nil
 	}
@@ -104,7 +111,8 @@ func (s *Scans) History(ctx context.Context, appID string, limit int) ([]Scan, e
 	}
 
 	rows, err := s.db.Query(ctx, `
-		SELECT id, app_id, coalesce(spec_id, ''), scanner_ref, scanner, score, findings, error, ran_at
+		SELECT id, app_id, coalesce(spec_id, ''), scanner_ref, scanner, score, score_fixable,
+		       findings, error, ran_at
 		FROM app_scans
 		WHERE app_id = $1
 		ORDER BY ran_at DESC
@@ -119,7 +127,7 @@ func (s *Scans) History(ctx context.Context, appID string, limit int) ([]Scan, e
 		var scan Scan
 		var findings []byte
 		if err := rows.Scan(&scan.ID, &scan.AppID, &scan.SpecID, &scan.ScannerRef, &scan.Scanner,
-			&scan.Score, &findings, &scan.Error, &scan.RanAt); err != nil {
+			&scan.Score, &scan.ScoreFixable, &findings, &scan.Error, &scan.RanAt); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read the app's scans.", err)
 		}
 		if len(findings) > 0 {
