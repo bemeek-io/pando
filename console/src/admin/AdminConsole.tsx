@@ -32,6 +32,7 @@ import { Resources } from './Resources';
 import { AddApp } from './AddApp';
 import { Reference } from './Reference';
 import { DeleteApp } from './DeleteApp';
+import { DeployButton } from './DeployButton';
 import type { Route, Section } from '../app/route';
 import { ThemeToggle } from '../ui/ThemeToggle';
 import { relative } from '../ui/time';
@@ -393,10 +394,18 @@ function AppScreen({
             <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
             <StatusIndicator status={statusSymbol(app.data.state)} label={statusLabel(app.data.state)} />
           </div>
-          {/* In the header rather than on Settings: an app whose source could
-              not be fetched has no pinned spec and therefore no Settings tab,
-              and that is the app most likely to be deleted. */}
-          <DeleteApp appID={app.data.id} appName={app.data.name} onDeleted={onBack} />
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+            {/* Deploy where somebody looking at an app can reach it, from any
+                tab, rather than under everything on the overview. Only for an
+                app that has a configuration to deploy: before that, the thing
+                to do is accept one. */}
+            {app.data.pinned_spec_id && <DeployButton app={app.data} />}
+
+            {/* In the header rather than on Settings: an app whose source could
+                not be fetched has no pinned spec and therefore no Settings tab,
+                and that is the app most likely to be deleted. */}
+            <DeleteApp appID={app.data.id} appName={app.data.name} onDeleted={onBack} />
+          </div>
         </div>
       </header>
 

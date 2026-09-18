@@ -577,3 +577,17 @@ address is what it was for — and an archived app is at no address at all: its
 routing is removed, its bundle destroyed, and the proxy's own lookup has always
 filtered `deleted_at IS NULL`, so a reused slug cannot reach the old app even in
 the window before the janitor runs.
+
+## Deploy was under everything on the page
+
+The overview grew — a status card, a security score with its findings, the
+warnings — and Deploy stayed at the bottom of it, so deploying meant scrolling
+past everything to reach the one thing somebody came to do.
+
+It is in the app's header now, beside Delete: an action on the app rather than
+a part of the overview, and reachable from every tab rather than from one. It
+is the view's single primary button, which is the brand's rule, and it keeps its
+own query of the app's revisions rather than taking one as a prop — passing the
+revision down is how a button ends up shipping a spec that changed while
+somebody was reading the page. It appears only once an app has a configuration
+to deploy; before that the thing to do is accept one.

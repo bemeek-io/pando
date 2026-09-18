@@ -5,10 +5,10 @@
 // Logs tab — both are histories, and a history on the screen you deploy from is
 // a screen that scrolls forever.
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Banner, Button, Card, StatusIndicator, Tag } from '@design';
 
-import { api, RequestFailed } from '@api/client';
+import { api } from '@api/client';
 import type { App, Deployment } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { InlineWarning } from '../ui/InlineWarning';
@@ -31,8 +31,6 @@ export function AppOverview({
   /** Where a warning's fix lives: a tab, and the section on it. */
   onGo: (tab: string, focus?: string) => void;
 }) {
-  const queries = useQueryClient();
-
   const deployments = useQuery({
     queryKey: ['apps', app.id, 'deployments'],
     queryFn: () => api.get<{ deployments: Deployment[] | null }>(`/apps/${app.id}/deployments`),
@@ -72,17 +70,6 @@ export function AppOverview({
   // could make was inert: the change was saved, and a deploy shipped the old
   // spec without saying so.
   const unshipped = Boolean(newest && pinned && newest.revision > pinned.revision);
-
-  const deploy = useMutation({
-    // The newest revision when there is an unshipped one, so Deploy ships what
-    // the screen is showing. An empty body deploys the pinned spec, which is
-    // right only when they are the same.
-    mutationFn: () =>
-      api.post(`/apps/${app.id}/deployments`, unshipped ? { spec_revision: newest?.revision } : {}),
-    // ['apps'] so the list's status follows the app through building to
-    // running, rather than only this screen.
-    onSuccess: () => queries.invalidateQueries({ queryKey: ['apps'] }),
-  });
 
   const latest = (deployments.data?.deployments ?? [])[0];
   const warnings = pinnedSpec.data?.body?.warnings ?? [];
@@ -194,17 +181,6 @@ export function AppOverview({
         );
       })}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-        <Button
-          variant="primary"
-          onClick={() => deploy.mutate()}
-          disabled={deploy.isPending || app.state === 'deploying'}
-          style={{ alignSelf: 'flex-start' }}
-        >
-          Deploy
-        </Button>
-        {deploy.isError && <Failure error={deploy.error} />}
-      </div>
     </div>
   );
 }
@@ -251,18 +227,3 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function Failure({ error }: { error: unknown }) {
-  const failed = error instanceof RequestFailed ? error : null;
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-      <p style={{ font: 'var(--type-body-ui)', color: 'var(--marker-deep)', margin: 0 }}>
-        {failed?.message ?? 'Pando couldn’t start a deploy. Try again.'}
-      </p>
-      {failed?.remedy && (
-        <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
-          {failed.remedy}
-        </p>
-      )}
-    </div>
-  );
-}
