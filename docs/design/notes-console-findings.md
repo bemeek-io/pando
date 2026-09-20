@@ -795,3 +795,40 @@ under a reading that discards it.
 to a reverse proxy in front of the app, and under Pando that service has no work
 left to do (R-023). When the image is a known proxy the refusal says so, which
 turns a file somebody has to relocate into a service they can delete.
+
+## "Seems like it should be able to run"
+
+It should, and refusing it was the wrong call.
+
+The reasoning behind the refusal was sound as far as it went: storage Pando
+manages is a directory, Docker will not mount a directory over a file in the
+image, and R-020 forbids reading the repository at deploy time. What it missed
+is that R-020 says the *spec* is the sole record of how an app runs — and a file
+read once at detection and stored in the spec satisfies that completely.
+`Build.GeneratedFiles` already works exactly this way, with a comment making the
+same argument: "they live in the spec because R-020 makes the state store the
+sole record of how an app runs."
+
+So a single-file bind mount is carried now. `spec.File` holds the path, the
+content and the mode; the runtime places it between create and start, which is
+the only moment available — the container's filesystem exists and nothing has
+read it yet. Directories above it are created, so an image without `/etc/caddy`
+is an ordinary image rather than a failure. The Docker adapter reports
+`SupportsCarriedFiles`, and a runtime that cannot do it is a plan-time refusal
+rather than an app that starts without its configuration (R-254).
+
+Two things that are easy to get wrong and are tested:
+
+**A changed file has to recreate the container.** Content copied in after create
+leaves no trace in the container's configuration, so `matchesPlan` would have
+said "already running" and an edited Caddyfile would never ship. The container
+carries a digest of its files as a label.
+
+**A carried file is a snapshot.** Editing the repository changes nothing until
+the app is read again, and the import warning says so in those words. That is
+R-020 working rather than a gap: a file fetched from a branch at deploy time
+would make the same revision deploy differently tomorrow.
+
+What is still refused is what cannot travel in a spec: larger than 64 KB, or not
+text. Both say which of the two it is, and both point at the same alternative —
+a `COPY` line, because a file that size is a build input.

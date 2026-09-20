@@ -45,6 +45,76 @@ func bundle(bundleID string, env map[string]secret.Value) api.BundlePlan {
 	}
 }
 
+// TestR020_ACarriedFileIsInTheContainer asserts R-020.
+//
+// A configuration file travels in the spec and is placed in the workload before
+// it starts — the mechanism that replaced turning `./Caddyfile:/etc/caddy/
+// Caddyfile` into a volume Docker refuses to mount. Nothing is read from the
+// repository at deploy time: these bytes came out of the pinned revision.
+func TestR020_ACarriedFileIsInTheContainer(t *testing.T) {
+	ctx := context.Background()
+	a := adapter(t)
+	id := "test-files-" + time.Now().Format("150405")
+	cleanup(t, a, id)
+
+	const body = ":80 {\n  respond \"ok\"\n}\n"
+
+	plan := bundle(id, nil)
+	plan.Workloads[0].Files = []api.FilePlan{
+		{Path: "/etc/caddy/Caddyfile", Content: body},
+		{Path: "/usr/local/bin/start.sh", Content: "#!/bin/sh\nexec sleep 3600\n", Mode: 0o755},
+	}
+	_, err := a.Apply(ctx, plan)
+	require.NoError(t, err)
+
+	t.Run("the file is there, in a directory the image did not have", func(t *testing.T) {
+		require.Equal(t, body, inContainer(t, id, "web", "cat", "/etc/caddy/Caddyfile"))
+	})
+
+	t.Run("the executable one is executable", func(t *testing.T) {
+		out := inContainer(t, id, "web", "stat", "-c", "%a", "/usr/local/bin/start.sh")
+		require.Equal(t, "755", strings.TrimSpace(out))
+	})
+
+	t.Run("and a changed file recreates the workload", func(t *testing.T) {
+		first, err := a.Observe(ctx, api.BundleRef{BundleID: id})
+		require.NoError(t, err)
+		startedAt := first.Workloads[0].StartedAt
+
+		// The same plan changes nothing.
+		_, err = a.Apply(ctx, plan)
+		require.NoError(t, err)
+		same, err := a.Observe(ctx, api.BundleRef{BundleID: id})
+		require.NoError(t, err)
+		require.Equal(t, startedAt, same.Workloads[0].StartedAt)
+
+		// A file's contents are not part of a container's configuration, so
+		// without the digest label an edited Caddyfile would converge to
+		// "already running" and never ship.
+		edited := bundle(id, nil)
+		edited.Workloads[0].Files = []api.FilePlan{
+			{Path: "/etc/caddy/Caddyfile", Content: body + "# changed\n"},
+			{Path: "/usr/local/bin/start.sh", Content: "#!/bin/sh\nexec sleep 3600\n", Mode: 0o755},
+		}
+		_, err = a.Apply(ctx, edited)
+		require.NoError(t, err)
+
+		after, err := a.Observe(ctx, api.BundleRef{BundleID: id})
+		require.NoError(t, err)
+		require.NotEqual(t, startedAt, after.Workloads[0].StartedAt,
+			"an edited file is a workload that no longer matches its plan")
+	})
+}
+
+// inContainer runs a command in a workload and returns its output.
+func inContainer(t *testing.T, bundleID, workload string, args ...string) string {
+	t.Helper()
+	name := "pando-" + bundleID + "-" + workload
+	out, err := exec.Command("docker", append([]string{"exec", name}, args...)...).CombinedOutput()
+	require.NoError(t, err, string(out))
+	return string(out)
+}
+
 func cleanup(t *testing.T, a *dockeradapter.Adapter, bundleID string) {
 	t.Helper()
 	t.Cleanup(func() {

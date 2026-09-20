@@ -578,6 +578,11 @@ func bundlePlanFor(s *spec.AppSpec, image string, perWorkload map[string]string,
 		for _, m := range w.Mounts {
 			wp.Mounts = append(wp.Mounts, api.MountPlan{VolumeID: m.VolumeID, Path: m.Path, ReadOnly: m.ReadOnly})
 		}
+		// Configuration carried in the spec (R-020): read once at detection,
+		// pinned to this revision, replayed on every start.
+		for _, f := range w.Files {
+			wp.Files = append(wp.Files, api.FilePlan{Path: f.Path, Content: f.Content, Mode: f.Mode})
+		}
 		for _, port := range w.Ports {
 			wp.Ports = append(wp.Ports, api.PortPlan{Number: port.Number, Protocol: port.Protocol})
 		}

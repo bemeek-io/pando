@@ -328,7 +328,9 @@ itself, to a registry or a daemon, and the daemon is forbidden.
 
 **R-098 [D]** The user reviews the proposal, then it **pins**. Detection does not re-run implicitly (R-022).
 
-**R-099 [D]** Compose constructs incompatible with the boundary are rejected or rewritten, with the reason shown: `network_mode: host`, `privileged: true`, bind mounts to host paths, a bind mount of a single file out of the repository, `deploy.replicas`. Host policy governs whether an admin may override (R-190).
+**R-099 [D]** Compose constructs incompatible with the boundary are rejected or rewritten, with the reason shown: `network_mode: host`, `privileged: true`, bind mounts to host paths, `deploy.replicas`. Host policy governs whether an admin may override (R-190).
+
+**R-099a [D]** A **configuration file** a compose service bind-mounts from the repository — a Caddyfile, an `nginx.conf`, an `init.sql` — is copied into the spec at detection and placed in the workload at every start. It is a snapshot, and the import says so: changing the file in the repository does nothing until the app is read again. This is R-020 rather than an exception to it — the spec remains the sole record of how the app runs. Files are text and capped; anything larger is a build input and is refused with that reason. A runtime that cannot place a file declares so in its capabilities, and the planner refuses before anything is created (R-254).
 
 **R-100 [D]** A user may **promote** a compose-declared service to a Pando-managed one — e.g. binding an ad-hoc Postgres to a real one. Shown as an explicit diff, never automatic.
 

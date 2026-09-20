@@ -12,6 +12,7 @@ import { Banner, Button, Dialog, Input, Select, StatusIndicator, Table } from '@
 import { api } from '@api/client';
 import { Quiet, messageOf } from '../install/Accounts';
 import { Environment } from './Environment';
+import { CarriedFiles } from './CarriedFiles';
 import { BuildPlan } from './BuildPlan';
 
 interface Slot {
@@ -32,6 +33,7 @@ export function Resources({ appID, focus }: { appID: string; focus?: string }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-7)' }}>
       <Slots appID={appID} focus={focus === 'dependencies'} />
       <Environment appID={appID} focus={focus === 'variables'} />
+      <CarriedFiles appID={appID} />
       <BuildPlan appID={appID} />
       {/* `focus` is how the persistence warning on Overview lands somebody on
           the thing it is talking about rather than on this tab's first

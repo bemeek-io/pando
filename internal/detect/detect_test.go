@@ -880,58 +880,83 @@ func TestARelativeBindMountBecomesAManagedVolume(t *testing.T) {
 		"the rewrite names the path, so the user can see what moved")
 }
 
-// TestR099_ASingleFileBindMountIsRefusedAtImport asserts R-099.
+// TestR020_ASingleFileBindMountIsCarriedInTheSpec asserts R-020.
 //
 // `./Caddyfile:/etc/caddy/Caddyfile` is not the same construct as
 // `./pgdata:/var/lib/postgresql/data`, though compose writes them the same way.
 // A directory of data becomes a volume Pando manages. A single file cannot:
-// nothing is read from the repository at deploy time (R-020), so the volume
-// would come up empty, and Docker will not mount a directory over a file that
-// exists in the image regardless.
+// storage is a directory, and Docker will not mount one over a file in the
+// image — which is how this used to surface, as `apply failed: Could not
+// create "proxy".` at the last step of a deploy.
 //
-// It used to import clean and fail at the last step of the deploy, after the
-// build and the scan, with `apply failed: Could not create "proxy".` — about a
-// line in a file Pando had read minutes earlier.
-func TestR099_ASingleFileBindMountIsRefusedAtImport(t *testing.T) {
+// So the file travels in the spec, read once here and placed in the container
+// at every start. That is R-020 rather than an exception to it: the spec is the
+// sole record of how the app runs, and nothing is read from the repository when
+// it is deployed. Build.GeneratedFiles is the same idea one layer along.
+func TestR020_ASingleFileBindMountIsCarriedInTheSpec(t *testing.T) {
+	const caddyfile = ":80 {\n  respond \"ok\"\n}\n"
+
 	result, err := auction().Run(context.Background(), memSource{
 		"compose.yaml": "services:\n  proxy:\n    image: caddy:2\n" +
 			"    volumes:\n      - ./Caddyfile:/etc/caddy/Caddyfile:ro\n",
-		"Caddyfile": ":80 {\n  respond \"ok\"\n}\n",
-	})
-	require.NoError(t, err, "a rejection is a result, not a failure of detection")
-
-	require.Equal(t, detect.StatusBlocked, result.Status)
-	require.Error(t, result.Blocked)
-
-	e := errs.As(result.Blocked)
-	require.Equal(t, errs.PlanComposeConstructRejected, e.Code)
-
-	rejected, ok := e.Details["rejected"].([]map[string]any)
-	require.True(t, ok)
-	require.Len(t, rejected, 1)
-	require.Equal(t, "proxy", rejected[0]["service"])
-	require.Contains(t, rejected[0]["reason"], "./Caddyfile",
-		"the line to change, by name")
-	require.Contains(t, rejected[0]["reason"], "COPY",
-		"and what to do instead, since the file still has to reach the container")
-}
-
-// A proxy in front of the app is doing work Pando does (R-023), so the refusal
-// says so: one of the two ways out is deleting the service.
-func TestR099_ARefusedProxyServiceIsNamedAsOne(t *testing.T) {
-	result, err := auction().Run(context.Background(), memSource{
-		"compose.yaml": "services:\n  app:\n    image: nginx\n  proxy:\n    image: caddy:2-alpine\n" +
-			"    volumes:\n      - ./Caddyfile:/etc/caddy/Caddyfile:ro\n",
-		"Caddyfile": ":80 {\n  respond \"ok\"\n}\n",
+		"Caddyfile": caddyfile,
 	})
 	require.NoError(t, err)
-	require.Equal(t, detect.StatusBlocked, result.Status)
+	require.NotEqual(t, detect.StatusBlocked, result.Status)
 
-	e := errs.As(result.Blocked)
-	rejected, ok := e.Details["rejected"].([]map[string]any)
-	require.True(t, ok)
-	require.Len(t, rejected, 1)
-	require.Contains(t, rejected[0]["reason"], "Pando is already one")
+	draft := result.Winner.Draft
+	require.Len(t, draft.Workloads, 1)
+	proxy := draft.Workloads[0]
+
+	require.Len(t, proxy.Files, 1)
+	require.Equal(t, "/etc/caddy/Caddyfile", proxy.Files[0].Path)
+	require.Equal(t, caddyfile, proxy.Files[0].Content, "the bytes, not a reference to them")
+
+	// And not also a volume: two mechanisms for one path, one of which the
+	// daemon refuses.
+	require.Empty(t, proxy.Mounts)
+	require.Empty(t, draft.Volumes)
+
+	// A copy taken now is a copy taken now, and the warning says so — editing
+	// the repository does nothing until the app is read again (R-102).
+	require.True(t, hasWarning(draft.Warnings, spec.WarnComposeConstructRewritten, "./Caddyfile"))
+	require.True(t, hasWarning(draft.Warnings, spec.WarnComposeConstructRewritten, "read again"))
+}
+
+// What cannot be carried is still refused, and says which of the two reasons it
+// is. A spec is something a person reads and a database row holds.
+func TestR099_AFileTooBigOrTooBinaryToCarryIsRefused(t *testing.T) {
+	t.Run("too big", func(t *testing.T) {
+		result, err := auction().Run(context.Background(), memSource{
+			"compose.yaml": "services:\n  app:\n    image: nginx\n" +
+				"    volumes:\n      - ./blob.json:/etc/app/blob.json\n",
+			"blob.json": strings.Repeat("x", spec.FileSizeLimit+1),
+		})
+		require.NoError(t, err)
+		require.Equal(t, detect.StatusBlocked, result.Status)
+
+		e := errs.As(result.Blocked)
+		rejected, ok := e.Details["rejected"].([]map[string]any)
+		require.True(t, ok)
+		require.Len(t, rejected, 1)
+		require.Contains(t, rejected[0]["reason"], "build input")
+		require.Contains(t, rejected[0]["reason"], "COPY")
+	})
+
+	t.Run("not text", func(t *testing.T) {
+		result, err := auction().Run(context.Background(), memSource{
+			"compose.yaml": "services:\n  app:\n    image: nginx\n" +
+				"    volumes:\n      - ./logo.png:/etc/app/logo.png\n",
+			"logo.png": "\x89PNG\r\n\x1a\n\xff\xfe\xfd",
+		})
+		require.NoError(t, err)
+		require.Equal(t, detect.StatusBlocked, result.Status)
+
+		e := errs.As(result.Blocked)
+		rejected, ok := e.Details["rejected"].([]map[string]any)
+		require.True(t, ok)
+		require.Contains(t, rejected[0]["reason"], "not a text file")
+	})
 }
 
 // The same mount, with no such file in the repository, is the ordinary case:

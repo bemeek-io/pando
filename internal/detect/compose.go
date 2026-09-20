@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 
@@ -229,26 +230,15 @@ func (c *composeImport) rejectIncompatible() error {
 			// the image anyway — which is how this used to surface: an app
 			// that imported and scanned and built, and then failed at the
 			// last step with `source /var/lib/docker/... is not directory`.
+			// A single file out of the repository — a Caddyfile, an
+			// nginx.conf, an init.sql. Pando carries it in the spec and places
+			// it in the container at start, so the app runs the way its author
+			// wrote it. What cannot be carried is refused here: too big to
+			// belong in a spec, or not text.
 			if c.isFile(mount.hostPath) {
-				reason := "This mounts the single file " + mount.hostPath + " into the container at " +
-					mount.containerPath + ". Pando's storage is a directory, and nothing is " +
-					"read from the repository when an app is deployed, so there is nothing " +
-					"for that file to come from. Copy it into the image instead — a `COPY " +
-					path.Base(mount.hostPath) + " " + mount.containerPath + "` line in the " +
-					"service's Dockerfile does what this mount was doing."
-
-				// The common case for a mounted config file is a reverse proxy
-				// in front of the app, and under Pando that service has no work
-				// left to do: Pando terminates TLS, gives the app an address
-				// and routes to it (R-023). Saying so turns a file somebody has
-				// to relocate into a service they can delete.
-				if isReverseProxy(s.Image) {
-					reason += " This service is a reverse proxy, and Pando is already one: it " +
-						"gives this app an address, terminates TLS and routes traffic to it. " +
-						"Removing the service from the compose file is the other way out."
+				if why, ok := c.uncarryable(mount.hostPath); !ok {
+					found = append(found, rejection{name, "volume " + mount.raw, why})
 				}
-
-				found = append(found, rejection{name, "volume " + mount.raw, reason})
 			}
 		}
 	}
@@ -466,19 +456,6 @@ func (c *composeImport) wire(backing map[string]spec.SlotType, workloads []spec.
 	return slots
 }
 
-// isReverseProxy reports whether an image is one of the proxies people put in
-// front of an app. Named images only — there is no guessing at what an
-// unfamiliar image does.
-func isReverseProxy(image string) bool {
-	name := strings.ToLower(image)
-	for _, known := range []string{"caddy", "nginx", "traefik", "haproxy", "envoyproxy/envoy", "httpd"} {
-		if strings.Contains(name, known) {
-			return true
-		}
-	}
-	return false
-}
-
 // pointsAt reports whether a value names a compose service as a host.
 //
 // The shapes that matter are the ones a connection string takes:
@@ -509,6 +486,7 @@ func (c *composeImport) workload(name string, only bool) spec.Workload {
 		Env:        c.env(name, s),
 		Ports:      c.ports(name, s),
 		Mounts:     c.mounts(name, s),
+		Files:      c.files(name, s),
 		DependsOn:  dependsOn(s.DependsOn),
 		Health:     health(s.Healthcheck),
 
@@ -637,6 +615,10 @@ func (c *composeImport) volumes(running []string) []spec.Volume {
 	// used by two of them is declared once.
 	for _, service := range running {
 		for _, m := range parseMounts(c.file.Services[service].Volumes) {
+			// A single file is carried in the spec, not stored in a volume.
+			if m.hostPath != "" && c.isFile(m.hostPath) {
+				continue
+			}
 			if m.volumeName != "" && !containsString(named, m.volumeName) {
 				named = append(named, m.volumeName)
 			}
@@ -667,10 +649,94 @@ func (c *composeImport) mountedAnywhere(volume string) bool {
 	return false
 }
 
+// files carries single-file bind mounts into the spec.
+//
+// `./Caddyfile:/etc/caddy/Caddyfile` is configuration the app cannot start
+// without, and neither mechanism Pando has for a path fits it: storage is a
+// directory, and a host bind mount would mean reading the repository at deploy
+// time, which R-020 forbids. So the file itself is read once, here, and stored
+// in the spec — pinned to the revision, replayed at every start, the same way
+// a generated build file already is.
+//
+// It is a snapshot, and the warning says so: editing the file in the repository
+// changes nothing until somebody re-detects. That is R-020 working as intended
+// rather than a gap — the spec is the record of how the app runs, and a file
+// re-read from a branch at deploy time would make the same revision deploy
+// differently tomorrow.
+func (c *composeImport) files(name string, s composeService) []spec.File {
+	var files []spec.File
+
+	for _, m := range parseMounts(s.Volumes) {
+		if m.hostPath == "" || !c.isFile(m.hostPath) {
+			continue
+		}
+		content, ok := c.read(m.hostPath)
+		if !ok {
+			continue
+		}
+
+		files = append(files, spec.File{Path: m.containerPath, Content: content})
+		c.rewrote(name, "volume "+m.raw,
+			"Pando copied "+m.hostPath+" out of the repository and carries it in this app's "+
+				"configuration, placing it at "+m.containerPath+" each time the service starts. "+
+				"It is a copy taken now: editing "+m.hostPath+" in the repository changes nothing "+
+				"until this app is read again.")
+	}
+	return files
+}
+
+// read returns a repository file's contents, if it is one Pando can carry.
+func (c *composeImport) read(hostPath string) (string, bool) {
+	if c.src == nil {
+		return "", false
+	}
+	f, err := c.src.Open(path.Clean(strings.TrimPrefix(hostPath, "./")))
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = f.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(f, spec.FileSizeLimit+1))
+	if err != nil || len(body) > spec.FileSizeLimit || !utf8.Valid(body) {
+		return "", false
+	}
+	return string(body), true
+}
+
+// uncarryable reports why a file cannot travel in the spec, when it cannot.
+//
+// Two reasons, and both are about what a spec is: something a person reads and
+// a database row holds. A megabyte of anything is a build input, and a binary
+// is not configuration.
+func (c *composeImport) uncarryable(hostPath string) (string, bool) {
+	if _, ok := c.read(hostPath); ok {
+		return "", true
+	}
+
+	clean := path.Clean(strings.TrimPrefix(hostPath, "./"))
+	if info, err := c.src.Stat(clean); err == nil && info.Size > spec.FileSizeLimit {
+		return "This mounts " + hostPath + ", which is " + fmt.Sprintf("%d KB", info.Size/1024) +
+			". Pando carries a configuration file up to " + fmt.Sprintf("%d KB", spec.FileSizeLimit/1024) +
+			" in the app's own configuration; a file this size is a build input. Copy it into the " +
+			"image instead, with a `COPY " + path.Base(hostPath) + "` line in the service's Dockerfile.", false
+	}
+
+	return "This mounts " + hostPath + ", which is not a text file. Pando carries a configuration " +
+		"file in the app's own configuration, and that is somewhere a person reads. Copy it into " +
+		"the image instead, with a `COPY " + path.Base(hostPath) + "` line in the service's " +
+		"Dockerfile.", false
+}
+
 func (c *composeImport) mounts(name string, s composeService) []spec.Mount {
 	var mounts []spec.Mount
 	for _, m := range parseMounts(s.Volumes) {
 		if m.volumeName == "" {
+			continue
+		}
+		// A single file is carried in the spec instead (see files above).
+		// Making it a volume as well is two mechanisms for one path, and the
+		// one Docker refuses.
+		if m.hostPath != "" && c.isFile(m.hostPath) {
 			continue
 		}
 		mounts = append(mounts, spec.Mount{

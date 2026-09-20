@@ -240,6 +240,7 @@ export interface Workload {
   env?: (EnvEntry[] | null);
   ports?: (Port[] | null);
   mounts?: (Mount[] | null);
+  files?: (File[] | null);
   depends_on?: (string[] | null);
   healthcheck?: Healthcheck;
   exposed: boolean;
@@ -414,6 +415,12 @@ export interface Mount {
   volume_id: string;
   path: string;
   read_only: boolean;
+}
+
+export interface File {
+  path: string;
+  content: string;
+  mode?: number;
 }
 
 export interface Healthcheck {

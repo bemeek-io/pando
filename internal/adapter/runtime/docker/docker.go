@@ -1,11 +1,17 @@
 package docker
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +41,12 @@ const (
 	labelBundle   = "io.pando.bundle"
 	labelWorkload = "io.pando.workload"
 	labelManaged  = "io.pando.managed"
+
+	// labelFiles digests the configuration files carried into this container
+	// (spec.File). They are copied in after create and leave no trace in the
+	// container's own configuration, so this is what makes a changed file a
+	// container that no longer matches its plan.
+	labelFiles = "io.pando.files"
 
 	// labelTrial marks everything a trial run creates (R-097), so that a trial
 	// interrupted by Pando restarting can be found and removed rather than
@@ -123,6 +135,7 @@ func (a *Adapter) Capabilities(context.Context) (api.RuntimeCapabilities, error)
 		IsolationClass: spec.IsolationContainer,
 
 		SupportsPersistentVolumes: true,
+		SupportsCarriedFiles:      true,
 		SupportsExec:              true,
 		SupportsMultipleWorkloads: true,
 		SupportsPrivateNetwork:    true,
@@ -287,6 +300,13 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 			labelBundle:   p.BundleID,
 			labelWorkload: w.Name,
 			labelManaged:  "true",
+
+			// What the carried files were, so that changing one is a change
+			// this container does not match. They go in after create and
+			// leave no trace in the container's configuration, so without
+			// this a spec whose only edit was a Caddyfile would converge to
+			// "already running" and the edit would never ship.
+			labelFiles: fileDigest(w.Files),
 		},
 	}
 	if w.Health != nil {
@@ -316,10 +336,102 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 	if err != nil {
 		return createFailure(w, err)
 	}
+
+	// Configuration files, placed before the workload runs.
+	//
+	// Between create and start, which is the only moment they can go in: the
+	// container's filesystem exists and nothing has read it yet. A volume
+	// cannot do this — Docker will not mount a directory over a file in the
+	// image — and a bind mount from the host would mean reading the repository
+	// at deploy time, which R-020 forbids. The bytes come from the spec.
+	for _, f := range w.Files {
+		if err := a.placeFile(ctx, created.ID, f); err != nil {
+			return errs.Wrap(errs.AdapterFailed,
+				fmt.Sprintf("Could not put %s into %q.", f.Path, w.Name), err)
+		}
+	}
+
 	if err := a.cli.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
 		return errs.Wrap(errs.AdapterFailed, fmt.Sprintf("Could not start %q.", w.Name), err)
 	}
 	return nil
+}
+
+// fileDigest summarizes a workload's carried files.
+//
+// Sorted by path, and covering the mode as well as the content: a file made
+// executable is a different container from the same file that is not.
+func fileDigest(files []api.FilePlan) string {
+	if len(files) == 0 {
+		return ""
+	}
+
+	sorted := append([]api.FilePlan(nil), files...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Path < sorted[j].Path })
+
+	h := sha256.New()
+	for _, f := range sorted {
+		fmt.Fprintf(h, "%s\x00%d\x00%d\x00", f.Path, f.Mode, len(f.Content))
+		h.Write([]byte(f.Content))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// placeFile copies one file into a created container.
+//
+// CopyToContainer extracts a tar stream at a path in the container, so the
+// archive is rooted at / and carries the file at its full path. The directories
+// above it go in as entries of their own: Docker does not create a missing
+// parent, and an image whose /etc/caddy does not exist yet is an ordinary
+// image, not a broken one. An entry for a directory that already exists is a
+// no-op at the mode these are written with.
+func (a *Adapter) placeFile(ctx context.Context, containerID string, f api.FilePlan) error {
+	mode := f.Mode
+	if mode == 0 {
+		mode = 0o644
+	}
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	clean := path.Clean(f.Path)
+	for _, dir := range ancestors(path.Dir(clean)) {
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     strings.TrimPrefix(dir, "/") + "/",
+			Typeflag: tar.TypeDir,
+			Mode:     0o755,
+			ModTime:  time.Now(),
+		}); err != nil {
+			return err
+		}
+	}
+
+	if err := tw.WriteHeader(&tar.Header{
+		Name:    strings.TrimPrefix(clean, "/"),
+		Mode:    int64(mode),
+		Size:    int64(len(f.Content)),
+		ModTime: time.Now(),
+	}); err != nil {
+		return err
+	}
+	if _, err := tw.Write([]byte(f.Content)); err != nil {
+		return err
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+
+	return a.cli.CopyToContainer(ctx, containerID, "/", &buf, container.CopyToContainerOptions{})
+}
+
+// ancestors lists a directory and everything above it, outermost first, so a
+// tar stream creates them in an order extraction can follow.
+func ancestors(dir string) []string {
+	var out []string
+	for d := path.Clean(dir); d != "/" && d != "." && d != ""; d = path.Dir(d) {
+		out = append([]string{d}, out...)
+	}
+	return out
 }
 
 // createFailure says why the daemon refused, in the app's own terms.
@@ -952,6 +1064,9 @@ func (a *Adapter) matchesPlan(ctx context.Context, containerID string, w api.Wor
 		return false, nil
 	}
 	if inspect.Config.Image != w.Image {
+		return false, nil
+	}
+	if inspect.Config.Labels[labelFiles] != fileDigest(w.Files) {
 		return false, nil
 	}
 
