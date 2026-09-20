@@ -266,9 +266,16 @@ func (c *composeImport) rejectIncompatible() error {
 		summary = append(summary, r.Service+": "+r.Construct)
 	}
 
+	// "1 construct(s)" is how a message written for the plural case reads in
+	// the single one, which is the common one.
+	count := fmt.Sprintf("%d constructs", len(found))
+	if len(found) == 1 {
+		count = "a construct"
+	}
+
 	return errs.Newf(errs.PlanComposeConstructRejected,
-		"%s uses %d construct(s) that cannot run inside the boundary Pando puts around an app: %s.",
-		c.source, len(found), strings.Join(summary, "; ")).
+		"%s uses %s that cannot run inside the boundary Pando puts around an app: %s.",
+		c.source, count, strings.Join(summary, "; ")).
 		WithDetail("rejected", details).
 		WithRemedy("Each entry above says why. Remove or change those lines in " + c.source +
 			", or deploy without the compose file by supplying an image and a command instead.")

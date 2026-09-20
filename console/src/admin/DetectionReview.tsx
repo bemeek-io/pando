@@ -37,6 +37,7 @@ import {
 import { api, RequestFailed } from '@api/client';
 import type { Candidate, Proposal, Question } from '@api/types.gen';
 import { InlineWarning } from '../ui/InlineWarning';
+import { rejectedEntries } from './rejections';
 
 interface DetectionResponse {
   status: string;
@@ -538,8 +539,18 @@ function Blocked({ proposal }: { proposal: Proposal }) {
   // rather than replaced with a generic failure. The compose importer produces
   // a remedy naming the lines to change.
   const blocked = proposal.blocked;
+
+  // The entries the summary is summarizing.
+  //
+  // They travel in the envelope's details and nothing rendered them, so the
+  // screen said "docker-compose.yml uses 1 construct(s) that cannot run inside
+  // the boundary" and then "Each entry above says why" — above which there was
+  // one line naming the construct and nothing saying why. The why is the whole
+  // reason the importer writes one per rejection (R-105).
+  const rejected = rejectedEntries(blocked?.details);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxWidth: '76ch' }}>
       <div>
         <h4 style={{ font: 'var(--type-h4)', margin: 0, color: 'var(--marker-deep)' }}>
           Pando can&rsquo;t run this app as it&rsquo;s written
@@ -548,6 +559,34 @@ function Blocked({ proposal }: { proposal: Proposal }) {
           {blocked?.message}
         </p>
       </div>
+
+      {rejected.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {rejected.map((entry) => (
+            <div
+              key={entry.service + entry.construct}
+              style={{
+                borderTop: 'var(--border-width) solid var(--rule)',
+                paddingTop: 'var(--space-3)',
+              }}
+            >
+              <div style={{ font: 'var(--type-code-sm)', color: 'var(--ink)' }}>
+                {entry.service} &middot; {entry.construct}
+              </div>
+              <p
+                style={{
+                  font: 'var(--type-body-ui)',
+                  color: 'var(--ink-secondary)',
+                  margin: 'var(--space-2) 0 0',
+                }}
+              >
+                {entry.reason}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {blocked?.remedy && (
         <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
           {blocked.remedy}
@@ -557,6 +596,7 @@ function Blocked({ proposal }: { proposal: Proposal }) {
     </div>
   );
 }
+
 
 function DetectionFailed({
   error,
