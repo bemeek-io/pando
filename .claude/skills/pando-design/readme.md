@@ -56,7 +56,7 @@ evidence of what Pando's UI actually looks like today. Each kit's README repeats
 Grouped by concern. Every component reads its values from the CSS custom properties —
 no CSS-in-JS, no npm dependencies, React only.
 
-**`components/brand/`** — `ContourMap`, `Logo`
+**`components/brand/`** — `ContourMap`, `Logo`, `MapCollar`
 **`components/core/`** — `Button`, `IconButton`, `Icon`, `Tag`, `Badge`, `Card`
 **`components/forms/`** — `Input`, `Select`, `Checkbox`, `Radio`, `Switch`
 **`components/data/`** — `Table`, `StatusIndicator` (plus `StatusSymbol`)
@@ -82,6 +82,15 @@ them and the spec's rules extend cleanly to them — each is noted in its `.d.ts
 - `Switch`, `Radio`, `Select` — form controls the console needs; styled from the
   spec's input and focus rules.
 - `StatusSymbol` — the bare 8px symbol, for dense tables and banners.
+- `MapCollar` — the neatline, corner ticks and marginal data of a printed sheet,
+  lifted out of `ContourMap`'s hero mode, which is where the spec first describes
+  them. The collar and the contour are different ideas and the split is the point:
+  the contour is terrain and is confined to four places, while the collar is the
+  sheet it prints on, and a page can be a sheet without being terrain. `ContourMap
+  collar` composes it, so the tick geometry has one definition rather than one per
+  surface that wants to look like a map. **Added in phase 8**, when the console
+  turned out to carry no trace of the brand's one bold idea and the honest fix was
+  not more contours — it was the other half of the language.
 
 ## Content fundamentals
 

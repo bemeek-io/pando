@@ -13,7 +13,7 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Button, EmptyState, Logo, SidebarNav, StatusIndicator, Table, Tabs, Tooltip } from '@design';
+import { Badge, Button, ContourMap, EmptyState, Logo, SidebarNav, StatusIndicator, Table, Tabs, Tooltip } from '@design';
 import type { SidebarItem } from '@design';
 
 import { api } from '@api/client';
@@ -31,6 +31,7 @@ import { Resources } from './Resources';
 import { AddApp } from './AddApp';
 import type { Route, Section } from '../app/route';
 import { Terminal } from './Terminal';
+import { Sheet } from '../ui/Sheet';
 
 export function AdminConsole({
   route,
@@ -143,22 +144,15 @@ function AppsList({
   const [adding, setAdding] = useState(false);
 
   return (
-    <div style={{ maxWidth: 'var(--console-max)' }}>
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 'var(--space-4)',
-          padding: 'var(--space-6) var(--console-padding) var(--space-4)',
-        }}
+    <>
+      <Sheet
+        heading="Apps"
+        action={
+          <Button variant="primary" onClick={() => setAdding(true)}>
+            Add app
+          </Button>
+        }
       >
-        <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>Apps</h3>
-        <Button variant="primary" onClick={() => setAdding(true)}>
-          Add app
-        </Button>
-      </header>
-      <div style={{ padding: '0 var(--console-padding) var(--space-7)' }}>
         <Table
           onRowClick={onOpen}
           // A fresh install has no apps, and the list was a set of column
@@ -203,7 +197,7 @@ function AppsList({
           ]}
           rows={rows}
         />
-      </div>
+      </Sheet>
 
       {adding && (
         <AddApp
@@ -214,7 +208,7 @@ function AppsList({
           }}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -262,11 +256,48 @@ function AppScreen({
 
   if (app.isPending) return null;
   if (app.isError || !app.data) {
+    // A link to an app that is gone, or that this account may not manage. It
+    // used to be a Back button on an otherwise blank page, which says nothing
+    // about which of those happened or that anything happened at all.
+    //
+    // This is the design system's 404 figure and the one place it is allowed:
+    // a collared contour with its summit mark missing, which is the spec's
+    // single deliberate exception — the thing you came for is not on this
+    // sheet.
+    //
+    // Not wrapped in Sheet, deliberately. The figure brings its own collar and
+    // a collar inside a collar is two frames around one thing, which is the
+    // rule MapCollar states. This screen's frame is the map.
     return (
-      <div style={{ padding: 'var(--space-6) var(--console-padding)' }}>
-        <Button variant="ghost" onClick={onBack}>
-          Apps
-        </Button>
+      <div style={{ maxWidth: 'var(--console-max)', padding: 'var(--console-padding)' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center',
+            gap: 'var(--space-4)',
+            padding: 'var(--space-7) var(--space-5)',
+          }}
+        >
+          <ContourMap size={320} rings={6} collar summit={false} />
+          <h3 style={{ font: 'var(--type-h3)', color: 'var(--ink)', margin: 0 }}>
+            Pando couldn&rsquo;t find that app
+          </h3>
+          <p
+            style={{
+              font: 'var(--type-body-ui)',
+              color: 'var(--ink-secondary)',
+              maxWidth: '46ch',
+              margin: 0,
+            }}
+          >
+            It may have been deleted, or this account may not be allowed to manage it.
+          </p>
+          <Button variant="primary" onClick={onBack}>
+            Back to apps
+          </Button>
+        </div>
       </div>
     );
   }
@@ -287,36 +318,36 @@ function AppScreen({
       [{ value: 'detection', label: 'Configuration' }];
 
   return (
-    <div style={{ maxWidth: 'var(--console-max)' }}>
-      <header
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 'var(--space-3)',
-          padding: 'var(--space-6) var(--console-padding) var(--space-4)',
-        }}
-      >
-        <Button variant="ghost" onClick={onBack} style={{ alignSelf: 'flex-start' }}>
-          Apps
-        </Button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-          <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
-          <StatusIndicator status={statusSymbol(app.data.state)} label={statusLabel(app.data.state)} />
+    <Sheet
+      heading={
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <Button variant="ghost" onClick={onBack} style={{ alignSelf: 'flex-start' }}>
+            Apps
+          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
+            <StatusIndicator
+              status={statusSymbol(app.data.state)}
+              label={statusLabel(app.data.state)}
+            />
+          </div>
         </div>
-      </header>
+      }
+      // The sheet's marginal data. An app's id is what the CLI and the API want
+      // and the console had nowhere to show it, so it was a value you could
+      // only get by reading the address bar.
+      note={app.data.id}
+    >
+      <Tabs value={tab} onChange={setTab} items={tabs} />
 
-      <div style={{ padding: '0 var(--console-padding)' }}>
-        <Tabs value={tab} onChange={setTab} items={tabs} />
-      </div>
-
-      <div style={{ padding: 'var(--space-5) var(--console-padding) var(--space-7)' }}>
+      <div style={{ paddingTop: 'var(--space-5)' }}>
         {tab === 'detection' && <DetectionReview appID={app.data.id} reviewed={reviewed} />}
         {tab === 'sharing' && <Sharing appID={app.data.id} appName={app.data.name} />}
         {tab === 'overview' && <AppOverview app={app.data} />}
         {tab === 'resources' && <Resources appID={app.data.id} />}
         {tab === 'terminal' && <Terminal appID={app.data.id} />}
       </div>
-    </div>
+    </Sheet>
   );
 }
 

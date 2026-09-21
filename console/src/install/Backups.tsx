@@ -12,7 +12,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Dialog, Input, Table, Tag } from '@design';
+import { Banner, Button, Dialog, EmptyState, Input, Table, Tag } from '@design';
 
 import { api } from '@api/client';
 import { Quiet, Screen, messageOf } from './Accounts';
@@ -50,6 +50,21 @@ export function Backups() {
       {backups.isError && <Quiet>{messageOf(backups.error)}</Quiet>}
 
       <Table
+        // An installation that has never been backed up is the state this
+        // screen most needs to be clear about, and it was the one it showed as
+        // a row of column headers over blank paper.
+        empty={
+          <EmptyState
+            heading="No backups yet"
+            action={
+              <Button variant="primary" onClick={() => setTaking(true)}>
+                Take a backup
+              </Button>
+            }
+          >
+            A backup holds every app, account and secret in this installation.
+          </EmptyState>
+        }
         columns={[
           {
             key: 'created_at',

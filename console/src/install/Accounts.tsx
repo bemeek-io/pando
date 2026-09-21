@@ -16,6 +16,7 @@ import { Button, Dialog, Input, Select, StatusIndicator, Table, Tag } from '@des
 
 import { api, RequestFailed } from '@api/client';
 import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
+import { Sheet } from '../ui/Sheet';
 
 interface Account {
   id: string;
@@ -252,6 +253,7 @@ function AddAccount({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** Every install screen is one sheet. The frame lives in Sheet. */
 export function Screen({
   heading,
   action,
@@ -262,21 +264,9 @@ export function Screen({
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ maxWidth: 'var(--console-max)' }}>
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 'var(--space-4)',
-          padding: 'var(--space-6) var(--console-padding) var(--space-4)',
-        }}
-      >
-        <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{heading}</h3>
-        {action}
-      </header>
-      <div style={{ padding: '0 var(--console-padding) var(--space-7)' }}>{children}</div>
-    </div>
+    <Sheet heading={heading} action={action}>
+      {children}
+    </Sheet>
   );
 }
 

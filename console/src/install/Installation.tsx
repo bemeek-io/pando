@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Switch, Table, Tag, Input, StatusIndicator } from '@design';
+import { Banner, Button, EmptyState, Switch, Table, Tag, Input, StatusIndicator } from '@design';
 
 import { api } from '@api/client';
 import { Quiet, Screen, messageOf } from './Accounts';
@@ -335,6 +335,17 @@ export function Audit() {
 
       <Table
         dense
+        // Column headers over nothing, until now. A filter that matches
+        // nothing and a log that holds nothing look identical in that state,
+        // and this is the screen where "nothing happened" and "your filter is
+        // wrong" are very different answers.
+        empty={
+          <EmptyState heading={filter ? 'No events match that action' : 'Nothing recorded yet'}>
+            {filter
+              ? 'Actions are matched from the start, so app. finds every app event. Clear the filter to see everything.'
+              : 'Every action Pando takes is written here, and nothing can rewrite it afterwards.'}
+          </EmptyState>
+        }
         columns={[
           {
             key: 'occurred_at',

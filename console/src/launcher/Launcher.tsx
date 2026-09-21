@@ -18,6 +18,7 @@ import { Card, EmptyState, Logo, StatusIndicator } from '@design';
 import { api } from '@api/client';
 import type { App } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
+import { Sheet } from '../ui/Sheet';
 
 export function Launcher({ onAdmin }: { onAdmin?: () => void }) {
   const apps = useQuery({
@@ -54,20 +55,21 @@ export function Launcher({ onAdmin }: { onAdmin?: () => void }) {
         )}
       </header>
 
-      <main
-        style={{
-          maxWidth: 'var(--console-max)',
-          margin: '0 auto',
-          padding: 'var(--space-7) var(--console-padding)',
-        }}
-      >
-        {apps.isPending && <Quiet>Loading your apps.</Quiet>}
+      <main style={{ maxWidth: 'var(--console-max)', margin: '0 auto' }}>
+        {/* The same sheet the admin console is printed on, so the two halves of
+            the product read as one thing. The launcher is the screen a
+            non-technical person meets first (R-005), and it gets the frame and
+            the corner ticks and nothing else — the contour only turns up when
+            there is nothing to show. */}
+        <Sheet heading="Your apps">
+          {apps.isPending && <Quiet>Loading your apps.</Quiet>}
 
-        {apps.isError && (
-          <Quiet>Pando couldn&rsquo;t load your apps. Reload the page to try again.</Quiet>
-        )}
+          {apps.isError && (
+            <Quiet>Pando couldn&rsquo;t load your apps. Reload the page to try again.</Quiet>
+          )}
 
-        {apps.data && <Tiles apps={apps.data.apps ?? []} />}
+          {apps.data && <Tiles apps={apps.data.apps ?? []} />}
+        </Sheet>
       </main>
     </div>
   );

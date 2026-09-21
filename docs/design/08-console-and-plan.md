@@ -48,6 +48,29 @@ with two design systems and neither maintained.
 error a person can act on or paste into an assistant; the design system asks for no apology, no
 `Error:` prefix and no exclamation mark. An API message and a console message reach the same person.
 
+**[D] Every console page is framed as a survey sheet, and the contour figure stays rare.** The
+brand's one bold element is the contour map, and the system confines it to four places — marketing
+hero, docs home header, empty states, the 404 page. None of those is a console screen, so a console
+built strictly to the rules carries no trace of the brand: correct paper, correct ink, correct type,
+and indistinguishable from any other product. Scattering contours through the console is the wrong
+fix; the system forbids it in as many words ("never as wallpaper, never behind text").
+
+The fix is the other half of the topo language. A printed quadrangle is a contour figure *and* the
+sheet it prints on — a neatline, corner ticks, marginal data — and the sheet was hard-coded inside
+`ContourMap`'s hero mode. It is now `MapCollar`, which `ContourMap` composes, and which
+`console/src/ui/Sheet.tsx` uses to frame every screen. The collar is structure rather than
+illustration, so it does not spend a screen's one bold element; the spec's own hero prints a contour
+inside a collar, which is the precedent. A collar is never nested in a collar, and marginal data is
+only ever real — an app's id, not invented coordinates, because period dress is the one thing the
+brand's opening rule rules out.
+
+Where the contour figure does appear in the console, it is by the system's existing recipe and not a
+new one: 120px inside empty states, and the 404 figure — 320px, collared, summit mark absent — for
+an app id that resolves to nothing. The sign-in screen is the one addition, at the docs-header
+recipe (320px, no collar). It is defensible because the supplied logo turned out to be the "pando."
+wordmark rather than the three nested contours the spec described, which removed the logo from the
+contour's list of places; without this the first screen anyone sees has no brand on it at all.
+
 ### 1.3 Screens that carry requirement weight
 
 Most screens are ordinary CRUD. These four are where requirements are either honored or lost.
