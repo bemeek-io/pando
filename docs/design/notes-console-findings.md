@@ -832,3 +832,37 @@ would make the same revision deploy differently tomorrow.
 What is still refused is what cannot travel in a spec: larger than 64 KB, or not
 text. Both say which of the two it is, and both point at the same alternative —
 a `COPY` line, because a file that size is a build input.
+
+## The reconciler replaced an app with a second copy of its own proxy
+
+crewmate came up, said degraded, and served nothing. Both of its containers were
+running Caddy — the proxy, and the application, which had been built correctly
+and then thrown away.
+
+Three things lined up, and each is worth fixing on its own.
+
+**One image per app.** A deployment records `image_ref`, and for a compose app
+that is whatever `primaryImage` returned: the primary workload's, which here was
+the proxy. The reconciler plans from that single reference, so every workload
+whose own image the plan does not name took the proxy's.
+
+**One digest per app.** `ExpectedDigest` was compared against every workload, so
+the application container — running its own image, correctly — was permanently
+"running the wrong image". That is classified reconcilable, so the loop
+corrected it: recreated from the plan, which had Caddy in it. Fifteen seconds
+after a good deploy, the app was gone.
+
+**And the digest was not even the primary's.** `primaryDigest` returned the
+first running workload the runtime happened to list.
+
+So deployments record what each part ran — `workload_images` as
+`{"app": {"ref": …, "digest": …}}` — the reconciler plans from that, and each
+workload is compared against its own digest. A workload with no record is not
+compared at all, because unknown is not drift.
+
+Two guards for what is left over. The app-level image is no longer substituted
+for a workload that builds its own: empty is the honest answer, and nothing
+starts a workload from an image Pando cannot name. And a missing workload the
+plan cannot name an image for is reported rather than recreated (R-148,
+"reconcile when possible, report when not") with "deploy this app again" as the
+remedy — which is exactly what an app deployed before this change needs.

@@ -161,9 +161,36 @@ func TestThePrimaryDigestComesFromTheRuntime(t *testing.T) {
 			{Name: "worker", Present: true, Running: false, ImageDigest: "sha256:stopped"},
 			{Name: "web", Present: true, Running: true, ImageDigest: "sha256:running"},
 		},
-	}}, "app_01HQ8")
+	}}, digestSpec("web"), "app_01HQ8")
 
 	require.Equal(t, "sha256:running", got, "a stopped workload's image is not what is running")
+}
+
+// TestThePrimaryDigestIsThePrimaryWorkloads asserts that it is that workload's.
+//
+// It used to be whichever running workload the runtime listed first, which for
+// a two-service app is a coin toss — and this digest is what "running the wrong
+// image" is decided by, so taking it from the proxy made the application
+// container permanently wrong, and the correction for that replaced it with a
+// second copy of the proxy.
+func TestThePrimaryDigestIsThePrimaryWorkloads(t *testing.T) {
+	got := primaryDigest(context.Background(), observing{bundle: api.ObservedBundle{
+		Workloads: []api.ObservedWorkload{
+			{Name: "proxy", Present: true, Running: true, ImageDigest: "sha256:caddy"},
+			{Name: "app", Present: true, Running: true, ImageDigest: "sha256:theapp"},
+		},
+	}}, digestSpec("app"), "app_01HQ8")
+
+	require.Equal(t, "sha256:theapp", got)
+}
+
+// A spec whose primary workload is the named one.
+func digestSpec(primary string) *spec.AppSpec {
+	return &spec.AppSpec{Workloads: []spec.Workload{
+		{Name: "proxy"},
+		{Name: "app"},
+		{Name: primary, Primary: true},
+	}}
 }
 
 // Empty on any failure, which makes image drift undetectable rather than making
@@ -171,13 +198,14 @@ func TestThePrimaryDigestComesFromTheRuntime(t *testing.T) {
 func TestAnUnobservableRuntimeYieldsNoDigestRatherThanAWrongOne(t *testing.T) {
 	ctx := context.Background()
 
-	require.Empty(t, primaryDigest(ctx, observing{err: errors.New("daemon is not running")}, "app_01HQ8"))
-	require.Empty(t, primaryDigest(ctx, observing{bundle: api.ObservedBundle{}}, "app_01HQ8"))
+	s := digestSpec("web")
+	require.Empty(t, primaryDigest(ctx, observing{err: errors.New("daemon is not running")}, s, "app_01HQ8"))
+	require.Empty(t, primaryDigest(ctx, observing{bundle: api.ObservedBundle{}}, s, "app_01HQ8"))
 
 	// Running, but the runtime does not report a digest.
 	require.Empty(t, primaryDigest(ctx, observing{bundle: api.ObservedBundle{
 		Workloads: []api.ObservedWorkload{{Name: "web", Present: true, Running: true}},
-	}}, "app_01HQ8"))
+	}}, s, "app_01HQ8"))
 }
 
 // TestR105_AFailedStepSaysWhyInTheLogSomebodyIsWatching asserts R-105.

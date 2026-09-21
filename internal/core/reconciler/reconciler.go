@@ -273,7 +273,7 @@ func (r *Reconciler) reconcileOne(ctx context.Context, app state.Reconcilable) {
 // fingerprints, and a fingerprint is built from secret *versions* — so the loop
 // that runs every fifteen seconds for every app never decrypts anything.
 func (r *Reconciler) desired(ctx context.Context, app state.Reconcilable, s *spec.AppSpec, observed api.ObservedBundle) (api.BundlePlan, Inputs, error) {
-	want := PlanShape(s, app.ImageRef)
+	want := PlanShape(s, app.ImageRef, app.WorkloadImages)
 
 	// A provisioned database is part of what should be running (R-131).
 	//
@@ -303,7 +303,25 @@ func (r *Reconciler) desired(ctx context.Context, app state.Reconcilable, s *spe
 		return api.BundlePlan{}, Inputs{}, err
 	}
 
+	// Per workload where the deployment recorded it. The app-level digest
+	// belongs to the primary workload and to nothing else: comparing every
+	// workload against it made a compose app's second service permanently
+	// "running the wrong image", and the correction replaced it with the
+	// primary's image.
+	expected := map[string]string{}
+	for name, ran := range app.WorkloadImages {
+		if ran.Digest != "" {
+			expected[name] = ran.Digest
+		}
+	}
+	if len(expected) == 0 && app.ImageDigest != "" {
+		if primary, ok := s.PrimaryWorkload(); ok {
+			expected[primary.Name] = app.ImageDigest
+		}
+	}
+
 	return want, Inputs{
+		ExpectedDigests:     expected,
 		ExpectedDigest:      app.ImageDigest,
 		AppliedEnvHash:      app.AppliedEnvHash,
 		CurrentEnvHash:      EnvHash(s, versions),

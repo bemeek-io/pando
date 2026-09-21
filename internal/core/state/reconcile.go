@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/bemeek-io/pando/internal/errs"
@@ -16,6 +17,16 @@ type Reconcilable struct {
 	NextAttemptAt       *time.Time
 	UnobservableSince   *time.Time
 	AppliedEnvHash      string
+
+	// WorkloadImages is what each part of the app ran, for an app whose parts
+	// are built separately. Empty for a single-image app, where ImageRef says
+	// everything, and for a deployment from before it was recorded.
+	//
+	// The reconciler restores a missing workload from the recorded image, and
+	// with only ImageRef to go on it restored every workload from one image —
+	// which for a compose app meant replacing the application with a second
+	// copy of whichever service happened to be primary.
+	WorkloadImages map[string]WorkloadImage
 
 	// ImageRef is what the last successful deployment ran. The reconciler
 	// restores a missing workload with this rather than rebuilding: correcting
@@ -64,7 +75,12 @@ func (r *Reconciles) Due(ctx context.Context, now time.Time, limit int) ([]Recon
 		           SELECT d.image_digest FROM deployments d
 		           WHERE d.app_id = a.id AND d.status = 'succeeded' AND d.image_digest IS NOT NULL
 		           ORDER BY d.started_at DESC LIMIT 1
-		       ), '')
+		       ), ''),
+		       (
+		           SELECT d.workload_images FROM deployments d
+		           WHERE d.app_id = a.id AND d.status = 'succeeded' AND d.workload_images IS NOT NULL
+		           ORDER BY d.started_at DESC LIMIT 1
+		       )
 		FROM apps a
 		WHERE a.deleted_at IS NULL
 		  AND a.state = ANY($1)
@@ -84,12 +100,20 @@ func (r *Reconciles) Due(ctx context.Context, now time.Time, limit int) ([]Recon
 		var owner, pinned *string
 		var source []byte
 
+		var workloadImages []byte
 		if err := rows.Scan(&a.ID, &a.Name, &a.Slug, &owner, &a.State, &a.DesiredState,
 			&pinned, &source, &a.CreatedAt, &a.UpdatedAt,
 			&a.ConsecutiveFailures, &a.LastFailureAt,
 			&a.NextAttemptAt, &a.UnobservableSince,
-			&a.AppliedEnvHash, &a.ImageRef, &a.ImageDigest); err != nil {
+			&a.AppliedEnvHash, &a.ImageRef, &a.ImageDigest, &workloadImages); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read which apps need attention.", err)
+		}
+		if len(workloadImages) > 0 {
+			// A deployment written before this column, or by a version that
+			// wrote something else into it, leaves the map empty: the
+			// reconciler then knows nothing per workload, which is where it
+			// started, rather than knowing something wrong.
+			_ = json.Unmarshal(workloadImages, &a.WorkloadImages)
 		}
 		if owner != nil {
 			a.OwnerUserID = *owner

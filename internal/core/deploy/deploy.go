@@ -349,9 +349,10 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 	// restores a missing workload from the recorded image rather than
 	// rebuilding, and it detects a rotated secret (R-193) by comparing this
 	// fingerprint, because Observe returns no environment and never will.
+	ran := workloadImages(ctx, runtime, appSpec, perWorkload, image, dep.AppID)
 	if err := r.deploys.SetImageRef(ctx, dep.ID,
 		firstNonEmpty(image, primaryImage(appSpec, perWorkload)),
-		primaryDigest(ctx, runtime, dep.AppID)); err != nil {
+		primaryDigest(ctx, runtime, appSpec, dep.AppID), ran); err != nil {
 		return fail("commit", err)
 	}
 	if r.reconciles != nil {
@@ -514,8 +515,8 @@ func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Ch
 // for every app. That comparison needs the shape — workloads, images, ports,
 // mounts, volumes — and must never be a reason to decrypt a secret, so this
 // stops short of environment and R-193's fingerprint covers the rest.
-func BundlePlanShape(s *spec.AppSpec, image string) (api.BundlePlan, error) {
-	return bundlePlanFor(s, image, nil, nil, provisioned{}, false)
+func BundlePlanShape(s *spec.AppSpec, image string, perWorkload map[string]string) (api.BundlePlan, error) {
+	return bundlePlanFor(s, image, perWorkload, nil, provisioned{}, false)
 }
 
 func (r *Runner) bundlePlan(s *spec.AppSpec, image string, perWorkload map[string]string, secrets map[string]secret.Value, svcs provisioned) (api.BundlePlan, error) {
@@ -557,10 +558,16 @@ func bundlePlanFor(s *spec.AppSpec, image string, perWorkload map[string]string,
 			// disk shared with twenty others.
 			LogBytes: s.Retention.LogBytes,
 			// This workload's own build first, then the image the compose file
-			// named, then the app's single built image. A compose app has no
-			// app-wide image, so the order only ever resolves one of the first
-			// two for it.
-			Image:      firstNonEmpty(perWorkload[w.Name], w.Image, image),
+			// named, then the app's single built image — and that last one
+			// only when this workload is not built separately.
+			//
+			// Without the condition, a workload whose own image is not known
+			// here takes the app's. For a compose app that is the primary
+			// workload's image, so a reconciler plan built without the
+			// per-workload record replaced the application container with a
+			// second copy of the proxy. Empty is the honest answer: nothing
+			// starts a workload from an image Pando cannot name.
+			Image:      workloadImage(w, perWorkload, image),
 			Command:    w.Command,
 			Entrypoint: w.Entrypoint,
 			WorkingDir: w.WorkingDir,
@@ -784,6 +791,22 @@ func writeFailure(sink io.Writer, headline string, err error) {
 	}
 }
 
+// workloadImage is the image one workload runs.
+func workloadImage(w spec.Workload, perWorkload map[string]string, appImage string) string {
+	if built := perWorkload[w.Name]; built != "" {
+		return built
+	}
+	if w.Image != "" {
+		return w.Image
+	}
+	if w.Build != nil {
+		// Built separately, and this deployment does not know what came out of
+		// that build. The app-level image is a different workload's.
+		return ""
+	}
+	return appImage
+}
+
 // detailOf returns the underlying cause for the build log.
 //
 // Build failures are the one place an internal cause is worth showing: the
@@ -837,17 +860,63 @@ func short(commit string) string {
 // comparing against a running container later is what was running now. Empty on
 // any failure, which makes image drift undetectable rather than making every
 // workload look wrong.
-func primaryDigest(ctx context.Context, runtime api.RuntimeAdapter, appID string) string {
+func primaryDigest(ctx context.Context, runtime api.RuntimeAdapter, s *spec.AppSpec, appID string) string {
 	observed, err := runtime.Observe(ctx, api.BundleRef{BundleID: appID})
 	if err != nil {
 		return ""
 	}
+
+	// The primary workload's, where there is one. This used to take whichever
+	// running workload Observe listed first, which for a two-service app is a
+	// coin toss — and the digest is what "this workload is running the wrong
+	// image" is decided by, so getting it from a different workload makes the
+	// app permanently wrong in the reconciler's eyes.
+	primary, ok := s.PrimaryWorkload()
+	if ok {
+		for _, w := range observed.Workloads {
+			if w.Name == primary.Name && w.ImageDigest != "" {
+				return w.ImageDigest
+			}
+		}
+	}
+
 	for _, w := range observed.Workloads {
 		if w.Running && w.ImageDigest != "" {
 			return w.ImageDigest
 		}
 	}
 	return ""
+}
+
+// workloadImages records what each part of the app actually ran.
+//
+// The reference comes from the plan — what Pando asked for — and the digest
+// from the runtime, which is what a running container can be compared against.
+// One image is the whole story only for an app built from a single Dockerfile;
+// a compose app builds per service, and the reconciler needs to restore each
+// one with its own image rather than with the app's.
+func workloadImages(ctx context.Context, runtime api.RuntimeAdapter, s *spec.AppSpec,
+	perWorkload map[string]string, image, appID string,
+) map[string]state.WorkloadImage {
+	digests := map[string]string{}
+	if observed, err := runtime.Observe(ctx, api.BundleRef{BundleID: appID}); err == nil {
+		for _, w := range observed.Workloads {
+			digests[w.Name] = w.ImageDigest
+		}
+	}
+
+	out := map[string]state.WorkloadImage{}
+	for _, w := range s.Workloads {
+		ref := firstNonEmpty(perWorkload[w.Name], w.Image, image)
+		if ref == "" && digests[w.Name] == "" {
+			continue
+		}
+		out[w.Name] = state.WorkloadImage{Ref: ref, Digest: digests[w.Name]}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // recordVolumes writes the volume rows for a deploy, reading handles back from

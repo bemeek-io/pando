@@ -178,17 +178,37 @@ func (d *Deployments) InFlight(ctx context.Context, appID string) (bool, error) 
 // The digest is what makes "a workload exists with the wrong image" detectable.
 // A reference cannot be compared against a running container — the container
 // reports a digest — and a tag can point somewhere new without changing.
-func (d *Deployments) SetImageRef(ctx context.Context, deploymentID, imageRef, digest string) error {
-	if imageRef == "" && digest == "" {
+func (d *Deployments) SetImageRef(ctx context.Context, deploymentID, imageRef, digest string, perWorkload map[string]WorkloadImage) error {
+	if imageRef == "" && digest == "" && len(perWorkload) == 0 {
 		return nil
 	}
+
+	// Per workload as well, because one image is the whole story only for an
+	// app built from one Dockerfile. A compose app builds per service, and a
+	// reconciler restoring every workload from the app's single recorded image
+	// replaces the application with a second copy of its proxy.
+	var encoded []byte
+	if len(perWorkload) > 0 {
+		var err error
+		if encoded, err = json.Marshal(perWorkload); err != nil {
+			return errs.Wrap(errs.Internal, "Could not record the deployed images.", err)
+		}
+	}
+
 	_, err := d.db.Exec(ctx,
-		`UPDATE deployments SET image_ref = NULLIF($2, ''), image_digest = NULLIF($3, '')
-		 WHERE id = $1`, deploymentID, imageRef, digest)
+		`UPDATE deployments
+		    SET image_ref = NULLIF($2, ''), image_digest = NULLIF($3, ''), workload_images = $4
+		  WHERE id = $1`, deploymentID, imageRef, digest, encoded)
 	if err != nil {
 		return errs.Wrap(errs.Internal, "Could not record the deployed image.", err)
 	}
 	return nil
+}
+
+// WorkloadImage is what one part of an app ran.
+type WorkloadImage struct {
+	Ref    string `json:"ref,omitempty"`
+	Digest string `json:"digest,omitempty"`
 }
 
 // LastImage returns the image the app's newest successful deploy shipped.
