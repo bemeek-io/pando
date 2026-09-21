@@ -31,6 +31,13 @@ func (m memSource) Stat(name string) (api.FileInfo, error) {
 	if content, ok := m[clean]; ok {
 		return api.FileInfo{Name: path.Base(clean), Size: int64(len(content))}, nil
 	}
+	// Directories are implied by the files under them, as source.dirView
+	// reports a real one.
+	for name := range m {
+		if strings.HasPrefix(name, clean+"/") {
+			return api.FileInfo{Name: path.Base(clean), IsDir: true}, nil
+		}
+	}
 	return api.FileInfo{}, io.EOF
 }
 

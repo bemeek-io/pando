@@ -356,6 +356,18 @@ func TestO20_TheAPIRefusesACredentialInPlainConfiguration(t *testing.T) {
 	require.NotContains(t, refused.String(), "sk-ant-plain")
 }
 
+// O-20: a secrets adapter is what would encrypt credentials, so it cannot be
+// given any.
+func TestO20_ASecretsAdapterCannotBeGivenCredentials(t *testing.T) {
+	i := newInstall(t)
+	refused := i.do(i.admin(), http.MethodPost, "/adapters", map[string]any{
+		"id": "sek_other", "category": "secrets", "kind": "local",
+		"credentials": map[string]any{"passphrase": "x"},
+	})
+	require.Equal(t, http.StatusBadRequest, refused.Code, refused.String())
+	require.Contains(t, refused.String(), "encrypt")
+}
+
 // --- promotion and demotion ------------------------------------------------
 
 // Changing someone's status and changing their power are different acts, and
