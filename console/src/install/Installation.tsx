@@ -44,7 +44,7 @@ export function Installation() {
           { key: 'category', header: 'Category', width: '16ch', muted: true },
           {
             key: 'healthy',
-            header: 'Reachable',
+            header: 'Status',
             width: '16ch',
             render: (row: AdapterRow) => (
               // Live, not stored: an adapter that was reachable at startup and
