@@ -64,8 +64,10 @@ It covers the whole background, so what keeps it from reading as wallpaper is ho
 - **In colour, beside the form, on sign-in.** The sign-in and first-run password screens show the
   same terrain as a picture (`TopoMap`): index contours in `--contour`, the rest in
   `--contour-line`, and the marker-red summit triangle on the top of the central hill, as on the
-  brand's hero figure. On a wide window the form sits on plain paper on the left and the map fills
-  the right; below 60em the map is a band across the top. The form is never drawn over the map.
+  brand's hero figure. On a wide window the land rises on the right and falls away before the form
+  on the left; below 60em it rises at the top and falls away above the form. There is no panel
+  edge: the map ends where its lowest contour does, an irregular line made by the terrain, not a
+  crop and not a fade. The form is never drawn over the map.
 - **Seamless at any length.** It is a tile, and the terrain is periodic — hills wrap round the
   tile's edges and the warp uses whole periods — so contours meet across every seam. The tile is
   1600 × 1200, so a repeat is rarely in view at once.

@@ -194,10 +194,11 @@ export function ChangePassword({ username }: { username?: string }) {
  * places the contour figure appears.
  *
  * So the one screen every person sees before anything else carried no trace of
- * the brand's single bold idea. It gets the map as a picture, in colour: on a
- * wide window the form sits on plain paper on the left and the map fills the
- * right; on a narrow one the map is a band across the top and the form sits
- * below it. The form never sits on the map, so nothing has to be read over it.
+ * the brand's single bold idea. It gets the map as a picture, in colour. On a
+ * wide window the land rises on the right and falls away before it reaches
+ * the form on the left; on a narrow one it rises at the top and falls away
+ * above the form. Either way the map ends where its lowest contour does — no
+ * panel edge — and the form sits on plain paper, never over a line.
  */
 function Frame({
   heading = 'Sign in to Pando',
@@ -215,18 +216,20 @@ function Frame({
       style={{
         minHeight: '100vh',
         background: 'var(--paper)',
+        position: 'relative',
+        isolation: 'isolate',
+        overflow: 'hidden',
         display: 'flex',
-        flexDirection: wide ? 'row' : 'column',
+        alignItems: wide ? 'center' : 'flex-start',
       }}
     >
+      <TopoMap seed="sign-in" recede={wide ? 'left' : 'down'} />
       <div
         style={{
-          flex: wide ? '0 0 44%' : '0 0 auto',
-          order: wide ? 0 : 1,
+          width: wide ? '44%' : '100%',
           display: 'flex',
-          alignItems: 'center',
           justifyContent: 'center',
-          padding: wide ? 'var(--space-8)' : 'var(--space-6) var(--space-5)',
+          padding: wide ? 'var(--space-8)' : '42vh var(--space-5) var(--space-6)',
         }}
       >
         <div style={{ width: '100%', maxWidth: '36ch' }}>
@@ -247,18 +250,6 @@ function Frame({
           )}
           <div style={{ marginTop: 'var(--space-6)' }}>{children}</div>
         </div>
-      </div>
-
-      <div
-        style={{
-          position: 'relative',
-          overflow: 'hidden',
-          flex: wide ? '1 1 auto' : '0 0 32vh',
-          order: wide ? 1 : 0,
-          minHeight: wide ? '100vh' : '32vh',
-        }}
-      >
-        <TopoMap seed="sign-in" />
       </div>
     </div>
   );

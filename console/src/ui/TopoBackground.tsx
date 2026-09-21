@@ -90,7 +90,7 @@ function surface(seed: string): Height {
 }
 
 /** Every contour of the tile, one path per level, lowest first. */
-function trace(height: Height, levels: number): string[] {
+function trace(height: Height, levels: number, floor = 0.06): string[] {
   const w = COLS + 1;
   const v = new Float64Array(w * (ROWS + 1));
   let min = Infinity;
@@ -106,7 +106,7 @@ function trace(height: Height, levels: number): string[] {
   const at = (i: number, j: number): number => v[j * w + i] ?? 0;
 
   const out: string[] = [];
-  const lo = min + (max - min) * 0.06;
+  const lo = min + (max - min) * floor;
   const hi = max - (max - min) * 0.04;
 
   for (let l = 0; l < levels; l++) {
@@ -261,30 +261,66 @@ interface Feature {
 
 const features = new Map<string, Feature>();
 
+/** Which way the land falls away: toward the left edge, or toward the bottom. */
+type Recede = 'left' | 'down';
+
+const smoothstep = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+// How far the land reaches, and where to look for its summit, per direction.
+// The falloff is long and its start wanders, so the lowest contours spread out
+// and follow the hills instead of stacking into a straight wall along the edge.
+const RECEDE = {
+  left: {
+    envelope: (x: number, y: number) =>
+      smoothstep(0.3 + 0.07 * Math.sin(TAU * 1.3 * y + 1.1) + 0.03 * Math.sin(TAU * 3.1 * y + 0.4), 0.88, x),
+    search: { x: [0.6, 0.88], y: [0.3, 0.7] },
+    align: 'xMaxYMid slice',
+  },
+  down: {
+    envelope: (x: number, y: number) =>
+      smoothstep(0.5 + 0.06 * Math.sin(TAU * 1.2 * x + 0.7) + 0.03 * Math.sin(TAU * 2.7 * x + 2.2), 0.08, y),
+    search: { x: [0.3, 0.7], y: [0.04, 0.22] },
+    align: 'xMidYMin slice',
+  },
+} as const;
+
+// Contours start this far up the land's height range. Higher than the
+// background's, so the map ends on the flanks of the hills, not on a plain.
+const FEATURE_FLOOR = 0.16;
+
 /**
- * The map as a picture rather than a background: the sign-in screen's right
- * half. Here it is the thing to look at, so it is drawn in colour — every
- * fifth line an index contour in `--contour`, the rest in `--contour-line` —
- * with the marker-red summit triangle on the highest ground near the middle,
- * as on the brand's own hero figure.
+ * The map as a picture rather than a background: the sign-in screen. Here it
+ * is the thing to look at, so it is drawn in colour — every fifth line an
+ * index contour in `--contour`, the rest in `--contour-line` — with the
+ * marker-red summit triangle on the top of a hill, as on the brand's own hero
+ * figure.
  *
- * Fills its positioned parent, cropped to cover it; lines keep their width at
- * any size.
+ * It has no edge. The land falls away toward one side (`recede`), and below the
+ * lowest contour there is simply no line to draw, so the map ends where its
+ * outermost contour does — an irregular line made by the terrain, not a crop
+ * and not a fade. Fills its positioned parent; lines keep their width at any
+ * size.
  */
-export function TopoMap({ seed }: { seed: string }) {
+export function TopoMap({ seed, recede }: { seed: string; recede: Recede }) {
+  const key = `${seed}|${recede}`;
+  const { envelope, search, align } = RECEDE[recede];
+
   const f = useMemo(() => {
-    let t = features.get(seed);
+    let t = features.get(key);
     if (!t) {
-      const height = surface(seed);
-      // The summit: start at the highest point in the middle of the tile — the
-      // part a cropped panel always shows — then climb to the top of that
-      // hill, so the mark sits inside its innermost ring rather than on a
-      // slope at the edge of the search.
+      const ground = surface(seed);
+      const height: Height = (x, y) => ground(x, y) * envelope(x, y);
+      // The summit: start at the highest point in the search area — ground a
+      // cropped view always shows — then climb to the top of that hill, so
+      // the mark sits inside its innermost ring rather than on a slope.
       let bi = 0;
       let bj = 0;
       let top = -Infinity;
-      for (let j = Math.round(ROWS * 0.3); j <= Math.round(ROWS * 0.7); j++) {
-        for (let i = Math.round(COLS * 0.3); i <= Math.round(COLS * 0.7); i++) {
+      for (let j = Math.round(ROWS * search.y[0]); j <= Math.round(ROWS * search.y[1]); j++) {
+        for (let i = Math.round(COLS * search.x[0]); i <= Math.round(COLS * search.x[1]); i++) {
           const h = height(i / COLS, j / ROWS);
           if (h > top) {
             top = h;
@@ -308,11 +344,11 @@ export function TopoMap({ seed }: { seed: string }) {
           }
         }
       }
-      t = { levels: trace(height, FEATURE_LEVELS), summit: [bi * CELL, bj * CELL] };
-      features.set(seed, t);
+      t = { levels: trace(height, FEATURE_LEVELS, FEATURE_FLOOR), summit: [bi * CELL, bj * CELL] };
+      features.set(key, t);
     }
     return t;
-  }, [seed]);
+  }, [key, seed, envelope, search]);
 
   const [sx, sy] = f.summit;
   const s = 7;
@@ -321,8 +357,15 @@ export function TopoMap({ seed }: { seed: string }) {
     <svg
       aria-hidden="true"
       viewBox={`0 0 ${COLS * CELL} ${ROWS * CELL}`}
-      preserveAspectRatio="xMidYMid slice"
-      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+      preserveAspectRatio={align}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        zIndex: -1,
+        pointerEvents: 'none',
+      }}
     >
       {f.levels.map((d, i) => {
         const index = i % 5 === 4;
