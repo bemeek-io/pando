@@ -200,21 +200,37 @@ var toolList = []tool{
 		},
 	},
 	{
-		Name:        "pando_get_logs",
-		Description: "Read an app's recent logs.",
-		Schema:      schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+		Name: "pando_get_logs",
+		Description: "Read an app's recent logs. An app can be made of several parts — a web " +
+			"service, a worker, a database it brought with it — and each has its own log. " +
+			"Without `workload` this is the primary part, the one the app's address resolves " +
+			"to; pando_get_status lists the names.",
+		Schema: schema(map[string]any{
+			"app_id":   str("The app's ID."),
+			"workload": str("Which part of the app to read. Defaults to the primary one."),
+		}, "app_id"),
 		request: func(args map[string]any) (string, string, any, error) {
 			id, err := stringArg(args, "app_id", true)
 			if err != nil {
 				return "", "", nil, err
 			}
-			return "GET", appPath(id, "/logs"), nil, nil
+			workload, err := stringArg(args, "workload", false)
+			if err != nil {
+				return "", "", nil, err
+			}
+			path := "/logs"
+			if workload != "" {
+				path += "?workload=" + url.QueryEscape(workload)
+			}
+			return "GET", appPath(id, path), nil, nil
 		},
 	},
 	{
-		Name:        "pando_get_status",
-		Description: "What an app is doing right now: running, degraded, failed, and why.",
-		Schema:      schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+		Name: "pando_get_status",
+		Description: "What an app is doing right now: running, degraded, failed, and why — " +
+			"including each part separately, so a single part that is crash-looping is " +
+			"visible rather than averaged into one word for the app.",
+		Schema: schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
 		request: func(args map[string]any) (string, string, any, error) {
 			id, err := stringArg(args, "app_id", true)
 			if err != nil {

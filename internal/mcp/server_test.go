@@ -232,6 +232,9 @@ func TestEachToolMapsToItsEndpoint(t *testing.T) {
 		{"pando_plan", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/plan"},
 		{"pando_deploy", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/deployments"},
 		{"pando_get_logs", `{"app_id":"app_01HQ8"}`, "GET", "/apps/app_01HQ8/logs"},
+		// R-261: the console and the CLI can read one part of a multi-part
+		// app's logs, so an agent can too.
+		{"pando_get_logs", `{"app_id":"app_01HQ8","workload":"worker"}`, "GET", "/apps/app_01HQ8/logs?workload=worker"},
 		{"pando_get_status", `{"app_id":"app_01HQ8"}`, "GET", "/apps/app_01HQ8/status"},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {

@@ -42,11 +42,11 @@ var routeDocs = []reference.Route{
 	{Method: "GET", Path: "/api/v1/apps/{appID}", Group: "Apps", Summary: "One app: name, source, state and pinned spec.", Verb: string(authz.AppView)},
 	{Method: "PATCH", Path: "/api/v1/apps/{appID}", Group: "Apps", Summary: "Rename an app or change its source.", Verb: string(authz.AppSpecEdit)},
 	{Method: "DELETE", Path: "/api/v1/apps/{appID}", Group: "Apps", Summary: "Delete an app. With storage, `backup=true` keeps a final copy and `force=true` discards it; without either, the request is refused so the decision is taken rather than assumed (R-204, R-205).", Verb: string(authz.AppDelete)},
-	{Method: "GET", Path: "/api/v1/apps/{appID}/status", Group: "Apps", Summary: "What the app is doing now: state, health and the deploy in flight.", Verb: string(authz.AppView)},
+	{Method: "GET", Path: "/api/v1/apps/{appID}/status", Group: "Apps", Summary: "What the app is doing now: its state, and each part separately — running, restarting and how often, health, exit code — so a single crash-looping part is visible rather than averaged into one word.", Verb: string(authz.AppView)},
 	{Method: "POST", Path: "/api/v1/apps/{appID}/start", Group: "Apps", Summary: "Set the app's desired state to running. The reconciler converges to it, so it survives a restart.", Verb: string(authz.AppRestart)},
 	{Method: "POST", Path: "/api/v1/apps/{appID}/stop", Group: "Apps", Summary: "Set the app's desired state to stopped.", Verb: string(authz.AppRestart)},
 	{Method: "POST", Path: "/api/v1/apps/{appID}/restart", Group: "Apps", Summary: "Restart the running workloads without changing anything.", Verb: string(authz.AppRestart)},
-	{Method: "GET", Path: "/api/v1/apps/{appID}/logs", Group: "Apps", Summary: "The app's own output, from the runtime. `tail` sets how many lines.", Verb: string(authz.AppLogsRead)},
+	{Method: "GET", Path: "/api/v1/apps/{appID}/logs", Group: "Apps", Summary: "The app's own output, from the runtime. `tail` sets how many lines; `workload` picks which part of the app, defaulting to the primary one.", Verb: string(authz.AppLogsRead)},
 	{Method: "GET", Path: "/api/v1/apps/{appID}/exec", Group: "Apps", Summary: "A terminal in the running app, over a websocket. Refused when host policy has turned exec off, including for the owner (R-085).", Verb: string(authz.AppExec)},
 
 	// --- detection --------------------------------------------------------

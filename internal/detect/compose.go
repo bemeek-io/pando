@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"path"
@@ -83,6 +84,7 @@ type composeService struct {
 	Expose      []any          `yaml:"expose"`
 	Volumes     []any          `yaml:"volumes"`
 	Environment any            `yaml:"environment"`
+	EnvFile     any            `yaml:"env_file"`
 	DependsOn   any            `yaml:"depends_on"`
 	Healthcheck *composeHealth `yaml:"healthcheck"`
 
@@ -772,7 +774,15 @@ func (c *composeImport) mounts(name string, s composeService) []spec.Mount {
 // variable that silently became empty would be an app misconfigured with no
 // sign of it (R-102).
 func (c *composeImport) env(name string, s composeService) []spec.EnvEntry {
-	var entries []spec.EnvEntry
+	// `env_file:` first, because `environment:` overrides it — compose's own
+	// precedence, and the reason DATABASE_URL keeps the value the compose file
+	// spells out rather than whatever a template beside it suggests.
+	entries := c.fromEnvFiles(name, s)
+
+	at := map[string]int{}
+	for i, e := range entries {
+		at[e.Key] = i
+	}
 
 	add := func(key, raw string) {
 		key = strings.TrimSpace(key)
@@ -783,7 +793,13 @@ func (c *composeImport) env(name string, s composeService) []spec.EnvEntry {
 		if strings.Contains(value, "${") {
 			c.unresolved(name, key, value)
 		}
-		entries = append(entries, spec.EnvEntry{Key: key, Value: &value, Source: spec.EnvFromCompose})
+		entry := spec.EnvEntry{Key: key, Value: &value, Source: spec.EnvFromCompose}
+		if i, seen := at[key]; seen {
+			entries[i] = entry
+			return
+		}
+		at[key] = len(entries)
+		entries = append(entries, entry)
 	}
 
 	switch v := s.Environment.(type) {
@@ -806,6 +822,135 @@ func (c *composeImport) env(name string, s composeService) []spec.EnvEntry {
 		}
 	}
 	return entries
+}
+
+// fromEnvFiles imports what a service's `env_file:` points at.
+//
+// Ignoring the directive entirely is how crewmate deployed with two of its
+// variables and none of the other eight: the compose file said
+// `env_file: .env`, Pando read `environment:` and nothing else, and the app
+// crash-looped on `APP_BASE_URL is required` with no sign of it anywhere in the
+// console. R-096 says a compose file is imported, and this is part of it.
+//
+// The file itself is usually absent, because a `.env` holds an app's passwords
+// and is the first thing a `.gitignore` names. The template beside it — the
+// `.env.example` its README tells you to copy — names the variables the app
+// reads, so Pando takes the names and leaves the values empty, which is what a
+// hole is (R-130). It says so in a warning: the values were never in the
+// repository, and a variable nobody has filled in reaches nothing.
+func (c *composeImport) fromEnvFiles(service string, s composeService) []spec.EnvEntry {
+	var entries []spec.EnvEntry
+
+	for _, name := range envFileNames(s.EnvFile) {
+		if declared, ok := c.readEnvAssignments(name); ok {
+			for _, kv := range declared {
+				value := kv.Value
+				entries = append(entries, spec.EnvEntry{
+					Key: kv.Key, Value: &value, Source: spec.EnvFromCompose,
+				})
+			}
+			continue
+		}
+
+		template, declared, ok := c.templateFor(name)
+		if !ok {
+			c.rewrote(service, "env_file: "+name,
+				"This points at "+name+", which is not in the repository, and there is no template "+
+					"beside it to read the variable names from. Add the variables this app needs on "+
+					"its own settings — nothing else in the repository says what they are.")
+			continue
+		}
+
+		var named []string
+		for _, kv := range declared {
+			empty := ""
+			entries = append(entries, spec.EnvEntry{
+				Key: kv.Key, Value: &empty, Source: spec.EnvFromDetection,
+			})
+			named = append(named, kv.Key)
+		}
+
+		c.rewrote(service, "env_file: "+name,
+			"This points at "+name+", which is not in the repository — it holds this app's own "+
+				"values and is not committed. Pando took the variable names from "+template+
+				" and left them empty: "+strings.Join(truncate(named, 8), ", ")+
+				". Set them on this app's variables.")
+	}
+	return entries
+}
+
+// envFileNames reads the `env_file:` shapes compose allows: one path, a list of
+// them, or a list of `{path, required}` maps.
+func envFileNames(v any) []string {
+	switch f := v.(type) {
+	case nil:
+		return nil
+	case []any:
+		var out []string
+		for _, entry := range f {
+			if text := scalar(entry); text != "" {
+				out = append(out, text)
+				continue
+			}
+			if m, ok := entry.(map[string]any); ok {
+				if text := scalar(m["path"]); text != "" {
+					out = append(out, text)
+				}
+			}
+		}
+		return out
+	default:
+		if text := scalar(v); text != "" {
+			return []string{text}
+		}
+		return nil
+	}
+}
+
+// assignment is one KEY=VALUE line.
+type assignment struct{ Key, Value string }
+
+// readEnvAssignments parses a dotenv file out of the repository.
+func (c *composeImport) readEnvAssignments(name string) ([]assignment, bool) {
+	if c.src == nil {
+		return nil, false
+	}
+	clean := path.Clean(strings.TrimPrefix(name, "./"))
+	if strings.HasPrefix(clean, "..") || strings.HasPrefix(clean, "/") {
+		return nil, false
+	}
+
+	f, err := c.src.Open(clean)
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = f.Close() }()
+
+	var out []assignment
+	scanner := bufio.NewScanner(io.LimitReader(f, 64<<10))
+	for scanner.Scan() {
+		if m := envAssignment.FindStringSubmatch(scanner.Text()); m != nil {
+			out = append(out, assignment{Key: m[1], Value: strings.TrimSpace(m[2])})
+		}
+	}
+	return out, true
+}
+
+// templateFor finds the committed template beside an env file that is not.
+func (c *composeImport) templateFor(name string) (string, []assignment, bool) {
+	clean := path.Clean(strings.TrimPrefix(name, "./"))
+	candidates := []string{clean + ".example", clean + ".sample", clean + ".template"}
+	if path.Base(clean) == ".env" {
+		candidates = append(candidates, path.Join(path.Dir(clean), ".env.example"),
+			path.Join(path.Dir(clean), ".env.sample"), path.Join(path.Dir(clean), ".env.template"))
+	}
+
+	for _, candidate := range candidates {
+		if declared, ok := c.readEnvAssignments(candidate); ok && len(declared) > 0 {
+			return candidate, declared, true
+		}
+	}
+	return "", nil, false
 }
 
 // unresolved warns about a variable whose value the compose file does not hold.

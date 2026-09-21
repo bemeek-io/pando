@@ -54,11 +54,11 @@ one verb says nothing about another (R-082).
 | `GET /api/v1/apps/{appID}` | `app.view` | One app: name, source, state and pinned spec. |
 | `PATCH /api/v1/apps/{appID}` | `app.spec.edit` | Rename an app or change its source. |
 | `DELETE /api/v1/apps/{appID}` | `app.delete` | Delete an app. With storage, `backup=true` keeps a final copy and `force=true` discards it; without either, the request is refused so the decision is taken rather than assumed (R-204, R-205). |
-| `GET /api/v1/apps/{appID}/status` | `app.view` | What the app is doing now: state, health and the deploy in flight. |
+| `GET /api/v1/apps/{appID}/status` | `app.view` | What the app is doing now: its state, and each part separately — running, restarting and how often, health, exit code — so a single crash-looping part is visible rather than averaged into one word. |
 | `POST /api/v1/apps/{appID}/start` | `app.restart` | Set the app's desired state to running. The reconciler converges to it, so it survives a restart. |
 | `POST /api/v1/apps/{appID}/stop` | `app.restart` | Set the app's desired state to stopped. |
 | `POST /api/v1/apps/{appID}/restart` | `app.restart` | Restart the running workloads without changing anything. |
-| `GET /api/v1/apps/{appID}/logs` | `app.logs.read` | The app's own output, from the runtime. `tail` sets how many lines. |
+| `GET /api/v1/apps/{appID}/logs` | `app.logs.read` | The app's own output, from the runtime. `tail` sets how many lines; `workload` picks which part of the app, defaulting to the primary one. |
 | `GET /api/v1/apps/{appID}/exec` | `app.exec` | A terminal in the running app, over a websocket. Refused when host policy has turned exec off, including for the owner (R-085). |
 
 ### Detection

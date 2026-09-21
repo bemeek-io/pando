@@ -12,6 +12,7 @@ import { api } from '@api/client';
 import type { App, Deployment } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { InlineWarning } from '../ui/InlineWarning';
+import { Parts } from './Parts';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { deployLabel, deployStatus } from './Logs';
@@ -160,6 +161,11 @@ export function AppOverview({
         </Card>
 
       </div>
+
+      {/* Why an app is degraded, when it is made of several parts. The app's
+          own state is one word for all of them, and the part that is failing
+          is the thing somebody needs. */}
+      <Parts app={app} onLogs={(workload) => onGo('logs', workload)} />
 
       {/* The security score, where the deploy log used to be — and across the
           measure rather than in the column that held it. A log is a column of

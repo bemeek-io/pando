@@ -130,6 +130,18 @@ Show an app
 pando app show <app>
 ```
 
+#### `app status`
+
+What each part of an app is doing right now
+
+```
+pando app status <app>
+```
+
+What each part of an app is doing right now.
+
+An app can be made of several parts, and "degraded" is the app's answer for all of them together. This is the per-part answer: which are running, which are restarting and how many times, and which health check is failing. The names are also what `pando logs --workload` takes.
+
 ### `backup`
 
 Back up and restore this installation
@@ -271,9 +283,14 @@ Read an app's logs
 pando logs <app>
 ```
 
+Read an app's logs.
+
+An app made of several parts — a web service, a worker, a database it brought with it — has a log per part. Without --workload this is the primary one, which is the part the app's address resolves to. `pando app status <app>` lists the names.
+
 | Flag | Default | What it does |
 | --- | --- | --- |
 | `-f`, `--follow` |  | keep the connection open and print new lines |
+| `-w`, `--workload` |  | which part of the app to read (default: the primary one) |
 
 ### `mcp`
 

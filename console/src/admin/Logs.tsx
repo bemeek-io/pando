@@ -13,12 +13,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, CodeBlock, StatusIndicator, Table } from '@design';
+import { Button, CodeBlock, Select, StatusIndicator, Table } from '@design';
 
 import { api, base } from '@api/client';
 import type { App, Deployment } from '@api/types.gen';
 import { Quiet, messageOf } from '../install/Accounts';
 import { MEASURE } from '../ui/layout';
+import { Parts, useParts, labelFor } from './Parts';
 
 /**
  * A log, at a height that leaves the rest of the page reachable.
@@ -162,7 +163,7 @@ export function DeploymentLog({
 }
 
 /** The app's own output, from the runtime, and the deploys before this one. */
-export function Logs({ app }: { app: App }) {
+export function Logs({ app, workload }: { app: App; workload?: string }) {
   const deployments = useQuery({
     queryKey: ['apps', app.id, 'deployments'],
     queryFn: () => api.get<{ deployments: Deployment[] | null }>(`/apps/${app.id}/deployments`),
@@ -175,7 +176,9 @@ export function Logs({ app }: { app: App }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-7)' }}>
-      <AppOutput app={app} />
+      <Parts app={app} />
+
+      <AppOutput app={app} workload={workload} />
 
       <section style={{ maxWidth: MEASURE }}>
         <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Deploys</h4>
@@ -224,15 +227,32 @@ export function Logs({ app }: { app: App }) {
 
 const TAIL = 500;
 
-function AppOutput({ app }: { app: App }) {
+/** The part the app's address resolves to, which is the log shown by default. */
+function primaryName(parts: { name: string; primary: boolean }[]): string {
+  return parts.find((part) => part.primary)?.name ?? parts[0]?.name ?? '';
+}
+
+function AppOutput({ app, workload }: { app: App; workload?: string }) {
   // Only an app that has been deployed has a runtime to ask. The endpoint says
   // so itself — it refuses an app with no pinned spec — and asking anyway would
   // put an error on the screen where the answer is "not yet".
   const enabled = Boolean(app.pinned_spec_id);
 
+  // Which part's log this is. The endpoint has always taken `workload` and
+  // nothing in the console passed one, so an app made of three containers
+  // showed one log — the primary's — and the container that was actually
+  // crash-looping had no screen at all.
+  const parts = useParts(app).data?.workloads ?? [];
+  const [chosen, setChosen] = useState<string | null>(null);
+  const showing = chosen ?? workload ?? '';
+
   const output = useQuery({
-    queryKey: ['apps', app.id, 'output'],
-    queryFn: () => api.text(`/apps/${app.id}/logs?tail=${TAIL}`),
+    queryKey: ['apps', app.id, 'output', showing],
+    queryFn: () =>
+      api.text(
+        `/apps/${app.id}/logs?tail=${TAIL}` +
+          (showing ? `&workload=${encodeURIComponent(showing)}` : ''),
+      ),
     enabled,
     // The runtime is asked once and re-asked on demand, except while the app is
     // running, where a log nobody has to refresh is the point of having one.
@@ -253,11 +273,25 @@ function AppOutput({ app }: { app: App }) {
 
   return (
     <section style={{ maxWidth: MEASURE }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
         <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Output</h4>
-        <Button variant="ghost" disabled={!enabled} onClick={() => void output.refetch()}>
-          Refresh
-        </Button>
+
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          {parts.length > 1 && (
+            <Select
+              label="Part"
+              value={showing || primaryName(parts)}
+              options={parts.map((part) => ({
+                value: part.name,
+                label: `${part.name} — ${labelFor(part).toLowerCase()}`,
+              }))}
+              onChange={(e) => setChosen(e.target.value)}
+            />
+          )}
+          <Button variant="ghost" disabled={!enabled} onClick={() => void output.refetch()}>
+            Refresh
+          </Button>
+        </span>
       </div>
 
       <div style={{ marginTop: 'var(--space-4)' }}>
@@ -267,9 +301,9 @@ function AppOutput({ app }: { app: App }) {
           <Quiet>{messageOf(output.error)}</Quiet>
         ) : (
           <LogBox
-            title={app.name}
+            title={showing || app.name}
             lines={lines}
-            empty={<Quiet>This app hasn’t printed anything.</Quiet>}
+            empty={<Quiet>This part of the app hasn’t printed anything.</Quiet>}
           />
         )}
       </div>

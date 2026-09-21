@@ -482,7 +482,7 @@ function AppScreen({
         {tab === 'detection' && <DetectionReview appID={app.data.id} reviewed={reviewed} />}
         {tab === 'sharing' && <Sharing appID={app.data.id} appName={app.data.name} />}
         {tab === 'overview' && <AppOverview app={app.data} onGo={setTab} />}
-        {tab === 'logs' && <Logs app={app.data} />}
+        {tab === 'logs' && <Logs app={app.data} workload={focus} />}
         {tab === 'resources' && <Resources appID={app.data.id} focus={focus} />}
         {tab === 'terminal' && <Terminal appID={app.data.id} />}
       </div>

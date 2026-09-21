@@ -49,6 +49,6 @@ boundary (O-12), and offering a tool policy will refuse wastes the agent's turn.
 | `pando_accept_proposal` | Accept what Pando worked out and pin it as the app's setup. This does not deploy — call pando_deploy after. | `app_id` |
 | `pando_plan` | Show what a deploy would do, without doing it. Side-effect free, so it is safe to call after any change to check the change is deployable. | `app_id` |
 | `pando_deploy` | Deploy an app. Returns once the deployment has been accepted, not once it is running. | `app_id`, `idempotency_key` (optional) |
-| `pando_get_logs` | Read an app's recent logs. | `app_id` |
-| `pando_get_status` | What an app is doing right now: running, degraded, failed, and why. | `app_id` |
+| `pando_get_logs` | Read an app's recent logs. An app can be made of several parts — a web service, a worker, a database it brought with it — and each has its own log. Without `workload` this is the primary part, the one the app's address resolves to; pando_get_status lists the names. | `app_id`, `workload` (optional) |
+| `pando_get_status` | What an app is doing right now: running, degraded, failed, and why — including each part separately, so a single part that is crash-looping is visible rather than averaged into one word for the app. | `app_id` |
 

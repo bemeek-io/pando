@@ -860,6 +860,89 @@ func TestR099_ARefusedComposeFileIsNotOutbidByTheDockerfile(t *testing.T) {
 	require.Contains(t, e.Message, "privileged")
 }
 
+// TestR096_AnEnvFileIsPartOfTheComposeFile asserts R-096.
+//
+// `env_file: .env` was read by nothing. A compose service that keeps its
+// variables in a file got two of them — the ones spelled out under
+// `environment:` — and none of the other eight, so the app deployed, started,
+// and crash-looped on `APP_BASE_URL is required` with nothing in the console
+// naming a variable at all.
+//
+// The file itself is almost never committed: it holds the app's own passwords
+// and is the first line of a .gitignore. The template beside it is, so Pando
+// takes the names from there and leaves the values empty — a hole, which is
+// what R-130 says a declared variable is.
+func TestR096_AnEnvFileIsPartOfTheComposeFile(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yaml": "services:\n  app:\n    image: nginx\n    env_file: .env\n" +
+			"    environment:\n      TRUST_PROXY: \"true\"\n",
+		".env.example": "# Required\nAPP_BASE_URL=https://app.example.com\nVAPID_PUBLIC_KEY=\n",
+	})
+	require.NoError(t, err)
+
+	env := map[string]string{}
+	sources := map[string]spec.EnvSource{}
+	for _, e := range result.Winner.Draft.Workloads[0].Env {
+		require.NotNil(t, e.Value)
+		env[e.Key] = *e.Value
+		sources[e.Key] = e.Source
+	}
+
+	require.Equal(t, "true", env["TRUST_PROXY"])
+	require.Equal(t, spec.EnvFromCompose, sources["TRUST_PROXY"])
+
+	// Named, and empty: the sample value in a template is an example, not an
+	// answer, and `APP_BASE_URL=https://app.example.com` filled in looks
+	// answered.
+	require.Contains(t, env, "APP_BASE_URL")
+	require.Empty(t, env["APP_BASE_URL"])
+	require.Equal(t, spec.EnvFromDetection, sources["APP_BASE_URL"])
+	require.Contains(t, env, "VAPID_PUBLIC_KEY")
+
+	// And it says where they came from and what is left to do (R-102).
+	require.True(t, hasWarning(result.Winner.Draft.Warnings,
+		spec.WarnComposeConstructRewritten, ".env.example"))
+	require.True(t, hasWarning(result.Winner.Draft.Warnings,
+		spec.WarnComposeConstructRewritten, "APP_BASE_URL"))
+}
+
+// A committed env file is read as written: those are values somebody chose to
+// commit, and Pando does not second-guess them.
+func TestAnEnvFileInTheRepositoryIsReadAsWritten(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yaml": "services:\n  app:\n    image: nginx\n" +
+			"    env_file:\n      - ./config/app.env\n",
+		"config/app.env": "LOG_LEVEL=debug\n# a comment\nREGION=eu-west-1\n",
+	})
+	require.NoError(t, err)
+
+	env := map[string]string{}
+	for _, e := range result.Winner.Draft.Workloads[0].Env {
+		env[e.Key] = *e.Value
+	}
+	require.Equal(t, "debug", env["LOG_LEVEL"])
+	require.Equal(t, "eu-west-1", env["REGION"])
+}
+
+// `environment:` wins over `env_file:`, which is compose's own precedence.
+func TestEnvironmentOverridesTheEnvFile(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yaml": "services:\n  app:\n    image: nginx\n    env_file: .env\n" +
+			"    environment:\n      LOG_LEVEL: warn\n",
+		".env": "LOG_LEVEL=debug\n",
+	})
+	require.NoError(t, err)
+
+	var count int
+	for _, e := range result.Winner.Draft.Workloads[0].Env {
+		if e.Key == "LOG_LEVEL" {
+			count++
+			require.Equal(t, "warn", *e.Value)
+		}
+	}
+	require.Equal(t, 1, count, "one entry, not two with undefined precedence")
+}
+
 // A relative bind mount is data until proven otherwise (R-203).
 func TestARelativeBindMountBecomesAManagedVolume(t *testing.T) {
 	result, err := auction().Run(context.Background(), memSource{

@@ -866,3 +866,34 @@ starts a workload from an image Pando cannot name. And a missing workload the
 plan cannot name an image for is reported rather than recreated (R-148,
 "reconcile when possible, report when not") with "deploy this app again" as the
 remedy — which is exactly what an app deployed before this change needs.
+
+## An app made of parts had one state, one log, and no way to ask about either
+
+crewmate said degraded. Its application container was restarting every two
+seconds on a missing variable, and the only place that was visible was
+`docker ps` on the host — which is the thing Pando exists so nobody has to run.
+
+**`env_file:` was read by nothing.** crewmate's compose file says
+`env_file: .env`, and the importer had no such field: the app got the two
+variables spelled out under `environment:` and none of the other eight. The file
+itself is almost never committed, because it holds the app's own passwords, so
+the import reads the template beside it — the `.env.example` the README tells you
+to copy — takes the names, leaves the values empty (R-130), and says so in a
+warning naming them. `environment:` still wins over `env_file:`, which is
+compose's own precedence.
+
+**Status is per part now.** `GET /apps/{id}/status` reported the adapter's own
+struct, serialized with Go field names in an API that is snake_case everywhere
+else. It returns a typed list: name, whether it is the part the address resolves
+to, running, **restarting and how many times**, health, exit code. Restarting is
+the field that matters — a container the runtime keeps restarting is up at
+almost every instant anybody looks at it, which is the reading that makes a
+broken app look fine.
+
+**And logs are per part.** The endpoint has always taken `?workload=`; nothing
+passed one, so an app made of three containers showed one log and the container
+that was actually crash-looping had no screen at all. The console has a picker,
+`pando logs` has `--workload`, and `pando_get_logs` takes one.
+
+All four surfaces move together, because R-261 says they must: the console's
+Parts table, `pando app status`, `pando_get_status`, and the API they all read.
