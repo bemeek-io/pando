@@ -36,12 +36,12 @@ func TestStoppingSaysHowToStartItAgain(t *testing.T) {
 	require.Contains(t, got.out, "pando app start app_01HQ8")
 }
 
-// TestR261_StatusReportsEachPartSeparately asserts R-261.
+// TestR261_TheCLIReportsEachPartOfAnApp asserts R-261.
 //
 // An app can be a web service, a proxy and a database it brought with it, and
 // "degraded" is one word for all of them. The console shows the parts; so does
 // this, and the names it prints are what `pando logs --workload` takes.
-func TestR261_StatusReportsEachPartSeparately(t *testing.T) {
+func TestR261_TheCLIReportsEachPartOfAnApp(t *testing.T) {
 	api := newAPI(t).reply("GET /apps/app_01HQ8/status", map[string]any{
 		"state":         "degraded",
 		"desired_state": "running",
