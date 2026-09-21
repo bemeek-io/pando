@@ -5,13 +5,14 @@
 // a slot is a hole the app declared (R-130) and a volume is data the app owns
 // and that outlives it (R-204).
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banner, Button, Dialog, Input, Select, StatusIndicator, Table } from '@design';
 
 import { api } from '@api/client';
 import { Quiet, messageOf } from '../install/Accounts';
 import { Environment } from './Environment';
+import { CarriedFiles } from './CarriedFiles';
 import { BuildPlan } from './BuildPlan';
 
 interface Slot {
@@ -27,13 +28,17 @@ interface Volume {
   handle: string;
 }
 
-export function Resources({ appID }: { appID: string }) {
+export function Resources({ appID, focus }: { appID: string; focus?: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-7)' }}>
-      <Slots appID={appID} />
-      <Environment appID={appID} />
+      <Slots appID={appID} focus={focus === 'dependencies'} />
+      <Environment appID={appID} focus={focus === 'variables'} />
+      <CarriedFiles appID={appID} />
       <BuildPlan appID={appID} />
-      <Volumes appID={appID} />
+      {/* `focus` is how the persistence warning on Overview lands somebody on
+          the thing it is talking about rather than on this tab's first
+          section. */}
+      <Volumes appID={appID} focus={focus === 'storage'} />
     </div>
   );
 }
@@ -46,13 +51,23 @@ const TYPE_NAMES: Record<string, string> = {
   redis: 'Redis',
   s3: 'object storage',
   smtp: 'email',
+
+  // Apps pinned before detection stopped calling every variable a dependency
+  // still carry these. Nothing about such a slot says what it connects to,
+  // because there was never anything to connect it to — it is a value.
+  unknown: 'a value',
 };
 
 /** Pando can stand these up itself. The rest are bound or given a value. */
 const PROVISIONABLE = new Set(['postgres', 'mysql', 'redis']);
 
-function Slots({ appID }: { appID: string }) {
+function Slots({ appID, focus }: { appID: string; focus?: boolean }) {
   const [editing, setEditing] = useState<Slot | null>(null);
+  const heading = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (focus) heading.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [focus]);
 
   const slots = useQuery({
     queryKey: ['slots', appID],
@@ -62,7 +77,7 @@ function Slots({ appID }: { appID: string }) {
   const rows = slots.data?.slots ?? [];
 
   return (
-    <section>
+    <section ref={heading}>
       <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Dependencies</h4>
       {/* R-132, said once here rather than repeated per row: an unfilled
           required dependency refuses the deploy instead of starting something
@@ -77,7 +92,7 @@ function Slots({ appID }: { appID: string }) {
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
           columns={[
-            { key: 'key', header: 'Variable', width: 'minmax(0,1fr)', mono: true },
+            { key: 'key', header: 'Variable', width: 'minmax(0,26ch)', mono: true },
             {
               key: 'type',
               header: 'Kind',
@@ -87,7 +102,7 @@ function Slots({ appID }: { appID: string }) {
             {
               key: 'resolution',
               header: 'Filled by',
-              width: 'minmax(0,1.4fr)',
+              width: 'minmax(0,28ch)',
               render: (row: Slot) => describe(row),
             },
             {
@@ -150,7 +165,10 @@ function FillSlot({
 }) {
   const queries = useQueryClient();
   const canProvision = PROVISIONABLE.has(slot.type);
-  const [mode, setMode] = useState(slot.resolution?.mode ?? (canProvision ? 'provisioned' : 'bound'));
+  const isValue = slot.type === 'unknown';
+  const [mode, setMode] = useState(
+    slot.resolution?.mode ?? (canProvision ? 'provisioned' : isValue ? 'literal' : 'bound'),
+  );
   const [target, setTarget] = useState(slot.resolution?.target ?? '');
   const [value, setValue] = useState('');
 
@@ -194,11 +212,18 @@ function FillSlot({
         {/* R-010: Pando does not run infrastructure it cannot stand up in a
             container. Saying which kinds it can is better than offering the
             option and failing at deploy. */}
-        {!canProvision && (
+        {isValue ? (
           <Banner tone="info">
-            Pando doesn&rsquo;t stand up {TYPE_NAMES[slot.type] ?? slot.type} itself. Connect this to
-            something you already run, or paste a value.
+            Nothing about {slot.key} says what it connects to, so there is nothing for Pando to run
+            or to point it at. Paste the value it should have.
           </Banner>
+        ) : (
+          !canProvision && (
+            <Banner tone="info">
+              Pando doesn&rsquo;t stand up {TYPE_NAMES[slot.type] ?? slot.type} itself. Connect this
+              to something you already run, or paste a value.
+            </Banner>
+          )
         )}
 
         <Select
@@ -244,9 +269,14 @@ function FillSlot({
 
 // --- volumes ---------------------------------------------------------------
 
-function Volumes({ appID }: { appID: string }) {
+function Volumes({ appID, focus }: { appID: string; focus?: boolean }) {
   const queries = useQueryClient();
   const [adding, setAdding] = useState(false);
+  const heading = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (focus) heading.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [focus]);
   const [name, setName] = useState('');
   const [path, setPath] = useState('');
 
@@ -268,7 +298,11 @@ function Volumes({ appID }: { appID: string }) {
   const rows = volumes.data?.volumes ?? [];
 
   return (
-    <section>
+    // No width of its own: the cap arrived with the scroll-into-view ref and
+    // made this the one narrow section on a page of wide ones. Every section
+    // here is bounded by its table's own columns, which is what keeps them
+    // agreeing with each other.
+    <section ref={heading}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Storage</h4>
         <Button variant="ghost" onClick={() => setAdding(true)}>
@@ -287,8 +321,8 @@ function Volumes({ appID }: { appID: string }) {
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
           columns={[
-            { key: 'id', header: 'Reference', width: 'minmax(0,1fr)', mono: true },
-            { key: 'handle', header: 'Where it is', width: 'minmax(0,1.4fr)', mono: true, muted: true },
+            { key: 'id', header: 'Reference', width: 'minmax(0,28ch)', mono: true },
+            { key: 'handle', header: 'Where it is', width: 'minmax(0,38ch)', mono: true, muted: true },
             { key: 'adapter_ref', header: 'Runtime', width: '18ch', mono: true, muted: true },
           ]}
           rows={rows}

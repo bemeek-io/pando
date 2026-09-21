@@ -12,12 +12,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
+	aianthropic "github.com/bemeek-io/pando/internal/adapter/ai/anthropic"
 	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
 	backuplocal "github.com/bemeek-io/pando/internal/adapter/backup/local"
 	buildkitadapter "github.com/bemeek-io/pando/internal/adapter/builder/buildkit"
@@ -27,6 +29,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/routing/loopback"
 	"github.com/bemeek-io/pando/internal/adapter/routing/traefik"
 	dockerruntime "github.com/bemeek-io/pando/internal/adapter/runtime/docker"
+	trivyscanner "github.com/bemeek-io/pando/internal/adapter/scanner/trivy"
 	secretslocal "github.com/bemeek-io/pando/internal/adapter/secrets/local"
 	servicesdocker "github.com/bemeek-io/pando/internal/adapter/services/docker"
 	"github.com/bemeek-io/pando/internal/cli"
@@ -43,6 +46,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/planner"
 	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
 	"github.com/bemeek-io/pando/internal/core/reconciler"
+	"github.com/bemeek-io/pando/internal/core/security"
 	"github.com/bemeek-io/pando/internal/core/source"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
@@ -259,7 +263,7 @@ func serve(ctx context.Context, configPath string) error {
 
 	notifications := state.NewNotifications(db)
 
-	registry, err := registerAdapters(ctx, adapters, notifications, logger)
+	registry, adapterCredentials, err := registerAdapters(ctx, db, adapters, notifications, logger)
 	if err != nil {
 		return err
 	}
@@ -304,8 +308,22 @@ func serve(ctx context.Context, configPath string) error {
 		proxyUpstream = "http://pando:8080"
 	}
 	reconciles := state.NewReconciles(db)
+	// The security score (R-310). One service, three readers: the deploy path
+	// scores what it built, the API serves the number, and the GC places every
+	// app against the threshold.
+	scans := state.NewScans(db)
+	securityService := &security.Service{
+		Scans:       scans,
+		Deployments: deployments,
+		Registry:    registry,
+		Policy:      hostPolicy,
+		Auditor:     auditor,
+		Logger:      logger,
+	}
+
 	deployer := deploy.NewRunner(registry, appPlanner, apps, deployments, secrets, reconciles, logStore, volumes, proxyUpstream).
-		WithServices(state.NewServices(db), secrets)
+		WithServices(state.NewServices(db), secrets).
+		WithSecurity(securityService)
 
 	// Detection (Sequence A). Every detector bids; the runtime supplies the
 	// trial run (R-097), and a registry probe would supply R-094's top tier.
@@ -319,6 +337,9 @@ func serve(ctx context.Context, configPath string) error {
 
 	detections := state.NewDetections(db)
 	detector := &detection.Runner{
+		// The score of what was proposed, before anybody decides whether to
+		// deploy it (R-312).
+		Scanner:    sourceScanner{service: securityService, logger: logger},
 		Apps:       apps,
 		Detections: detections,
 		Policy:     hostPolicy,
@@ -353,6 +374,17 @@ func serve(ctx context.Context, configPath string) error {
 			// (docs/design/notes-registry-tier-namespaces.md).
 			Registry: ociprobe.New(),
 		},
+	}
+
+	// Screening (R-330, design 10). Optional in the strong sense: an install
+	// with no AI adapter configured is not a degraded install, because
+	// everything the auction produced is in the proposal either way (R-335).
+	if ai, ref, found := registry.DefaultAI(); found {
+		detector.Screener = ai
+		detector.ScreenerRef = ref
+		detector.ScreenPolicy = hostPolicy
+		detector.Auditor = detectionAuditor{auditor}
+		logger.Info("detection proposals will be screened", zap.String("adapter", ref))
 	}
 
 	// Assertions are what an app can actually trust about a caller (R-051).
@@ -408,6 +440,7 @@ func serve(ctx context.Context, configPath string) error {
 	// app's own listener falls back to for Pando's reserved path (R-172).
 	apiHandler := (&httpapi.Server{
 		Logger:   logger,
+		Security: securityService,
 		DB:       db,
 		Identity: identity,
 		Users:    users,
@@ -418,11 +451,15 @@ func serve(ctx context.Context, configPath string) error {
 		Auditor:  auditor,
 		Policy:   hostPolicy,
 
-		Registry:    registry,
-		Adapters:    adapters,
+		Registry: registry,
+		Adapters: adapters,
+
+		AdapterCredentials: adapterCredentials,
+
 		Allocations: allocations,
 		Planner:     appPlanner,
 		Deployments: deployments,
+		Reconciles:  reconciles,
 		Deployer:    deployer,
 		Logs:        logStore,
 		Secrets:     secrets,
@@ -601,6 +638,14 @@ func serve(ctx context.Context, configPath string) error {
 		Backups:      backups,
 		Backup:       backupService,
 		BundleSource: bundleSource,
+
+		// The security pass (R-315, R-316): mark, warn, and stop when the
+		// grace has run out. Inert until an administrator sets a threshold.
+		Security:      securityService,
+		SecurityState: scans,
+		PolicyStore:   hostPolicy,
+		Desired:       apps,
+		Notifier:      securityNotifier{notifications},
 	}).Run(loopCtx)
 
 	errCh := make(chan error, 1)
@@ -623,6 +668,25 @@ func serve(ctx context.Context, configPath string) error {
 	return srv.Shutdown(shutdownCtx)
 }
 
+// detectionAuditor adapts the audit writer to what detection needs.
+//
+// A screening is an action by Pando, not by the person who created the app:
+// detection runs in the background after app creation, and the principal that
+// read the repository is the install. KindSystem is what that is (R-337).
+type detectionAuditor struct{ w *audit.Writer }
+
+func (a detectionAuditor) Write(ctx context.Context, e detection.AuditEvent) error {
+	return a.w.Write(ctx, audit.Event{
+		PrincipalKind: audit.KindSystem,
+		PrincipalID:   "system",
+		Action:        e.Action,
+		AppID:         e.AppID,
+		TargetKind:    "app",
+		TargetID:      e.AppID,
+		Detail:        e.Detail,
+	})
+}
+
 // registerAdapters configures the compiled-in adapters from adapter_configs,
 // seeding the defaults on a fresh install.
 //
@@ -630,20 +694,34 @@ func serve(ctx context.Context, configPath string) error {
 // preventing startup: one broken adapter should not take the whole install
 // offline, and the planner already refuses to plan against an adapter it cannot
 // reach (R-254).
-func registerAdapters(ctx context.Context, store *state.Adapters, notifications *state.Notifications, logger *zap.Logger) (*adapterapi.Registry, error) {
+func registerAdapters(ctx context.Context, db *state.DB, store *state.Adapters, notifications *state.Notifications, logger *zap.Logger) (*adapterapi.Registry, *state.AdapterCredentials, error) {
 	if err := seedDefaultAdapters(ctx, store); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	configured, err := store.List(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
+	// Secrets adapters first. Every other adapter's credentials are sealed by
+	// one (O-20), so it has to be configured before they can be opened. A
+	// secrets adapter's own configuration never carries credentials — there is
+	// nothing to open them with — and the create handler refuses them.
+	sort.SliceStable(configured, func(i, j int) bool {
+		return configured[i].Category == string(adapterapi.CategorySecrets) &&
+			configured[j].Category != string(adapterapi.CategorySecrets)
+	})
+
 	registry := adapterapi.NewRegistry()
+	var credentials *state.AdapterCredentials
 	for _, c := range configured {
 		if !c.Enabled {
 			continue
+		}
+
+		if c.Category != string(adapterapi.CategorySecrets) && credentials == nil {
+			credentials = adapterCredentialsFor(db, registry)
 		}
 
 		var adapter adapterapi.Adapter
@@ -662,6 +740,14 @@ func registerAdapters(ctx context.Context, store *state.Adapters, notifications 
 			adapter = servicesdocker.New()
 		case c.Category == string(adapterapi.CategoryRouting) && c.Kind == traefik.Kind:
 			adapter = traefik.New()
+		case c.Category == string(adapterapi.CategoryScanner) && c.Kind == trivyscanner.Kind:
+			adapter = trivyscanner.New()
+		case c.Category == string(adapterapi.CategoryAI) && c.Kind == aianthropic.Kind:
+			// Not seeded (design 10 §7): there is no AI adapter that works
+			// without a credential, and seeding one would put a permanently
+			// unhealthy adapter in every install's console. An install that
+			// wants screening configures this row itself.
+			adapter = aianthropic.New()
 		case c.Category == string(adapterapi.CategoryNotify) && c.Kind == notifyconsole.Kind:
 			// The sink is supplied by core. The adapter stores nothing itself,
 			// which is R-027 — an adapter never touches state.
@@ -672,22 +758,79 @@ func registerAdapters(ctx context.Context, store *state.Adapters, notifications 
 			continue
 		}
 
-		if err := adapter.Configure(ctx, c.Config); err != nil {
+		raw := c.Config
+		if c.Category != string(adapterapi.CategorySecrets) {
+			// Decrypted here and handed over in memory only (O-20). Nothing on
+			// this path is logged: a failure is reported by adapter ID alone.
+			creds, err := credentials.Resolve(ctx, c.ID)
+			if err != nil {
+				logger.Error("adapter credentials could not be opened, so the adapter was skipped",
+					zap.String("id", c.ID))
+				continue
+			}
+			if raw, err = withCredentials(c.Config, creds); err != nil {
+				logger.Error("adapter could not be configured and was skipped", zap.String("id", c.ID))
+				continue
+			}
+		}
+
+		if err := adapter.Configure(ctx, raw); err != nil {
 			logger.Error("adapter could not be configured and was skipped",
 				zap.String("id", c.ID), zap.Error(err))
 			continue
 		}
 		if err := registry.Register(c.ID, adapter); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if c.IsDefault {
 			if err := registry.SetDefault(adapterapi.Category(c.Category), c.ID); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 		logger.Info("adapter registered", zap.String("id", c.ID), zap.String("kind", c.Kind))
 	}
-	return registry, nil
+	if credentials == nil {
+		credentials = adapterCredentialsFor(db, registry)
+	}
+	return registry, credentials, nil
+}
+
+// adapterCredentialsFor is the credential store, sealed by the install's
+// secrets adapter: the default one, or the only one.
+func adapterCredentialsFor(db *state.DB, registry *adapterapi.Registry) *state.AdapterCredentials {
+	ref, ok := registry.Default(adapterapi.CategorySecrets)
+	if !ok {
+		if refs := registry.ByCategory(adapterapi.CategorySecrets); len(refs) > 0 {
+			ref = refs[0]
+		}
+	}
+	sa, _ := registry.Secrets(ref)
+	return state.NewAdapterCredentials(db, sa, ref)
+}
+
+// withCredentials adds decrypted credentials to an adapter's configuration as
+// a `credentials` object — the one key the database refuses in the stored
+// config, so an adapter reading it knows it came from encrypted storage.
+func withCredentials(raw json.RawMessage, creds map[string]secret.Value) (json.RawMessage, error) {
+	if len(creds) == 0 {
+		return raw, nil
+	}
+	cfg := map[string]json.RawMessage{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, err
+		}
+	}
+	plain := make(map[string]string, len(creds))
+	for field, v := range creds {
+		plain[field] = v.Reveal()
+	}
+	body, err := json.Marshal(plain)
+	if err != nil {
+		return nil, err
+	}
+	cfg["credentials"] = body
+	return json.Marshal(cfg)
 }
 
 // seedDefaultAdapters gives a fresh install a working set: Docker to run
@@ -743,6 +886,13 @@ func seedDefaultAdapters(ctx context.Context, store *state.Adapters) error {
 		// message waits in Pando for the next time the recipient looks.
 		{ID: "ntf_console", Category: string(adapterapi.CategoryNotify), Kind: notifyconsole.Kind,
 			Name: "In the console", IsDefault: true, Enabled: true},
+
+		// The security score (R-310). Seeded on, because a score nobody has is
+		// a score nobody acts on — and seeded *permissive*: scanning happens,
+		// the number is shown, and nothing is enforced until an administrator
+		// sets a threshold (R-270, R-314).
+		{ID: "scn_trivy", Category: string(adapterapi.CategoryScanner), Kind: trivyscanner.Kind,
+			Name: "Trivy", IsDefault: true, Enabled: true},
 	} {
 		if filled[c.Category] {
 			continue
@@ -912,4 +1062,58 @@ func consoleHandler(logger *zap.Logger) http.Handler {
 		return nil
 	}
 	return handler
+}
+
+// securityNotifier tells an app's owner that it is below the installation's
+// security requirement, and what happens next (R-315).
+//
+// A shim rather than the notify adapter directly: the reconciler's pass knows a
+// user ID and two strings, and nothing about recipients, retention or
+// notification kinds. `policy_violation` is the kind, because that is what this
+// is — the app did not fail and the deploy did not fail.
+type securityNotifier struct{ store *state.Notifications }
+
+func (n securityNotifier) Notify(ctx context.Context, userID, appID, subject, body string) {
+	if n.store == nil {
+		return
+	}
+	_ = n.store.Record(ctx, adapterapi.Notification{
+		Kind:       adapterapi.NotifyPolicyViolation,
+		AppID:      appID,
+		Recipients: []adapterapi.Recipient{{UserID: userID}},
+		Subject:    subject,
+		Body:       body,
+	}, 0)
+}
+
+// sourceScanner scores a checkout during detection (R-312).
+//
+// A shim rather than the security service directly: detection knows an app ID
+// and a directory, and nothing about scan requests, audit events or who is
+// asking — which here is nobody. Detection runs in the background after an app
+// is created, so the principal is the system, recorded as such.
+type sourceScanner struct {
+	service *security.Service
+	logger  *zap.Logger
+}
+
+func (s sourceScanner) ScanSource(ctx context.Context, appID, dir string) {
+	if s.service == nil {
+		return
+	}
+	if _, configured := s.service.Configured(); !configured {
+		return
+	}
+
+	// No spec ID: there is no revision yet, and there may never be one — this
+	// is a scan of what was proposed, which is exactly the thing somebody is
+	// deciding about.
+	if _, err := s.service.Scan(ctx, adapterapi.ScanRequest{AppID: appID, SourceDir: dir},
+		audit.Event{PrincipalKind: audit.KindSystem, PrincipalID: "detection"}); err != nil {
+		// Never fatal. The proposal is what this run is producing, and a
+		// scanner that could not read a checkout is recorded as a failed scan
+		// on the app already.
+		s.logger.Info("could not scan an app's source during detection",
+			zap.String("app_id", appID), zap.Error(err))
+	}
 }

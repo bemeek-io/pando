@@ -9,12 +9,13 @@
 // grows a button per provider rather than a second page — R-044's providers are
 // alternatives to this form, not alternatives to signing in.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Input, Logo } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 
+import { TopoMap } from '../ui/TopoBackground';
 import { returnTo } from './return-to';
 
 export function Login() {
@@ -182,9 +183,23 @@ export function ChangePassword({ username }: { username?: string }) {
   );
 }
 
-/** The shared card. Left-aligned, one column, no decoration — the brand's rule
- *  is that a quiet screen stays quiet, and there is no contour illustration
- *  here because the logo is already doing that work. */
+/**
+ * The shared card. Left-aligned, one column.
+ *
+ * This used to carry a note saying there was no contour illustration here
+ * because the logo was already doing that work. That stopped being true when
+ * the real logo arrived: the mark is the "pando." wordmark with a marker-red
+ * full stop, not the three nested contours the spec had described, and the
+ * design system's own readme records that the logo is no longer one of the
+ * places the contour figure appears.
+ *
+ * So the one screen every person sees before anything else carried no trace of
+ * the brand's single bold idea. It gets the map as a picture, in colour. On a
+ * wide window the land rises on the right and falls away before it reaches
+ * the form on the left; on a narrow one it rises at the top and falls away
+ * above the form. Either way the map ends where its lowest contour does — no
+ * panel edge — and the form sits on plain paper, never over a line.
+ */
 function Frame({
   heading = 'Sign in to Pando',
   lede,
@@ -194,37 +209,64 @@ function Frame({
   lede?: string;
   children: React.ReactNode;
 }) {
+  const wide = useWide();
+
   return (
     <div
       style={{
         minHeight: '100vh',
         background: 'var(--paper)',
+        position: 'relative',
+        isolation: 'isolate',
+        overflow: 'hidden',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 'var(--space-5)',
+        alignItems: wide ? 'center' : 'flex-start',
       }}
     >
-      <div style={{ width: '100%', maxWidth: '36ch' }}>
-        <div style={{ marginBottom: 'var(--space-6)' }}>
-          <Logo size={24} />
+      <TopoMap seed="sign-in" recede={wide ? 'left' : 'down'} />
+      <div
+        style={{
+          width: wide ? '44%' : '100%',
+          display: 'flex',
+          justifyContent: 'center',
+          padding: wide ? 'var(--space-8)' : '42vh var(--space-5) var(--space-6)',
+        }}
+      >
+        <div style={{ width: '100%', maxWidth: '36ch' }}>
+          <div style={{ marginBottom: 'var(--space-6)' }}>
+            <Logo size={24} />
+          </div>
+          <h1 style={{ font: 'var(--type-h3)', color: 'var(--ink)', margin: 0 }}>{heading}</h1>
+          {lede && (
+            <p
+              style={{
+                font: 'var(--type-body-ui)',
+                color: 'var(--ink-secondary)',
+                margin: 'var(--space-3) 0 0',
+              }}
+            >
+              {lede}
+            </p>
+          )}
+          <div style={{ marginTop: 'var(--space-6)' }}>{children}</div>
         </div>
-        <h1 style={{ font: 'var(--type-h3)', color: 'var(--ink)', margin: 0 }}>{heading}</h1>
-        {lede && (
-          <p
-            style={{
-              font: 'var(--type-body-ui)',
-              color: 'var(--ink-secondary)',
-              margin: 'var(--space-3) 0 0',
-            }}
-          >
-            {lede}
-          </p>
-        )}
-        <div style={{ marginTop: 'var(--space-6)' }}>{children}</div>
       </div>
     </div>
   );
+}
+
+/** Wide enough for the form and the map side by side. In em, so it follows the
+ *  reader's text size rather than a device's pixel count. */
+function useWide(): boolean {
+  const query = '(min-width: 60em)';
+  const [wide, setWide] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setWide(m.matches);
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, []);
+  return wide;
 }
 
 function messageOf(error: unknown): string {

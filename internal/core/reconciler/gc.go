@@ -41,6 +41,14 @@ type GC struct {
 	Backup       BackupRunner
 	BundleSource *state.BundleSource
 
+	// The security pass (R-315, R-316). All four are nil on an installation
+	// with no scanner, where nothing is scored and the pass does nothing.
+	Security      SecurityScores
+	SecurityState SecurityState
+	PolicyStore   PolicyStore
+	Desired       Desired
+	Notifier      OwnerNotifier
+
 	// Clock is here so retention is testable without waiting a day.
 	Clock clock.Clock
 
@@ -110,6 +118,7 @@ func (g *GC) Collect(ctx context.Context) {
 	g.tearDownDeletedBundles(ctx)
 	g.runBackups(ctx)
 	g.reclaimOrphanedVolumes(ctx)
+	g.enforceSecurity(ctx)
 }
 
 // tearDownDeletedBundles destroys the bundles of apps that have been deleted.

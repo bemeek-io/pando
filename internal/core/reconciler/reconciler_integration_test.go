@@ -345,6 +345,32 @@ func TestR150_RepeatedFailureReachesFailedAndStops(t *testing.T) {
 	require.Equal(t, state.StateFailed, h.state(t))
 }
 
+// TestR150_GivingUpStopsTheApp asserts R-150.
+//
+// "Pando has stopped trying to start this app" has to be true of the host as
+// well as of the state machine. A crash-looping workload was being restarted by
+// the container runtime rather than by Pando, so an app Pando had given up on
+// kept looping underneath the message — the restart count climbing on a screen
+// that said nothing was trying any more.
+func TestR150_GivingUpStopsTheApp(t *testing.T) {
+	h := newHarness(t, state.StateRunning)
+	h.runtime.setObserved(api.ObservedBundle{Exists: true})
+	h.runtime.applyErr = errApplyFailed
+	h.rec.Clock = &steppingClock{now: time.Now().UTC()}
+
+	_, _, before := h.runtime.counts()
+
+	for range reconciler.DefaultFailureThreshold {
+		h.rec.Tick(context.Background())
+		h.rec.Clock.(*steppingClock).advance(10 * time.Minute)
+	}
+
+	require.Equal(t, state.StateFailed, h.state(t))
+
+	_, _, after := h.runtime.counts()
+	require.Greater(t, after, before, "the app is stopped, not left looping")
+}
+
 // An adapter being down is a platform problem, not app failure. Otherwise
 // restarting the Docker daemon marks every app on the host as failed.
 func TestAnUnreachableAdapterDoesNotMoveAnAppTowardFailed(t *testing.T) {

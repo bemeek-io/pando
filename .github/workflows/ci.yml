@@ -76,6 +76,16 @@ jobs:
           git diff --exit-code docs/traceability/requirements-index.md \
             || { echo "::error::Run 'make requirements-index' and commit the result."; exit 1; }
 
+      # The API, CLI and MCP reference is generated from the code that serves
+      # it, and the console reads the same document from the running binary.
+      # This is what keeps the repository's copy from describing a version of
+      # Pando that no longer exists (R-261).
+      - name: Reference is up to date
+        run: |
+          make reference
+          git diff --exit-code docs/api.md docs/cli.md docs/mcp.md \
+            || { echo "::error::Run 'make reference' and commit the result."; exit 1; }
+
   console:
     runs-on: ubuntu-latest
     # The console's checks are its own job because they need Node rather than

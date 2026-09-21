@@ -96,17 +96,42 @@ func LoadCredentials() (Credentials, error) {
 }
 
 // ErrNotLoggedIn is returned when there is no stored credential.
-var ErrNotLoggedIn = errors.New("not logged in — run `pando login` first")
+var ErrNotLoggedIn = errors.New("not logged in — run `pando login` first, or set PANDO_SERVER and PANDO_TOKEN")
+
+// The environment a machine authenticates with.
+//
+// `pando login` is for a person at a terminal: it stores a token in a file
+// under their home directory, which is the right place for it and the wrong
+// place for CI, a container, or an MCP client's configuration block. Those have
+// an environment and no home directory worth writing to, and without this the
+// only way to use a minted token was to write the credentials file by hand.
+//
+// Named constants because the reference quotes them: `docs/cli.md` and the
+// console's API screen are generated, and a documented variable name that
+// nothing reads is the drift this whole mechanism exists to prevent.
+const (
+	EnvServer = "PANDO_SERVER"
+	EnvToken  = "PANDO_TOKEN"
+)
 
 // New builds a client from stored credentials, with the server URL overridable
 // so a script can point at a different install without logging in again.
 func New(urlOverride string) (*Client, error) {
+	// The environment wins over the stored file, so a script or a container
+	// gets what it was given rather than whatever the image happened to be
+	// built with. The flag wins over both, because it is the most deliberate
+	// of the three.
+	envServer, envToken := os.Getenv(EnvServer), os.Getenv(EnvToken)
+
 	creds, err := LoadCredentials()
-	if err != nil && urlOverride == "" {
+	if err != nil && urlOverride == "" && envServer == "" {
 		return nil, err
 	}
 
 	base := creds.URL
+	if envServer != "" {
+		base = envServer
+	}
 	if urlOverride != "" {
 		base = urlOverride
 	}
@@ -114,9 +139,14 @@ func New(urlOverride string) (*Client, error) {
 		return nil, ErrNotLoggedIn
 	}
 
+	token := creds.Token
+	if envToken != "" {
+		token = envToken
+	}
+
 	return &Client{
 		BaseURL: strings.TrimSuffix(base, "/"),
-		Token:   creds.Token,
+		Token:   token,
 		// Generous: a deploy resolves a ref, which means cloning, and a backup
 		// streams a database dump plus every volume. Neither is a quick call
 		// and neither should be cut off by a default nobody chose.
