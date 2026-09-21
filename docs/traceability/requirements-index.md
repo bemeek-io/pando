@@ -168,7 +168,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-182** | D | There is an install-wide allowlist. | 12. Egress and Isolation | 01, 06 | 02, 03 | — |
 | **R-183** | D | Because app lists replace rather than narrow, the install-wide allowlist is a default, not a… | 12. Egress and Isolation | 06 | — | — |
 | **R-184** | P | Defining an app-level allowlist is gated by a verb, so an admin can restrict it. | 12. Egress and Isolation | 06 | 01 | — |
-| **R-190** | D V1 | Local secret storage: encrypted at rest with a key on the same disk. | 13. Secrets | 02, 03, 09 | 03, 04, 08 | `TestR190_ASecretRoundTripsThroughTheAdapter`, `TestR190_SecretsRoundTripThroughCiphertext` |
+| **R-190** | D V1 | Local secret storage: encrypted at rest with a key on the same disk. | 13. Secrets | 02, 03 | 03, 04, 08, 11 | `TestR190_ASecretRoundTripsThroughTheAdapter`, `TestR190_AnAdapterCredentialGoesInEncryptedAndNeverComesBack`, `TestR190_AnAdapterCredentialIsStoredOnlyAsCiphertext`, `TestR190_SecretsRoundTripThroughCiphertext`, `TestR190_TheDatabaseRefusesCredentialsInPlainConfiguration` |
 | **R-191** | D | The threat model must be stated, not implied: this protects a leaked backup file or copied… | 13. Secrets | 02 | 08 | — |
 | **R-192** | D | Environment variables are the default injection mechanism, since slot detection keys on them… | 13. Secrets | — | — | — |
 | **R-193** | D | On the env path, rotation implies a restart. | 13. Secrets | 02, 03, 05, 08 | 07 | `TestR193_AChangedEnvironmentFingerprintIsDrift`, `TestR193_ChangedEnvironmentCausesRecreate`, `TestR193_RotatingASecretChangesTheFingerprint` |

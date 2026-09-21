@@ -111,14 +111,16 @@ func TestR317_WhatWasReadIsRecordedInOrder(t *testing.T) {
 	require.Equal(t, []string{"b", "a", "c"}, r.files(), "each distinct file once, in read order")
 }
 
-// TestO20_TheKeyNeedNotBeStoredInTheDatabase asserts the interim answer to
-// O-20: an install can keep the credential out of adapter_configs entirely.
-func TestO20_TheKeyNeedNotBeStoredInTheDatabase(t *testing.T) {
+// TestO20_TheKeyResolvesFromEncryptedStorageOrTheEnvironment asserts O-20's
+// resolution: a key comes from the credential core decrypted, or from the
+// environment, and from nowhere else.
+func TestO20_TheKeyResolvesFromEncryptedStorageOrTheEnvironment(t *testing.T) {
 	env := map[string]string{"PANDO_AI_KEY": "from-named", "ANTHROPIC_API_KEY": "from-default"}
 	getenv := func(k string) string { return env[k] }
 
-	require.Equal(t, "inline", resolveKey(Config{APIKey: secretOf("inline"), APIKeyEnv: "PANDO_AI_KEY"}, getenv).Reveal(),
-		"an inline key wins, because somebody typed it deliberately")
+	stored := Config{Credentials: Credentials{APIKey: secretOf("stored")}, APIKeyEnv: "PANDO_AI_KEY"}
+	require.Equal(t, "stored", resolveKey(stored, getenv).Reveal(),
+		"the stored credential wins, because somebody set it deliberately")
 	require.Equal(t, "from-named", resolveKey(Config{APIKeyEnv: "PANDO_AI_KEY"}, getenv).Reveal())
 	require.Equal(t, "from-default", resolveKey(Config{}, getenv).Reveal(),
 		"the SDK's own variable when nothing is named")

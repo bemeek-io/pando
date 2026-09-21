@@ -2,6 +2,8 @@ package detection
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/screening"
@@ -53,11 +55,11 @@ const ActionScreen = "detection.screen"
 // was, and the only trace is a reason recorded on the outcome.
 func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Proposal, view api.SourceView) screening.Outcome {
 	if r.Screener == nil {
-		return screening.SkippedOutcome("No AI adapter is configured.")
+		return screening.SkippedOutcome(screening.SkipNotConfigured, "No AI adapter is configured.")
 	}
 	if r.ScreenPolicy != nil {
 		if reason := r.ScreenPolicy.AllowsScreening(ctx); reason != "" {
-			return screening.SkippedOutcome(reason)
+			return screening.SkippedOutcome(screening.SkipPolicy, reason)
 		}
 	}
 
@@ -66,7 +68,7 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 	// answer (R-099) — the same argument the job makes for skipping the trial
 	// run on a blocked winner.
 	if proposal.Blocked != nil {
-		return screening.SkippedOutcome("This repository cannot be imported as written, so there was nothing to screen.")
+		return screening.SkippedOutcome(screening.SkipBlocked, "This repository cannot be imported as written, so there was nothing to screen.")
 	}
 
 	trial := proposal.TrialSummary()
@@ -103,10 +105,27 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 		proposal.DraftSpec = proposal.WithScreenedAnswers(answers)
 		proposal.Questions = unanswered(proposal.Questions, answers)
 		outcome.Answers = answers
+
+		// Listed with the other changes, reason and evidence included, so the
+		// review shows why a question stopped being asked — not only that it did.
+		pending := make(map[string]string, len(answers))
+		for k, v := range answers {
+			pending[k] = v
+		}
+		for _, a := range result.Amendments {
+			key, value := strings.TrimSpace(a.Key), strings.TrimSpace(a.Value)
+			if a.Kind != api.AmendAnswerQuestion || pending[key] != value || value == "" {
+				continue
+			}
+			outcome.Applied = append(outcome.Applied, screening.Applied{
+				Amendment: a, Summary: fmt.Sprintf("answered %s: %s", key, value),
+			})
+			delete(pending, key) // once each
+		}
 	}
 
 	applied, refusedRest := screening.Apply(&proposal.DraftSpec, env, rest)
-	outcome.Applied = applied
+	outcome.Applied = append(outcome.Applied, applied...)
 	outcome.Refused = append(outcome.Refused, refusedRest...)
 
 	// The winner's draft is kept in step with the spec, because it is what the

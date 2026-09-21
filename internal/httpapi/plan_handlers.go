@@ -72,6 +72,16 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 
 	health := s.Registry.HealthCheckAll(r.Context())
 
+	// Names only. The console shows "an API key is set"; nothing can read one
+	// back (O-20).
+	credentials := map[string][]string{}
+	if s.AdapterCredentials != nil {
+		if credentials, err = s.AdapterCredentials.Fields(r.Context()); err != nil {
+			Error(w, r, err)
+			return
+		}
+	}
+
 	out := make([]map[string]any, 0, len(configured))
 	for _, c := range configured {
 		entry := map[string]any{
@@ -82,6 +92,9 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 			"is_default": c.IsDefault,
 			"enabled":    c.Enabled,
 			"healthy":    health[c.ID] == nil,
+		}
+		if fields := credentials[c.ID]; len(fields) > 0 {
+			entry["credentials_set"] = fields
 		}
 
 		// An unhealthy adapter's error message is not returned. It can carry a
@@ -107,6 +120,12 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 		case api.CategoryBuilder:
 			if b, ok := s.Registry.Builder(c.ID); ok {
 				if caps, err := b.Capabilities(r.Context()); err == nil {
+					entry["capabilities"] = caps
+				}
+			}
+		case api.CategoryAI:
+			if ai, ok := s.Registry.AI(c.ID); ok {
+				if caps, err := ai.Capabilities(r.Context()); err == nil {
 					entry["capabilities"] = caps
 				}
 			}

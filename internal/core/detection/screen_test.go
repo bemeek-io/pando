@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/screening"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/detect"
 	"github.com/bemeek-io/pando/internal/errs"
@@ -98,6 +99,7 @@ func TestR315_NoAdapterConfiguredLeavesTheProposalAlone(t *testing.T) {
 
 	require.False(t, outcome.Ran)
 	require.NotEmpty(t, outcome.Skipped)
+	require.Equal(t, screening.SkipNotConfigured, outcome.SkipCode)
 	require.Equal(t, before, p.DraftSpec)
 }
 
@@ -136,6 +138,7 @@ func TestR316_HostPolicyCanForbidScreeningInstallWide(t *testing.T) {
 
 	require.False(t, outcome.Ran)
 	require.Contains(t, outcome.Skipped, "administrator")
+	require.Equal(t, screening.SkipPolicy, outcome.SkipCode)
 	require.Zero(t, screener.called, "the adapter was never reached")
 }
 
@@ -221,6 +224,8 @@ func TestR318_AnAnsweredQuestionStopsBeingAsked(t *testing.T) {
 	}}}).screen(context.Background(), "app_x", &p, checkout)
 
 	require.Equal(t, map[string]string{detect.KeyPrimaryPort: "3000"}, outcome.Answers)
+	require.Len(t, outcome.Applied, 1, "the review lists it with the other changes")
+	require.Equal(t, "server.js calls listen(3000).", outcome.Applied[0].Amendment.Reason)
 	require.Empty(t, p.Questions, "nobody is asked this now")
 	require.Equal(t, 3000, p.DraftSpec.Workloads[0].Ports[0].Number)
 	require.Equal(t, spec.PortScreened, p.DraftSpec.Workloads[0].Ports[0].Source,

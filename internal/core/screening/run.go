@@ -34,17 +34,17 @@ type Screener interface {
 // to ignore an error is a caller that will one day not.
 func Run(ctx context.Context, s Screener, ref string, req api.ScreenRequest) (api.ScreenResult, Outcome) {
 	if s == nil {
-		return api.ScreenResult{}, SkippedOutcome("No AI adapter is configured.")
+		return api.ScreenResult{}, SkippedOutcome(SkipNotConfigured, "No AI adapter is configured.")
 	}
 
 	started := time.Now()
 	caps, err := s.Capabilities(ctx)
 	if err != nil {
-		return api.ScreenResult{}, SkippedOutcome(
-			"Pando could not reach the configured AI adapter: " + err.Error()).Elapsed(time.Since(started))
+		return api.ScreenResult{}, SkippedOutcome(SkipUnavailable,
+			"Pando could not reach the configured AI adapter: "+err.Error()).Elapsed(time.Since(started))
 	}
 	if !caps.Does(api.AIFunctionScreenPlan) {
-		return api.ScreenResult{}, SkippedOutcome(fmt.Sprintf(
+		return api.ScreenResult{}, SkippedOutcome(SkipUnsupported, fmt.Sprintf(
 			"The configured AI adapter (%s) does not screen deployment plans.", ref)).Elapsed(time.Since(started))
 	}
 
@@ -60,8 +60,8 @@ func Run(ctx context.Context, s Screener, ref string, req api.ScreenRequest) (ap
 	result, err := s.ScreenPlan(callCtx, req)
 	elapsed := time.Since(started)
 	if err != nil {
-		return api.ScreenResult{}, SkippedOutcome(
-			"The AI adapter could not screen this plan: " + err.Error()).Elapsed(elapsed)
+		return api.ScreenResult{}, SkippedOutcome(SkipUnavailable,
+			"The AI adapter could not screen this plan: "+err.Error()).Elapsed(elapsed)
 	}
 
 	model := result.Model

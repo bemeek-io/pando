@@ -25,6 +25,7 @@ import { Button, Card, CodeBlock, Dialog, Icon, IconButton, Input, Select, Tag }
 import { api, RequestFailed } from '@api/client';
 import type { Candidate, Proposal, Question } from '@api/types.gen';
 import { InlineWarning } from '../ui/InlineWarning';
+import { Screening } from './Screening';
 
 interface DetectionResponse {
   status: string;
@@ -114,6 +115,10 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
       <WinningBid candidate={proposal.winning_bid} />
+
+      {/* After the winning bid, before the questions: it changed the plan the
+          person is about to accept, and it may have answered some questions. */}
+      <Screening outcome={proposal.screening} />
 
       {asked.length > 0 && (
         <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>

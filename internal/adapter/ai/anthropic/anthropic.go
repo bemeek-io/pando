@@ -52,18 +52,15 @@ const (
 
 // Config is the adapter's own configuration (design 09 §7).
 type Config struct {
-	// APIKey is a secret.Value, so it renders [redacted] in every marshaler and
-	// cannot reach a log line (R-194).
-	//
-	// Stored in adapter_configs in the clear, which is the reason APIKeyEnv
-	// exists and is preferred. No adapter before this one held a credential,
-	// so where an install-scoped credential should live is an open question
-	// (O-20) rather than something this adapter gets to settle.
-	APIKey secret.Value `json:"api_key,omitzero"`
+	// Credentials are supplied by core, decrypted from adapter_credentials at
+	// startup (O-20). They are never part of the stored configuration: the
+	// database refuses a `credentials` key in adapter_configs.config, so a value
+	// here can only have come from encrypted storage.
+	Credentials Credentials `json:"credentials,omitzero"`
 
-	// APIKeyEnv names an environment variable holding the key, so the database
-	// holds a name rather than a value. When neither this nor APIKey is set,
-	// ANTHROPIC_API_KEY is read — the SDK's own convention.
+	// APIKeyEnv names an environment variable holding the key, for an operator
+	// who keeps credentials in the environment. When neither this nor a stored
+	// credential is set, ANTHROPIC_API_KEY is read — the SDK's own convention.
 	APIKeyEnv string `json:"api_key_env,omitempty"`
 
 	Model string `json:"model,omitempty"`
@@ -80,6 +77,14 @@ type Config struct {
 	MaxBytes int64 `json:"max_bytes,omitempty"`
 
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+}
+
+// Credentials is what this adapter needs kept secret.
+//
+// A secret.Value, so it renders [redacted] in every marshaler and cannot reach a
+// log line (R-194).
+type Credentials struct {
+	APIKey secret.Value `json:"api_key,omitzero"`
 }
 
 // Adapter is the AI adapter.
@@ -99,6 +104,17 @@ func (a *Adapter) Category() api.Category { return api.CategoryAI }
 func (a *Adapter) Configure(_ context.Context, raw json.RawMessage) error {
 	var cfg Config
 	if len(raw) > 0 {
+		// A key at the top level is a key that was stored in the clear. The
+		// create handler and the database both refuse one; refusing it here as
+		// well means a row written some other way does not quietly work.
+		var top map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &top); err != nil {
+			return fmt.Errorf("anthropic: reading configuration: %w", err)
+		}
+		if _, inline := top["api_key"]; inline {
+			return errors.New("anthropic: api_key is in this adapter's stored configuration, which is " +
+				"unencrypted; set it as a credential instead")
+		}
 		if err := json.Unmarshal(raw, &cfg); err != nil {
 			return fmt.Errorf("anthropic: reading configuration: %w", err)
 		}
@@ -109,10 +125,10 @@ func (a *Adapter) Configure(_ context.Context, raw json.RawMessage) error {
 		// Not a warning. An adapter with no credential can do nothing, and
 		// registering it would put a permanently unhealthy adapter in the
 		// console with no way to tell it from a provider outage.
-		return errors.New("anthropic: no API key was found — set api_key_env to the name of an " +
-			"environment variable holding it, or set ANTHROPIC_API_KEY where Pando runs")
+		return errors.New("anthropic: no API key was found — set one as this adapter's api_key " +
+			"credential, or name an environment variable in api_key_env")
 	}
-	cfg.APIKey = key
+	cfg.Credentials.APIKey = key
 	if cfg.Model == "" {
 		cfg.Model = DefaultModel
 	}
@@ -123,7 +139,7 @@ func (a *Adapter) Configure(_ context.Context, raw json.RawMessage) error {
 		cfg.MaxBytes = DefaultMaxBytes
 	}
 
-	opts := []option.RequestOption{option.WithAPIKey(cfg.APIKey.Reveal())}
+	opts := []option.RequestOption{option.WithAPIKey(cfg.Credentials.APIKey.Reveal())}
 	if cfg.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(cfg.BaseURL))
 	}
@@ -166,12 +182,12 @@ func (a *Adapter) Capabilities(_ context.Context) (api.AICapabilities, error) {
 	return caps, nil
 }
 
-// resolveKey finds the credential: inline, then the named variable, then the
-// SDK's default variable. getenv is injected so the order is testable without
-// touching the process environment.
+// resolveKey finds the credential: the stored one, then the named variable,
+// then the SDK's default variable. getenv is injected so the order is testable
+// without touching the process environment.
 func resolveKey(cfg Config, getenv func(string) string) secret.Value {
-	if !cfg.APIKey.IsZero() {
-		return cfg.APIKey
+	if !cfg.Credentials.APIKey.IsZero() {
+		return cfg.Credentials.APIKey
 	}
 	if cfg.APIKeyEnv != "" {
 		return secret.New(getenv(cfg.APIKeyEnv))

@@ -281,6 +281,7 @@ between two values of a field the spec already has.
 type Outcome struct {
     Ran        bool
     Skipped    string            // why nothing ran (§4.1); empty when it did
+    SkipCode   SkipCode          // the same, as a stable value: not_configured | policy | unsupported | unavailable | blocked
     AdapterRef string
     Model      string
     FilesRead  []string
@@ -292,8 +293,11 @@ type Outcome struct {
 }
 ```
 
-The console renders it as a section of the review: which adapter, which model, what it read, what it
-changed and why, and what it asked for that Pando would not do.
+The console renders it as a section of the review, directly under the winning bid: the model, each
+change with its reason and the files it cites, the files read, and what it asked for that Pando would
+not do. An answered question is listed among the changes with its reason, so the review shows why the
+question stopped being asked. When `skip_code` is `not_configured` the section is absent, because an
+install without an AI adapter is not degraded; any other skip is shown as one line with its reason.
 
 ---
 
@@ -336,7 +340,6 @@ seeding a broken one would put a permanently unhealthy adapter in every install'
 
 ```json
 {
-  "api_key_env": "ANTHROPIC_API_KEY",
   "model": "claude-opus-5",
   "screen_plans": true,
   "max_files": 40,
@@ -345,16 +348,18 @@ seeding a broken one would put a permanently unhealthy adapter in every install'
 }
 ```
 
-Configured through `POST /api/v1/adapters` like any other category, with `category: "ai"` and
-`kind: "anthropic"`. It takes effect at the next restart, because adapters are registered at startup
-(R-253).
+Configured through `POST /api/v1/adapters` like any other category, with `category: "ai"`,
+`kind: "anthropic"`, the settings above as `config`, and the key as `credentials: {"api_key": "…"}`.
+It takes effect at the next restart, because adapters are registered at startup (R-253).
 
-**[O] Where the credential lives is open (O-20).** This is the first adapter that holds one, and
-`adapter_configs.config` is stored in the clear. `GET /adapters` does not return it, but it is in the
-database unencrypted, which R-190 does not accept for secrets. The key resolves in this order:
-`api_key` inline, then the variable `api_key_env` names, then `ANTHROPIC_API_KEY`. The interim
-recommendation is the variable, which leaves only a name in the database. Inline works, so an install
-can configure screening from the console, and this paragraph is where that trade-off is written down.
+**[D] The API key is never stored in the clear (O-20).** `credentials` is write-only and is sealed by
+the install's secrets adapter into `adapter_credentials`, bound to the adapter's ID. The database
+refuses a `credentials` key in `adapter_configs.config`, the handler refuses `api_key` and similar
+names there, and the adapter refuses to start if it finds one at the top level of its stored
+configuration. Core decrypts the credential at startup and passes it to `Configure` in memory.
+`GET /adapters` reports `credentials_set: ["api_key"]` and nothing more. An operator who prefers the
+environment can instead set `api_key_env`, or `ANTHROPIC_API_KEY`, which the adapter reads when no
+credential is stored.
 
 **[P] `screen_plans` defaults to true** (R-316). Configuring the adapter required a credential; that
 was the decision.

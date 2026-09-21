@@ -3,6 +3,7 @@
 package httpapi_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -311,6 +312,48 @@ func TestRegisteringAnAdapterIsAdministration(t *testing.T) {
 		"id": "rt_evil", "category": "runtime", "kind": "docker",
 	})
 	require.Contains(t, []int{http.StatusForbidden, http.StatusNotFound}, denied.Code, denied.String())
+}
+
+// TestR190_AnAdapterCredentialGoesInEncryptedAndNeverComesBack asserts O-20's
+// resolution end to end: sent as a credential, stored as ciphertext, listed by
+// name, never returned.
+func TestR190_AnAdapterCredentialGoesInEncryptedAndNeverComesBack(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+	const key = "sk-ant-integration-must-not-leak"
+
+	created := i.do(admin, http.MethodPost, "/adapters", map[string]any{
+		"id": "ai_anthropic", "category": "ai", "kind": "anthropic", "name": "Anthropic",
+		"config":      map[string]any{"model": "claude-opus-5"},
+		"credentials": map[string]any{"api_key": key},
+	})
+	require.Equal(t, http.StatusCreated, created.Code, created.String())
+
+	var ciphertext []byte
+	require.NoError(t, i.db.QueryRow(context.Background(),
+		`SELECT ciphertext FROM adapter_credentials WHERE adapter_id = 'ai_anthropic' AND field = 'api_key'`).
+		Scan(&ciphertext))
+	require.NotContains(t, string(ciphertext), key)
+
+	listed := i.do(admin, http.MethodGet, "/adapters", nil)
+	require.Equal(t, http.StatusOK, listed.Code, listed.String())
+	require.NotContains(t, listed.String(), key)
+	require.Contains(t, listed.String(), `"credentials_set":["api_key"]`)
+
+	audited := i.do(admin, http.MethodGet, "/audit?action=adapter.configure", nil)
+	require.NotContains(t, audited.String(), key, "the audit event names the field, not the value")
+}
+
+// TestO20_TheAPIRefusesACredentialInPlainConfiguration asserts O-20.
+func TestO20_TheAPIRefusesACredentialInPlainConfiguration(t *testing.T) {
+	i := newInstall(t)
+	refused := i.do(i.admin(), http.MethodPost, "/adapters", map[string]any{
+		"id": "ai_anthropic", "category": "ai", "kind": "anthropic",
+		"config": map[string]any{"api_key": "sk-ant-plain"},
+	})
+	require.Equal(t, http.StatusBadRequest, refused.Code, refused.String())
+	require.Contains(t, refused.String(), "credentials")
+	require.NotContains(t, refused.String(), "sk-ant-plain")
 }
 
 // --- promotion and demotion ------------------------------------------------

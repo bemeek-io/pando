@@ -172,6 +172,7 @@ export interface TrialObservation {
 export interface Outcome {
   ran: boolean;
   skipped?: string;
+  skip_code?: string;
   adapter_ref?: string;
   model?: string;
   files_read?: (string[] | null);

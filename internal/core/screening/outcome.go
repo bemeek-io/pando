@@ -21,6 +21,10 @@ type Outcome struct {
 	// Every one of them is an ordinary outcome (R-315).
 	Skipped string `json:"skipped,omitempty"`
 
+	// SkipCode is Skipped as a stable machine value, so a client can branch
+	// without matching on a sentence that may be reworded.
+	SkipCode SkipCode `json:"skip_code,omitempty"`
+
 	AdapterRef string `json:"adapter_ref,omitempty"`
 	Model      string `json:"model,omitempty"`
 
@@ -62,9 +66,22 @@ type Refused struct {
 	Reason    string        `json:"reason"`
 }
 
-// Skipped returns an outcome for a screening that never ran.
-func SkippedOutcome(reason string) Outcome {
-	return Outcome{Ran: false, Skipped: reason}
+// SkipCode says why a screening did not run.
+type SkipCode string
+
+const (
+	// SkipNotConfigured is the ordinary case: no AI adapter. The console shows
+	// nothing for it, because an install without one is not degraded (R-315).
+	SkipNotConfigured SkipCode = "not_configured"
+	SkipPolicy        SkipCode = "policy"      // host policy forbids it (R-316)
+	SkipUnsupported   SkipCode = "unsupported" // the adapter does not screen
+	SkipUnavailable   SkipCode = "unavailable" // the provider failed or timed out
+	SkipBlocked       SkipCode = "blocked"     // nothing to screen (R-099)
+)
+
+// SkippedOutcome returns an outcome for a screening that never ran.
+func SkippedOutcome(code SkipCode, reason string) Outcome {
+	return Outcome{Ran: false, SkipCode: code, Skipped: reason}
 }
 
 // Elapsed records how long a screening took.

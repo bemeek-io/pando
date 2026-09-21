@@ -57,8 +57,8 @@ func configured(t *testing.T, cfg string) *anthropicadapter.Adapter {
 // return [redacted], so a config that is logged cannot carry the credential.
 func TestR194_TheAPIKeyNeverRenders(t *testing.T) {
 	var cfg anthropicadapter.Config
-	require.NoError(t, json.Unmarshal([]byte(`{"api_key":"sk-ant-secret-value"}`), &cfg))
-	require.Equal(t, "sk-ant-secret-value", cfg.APIKey.Reveal(), "the value is there")
+	require.NoError(t, json.Unmarshal([]byte(`{"credentials":{"api_key":"sk-ant-secret-value"}}`), &cfg))
+	require.Equal(t, "sk-ant-secret-value", cfg.Credentials.APIKey.Reveal(), "the value is there")
 
 	body, err := json.Marshal(cfg)
 	require.NoError(t, err)
@@ -68,7 +68,7 @@ func TestR194_TheAPIKeyNeverRenders(t *testing.T) {
 
 // TestR259_CapabilitiesAreDataNotATypeAssertion asserts R-259 and R-254.
 func TestR259_CapabilitiesAreDataNotATypeAssertion(t *testing.T) {
-	a := configured(t, `{"api_key":"sk-ant-test"}`)
+	a := configured(t, `{"credentials":{"api_key":"sk-ant-test"}}`)
 
 	caps, err := a.Capabilities(context.Background())
 	require.NoError(t, err)
@@ -82,12 +82,12 @@ func TestR259_CapabilitiesAreDataNotATypeAssertion(t *testing.T) {
 // Configuring the adapter meant supplying a credential, and that was the
 // decision. Asking a second time would charge the setup cost twice (R-002).
 func TestR316_ScreeningIsOnWhenTheAdapterIsConfigured(t *testing.T) {
-	on := configured(t, `{"api_key":"sk-ant-test"}`)
+	on := configured(t, `{"credentials":{"api_key":"sk-ant-test"}}`)
 	caps, err := on.Capabilities(context.Background())
 	require.NoError(t, err)
 	require.True(t, caps.Does(api.AIFunctionScreenPlan))
 
-	off := configured(t, `{"api_key":"sk-ant-test","screen_plans":false}`)
+	off := configured(t, `{"credentials":{"api_key":"sk-ant-test"},"screen_plans":false}`)
 	caps, err = off.Capabilities(context.Background())
 	require.NoError(t, err)
 	require.False(t, caps.Does(api.AIFunctionScreenPlan),
@@ -106,6 +106,18 @@ func TestAnAdapterWithNoCredentialRefusesToConfigure(t *testing.T) {
 	require.Contains(t, err.Error(), "api_key")
 }
 
+// TestO20_AKeyInTheStoredConfigurationIsRefused asserts O-20's resolution.
+//
+// The stored configuration is unencrypted. A key found there is refused rather
+// than used, so a row written around the API cannot quietly work.
+func TestO20_AKeyInTheStoredConfigurationIsRefused(t *testing.T) {
+	err := anthropicadapter.New().Configure(context.Background(),
+		json.RawMessage(`{"api_key":"sk-ant-plaintext"}`))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unencrypted")
+	require.NotContains(t, err.Error(), "sk-ant-plaintext", "and the error does not repeat it")
+}
+
 // TestR315_AnUnconfiguredAdapterFailsRatherThanPretends asserts R-315.
 //
 // The failure is an error the caller turns into a skipped screening, which
@@ -119,7 +131,7 @@ func TestR315_AnUnconfiguredAdapterFailsRatherThanPretends(t *testing.T) {
 
 // TestR020_ScreeningNeedsAReadableRepository asserts R-020.
 func TestR020_ScreeningNeedsAReadableRepository(t *testing.T) {
-	a := configured(t, `{"api_key":"sk-ant-test"}`)
+	a := configured(t, `{"credentials":{"api_key":"sk-ant-test"}}`)
 	_, err := a.ScreenPlan(context.Background(), api.ScreenRequest{Source: nil})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "repository")
@@ -128,7 +140,7 @@ func TestR020_ScreeningNeedsAReadableRepository(t *testing.T) {
 // TestR319_TheBudgetIsTheLowerOfWhatCoreAsksAndWhatTheAdapterWillDo asserts
 // R-319: neither side raises the other's.
 func TestR319_TheBudgetIsTheLowerOfWhatCoreAsksAndWhatTheAdapterWillDo(t *testing.T) {
-	a := configured(t, `{"api_key":"sk-ant-test","max_files":5,"max_bytes":1024}`)
+	a := configured(t, `{"credentials":{"api_key":"sk-ant-test"},"max_files":5,"max_bytes":1024}`)
 	caps, err := a.Capabilities(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, 5, caps.MaxFiles)

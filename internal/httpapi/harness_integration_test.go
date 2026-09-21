@@ -195,6 +195,8 @@ func newInstall(t *testing.T) *install {
 		Registry:    registry,
 		Adapters:    adapters,
 		Allocations: allocations,
+
+		AdapterCredentials: state.NewAdapterCredentials(db, secretsAdapter, "sec_local"),
 		Planner:     appPlanner,
 		Deployments: deployments,
 		Deployer:    deployer,

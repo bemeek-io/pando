@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"syscall"
 	"time"
 
@@ -260,7 +261,7 @@ func serve(ctx context.Context, configPath string) error {
 
 	notifications := state.NewNotifications(db)
 
-	registry, err := registerAdapters(ctx, adapters, notifications, logger)
+	registry, adapterCredentials, err := registerAdapters(ctx, db, adapters, notifications, logger)
 	if err != nil {
 		return err
 	}
@@ -430,17 +431,19 @@ func serve(ctx context.Context, configPath string) error {
 		Auditor:  auditor,
 		Policy:   hostPolicy,
 
-		Registry:    registry,
-		Adapters:    adapters,
-		Allocations: allocations,
-		Planner:     appPlanner,
-		Deployments: deployments,
-		Deployer:    deployer,
-		Logs:        logStore,
-		Secrets:     secrets,
-		Detections:  detections,
-		Detector:    detector,
-		Console:     consoleHandler(logger),
+		Registry: registry,
+		Adapters: adapters,
+
+		AdapterCredentials: adapterCredentials,
+		Allocations:        allocations,
+		Planner:            appPlanner,
+		Deployments:        deployments,
+		Deployer:           deployer,
+		Logs:               logStore,
+		Secrets:            secrets,
+		Detections:         detections,
+		Detector:           detector,
+		Console:            consoleHandler(logger),
 
 		// Policy is evaluated before grants, so it is wired into the
 		// authorizer rather than checked alongside it (R-272).
@@ -661,20 +664,34 @@ func (a detectionAuditor) Write(ctx context.Context, e detection.AuditEvent) err
 // preventing startup: one broken adapter should not take the whole install
 // offline, and the planner already refuses to plan against an adapter it cannot
 // reach (R-254).
-func registerAdapters(ctx context.Context, store *state.Adapters, notifications *state.Notifications, logger *zap.Logger) (*adapterapi.Registry, error) {
+func registerAdapters(ctx context.Context, db *state.DB, store *state.Adapters, notifications *state.Notifications, logger *zap.Logger) (*adapterapi.Registry, *state.AdapterCredentials, error) {
 	if err := seedDefaultAdapters(ctx, store); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	configured, err := store.List(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
+	// Secrets adapters first. Every other adapter's credentials are sealed by
+	// one (O-20), so it has to be configured before they can be opened. A
+	// secrets adapter's own configuration never carries credentials — there is
+	// nothing to open them with — and the create handler refuses them.
+	sort.SliceStable(configured, func(i, j int) bool {
+		return configured[i].Category == string(adapterapi.CategorySecrets) &&
+			configured[j].Category != string(adapterapi.CategorySecrets)
+	})
+
 	registry := adapterapi.NewRegistry()
+	var credentials *state.AdapterCredentials
 	for _, c := range configured {
 		if !c.Enabled {
 			continue
+		}
+
+		if c.Category != string(adapterapi.CategorySecrets) && credentials == nil {
+			credentials = adapterCredentialsFor(db, registry)
 		}
 
 		var adapter adapterapi.Adapter
@@ -709,22 +726,79 @@ func registerAdapters(ctx context.Context, store *state.Adapters, notifications 
 			continue
 		}
 
-		if err := adapter.Configure(ctx, c.Config); err != nil {
+		raw := c.Config
+		if c.Category != string(adapterapi.CategorySecrets) {
+			// Decrypted here and handed over in memory only (O-20). Nothing on
+			// this path is logged: a failure is reported by adapter ID alone.
+			creds, err := credentials.Resolve(ctx, c.ID)
+			if err != nil {
+				logger.Error("adapter credentials could not be opened, so the adapter was skipped",
+					zap.String("id", c.ID))
+				continue
+			}
+			if raw, err = withCredentials(c.Config, creds); err != nil {
+				logger.Error("adapter could not be configured and was skipped", zap.String("id", c.ID))
+				continue
+			}
+		}
+
+		if err := adapter.Configure(ctx, raw); err != nil {
 			logger.Error("adapter could not be configured and was skipped",
 				zap.String("id", c.ID), zap.Error(err))
 			continue
 		}
 		if err := registry.Register(c.ID, adapter); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if c.IsDefault {
 			if err := registry.SetDefault(adapterapi.Category(c.Category), c.ID); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 		logger.Info("adapter registered", zap.String("id", c.ID), zap.String("kind", c.Kind))
 	}
-	return registry, nil
+	if credentials == nil {
+		credentials = adapterCredentialsFor(db, registry)
+	}
+	return registry, credentials, nil
+}
+
+// adapterCredentialsFor is the credential store, sealed by the install's
+// secrets adapter: the default one, or the only one.
+func adapterCredentialsFor(db *state.DB, registry *adapterapi.Registry) *state.AdapterCredentials {
+	ref, ok := registry.Default(adapterapi.CategorySecrets)
+	if !ok {
+		if refs := registry.ByCategory(adapterapi.CategorySecrets); len(refs) > 0 {
+			ref = refs[0]
+		}
+	}
+	sa, _ := registry.Secrets(ref)
+	return state.NewAdapterCredentials(db, sa, ref)
+}
+
+// withCredentials adds decrypted credentials to an adapter's configuration as
+// a `credentials` object — the one key the database refuses in the stored
+// config, so an adapter reading it knows it came from encrypted storage.
+func withCredentials(raw json.RawMessage, creds map[string]secret.Value) (json.RawMessage, error) {
+	if len(creds) == 0 {
+		return raw, nil
+	}
+	cfg := map[string]json.RawMessage{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, err
+		}
+	}
+	plain := make(map[string]string, len(creds))
+	for field, v := range creds {
+		plain[field] = v.Reveal()
+	}
+	body, err := json.Marshal(plain)
+	if err != nil {
+		return nil, err
+	}
+	cfg["credentials"] = body
+	return json.Marshal(cfg)
 }
 
 // seedDefaultAdapters gives a fresh install a working set: Docker to run

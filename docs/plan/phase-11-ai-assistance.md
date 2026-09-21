@@ -30,17 +30,18 @@ produced, and amending what it missed.
 - [x] The Anthropic adapter: official Go SDK, `claude-opus-5` default, `list_files`/`read_file`
       against a budgeted reader, `submit_findings` with `strict: true` (R-319)
 - [x] Outcome stored on the proposal; console types regenerated
-- [ ] The review section in the console: which adapter and model, what it read, what it changed and
-      why, what it asked for and was refused
+- [x] The review section in the console (`console/src/admin/Screening.tsx`): the model, each change
+      with its reason and the files it cites, the files read, notes, and what Pando refused. Silent when
+      no AI adapter is configured; one line naming the reason when screening was skipped for any other
 - [x] Configurable through the existing `POST /api/v1/adapters` with `category: "ai"`, applied at
       restart like every other adapter; `api_key_env` keeps the key out of the database
-- [ ] Where an install-scoped credential lives — open as O-20. Inline `api_key` works and is stored in
-      the clear, and the design doc says so
+- [x] Credentials encrypted at rest (O-20, resolved): write-only `credentials` sealed by the secrets
+      adapter into `adapter_credentials`; a check constraint refuses them in plain configuration
 - [ ] The corpus measurement below
 
 ## Requirements in scope
 
-R-106, R-258, R-259, R-310–R-319. O-20 is raised here.
+R-106, R-190 (for adapter credentials), R-258, R-259, R-310–R-319. O-20 is resolved here.
 
 ## Done when
 

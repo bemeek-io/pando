@@ -50,15 +50,19 @@ type Server struct {
 	Auditor  *audit.Writer
 	Authent  *Authenticator
 
-	Registry    *api.Registry
-	Adapters    *state.Adapters
-	Planner     *planner.Planner
-	Allocations *state.Allocations
-	Deployments *state.Deployments
-	Deployer    *deploy.Runner
-	Logs        *deploy.LogStore
-	Secrets     *state.Secrets
-	Detections  *state.Detections
+	Registry *api.Registry
+	Adapters *state.Adapters
+
+	// AdapterCredentials holds adapters' credentials encrypted (O-20). Written
+	// by POST /adapters, never read back by any handler.
+	AdapterCredentials *state.AdapterCredentials
+	Planner            *planner.Planner
+	Allocations        *state.Allocations
+	Deployments        *state.Deployments
+	Deployer           *deploy.Runner
+	Logs               *deploy.LogStore
+	Secrets            *state.Secrets
+	Detections         *state.Detections
 
 	// Detector runs detection for an app. Nil on an install with no builder or
 	// runtime configured, in which case the detection endpoints say so rather
