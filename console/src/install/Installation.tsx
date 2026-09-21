@@ -572,7 +572,7 @@ interface Source {
 
 interface StartupConfig {
   file: string;
-  settings: Array<{ key: string; value: unknown; source: Source }>;
+  settings: Array<{ key: string; value: unknown; source: Source; env: string }>;
   policy: Array<{ key: string; value: unknown; source: Source }>;
 }
 
@@ -582,12 +582,12 @@ const FixedFields = createContext<Map<string, Source>>(new Map());
 /** Where a value was set, as a sentence an operator can act on. */
 function setIn(src: Source): string {
   if (src.kind === 'env') {
-    return `Set in the startup configuration by the environment variable ${src.name}. Change it where Pando's environment is defined — for Docker Compose, the pando service in docker-compose.yml — and restart Pando.`;
+    return `Set at startup by ${src.name}. To change it with Docker Compose, edit ${src.name} under environment: on the pando service in docker-compose.yml, then run docker compose up -d pando. A plain restart does not re-read the environment.`;
   }
   if (src.kind === 'file') {
-    return `Set in the startup configuration file ${src.name}, at ${src.key}. Change it there and restart Pando.`;
+    return `Set at startup in ${src.name}, at ${src.key}. Edit it there, then restart Pando.`;
   }
-  return 'Set in the startup configuration.';
+  return 'Set at startup.';
 }
 
 /**
@@ -656,16 +656,42 @@ function StartupSettings({ config }: { config?: StartupConfig }) {
     key: s.key,
     value: s.value === '' || s.value === null ? '—' : String(s.value),
     source: s.source,
+    env: s.env,
   }));
   return (
     <PolicySection
       heading="Startup configuration"
-      note={
-        config.file
-          ? `Read once when Pando started, from ${config.file} and the environment. Change a setting where it is set and restart Pando.`
-          : 'Read once when Pando started, from the environment; no config file was given. Change a setting where it is set and restart Pando.'
-      }
+      note="Read once when Pando starts. Under each setting is what sets it."
     >
+      {/* How to change one, concretely: which file to edit and which command
+          applies it. The command is the part people get wrong — a Compose
+          restart keeps the old environment. */}
+      <ul style={{ margin: 0, paddingLeft: 'var(--space-5)', font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+        <li>
+          <strong style={{ color: 'var(--ink)' }}>An environment variable</strong> (PANDO_…): with Docker Compose,
+          set it under <code style={{ font: 'var(--type-code-sm)' }}>environment:</code> on the{' '}
+          <code style={{ font: 'var(--type-code-sm)' }}>pando</code> service in{' '}
+          <code style={{ font: 'var(--type-code-sm)' }}>docker-compose.yml</code>, then run{' '}
+          <code style={{ font: 'var(--type-code-sm)' }}>docker compose up -d pando</code>.{' '}
+          <code style={{ font: 'var(--type-code-sm)' }}>docker compose restart</code> keeps the old environment.
+        </li>
+        <li>
+          <strong style={{ color: 'var(--ink)' }}>A file</strong>:{' '}
+          {config.file ? (
+            <>
+              edit <code style={{ font: 'var(--type-code-sm)' }}>{config.file}</code>, then restart Pando.
+            </>
+          ) : (
+            <>
+              none is in use. Start Pando with <code style={{ font: 'var(--type-code-sm)' }}>pando serve --config &lt;path&gt;</code>{' '}
+              to read one; the environment still wins over it.
+            </>
+          )}
+        </li>
+        <li>
+          <strong style={{ color: 'var(--ink)' }}>Default</strong>: not set anywhere. Set the variable shown to change it.
+        </li>
+      </ul>
       <Table
         columns={[
           {
@@ -675,11 +701,11 @@ function StartupSettings({ config }: { config?: StartupConfig }) {
             // Where it is set, under its name: an env var or a file path is
             // the one thing here that has to be read in full, and a column of
             // its own beside the value is too narrow for either.
-            render: (row: { key: string; source: Source }) => (
+            render: (row: { key: string; source: Source; env: string }) => (
               <div style={{ display: 'flex', flexDirection: 'column', padding: 'var(--space-2) 0', whiteSpace: 'normal' }}>
                 <span style={{ font: 'var(--type-code-sm)', color: 'var(--ink)' }}>{row.key}</span>
                 <span style={{ font: 'var(--type-code-sm)', color: 'var(--ink-secondary)', overflowWrap: 'anywhere' }}>
-                  {sourceLabel(row.source)}
+                  {row.source.kind === 'default' ? `Default · set with ${row.env}` : sourceLabel(row.source)}
                 </span>
               </div>
             ),

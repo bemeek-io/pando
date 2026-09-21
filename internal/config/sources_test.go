@@ -51,6 +51,7 @@ policy:
 	require.Equal(t, "warn", settingNamed(t, cfg, "log.level").Value)
 	require.Equal(t, Source{Kind: "env", Name: "PANDO_LOG_LEVEL"}, settingNamed(t, cfg, "log.level").Source)
 	require.Equal(t, Source{Kind: "default"}, settingNamed(t, cfg, "server.work_dir").Source)
+	require.Equal(t, "PANDO_SERVER_WORK_DIR", settingNamed(t, cfg, "server.work_dir").Env, "a default still says how to set it")
 	require.Equal(t, "15s", settingNamed(t, cfg, "server.shutdown_timeout").Value, "durations read as written")
 
 	// Secrets are never listed (R-194).

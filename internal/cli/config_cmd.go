@@ -35,6 +35,7 @@ func configCmd(client func() (*Client, error)) *cobra.Command {
 					Key    string `json:"key"`
 					Value  any    `json:"value"`
 					Source source `json:"source"`
+					Env    string `json:"env"`
 				} `json:"settings"`
 				Policy []struct {
 					Key    string          `json:"key"`
@@ -65,11 +66,20 @@ func configCmd(client func() (*Client, error)) *cobra.Command {
 			}
 			t := table(w, "SETTING", "VALUE", "FROM")
 			for _, s := range out.Settings {
-				fmt.Fprintf(t, "%s\t%v\t%s\n", s.Key, s.Value, from(s.Source))
+				f := from(s.Source)
+				if s.Source.Kind == "default" {
+					f = "default (set with " + s.Env + ")"
+				}
+				fmt.Fprintf(t, "%s\t%v\t%s\n", s.Key, s.Value, f)
 			}
 			if err := t.Flush(); err != nil {
 				return err
 			}
+			fmt.Fprintln(w)
+			fmt.Fprintln(w, "To change one: an env setting is in the environment Pando starts with — with Docker")
+			fmt.Fprintln(w, "Compose, under environment: on the pando service in docker-compose.yml, applied with")
+			fmt.Fprintln(w, "`docker compose up -d pando` (a plain restart keeps the old environment). A file setting")
+			fmt.Fprintln(w, "is in the config file shown; edit it and restart Pando.")
 			if len(out.Policy) > 0 {
 				fmt.Fprintln(w)
 				t = table(w, "FIXED POLICY", "VALUE", "FROM")

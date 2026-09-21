@@ -28,6 +28,10 @@ type Setting struct {
 	Key    string `json:"key"`
 	Value  any    `json:"value"`
 	Source Source `json:"source"`
+
+	// Env is the variable that sets it, whether or not it is set — so a
+	// setting still at its default can say how to change it.
+	Env string `json:"env"`
 }
 
 // PolicySetting is a host policy field set at startup (a `policy:` section in
@@ -90,7 +94,7 @@ func settingsOf(v *viper.Viper, path string) []Setting {
 		if d, ok := value.(time.Duration); ok {
 			value = d.String()
 		}
-		out = append(out, Setting{Key: key, Value: value, Source: sourceOf(v, key, path)})
+		out = append(out, Setting{Key: key, Value: value, Source: sourceOf(v, key, path), Env: envName(key)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
