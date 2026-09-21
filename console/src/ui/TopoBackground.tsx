@@ -11,12 +11,11 @@
 // periodic — hills wrap around the tile's edges and the warp uses whole
 // periods — so the lines meet across every seam and there is no edge to see.
 //
-// One colour, one line width, one opacity across the whole thing, and no index
-// contours. Two strengths: `quiet`, behind working screens, where it must never
-// compete with a table; and `full`, on the sign-in screens, which have nothing
-// else on them and can carry the whole map. Each page gets its own terrain from
-// a seed (the section, and the app when there is one); the same seed always
-// gives the same map.
+// Behind working screens it is extremely quiet — one colour, one line width,
+// one opacity, no index contours — because a table has to be read over it.
+// TopoMap, below, is the same terrain drawn as a picture in colour, for the
+// sign-in screen. Each page gets its own terrain from a seed (the section, and
+// the app when there is one); the same seed always gives the same map.
 
 import { useMemo } from 'react';
 
@@ -26,11 +25,9 @@ const ROWS = 120;
 const CELL = 10;
 const TAU = Math.PI * 2;
 
-const STRENGTH = {
-  quiet: { levels: 12, opacity: 0.35 },
-  full: { levels: 20, opacity: 0.8 },
-} as const;
-type Strength = keyof typeof STRENGTH;
+const BACKGROUND_LEVELS = 12;
+const BACKGROUND_OPACITY = 0.35;
+const FEATURE_LEVELS = 20;
 
 type Pt = [number, number];
 
@@ -61,7 +58,10 @@ function wrap(d: number): number {
   return Math.min(a, 1 - a);
 }
 
-function generate(seed: string, levels: number): string {
+type Height = (x: number, y: number) => number;
+
+/** The seeded surface. Periodic over the tile, so it can repeat seamlessly. */
+function surface(seed: string): Height {
   const r = rng(hash(seed));
   const between = (lo: number, hi: number) => lo + r() * (hi - lo);
 
@@ -76,7 +76,7 @@ function generate(seed: string, levels: number): string {
 
   // Every term is periodic over the tile, so opposite edges have equal
   // heights and the contours line up across the seam.
-  const height = (x: number, y: number) => {
+  return (x: number, y: number) => {
     const wx = x + 0.03 * Math.sin(TAU * 2 * y + p[0]!) + 0.015 * Math.sin(TAU * 5 * y + p[1]!);
     const wy = y + 0.03 * Math.sin(TAU * 2 * x + p[2]!) + 0.015 * Math.sin(TAU * 4 * x + p[3]!);
     let h = 0;
@@ -87,12 +87,10 @@ function generate(seed: string, levels: number): string {
     }
     return h + 0.05 * Math.sin(TAU * x + p[4]!) * Math.cos(TAU * y + p[5]!);
   };
-
-  return trace(height, levels);
 }
 
-/** Every contour of the tile, as one path. */
-function trace(height: (x: number, y: number) => number, levels: number): string {
+/** Every contour of the tile, one path per level, lowest first. */
+function trace(height: Height, levels: number): string[] {
   const w = COLS + 1;
   const v = new Float64Array(w * (ROWS + 1));
   let min = Infinity;
@@ -107,7 +105,7 @@ function trace(height: (x: number, y: number) => number, levels: number): string
   }
   const at = (i: number, j: number): number => v[j * w + i] ?? 0;
 
-  let out = '';
+  const out: string[] = [];
   const lo = min + (max - min) * 0.06;
   const hi = max - (max - min) * 0.04;
 
@@ -180,12 +178,14 @@ function trace(height: (x: number, y: number) => number, levels: number): string
       return chain.map((k) => pts.get(k) ?? [0, 0]);
     };
 
+    let d = '';
     const ends = [...adj.keys()].filter((k) => adj.get(k)?.length === 1);
     for (const k of [...ends, ...adj.keys()]) {
       if (used.has(k)) continue;
       const line = walk(k);
-      if (line.length >= 2) out += smooth(line);
+      if (line.length >= 2) d += smooth(line);
     }
+    out.push(d);
   }
   return out;
 }
@@ -212,26 +212,17 @@ const cache = new Map<string, string>();
  * `isolation: isolate`. It fills that root — its full scrolling height — and
  * sits above the root's paper and below everything else.
  */
-export function TopoBackground({
-  seed,
-  strength = 'quiet',
-}: {
-  seed: string;
-  strength?: Strength;
-}) {
-  const { levels, opacity } = STRENGTH[strength];
-  const key = `${seed}|${levels}`;
-
+export function TopoBackground({ seed }: { seed: string }) {
   const d = useMemo(() => {
-    let t = cache.get(key);
+    let t = cache.get(seed);
     if (t === undefined) {
-      t = generate(seed, levels);
-      cache.set(key, t);
+      t = trace(surface(seed), BACKGROUND_LEVELS).join('');
+      cache.set(seed, t);
     }
     return t;
-  }, [key, seed, levels]);
+  }, [seed]);
 
-  const id = `topo-${hash(key).toString(36)}`;
+  const id = `topo-${hash(seed).toString(36)}`;
 
   return (
     <svg
@@ -243,7 +234,7 @@ export function TopoBackground({
         height: '100%',
         zIndex: -1,
         pointerEvents: 'none',
-        opacity,
+        opacity: BACKGROUND_OPACITY,
       }}
     >
       <defs>
@@ -259,6 +250,99 @@ export function TopoBackground({
         </pattern>
       </defs>
       <rect width="100%" height="100%" fill={`url(#${id})`} />
+    </svg>
+  );
+}
+
+interface Feature {
+  levels: string[];
+  summit: Pt;
+}
+
+const features = new Map<string, Feature>();
+
+/**
+ * The map as a picture rather than a background: the sign-in screen's right
+ * half. Here it is the thing to look at, so it is drawn in colour — every
+ * fifth line an index contour in `--contour`, the rest in `--contour-line` —
+ * with the marker-red summit triangle on the highest ground near the middle,
+ * as on the brand's own hero figure.
+ *
+ * Fills its positioned parent, cropped to cover it; lines keep their width at
+ * any size.
+ */
+export function TopoMap({ seed }: { seed: string }) {
+  const f = useMemo(() => {
+    let t = features.get(seed);
+    if (!t) {
+      const height = surface(seed);
+      // The summit: start at the highest point in the middle of the tile — the
+      // part a cropped panel always shows — then climb to the top of that
+      // hill, so the mark sits inside its innermost ring rather than on a
+      // slope at the edge of the search.
+      let bi = 0;
+      let bj = 0;
+      let top = -Infinity;
+      for (let j = Math.round(ROWS * 0.3); j <= Math.round(ROWS * 0.7); j++) {
+        for (let i = Math.round(COLS * 0.3); i <= Math.round(COLS * 0.7); i++) {
+          const h = height(i / COLS, j / ROWS);
+          if (h > top) {
+            top = h;
+            bi = i;
+            bj = j;
+          }
+        }
+      }
+      for (let moved = true; moved; ) {
+        moved = false;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as const) {
+          const i = bi + di;
+          const j = bj + dj;
+          if (i < 0 || j < 0 || i > COLS || j > ROWS) continue;
+          const h = height(i / COLS, j / ROWS);
+          if (h > top) {
+            top = h;
+            bi = i;
+            bj = j;
+            moved = true;
+          }
+        }
+      }
+      t = { levels: trace(height, FEATURE_LEVELS), summit: [bi * CELL, bj * CELL] };
+      features.set(seed, t);
+    }
+    return t;
+  }, [seed]);
+
+  const [sx, sy] = f.summit;
+  const s = 7;
+
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox={`0 0 ${COLS * CELL} ${ROWS * CELL}`}
+      preserveAspectRatio="xMidYMid slice"
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+    >
+      {f.levels.map((d, i) => {
+        const index = i % 5 === 4;
+        return (
+          <path
+            key={i}
+            d={d}
+            fill="none"
+            stroke={index ? 'var(--contour)' : 'var(--contour-line)'}
+            strokeWidth={index ? 'var(--contour-index-width)' : 'var(--contour-line-width)'}
+            vectorEffect="non-scaling-stroke"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        );
+      })}
+      <polygon
+        points={`${sx},${sy - s} ${sx + s},${sy + s * 0.8} ${sx - s},${sy + s * 0.8}`}
+        fill="var(--marker)"
+      />
     </svg>
   );
 }

@@ -60,10 +60,12 @@ It covers the whole background, so what keeps it from reading as wallpaper is ho
   that fades draws the eye, which is exactly what a background must not do.
 - **Part of the page.** `console/src/ui/TopoBackground.tsx` fills its page root and scrolls with
   the content; pinned to the window it looked like a layer floating over the product. It is behind
-  the admin console, the launcher and the sign-in screens.
-- **Stronger where nothing competes.** The sign-in and first-run password screens use the `full`
-  strength — 20 levels at 0.8 opacity against the console's 12 at 0.35. They carry a heading and
-  two fields; the console carries tables that must be read over the map.
+  the admin console and the launcher.
+- **In colour, beside the form, on sign-in.** The sign-in and first-run password screens show the
+  same terrain as a picture (`TopoMap`): index contours in `--contour`, the rest in
+  `--contour-line`, and the marker-red summit triangle on the top of the central hill, as on the
+  brand's hero figure. On a wide window the form sits on plain paper on the left and the map fills
+  the right; below 60em the map is a band across the top. The form is never drawn over the map.
 - **Seamless at any length.** It is a tile, and the terrain is periodic — hills wrap round the
   tile's edges and the warp uses whole periods — so contours meet across every seam. The tile is
   1600 × 1200, so a repeat is rarely in view at once.

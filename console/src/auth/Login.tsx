@@ -9,13 +9,13 @@
 // grows a button per provider rather than a second page — R-044's providers are
 // alternatives to this form, not alternatives to signing in.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Input, Logo } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 
-import { TopoBackground } from '../ui/TopoBackground';
+import { TopoMap } from '../ui/TopoBackground';
 import { returnTo } from './return-to';
 
 export function Login() {
@@ -194,10 +194,10 @@ export function ChangePassword({ username }: { username?: string }) {
  * places the contour figure appears.
  *
  * So the one screen every person sees before anything else carried no trace of
- * the brand's single bold idea. It gets the whole map: the same generated
- * terrain that sits behind the console, at full strength. The console keeps it
- * extremely quiet because a table has to be read over it; this screen has a
- * heading and two fields, and can carry far more.
+ * the brand's single bold idea. It gets the map as a picture, in colour: on a
+ * wide window the form sits on plain paper on the left and the map fills the
+ * right; on a narrow one the map is a band across the top and the form sits
+ * below it. The form never sits on the map, so nothing has to be read over it.
  */
 function Frame({
   heading = 'Sign in to Pando',
@@ -208,40 +208,74 @@ function Frame({
   lede?: string;
   children: React.ReactNode;
 }) {
+  const wide = useWide();
+
   return (
     <div
       style={{
         minHeight: '100vh',
         background: 'var(--paper)',
-        position: 'relative',
-        isolation: 'isolate',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 'var(--space-5)',
+        flexDirection: wide ? 'row' : 'column',
       }}
     >
-      <TopoBackground seed="sign-in" strength="full" />
-      <div style={{ flex: '0 1 36ch', minWidth: 0 }}>
-        <div style={{ marginBottom: 'var(--space-6)' }}>
-          <Logo size={24} />
+      <div
+        style={{
+          flex: wide ? '0 0 44%' : '0 0 auto',
+          order: wide ? 0 : 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: wide ? 'var(--space-8)' : 'var(--space-6) var(--space-5)',
+        }}
+      >
+        <div style={{ width: '100%', maxWidth: '36ch' }}>
+          <div style={{ marginBottom: 'var(--space-6)' }}>
+            <Logo size={24} />
+          </div>
+          <h1 style={{ font: 'var(--type-h3)', color: 'var(--ink)', margin: 0 }}>{heading}</h1>
+          {lede && (
+            <p
+              style={{
+                font: 'var(--type-body-ui)',
+                color: 'var(--ink-secondary)',
+                margin: 'var(--space-3) 0 0',
+              }}
+            >
+              {lede}
+            </p>
+          )}
+          <div style={{ marginTop: 'var(--space-6)' }}>{children}</div>
         </div>
-        <h1 style={{ font: 'var(--type-h3)', color: 'var(--ink)', margin: 0 }}>{heading}</h1>
-        {lede && (
-          <p
-            style={{
-              font: 'var(--type-body-ui)',
-              color: 'var(--ink-secondary)',
-              margin: 'var(--space-3) 0 0',
-            }}
-          >
-            {lede}
-          </p>
-        )}
-        <div style={{ marginTop: 'var(--space-6)' }}>{children}</div>
+      </div>
+
+      <div
+        style={{
+          position: 'relative',
+          overflow: 'hidden',
+          flex: wide ? '1 1 auto' : '0 0 32vh',
+          order: wide ? 1 : 0,
+          minHeight: wide ? '100vh' : '32vh',
+        }}
+      >
+        <TopoMap seed="sign-in" />
       </div>
     </div>
   );
+}
+
+/** Wide enough for the form and the map side by side. In em, so it follows the
+ *  reader's text size rather than a device's pixel count. */
+function useWide(): boolean {
+  const query = '(min-width: 60em)';
+  const [wide, setWide] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setWide(m.matches);
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, []);
+  return wide;
 }
 
 function messageOf(error: unknown): string {
