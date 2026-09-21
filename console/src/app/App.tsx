@@ -109,6 +109,7 @@ export function App() {
     <Launcher
       onAdmin={isAdmin ? () => go({ view: 'admin', section: 'apps' }) : undefined}
       onSettings={openSettings}
+      onManage={isAdmin ? (appID) => go({ view: 'admin', section: 'apps', appID }) : undefined}
     />
   );
 }

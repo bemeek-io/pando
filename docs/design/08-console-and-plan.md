@@ -41,9 +41,11 @@ appearance alone.
 
 **[D] Arranging the launcher.** R-341, R-342. Everything that arranges the page is in one place: a
 three-dot menu on each tile, shown on hover or focus (always, on a device that cannot hover). It
-offers *Open*, *Add to / Remove from favorites*, and *Move to section…*, whose second page lists
-*Your apps*, the person's sections and *New section…*. A section is only ever made from there, with
-the app already in it, so there is no screen for managing sections and no section is born empty. The
+offers *Launch*, *Open in admin* (only for an app the person also administers — it is on `GET /apps`,
+the control-plane list, not merely on the launcher), *Add to / Remove from favorites*, and *Move to
+section…*, whose second page lists *Your apps*, the person's sections and *New section…*, which makes
+one with the app already in it. A quiet *New section* at the foot of the page makes an empty one.
+There is no screen for managing sections. The
 page shows *Favorites* (when there are any), then the person's sections in the order made, then
 *Your apps* for everything else; a favorite appears once, in *Favorites*. Every group collapses from
 its heading, remembered per browser like the theme. A person's own section has a menu of its own on

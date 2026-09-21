@@ -16,13 +16,14 @@
 // request carries the apps, where each is filed and the sections themselves,
 // so no two parts of this page can disagree about what you can open.
 //
-// Everything that arranges the page lives in one place — each tile's menu —
-// and there is no settings screen for it. Someone who never opens a menu sees
-// "Your apps" and nothing else.
+// Arranging the page happens on the page: each tile's menu, each section's
+// heading, and one quiet "New section" at the foot. There is no settings
+// screen for it. Someone who never opens a menu sees "Your apps" and nothing
+// else.
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { EmptyState, Icon, IconButton, Input, Logo } from '@design';
+import { Button, EmptyState, Icon, IconButton, Input, Logo } from '@design';
 
 import { api, base } from '@api/client';
 import type { App, Section } from '@api/types.gen';
@@ -38,12 +39,29 @@ const KEY = ['me', 'apps'];
 export function Launcher({
   onAdmin,
   onSettings,
+  onManage,
 }: {
   onAdmin?: () => void;
   /** Theme and signing out, which everyone can reach. */
   onSettings: () => void;
+  /** Opens an app in the admin console. Given only to someone who administers
+   *  something; each tile then offers it only for an app they administer. */
+  onManage?: (appID: string) => void;
 }) {
   const apps = useQuery({ queryKey: KEY, queryFn: () => api.get<MyApps>('/me/apps') });
+
+  // Which of these apps the person can also administer: GET /apps, the
+  // control-plane list — the same query the Admin entry is decided by, so it
+  // is already in the cache. Two planes, two lists (R-070, R-071); an app is
+  // offered in admin only when it is on the second one, never because it is
+  // on the first.
+  const managed = useQuery({
+    queryKey: ['apps'],
+    queryFn: () => api.get<{ apps: App[] | null }>('/apps'),
+    enabled: Boolean(onManage),
+    retry: false,
+  });
+  const manageable = new Set((managed.data?.apps ?? []).map((a) => a.id));
   const arrange = useArrange();
   const [collapsed, toggleCollapsed] = useCollapsed();
 
@@ -56,7 +74,15 @@ export function Launcher({
   const inSection = (id: string) => all.filter((a) => !a.favorite && a.section_id === id);
   const rest = all.filter((a) => !a.favorite && !(a.section_id && known.has(a.section_id)));
 
-  const tile = (app: App) => <Tile key={app.id} app={app} sections={sections} arrange={arrange} />;
+  const tile = (app: App) => (
+    <Tile
+      key={app.id}
+      app={app}
+      sections={sections}
+      arrange={arrange}
+      onManage={onManage && manageable.has(app.id) ? () => onManage(app.id) : undefined}
+    />
+  );
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--paper)', position: 'relative', isolation: 'isolate' }}>
@@ -145,6 +171,8 @@ export function Launcher({
               ))}
           </Group>
         )}
+
+        {apps.data && all.length > 0 && <NewSection arrange={arrange} />}
       </main>
     </div>
   );
@@ -199,10 +227,12 @@ function useArrange() {
     onSettled: settle,
   });
 
+  // With an app, from its menu: made with the app already in it. Without, from
+  // the foot of the page: made empty, to fill afterwards.
   const create = useMutation({
-    mutationFn: async ({ name, app }: { name: string; app: App }) => {
+    mutationFn: async ({ name, app }: { name: string; app?: App }) => {
       const section = await api.post<Section>('/me/sections', { name });
-      await api.put<void>(`/me/sections/${section.id}/apps/${app.id}`);
+      if (app) await api.put<void>(`/me/sections/${section.id}/apps/${app.id}`);
     },
     onSettled: settle,
   });
@@ -381,7 +411,17 @@ function reachable(app: App): boolean {
 // Touch screens have no hover, so there the menu button is always shown.
 const canHover = typeof window !== 'undefined' && window.matchMedia?.('(hover: hover)').matches;
 
-function Tile({ app, sections, arrange }: { app: App; sections: Section[]; arrange: Arrange }) {
+function Tile({
+  app,
+  sections,
+  arrange,
+  onManage,
+}: {
+  app: App;
+  sections: Section[];
+  arrange: Arrange;
+  onManage?: () => void;
+}) {
   // A card with the app's picture and its name, and no status line. The
   // launcher is for someone who came to open an app (R-005), and "running" is
   // the normal case — a word on every tile saying so is noise. What they need
@@ -465,7 +505,14 @@ function Tile({ app, sections, arrange }: { app: App; sections: Section[]; arran
 
       {(canHover ? near || menuOpen : true) && (
         <div style={{ position: 'absolute', top: 'var(--space-1)', right: 'var(--space-1)' }}>
-          <TileMenu app={app} open={open} sections={sections} arrange={arrange} onOpenChange={setMenuOpen} />
+          <TileMenu
+            app={app}
+            open={open}
+            sections={sections}
+            arrange={arrange}
+            onManage={onManage}
+            onOpenChange={setMenuOpen}
+          />
         </div>
       )}
     </div>
@@ -473,22 +520,24 @@ function Tile({ app, sections, arrange }: { app: App; sections: Section[]; arran
 }
 
 /**
- * Open, favorite, and where the app lives. Three things; filing it is a
- * second page of the same menu rather than a menu of its own, and making a
- * section is a line at the bottom of that page — there is no other place
- * sections are made, so there is no empty section to wonder about.
+ * Launch, favorite, where the app lives — and, for someone who administers
+ * it, the way to its admin screen. Filing it is a second page of the same menu
+ * rather than a menu of its own, and that page ends with making a new section
+ * for it.
  */
 function TileMenu({
   app,
   open,
   sections,
   arrange,
+  onManage,
   onOpenChange,
 }: {
   app: App;
   open: boolean;
   sections: Section[];
   arrange: Arrange;
+  onManage?: () => void;
   onOpenChange: (open: boolean) => void;
 }) {
   const [page, setPage] = useState<'main' | 'sections' | 'new'>('main');
@@ -564,7 +613,17 @@ function TileMenu({
           <>
             {open && (
               <MenuItem href={app.address} onSelect={close}>
-                Open
+                Launch
+              </MenuItem>
+            )}
+            {onManage && (
+              <MenuItem
+                onSelect={() => {
+                  close();
+                  onManage();
+                }}
+              >
+                Open in admin
               </MenuItem>
             )}
             <MenuItem
@@ -580,6 +639,47 @@ function TileMenu({
         );
       }}
     </Menu>
+  );
+}
+
+/**
+ * Making a section without starting from an app: a quiet line at the foot of
+ * the page that becomes a name field. Below everything, because it is the
+ * least frequent thing anybody does here.
+ */
+function NewSection({ arrange }: { arrange: Arrange }) {
+  const [name, setName] = useState<string | null>(null);
+
+  return (
+    <div style={{ padding: '0 var(--console-padding) var(--space-8)' }}>
+      {name === null ? (
+        <Button variant="ghost" onClick={() => setName('')}>
+          New section
+        </Button>
+      ) : (
+        <form
+          style={{ maxWidth: '32ch' }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const trimmed = name.trim();
+            if (trimmed) arrange.create.mutate({ name: trimmed });
+            setName(null);
+          }}
+        >
+          <Input
+            aria-label="New section name"
+            placeholder="Section name"
+            value={name}
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+            onBlur={() => setName(null)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setName(null);
+            }}
+          />
+        </form>
+      )}
+    </div>
   );
 }
 
