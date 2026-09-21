@@ -32,6 +32,7 @@ func Validate(s *AppSpec) error {
 	validatePrimaryWorkload(s, add)
 	validateWorkloadNames(s, add)
 	validateMounts(s, add)
+	validateFiles(s, add)
 	validateEnv(s, add)
 	validateDependencies(s, add)
 	validateSlots(s, add)
@@ -167,6 +168,49 @@ func validateMounts(s *AppSpec, add func(*errs.Error)) {
 				add(errs.Newf(errs.ValidInvalid,
 					"Workload %q mounts storage at %q, which is not an absolute path.", w.Name, m.Path).
 					WithRemedy("Mount paths must start with /, for example /app/data."))
+			}
+		}
+	}
+}
+
+// validateFiles asserts a carried file has somewhere to land and is small
+// enough to be carried.
+func validateFiles(s *AppSpec, add func(*errs.Error)) {
+	for _, w := range s.Workloads {
+		seen := map[string]bool{}
+		for _, f := range w.Files {
+			switch {
+			case !strings.HasPrefix(f.Path, "/"):
+				add(errs.Newf(errs.ValidInvalid,
+					"Workload %q carries a file for %q, which is not an absolute path.", w.Name, f.Path).
+					WithRemedy("File paths must start with /, for example /etc/caddy/Caddyfile."))
+			case strings.HasSuffix(f.Path, "/"):
+				add(errs.Newf(errs.ValidInvalid,
+					"Workload %q carries a file for %q, which names a directory.", w.Name, f.Path).
+					WithRemedy("Give the full path including the file name."))
+			case seen[f.Path]:
+				add(errs.Newf(errs.ValidInvalid,
+					"Workload %q carries two files for %q.", w.Name, f.Path).
+					WithRemedy("Remove one of them. Which would win is not defined."))
+			}
+			seen[f.Path] = true
+
+			if len(f.Content) > FileSizeLimit {
+				add(errs.Newf(errs.ValidInvalid,
+					"The file %q on workload %q is %d KB, and Pando carries files up to %d KB.",
+					f.Path, w.Name, len(f.Content)/1024, FileSizeLimit/1024).
+					WithRemedy("Build it into the image instead — a file this size is a build input."))
+			}
+
+			// A mount and a file at the same path is two mechanisms for one
+			// location, and which one the container ends up with depends on
+			// the runtime.
+			for _, m := range w.Mounts {
+				if m.Path == f.Path {
+					add(errs.Newf(errs.ValidInvalid,
+						"Workload %q both mounts storage and carries a file at %q.", w.Name, f.Path).
+						WithRemedy("Keep one. Storage is for data the app writes; a carried file is configuration."))
+				}
 			}
 		}
 	}

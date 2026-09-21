@@ -116,6 +116,109 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Service tokens: account-level, its own principal (R-060, R-061).
+//
+// Not self-service, and that asymmetry is the whole point. A delegated token
+// holds what its owner holds and dies with them (R-058, R-059), so issuing one
+// creates no new power. An account token is a principal in its own right: it
+// appears in grants under its own ID, in the audit log under its own name, and
+// it survives the person who created it. That is a new subject on the
+// installation, which is administration.
+//
+// The verb is install.users.manage, the same one that creates and deletes
+// accounts, because this creates something that acts like one. There is no
+// separate token verb: a second verb that only ever travels with the first is
+// a list to maintain and nothing to enforce (R-082 — no implication graph, so
+// every verb someone holds is a verb someone had to grant).
+
+func (s *Server) handleListServiceTokens(w http.ResponseWriter, r *http.Request) {
+	p := PrincipalFrom(r.Context())
+	if err := s.Authz.CheckInstall(r.Context(), p, authz.InstallUsersManage); err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	tokens, err := s.Tokens.ListAccounts(r.Context())
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	JSON(w, http.StatusOK, map[string]any{"tokens": tokens})
+}
+
+func (s *Server) handleCreateServiceToken(w http.ResponseWriter, r *http.Request) {
+	p := PrincipalFrom(r.Context())
+	if err := s.Authz.CheckInstall(r.Context(), p, authz.InstallUsersManage); err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	// The same rule as a delegated token, for the same reason: a stolen token
+	// that can mint tokens renews itself forever, and revoking the original
+	// achieves nothing.
+	if p.Kind == authz.KindToken {
+		Error(w, r, errs.New(errs.PermDenied, "A token cannot create another token.").
+			WithRemedy("Sign in to create one."))
+		return
+	}
+
+	var req struct {
+		Name        string `json:"name"`
+		ExpiresDays int    `json:"expires_days"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read."))
+		return
+	}
+	if req.Name == "" {
+		Error(w, r, errs.New(errs.ValidInvalid, "A service token needs a name.").
+			WithRemedy("Name it after what will use it, for example \"CI deploys\". The name is what appears in the audit log."))
+		return
+	}
+
+	var expires *time.Time
+	if req.ExpiresDays > 0 {
+		at := time.Now().UTC().AddDate(0, 0, req.ExpiresDays)
+		expires = &at
+	}
+
+	// R-061: a never-expires option exists, and host policy may forbid it. The
+	// clamp is here rather than in the caller, because the caller is the one
+	// being limited.
+	if expires == nil && s.PolicyStore != nil {
+		doc, err := s.PolicyStore.Load(r.Context())
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		if doc.MaxTokenLifetimeDays > 0 {
+			at := time.Now().UTC().AddDate(0, 0, doc.MaxTokenLifetimeDays)
+			expires = &at
+		}
+	}
+
+	issued, err := s.Tokens.Create(r.Context(), state.TokenAccount, req.Name, "", p.ID, expires)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	s.audit(r, audit.Event{
+		PrincipalKind: audit.PrincipalKind(p.Kind), PrincipalID: p.ID, OnBehalfOf: p.UserID,
+		Action: "token.create", TargetKind: "token", TargetID: issued.Token.ID,
+		Detail: map[string]any{"name": req.Name, "kind": state.TokenAccount},
+	})
+
+	// R-063, and R-060's consequence stated where it is acted on: this token is
+	// a principal that currently holds nothing. It reaches an app when somebody
+	// shares one with it.
+	JSON(w, http.StatusCreated, map[string]any{
+		"token":  issued.Token,
+		"secret": issued.Secret.Reveal(),
+		"note":   "This is the only time Pando will show this. Store it now.",
+	})
+}
+
 // handleRevokeToken revokes a token.
 //
 // Your own, or anyone's with install.users.manage — the same self-or-verb shape

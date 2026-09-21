@@ -5,9 +5,10 @@ Three kinds of document, and the distinction between the first two is load-beari
 | | Path | Authority | Churn |
 |---|---|---|---|
 | **Requirements** | [`requirements.md`](requirements.md) | What Pando *is*. 207 requirements, IDs `R-###`. | Slowly |
-| **Design** | [`design/`](design/) | How it is built. Nine documents, `00`–`08`. | Every sprint |
+| **Design** | [`design/`](design/) | How it is built. Ten documents, `00`–`09`. | Every sprint |
 | **Plan** | [`plan/`](plan/) | What to build next, in what order, and what is still unresolved. | Continuously |
 | **Traceability** | [`traceability/`](traceability/) | Generated. Which requirements are designed, planned, and proven. | On demand |
+| **Reference** | [`api.md`](api.md), [`cli.md`](cli.md), [`mcp.md`](mcp.md) | Generated from the code by `make reference`. What the binary actually serves. | Every change to a surface |
 
 **When design contradicts a requirement, the requirement wins** — or the requirement gets amended in
 the same change. Never a silent divergence.

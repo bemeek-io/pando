@@ -197,7 +197,7 @@ func TestR253_EverySeededAdapterHasAnImplementation(t *testing.T) {
 		Config: json.RawMessage(`{"key_path":` + quoted(t, t.TempDir()+"/secrets.key") + `}`),
 	}))
 
-	registry, err := registerAdapters(ctx, store, state.NewNotifications(db), logger)
+	registry, _, err := registerAdapters(ctx, db, store, state.NewNotifications(db), logger)
 	require.NoError(t, err)
 
 	require.Empty(t, logs.FilterMessage("skipping adapter of unknown kind").All(),
@@ -228,7 +228,7 @@ func TestADisabledAdapterIsNotRegistered(t *testing.T) {
 	                        WHERE category = $1`, string(adapterapi.CategoryBackup))
 	require.NoError(t, err)
 
-	registry, err := registerAdapters(ctx, store, state.NewNotifications(db), logger)
+	registry, _, err := registerAdapters(ctx, db, store, state.NewNotifications(db), logger)
 	require.NoError(t, err)
 
 	_, ok := registry.Default(adapterapi.CategoryBackup)
@@ -248,7 +248,7 @@ func TestAnUnknownKindIsSkippedRatherThanFatal(t *testing.T) {
 		Name: "Kubernetes", Enabled: true,
 	}))
 
-	registry, err := registerAdapters(ctx, store, state.NewNotifications(db), logger)
+	registry, _, err := registerAdapters(ctx, db, store, state.NewNotifications(db), logger)
 	require.NoError(t, err)
 
 	_, ok := registry.Get("rt_kubernetes")
@@ -270,7 +270,7 @@ func TestAnAdapterThatCannotBeConfiguredIsSkippedWithItsReason(t *testing.T) {
 		Name: "Broken", Enabled: true, Config: json.RawMessage(`{"path":""}`),
 	}))
 
-	registry, err := registerAdapters(ctx, store, state.NewNotifications(db), logger)
+	registry, _, err := registerAdapters(ctx, db, store, state.NewNotifications(db), logger)
 	require.NoError(t, err)
 
 	_, ok := registry.Get("bkp_broken")
@@ -315,7 +315,7 @@ func TestR097_TheTrialRunnerIsNilWhenNoRuntimeIsConfigured(t *testing.T) {
 	db := connected(t)
 	logger, _ := recorded()
 
-	registry, err := registerAdapters(ctx, state.NewAdapters(db), state.NewNotifications(db), logger)
+	registry, _, err := registerAdapters(ctx, db, state.NewAdapters(db), state.NewNotifications(db), logger)
 	require.NoError(t, err)
 	require.NotNil(t, runtimeForTrial(registry), "the seeded runtime supplies the trial")
 }
@@ -388,7 +388,7 @@ func TestTheReconcilerSeesOnlyTheAdaptersItResolves(t *testing.T) {
 	db := connected(t)
 	logger, _ := recorded()
 
-	registry, err := registerAdapters(ctx, state.NewAdapters(db), state.NewNotifications(db), logger)
+	registry, _, err := registerAdapters(ctx, db, state.NewAdapters(db), state.NewNotifications(db), logger)
 	require.NoError(t, err)
 
 	adapters := registryAdapters{registry}
@@ -438,7 +438,7 @@ func TestR251_TheBuildPlannerComesFromTheBuilderOrIsAbsent(t *testing.T) {
 	db := connected(t)
 	logger, _ := recorded()
 
-	registry, err := registerAdapters(ctx, state.NewAdapters(db), state.NewNotifications(db), logger)
+	registry, _, err := registerAdapters(ctx, db, state.NewAdapters(db), state.NewNotifications(db), logger)
 	require.NoError(t, err)
 	require.NotNil(t, buildPlanner(registry), "the seeded builder supplies one")
 }

@@ -11,13 +11,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/planner"
+	"github.com/bemeek-io/pando/internal/core/security"
 	"github.com/bemeek-io/pando/internal/core/source"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
@@ -71,6 +74,11 @@ type Runner struct {
 	// not something every Runner caller should be able to hand in a stub for.
 	secretStore *state.Secrets
 
+	// security scores what was built, before it is applied (R-312, R-314).
+	// Nil on an installation with no scanner, where nothing is scored and
+	// nothing is enforced.
+	security Security
+
 	// ProxyUpstream is where routing adapters must send traffic (R-023). It is
 	// Pando's proxy, always, and it is passed to every Ensure so that no adapter
 	// has to work it out.
@@ -112,6 +120,24 @@ func NewRunner(registry *api.Registry, p *planner.Planner, apps *state.Apps, dep
 	}
 }
 
+// WithSecurity enables the security score (R-310 – R-314).
+//
+// Optional in the same way WithServices is: a Runner without it deploys exactly
+// as before. An installation with no scanner configured has no scores and no
+// threshold to enforce, which is the shipped posture (R-317).
+func (r *Runner) WithSecurity(s Security) *Runner {
+	r.security = s
+	return r
+}
+
+// Security is what a deploy needs from the security service, narrowed to two
+// calls so the deploy path cannot reach for anything else.
+type Security interface {
+	Scan(ctx context.Context, req api.ScanRequest, principal audit.Event) (state.Scan, error)
+	Allows(ctx context.Context, appID, specID string) (security.Standing, error)
+	Configured() (string, bool)
+}
+
 // WithServices enables provisioned slots (R-131).
 //
 // Optional rather than a constructor argument because a Runner without it is
@@ -140,7 +166,7 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 		if e := errs.As(err); e != nil {
 			message = e.Message
 		}
-		fmt.Fprintf(sink, "\n!! %s failed: %s\n", step, message)
+		writeFailure(sink, step+" failed: "+message, err)
 		l.Warn("deployment failed", zap.String("step", step), zap.Error(err))
 		_ = r.deploys.Finish(ctx, dep.ID, state.DeployFailed, code, message)
 		return err
@@ -190,16 +216,26 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 			// The reason goes into the log the user is watching, not only into
 			// the server's own log. A build that fails without saying why is
 			// the failure mode R-105 exists to prevent.
-			fmt.Fprintf(sink, "\n!! %s\n", messageOf(err))
-			if detail := detailOf(err); detail != "" {
-				fmt.Fprintf(sink, "   %s\n", detail)
-			}
+			writeFailure(sink, messageOf(err), err)
 			fmt.Fprintf(sink, "   The running version of this app was not touched.\n")
 			_ = r.deploys.Finish(ctx, dep.ID, state.DeployFailed, string(errs.CodeOf(err)), messageOf(err))
 			l.Warn("build failed; app state unchanged (R-146)", zap.Error(err))
 			return err
 		}
 		image = built
+	}
+
+	// Step 10: scan what was built, and refuse to apply it if this
+	// installation's threshold says so (R-312, R-314).
+	//
+	// Here rather than before the build because the image is what there is to
+	// look at, and before `applying` because a refusal must leave the running
+	// app untouched — the same contract a failed build has (R-146).
+	if err := r.scan(ctx, dep, appSpec, image, checkout.Dir, sink); err != nil {
+		writeFailure(sink, messageOf(err), err)
+		fmt.Fprintf(sink, "   The running version of this app was not touched.\n")
+		_ = r.deploys.Finish(ctx, dep.ID, state.DeployFailed, string(errs.CodeOf(err)), messageOf(err))
+		return err
 	}
 
 	if err := r.deploys.SetStatus(ctx, dep.ID, state.DeployApplying); err != nil {
@@ -313,7 +349,10 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 	// restores a missing workload from the recorded image rather than
 	// rebuilding, and it detects a rotated secret (R-193) by comparing this
 	// fingerprint, because Observe returns no environment and never will.
-	if err := r.deploys.SetImageRef(ctx, dep.ID, image, primaryDigest(ctx, runtime, dep.AppID)); err != nil {
+	ran := workloadImages(ctx, runtime, appSpec, perWorkload, image, dep.AppID)
+	if err := r.deploys.SetImageRef(ctx, dep.ID,
+		firstNonEmpty(image, primaryImage(appSpec, perWorkload)),
+		primaryDigest(ctx, runtime, appSpec, dep.AppID), ran); err != nil {
 		return fail("commit", err)
 	}
 	if r.reconciles != nil {
@@ -325,6 +364,12 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 			EnvFingerprint(rev.Body, versions)); err != nil {
 			return fail("commit", err)
 		}
+	}
+	// What the app was doing when this finished, which is a different question
+	// from whether the deploy worked — and the one somebody reading a list of
+	// deploys is asking.
+	if err := r.deploys.SetResultState(ctx, dep.ID, newState); err != nil {
+		return err
 	}
 	if err := r.deploys.Finish(ctx, dep.ID, state.DeploySucceeded, "", ""); err != nil {
 		return err
@@ -476,8 +521,8 @@ func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Ch
 // for every app. That comparison needs the shape — workloads, images, ports,
 // mounts, volumes — and must never be a reason to decrypt a secret, so this
 // stops short of environment and R-193's fingerprint covers the rest.
-func BundlePlanShape(s *spec.AppSpec, image string) (api.BundlePlan, error) {
-	return bundlePlanFor(s, image, nil, nil, provisioned{}, false)
+func BundlePlanShape(s *spec.AppSpec, image string, perWorkload map[string]string) (api.BundlePlan, error) {
+	return bundlePlanFor(s, image, perWorkload, nil, provisioned{}, false)
 }
 
 func (r *Runner) bundlePlan(s *spec.AppSpec, image string, perWorkload map[string]string, secrets map[string]secret.Value, svcs provisioned) (api.BundlePlan, error) {
@@ -519,10 +564,16 @@ func bundlePlanFor(s *spec.AppSpec, image string, perWorkload map[string]string,
 			// disk shared with twenty others.
 			LogBytes: s.Retention.LogBytes,
 			// This workload's own build first, then the image the compose file
-			// named, then the app's single built image. A compose app has no
-			// app-wide image, so the order only ever resolves one of the first
-			// two for it.
-			Image:      firstNonEmpty(perWorkload[w.Name], w.Image, image),
+			// named, then the app's single built image — and that last one
+			// only when this workload is not built separately.
+			//
+			// Without the condition, a workload whose own image is not known
+			// here takes the app's. For a compose app that is the primary
+			// workload's image, so a reconciler plan built without the
+			// per-workload record replaced the application container with a
+			// second copy of the proxy. Empty is the honest answer: nothing
+			// starts a workload from an image Pando cannot name.
+			Image:      workloadImage(w, perWorkload, image),
 			Command:    w.Command,
 			Entrypoint: w.Entrypoint,
 			WorkingDir: w.WorkingDir,
@@ -539,6 +590,11 @@ func bundlePlanFor(s *spec.AppSpec, image string, perWorkload map[string]string,
 		}
 		for _, m := range w.Mounts {
 			wp.Mounts = append(wp.Mounts, api.MountPlan{VolumeID: m.VolumeID, Path: m.Path, ReadOnly: m.ReadOnly})
+		}
+		// Configuration carried in the spec (R-020): read once at detection,
+		// pinned to this revision, replayed on every start.
+		for _, f := range w.Files {
+			wp.Files = append(wp.Files, api.FilePlan{Path: f.Path, Content: f.Content, Mode: f.Mode})
 		}
 		for _, port := range w.Ports {
 			wp.Ports = append(wp.Ports, api.PortPlan{Number: port.Number, Protocol: port.Protocol})
@@ -582,6 +638,15 @@ func resolveEnv(s *spec.AppSpec, w spec.Workload, secrets map[string]secret.Valu
 	for _, e := range w.Env {
 		switch {
 		case e.Value != nil:
+			// A variable detection read out of `.env.example` and nobody
+			// filled in is a name, not a value. Setting it empty is a
+			// different thing from leaving it unset, and the difference
+			// decides what many apps do: `process.env.PORT || 3000` takes the
+			// default either way, `if "APP_BASE_URL" in os.environ` does not.
+			// An empty value somebody typed is kept — that is an answer.
+			if *e.Value == "" && e.Source == spec.EnvFromDetection {
+				continue
+			}
 			env[e.Key] = secret.New(*e.Value)
 
 		case e.SecretRef != nil:
@@ -708,6 +773,46 @@ func needsBuild(s *spec.AppSpec) bool {
 	return s.Source.Type != spec.SourceImage
 }
 
+// writeFailure puts a failure into the log the person is watching: the
+// headline, then why, then what to do.
+//
+// The build step always printed the cause; the steps after it did not, and an
+// adapter's message names only what it could not do. So a deploy that got all
+// the way to starting the app ended:
+//
+//	!! apply failed: Could not create "proxy".
+//
+// while the reason — a mount the daemon refused — sat in the server's log where
+// the person deploying cannot see it. An error nobody can act on is the failure
+// R-105 exists to prevent, and the last line of a deploy is the worst place for
+// one.
+func writeFailure(sink io.Writer, headline string, err error) {
+	fmt.Fprintf(sink, "\n!! %s\n", headline)
+
+	if detail := detailOf(err); detail != "" && !strings.Contains(headline, detail) {
+		fmt.Fprintf(sink, "   %s\n", detail)
+	}
+	if e := errs.As(err); e != nil && e.Remedy != "" {
+		fmt.Fprintf(sink, "   %s\n", e.Remedy)
+	}
+}
+
+// workloadImage is the image one workload runs.
+func workloadImage(w spec.Workload, perWorkload map[string]string, appImage string) string {
+	if built := perWorkload[w.Name]; built != "" {
+		return built
+	}
+	if w.Image != "" {
+		return w.Image
+	}
+	if w.Build != nil {
+		// Built separately, and this deployment does not know what came out of
+		// that build. The app-level image is a different workload's.
+		return ""
+	}
+	return appImage
+}
+
 // detailOf returns the underlying cause for the build log.
 //
 // Build failures are the one place an internal cause is worth showing: the
@@ -761,17 +866,63 @@ func short(commit string) string {
 // comparing against a running container later is what was running now. Empty on
 // any failure, which makes image drift undetectable rather than making every
 // workload look wrong.
-func primaryDigest(ctx context.Context, runtime api.RuntimeAdapter, appID string) string {
+func primaryDigest(ctx context.Context, runtime api.RuntimeAdapter, s *spec.AppSpec, appID string) string {
 	observed, err := runtime.Observe(ctx, api.BundleRef{BundleID: appID})
 	if err != nil {
 		return ""
 	}
+
+	// The primary workload's, where there is one. This used to take whichever
+	// running workload Observe listed first, which for a two-service app is a
+	// coin toss — and the digest is what "this workload is running the wrong
+	// image" is decided by, so getting it from a different workload makes the
+	// app permanently wrong in the reconciler's eyes.
+	primary, ok := s.PrimaryWorkload()
+	if ok {
+		for _, w := range observed.Workloads {
+			if w.Name == primary.Name && w.ImageDigest != "" {
+				return w.ImageDigest
+			}
+		}
+	}
+
 	for _, w := range observed.Workloads {
 		if w.Running && w.ImageDigest != "" {
 			return w.ImageDigest
 		}
 	}
 	return ""
+}
+
+// workloadImages records what each part of the app actually ran.
+//
+// The reference comes from the plan — what Pando asked for — and the digest
+// from the runtime, which is what a running container can be compared against.
+// One image is the whole story only for an app built from a single Dockerfile;
+// a compose app builds per service, and the reconciler needs to restore each
+// one with its own image rather than with the app's.
+func workloadImages(ctx context.Context, runtime api.RuntimeAdapter, s *spec.AppSpec,
+	perWorkload map[string]string, image, appID string,
+) map[string]state.WorkloadImage {
+	digests := map[string]string{}
+	if observed, err := runtime.Observe(ctx, api.BundleRef{BundleID: appID}); err == nil {
+		for _, w := range observed.Workloads {
+			digests[w.Name] = w.ImageDigest
+		}
+	}
+
+	out := map[string]state.WorkloadImage{}
+	for _, w := range s.Workloads {
+		ref := firstNonEmpty(perWorkload[w.Name], w.Image, image)
+		if ref == "" && digests[w.Name] == "" {
+			continue
+		}
+		out[w.Name] = state.WorkloadImage{Ref: ref, Digest: digests[w.Name]}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // recordVolumes writes the volume rows for a deploy, reading handles back from
@@ -802,4 +953,30 @@ func (r *Runner) recordVolumes(ctx context.Context, runtime api.RuntimeAdapter, 
 		})
 	}
 	return r.volumes.RecordFromRuntime(ctx, s.AppID, s.Runtime.AdapterRef, records)
+}
+
+// primaryImage is the image the app's primary workload runs.
+//
+// A compose app builds one image per service and leaves the spec's top-level
+// image empty, so "what is this app running" appears to have no single answer —
+// except that it does: the primary workload is the one the proxy sends traffic
+// to (R-030), and it is the one a scanner, a rollback and a person all mean.
+func primaryImage(s *spec.AppSpec, perWorkload map[string]string) string {
+	if s == nil {
+		return ""
+	}
+	if primary, ok := s.PrimaryWorkload(); ok {
+		if built, have := perWorkload[primary.Name]; have && built != "" {
+			return built
+		}
+		if primary.Image != "" {
+			return primary.Image
+		}
+	}
+	for _, w := range s.Workloads {
+		if built, have := perWorkload[w.Name]; have && built != "" {
+			return built
+		}
+	}
+	return ""
 }

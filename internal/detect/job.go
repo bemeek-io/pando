@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/core/screening"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/errs"
 	"github.com/bemeek-io/pando/internal/secret"
@@ -36,6 +37,60 @@ type Proposal struct {
 	// Commit is what was actually read. R-120: Ref is what the user asked for,
 	// Commit is what runs.
 	Commit string `json:"commit,omitempty"`
+
+	// Trial is what the trial run observed, minus the log, which TrialLog
+	// already carries.
+	//
+	// Kept on the proposal because the log is not the whole of what the trial
+	// established and two things need the rest of it. A screening pass has to
+	// know whether the app crashed, because that is what decides whether a
+	// dependency it found may be marked required (O-4's fallback, design 10
+	// §3.2). And "no trial ran" and "a trial ran and saw nothing" are different
+	// facts that an empty log reports identically.
+	Trial TrialObservation `json:"trial,omitzero"`
+
+	// Screening is what an AI adapter made of this proposal (R-331, design 10
+	// §5): which adapter, which model, what it read, what it changed and why,
+	// and what it asked for that Pando refused.
+	//
+	// On the proposal rather than only in the audit log, because the console
+	// renders it as a section of the review. R-334 calls for attribution, and
+	// attribution nobody can see is a record rather than attribution.
+	//
+	// Nil means no screening ran, which is the ordinary case for an install
+	// with no AI adapter configured — and not a degraded one (R-335).
+	Screening *screening.Outcome `json:"screening,omitempty"`
+}
+
+// TrialObservation is Trial without the log.
+type TrialObservation struct {
+	Ran            bool     `json:"ran,omitempty"`
+	Started        bool     `json:"started,omitempty"`
+	Crashed        bool     `json:"crashed,omitempty"`
+	ObservedPorts  []int    `json:"observed_ports,omitempty"`
+	ObservedWrites []string `json:"observed_writes,omitempty"`
+}
+
+// Observation is what survives onto the proposal.
+func (t Trial) Observation() TrialObservation {
+	return TrialObservation{
+		Ran:            t.Ran,
+		Started:        t.Started,
+		Crashed:        t.Crashed,
+		ObservedPorts:  t.ObservedPorts,
+		ObservedWrites: t.ObservedWrites,
+	}
+}
+
+// TrialSummary is the trial as an AI screener sees it (R-330, design 10 §2).
+func (p Proposal) TrialSummary() api.TrialSummary {
+	return api.TrialSummary{
+		Ran:            p.Trial.Ran,
+		Crashed:        p.Trial.Crashed,
+		ObservedPorts:  p.Trial.ObservedPorts,
+		ObservedWrites: p.Trial.ObservedWrites,
+		Log:            p.TrialLog,
+	}
 }
 
 // RegistryProbe and PublishedImage live in the adapter package, because a probe
@@ -128,6 +183,7 @@ func (j *Job) Run(ctx context.Context, appID string, src spec.Source, view api.S
 	trial := j.trial(ctx, draft)
 	draft, proposal.Questions = ApplyTrial(draft, proposal.Questions, trial)
 	proposal.TrialLog = trial.Log
+	proposal.Trial = trial.Observation()
 
 	// Step 11 — warnings. Path routing is read from the source rather than the
 	// trial, so it is attached here regardless of whether a trial happened.
@@ -148,13 +204,16 @@ func (j *Job) Run(ctx context.Context, appID string, src spec.Source, view api.S
 
 	// Step 12 — the status, recomputed. The trial may have answered the only
 	// outstanding question, which turns needs_answers into ready.
-	proposal.Status = statusFor(result.Winner, proposal.Questions)
+	proposal.Status = StatusFor(result.Winner, proposal.Questions)
 	proposal.Winner.Draft = draft
 	proposal.DraftSpec = j.assemble(appID, src, draft)
 	return proposal, nil
 }
 
-// statusFor recomputes detection status after the trial run.
+// StatusFor recomputes detection status after the trial run, and again
+// after a screening — an amendment can answer the last outstanding question,
+// and a status saying answers are needed while asking for none is one somebody
+// has to open the database to understand.
 //
 // Low confidence on its own no longer says needs_answers. The threshold exists
 // so that a shaky read is not presented as settled, and while a modest bid
@@ -168,7 +227,7 @@ func (j *Job) Run(ctx context.Context, appID string, src spec.Source, view api.S
 // the API says rather than to what it does: the console branches on running,
 // failed and blocked, and both the accept handler and the accept button gate on
 // unanswered questions.
-func statusFor(winner Candidate, questions []Question) string {
+func StatusFor(winner Candidate, questions []Question) string {
 	switch {
 	case winner.Strategy == StrategyUnknown:
 		return StatusNeedsAnswers
@@ -236,7 +295,8 @@ func (j *Job) checkRegistry(ctx context.Context, appID string, src spec.Source) 
 	trial := j.trial(ctx, draft)
 	draft, proposal.Questions = ApplyTrial(draft, proposal.Questions, trial)
 	proposal.TrialLog = trial.Log
-	proposal.Status = statusFor(candidate, proposal.Questions)
+	proposal.Trial = trial.Observation()
+	proposal.Status = StatusFor(candidate, proposal.Questions)
 	proposal.Winner.Draft = draft
 	proposal.DraftSpec = j.assemble(appID, src, draft)
 	return proposal, true

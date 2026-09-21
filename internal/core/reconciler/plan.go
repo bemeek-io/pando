@@ -6,6 +6,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/deploy"
 	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/bemeek-io/pando/internal/core/state"
 )
 
 // PlanShape builds what should be running, without resolving any secret.
@@ -17,8 +18,13 @@ import (
 //
 // Secrets are resolved only when there is something to apply, which is the
 // uncommon case.
-func PlanShape(s *spec.AppSpec, image string) api.BundlePlan {
-	plan, err := deploy.BundlePlanShape(s, image)
+func PlanShape(s *spec.AppSpec, image string, perWorkload map[string]state.WorkloadImage) api.BundlePlan {
+	refs := make(map[string]string, len(perWorkload))
+	for name, ran := range perWorkload {
+		refs[name] = ran.Ref
+	}
+
+	plan, err := deploy.BundlePlanShape(s, image, refs)
 	if err != nil {
 		return api.BundlePlan{}
 	}

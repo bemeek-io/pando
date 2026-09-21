@@ -6,6 +6,7 @@
 
 export { ContourMap } from './components/brand/ContourMap.jsx';
 export { Logo } from './components/brand/Logo.jsx';
+export { MapCollar } from './components/brand/MapCollar.jsx';
 
 export { CodeBlock } from './components/code/CodeBlock.jsx';
 export { InlineCode } from './components/code/InlineCode.jsx';

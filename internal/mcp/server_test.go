@@ -168,6 +168,7 @@ func TestR261_EveryToolIsOneEndpointAndIsDescribed(t *testing.T) {
 		"pando_list_apps", "pando_get_app", "pando_create_app",
 		"pando_get_detection", "pando_answer_detection", "pando_accept_proposal",
 		"pando_plan", "pando_deploy", "pando_get_logs", "pando_get_status",
+		"pando_stop_app", "pando_start_app", "pando_restart_app",
 	} {
 		require.True(t, names[want], "missing %s", want)
 	}
@@ -232,7 +233,16 @@ func TestEachToolMapsToItsEndpoint(t *testing.T) {
 		{"pando_plan", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/plan"},
 		{"pando_deploy", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/deployments"},
 		{"pando_get_logs", `{"app_id":"app_01HQ8"}`, "GET", "/apps/app_01HQ8/logs"},
+		// R-261: the console and the CLI can read one part of a multi-part
+		// app's logs, so an agent can too.
+		{"pando_get_logs", `{"app_id":"app_01HQ8","workload":"worker"}`, "GET", "/apps/app_01HQ8/logs?workload=worker"},
 		{"pando_get_status", `{"app_id":"app_01HQ8"}`, "GET", "/apps/app_01HQ8/status"},
+
+		// R-261: stopping an app without deleting it is a thing the API can
+		// do, so it is a thing every surface can do.
+		{"pando_stop_app", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/stop"},
+		{"pando_start_app", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/start"},
+		{"pando_restart_app", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/restart"},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
 			srv, s := newSession()

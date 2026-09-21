@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -15,6 +16,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
 	"github.com/bemeek-io/pando/internal/log"
@@ -383,13 +385,87 @@ func (s *Server) handleAppStatus(w http.ResponseWriter, r *http.Request) {
 					// presented as the app being broken.
 					body["observability"] = "unreachable"
 				} else {
-					body["workloads"] = observed.Workloads
+					body["workloads"] = workloadStatuses(rev.Body, observed)
 				}
 			}
 			body["revision"] = rev.Revision
 		}
 	}
 	JSON(w, http.StatusOK, body)
+}
+
+// WorkloadStatus is one part of an app, as it is right now.
+//
+// The adapter's own struct used to be serialized straight out, which put Go
+// field names on the wire — `Running`, `RestartCount` — in an API that is
+// snake_case everywhere else, and left the console reading a shape nothing
+// documented. It is the product (R-261), so it gets a type.
+type WorkloadStatus struct {
+	Name    string `json:"name"`
+	Primary bool   `json:"primary"`
+
+	Present bool `json:"present"`
+	Running bool `json:"running"`
+
+	// Restarting is the crash loop, which is the thing somebody looking at a
+	// degraded app most needs to see. A container that exits and is restarted
+	// by the runtime is "running" at almost every instant Pando looks at it.
+	Restarting   bool `json:"restarting"`
+	RestartCount int  `json:"restart_count"`
+
+	// Healthy is null when the workload declares no health check: no signal is
+	// not the same as unhealthy (R-221).
+	Healthy  *bool  `json:"healthy"`
+	ExitCode *int   `json:"exit_code,omitempty"`
+	Image    string `json:"image,omitempty"`
+
+	StartedAt *time.Time `json:"started_at,omitempty"`
+}
+
+// workloadStatuses pairs what the runtime sees with what the spec declares.
+func workloadStatuses(s *spec.AppSpec, observed api.ObservedBundle) []WorkloadStatus {
+	primary, _ := s.PrimaryWorkload()
+
+	found := make(map[string]api.ObservedWorkload, len(observed.Workloads))
+	for _, w := range observed.Workloads {
+		found[w.Name] = w
+	}
+
+	out := make([]WorkloadStatus, 0, len(observed.Workloads))
+	add := func(name string, w api.ObservedWorkload, declared bool) {
+		status := WorkloadStatus{
+			Name:         name,
+			Primary:      declared && name == primary.Name,
+			Present:      w.Present,
+			Running:      w.Running,
+			Restarting:   w.Restarting,
+			RestartCount: w.RestartCount,
+			Healthy:      w.Healthy,
+			ExitCode:     w.ExitCode,
+			Image:        w.ImageDigest,
+		}
+		if !w.StartedAt.IsZero() {
+			at := w.StartedAt
+			status.StartedAt = &at
+		}
+		out = append(out, status)
+	}
+
+	// The spec's order first, so the app's own parts read in the order its
+	// author wrote them, then anything else the runtime is running for this
+	// app — a provisioned database, which is part of what is running and would
+	// otherwise be invisible.
+	for _, w := range s.Workloads {
+		add(w.Name, found[w.Name], true)
+		delete(found, w.Name)
+	}
+	for _, w := range observed.Workloads {
+		if _, still := found[w.Name]; still {
+			add(w.Name, w, false)
+			delete(found, w.Name)
+		}
+	}
+	return out
 }
 
 func (s *Server) handleAppLogs(w http.ResponseWriter, r *http.Request) {

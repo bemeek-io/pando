@@ -228,6 +228,87 @@ func TestOnePersonsTokensAreNotAnothersToSeeOrRevoke(t *testing.T) {
 	require.Equal(t, http.StatusOK, i.do(admin, http.MethodGet, "/tokens", nil).Code)
 }
 
+// TestR060_AServiceTokenIsItsOwnPrincipalAndTakesAnInstallVerbToMint asserts the
+// line between the two kinds of token.
+//
+// A delegated token is self-service because it holds what its owner holds
+// (R-058). An account token is a new subject on the installation — its own
+// principal, in grants and in the audit log under its own name, outliving
+// whoever created it (R-060) — so minting one is administration.
+func TestR060_AServiceTokenIsItsOwnPrincipalAndTakesAnInstallVerbToMint(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+	ordinary := i.user("ordinary")
+
+	// Self-service stops at delegated tokens.
+	denied := i.do(ordinary, http.MethodPost, "/tokens/service", map[string]any{"name": "CI deploys"})
+	require.Equal(t, http.StatusForbidden, denied.Code, denied.String())
+	require.Equal(t, http.StatusForbidden, i.do(ordinary, http.MethodGet, "/tokens/service", nil).Code)
+
+	created := i.do(admin, http.MethodPost, "/tokens/service", map[string]any{"name": "CI deploys"})
+	require.Equal(t, http.StatusCreated, created.Code, created.String())
+
+	var issued struct {
+		Token struct {
+			ID          string `json:"id"`
+			Kind        string `json:"kind"`
+			OwnerUserID string `json:"owner_user_id"`
+		} `json:"token"`
+		Secret string `json:"secret"`
+	}
+	created.JSON(t, &issued)
+	require.Equal(t, "account", issued.Token.Kind)
+	require.Empty(t, issued.Token.OwnerUserID, "R-060: an account token acts as itself")
+	require.NotEmpty(t, issued.Secret)
+
+	// It authenticates as itself rather than as the administrator who made it.
+	agent := &session{token: issued.Secret}
+	me := i.do(agent, http.MethodGet, "/me", nil)
+	require.Equal(t, http.StatusOK, me.Code, me.String())
+
+	var who map[string]any
+	me.JSON(t, &who)
+	require.Equal(t, issued.Token.ID, who["id"])
+	require.Empty(t, who["user_id"], "an account token is nobody's delegate")
+
+	// And it holds nothing until somebody shares something with it: the
+	// administrator's power did not come with it.
+	apps := i.do(agent, http.MethodGet, "/apps", nil)
+	require.Equal(t, http.StatusOK, apps.Code, apps.String())
+	require.NotContains(t, apps.String(), "\"id\":\"app_", "a new service token administers nothing")
+
+	listed := i.do(admin, http.MethodGet, "/tokens/service", nil)
+	require.Equal(t, http.StatusOK, listed.Code)
+	require.Contains(t, listed.String(), issued.Token.ID)
+	require.NotContains(t, listed.String(), issued.Secret, "R-194: the secret never comes back out")
+
+	// A service token is not in anybody's personal list, including its
+	// creator's — it is not theirs, it is the installation's.
+	mine := i.do(admin, http.MethodGet, "/tokens", nil)
+	require.NotContains(t, mine.String(), issued.Token.ID)
+}
+
+// A token that can mint tokens renews itself forever, and revoking the original
+// achieves nothing. The rule holds for the kind that takes a verb, where a
+// stolen token holding install.users.manage would otherwise be permanent.
+func TestR060_AServiceTokenCannotMintAnotherToken(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+
+	created := i.do(admin, http.MethodPost, "/tokens", map[string]any{"name": "admin laptop"})
+	var issued struct {
+		Secret string `json:"secret"`
+	}
+	created.JSON(t, &issued)
+	require.NotEmpty(t, issued.Secret)
+
+	// This token carries the administrator's install verbs, and still cannot.
+	agent := &session{token: issued.Secret}
+	refused := i.do(agent, http.MethodPost, "/tokens/service", map[string]any{"name": "second"})
+	require.Equal(t, http.StatusForbidden, refused.Code, refused.String())
+	require.Contains(t, refused.String(), "cannot create another token")
+}
+
 // Every response carries the request ID, so a user reporting a failure hands
 // over one string that finds the log line.
 func TestEveryAPIResponseCarriesARequestID(t *testing.T) {
