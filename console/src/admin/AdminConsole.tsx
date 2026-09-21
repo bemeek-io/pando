@@ -41,6 +41,7 @@ import { relative } from '../ui/time';
 import { ScoreBadge } from '../ui/ScoreBadge';
 import { Terminal } from './Terminal';
 import { Sheet } from '../ui/Sheet';
+import { TopoBackground } from '../ui/TopoBackground';
 
 export function AdminConsole({
   route,
@@ -129,7 +130,10 @@ export function AdminConsole({
   items.push({ value: 'api', label: 'API and tools' });
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--paper)' }}>
+    // isolation makes this the stacking context, so the terrain's negative
+    // z-index puts it above the paper and below everything else.
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--paper)', isolation: 'isolate' }}>
+      <TopoBackground />
       <SidebarNav
         value={section}
         // One navigation, not two. setSection already drops the selected app,

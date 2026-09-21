@@ -21,6 +21,7 @@ import { api } from '@api/client';
 import type { App } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { Sheet } from '../ui/Sheet';
+import { TopoBackground } from '../ui/TopoBackground';
 
 export function Launcher({
   onAdmin,
@@ -36,7 +37,8 @@ export function Launcher({
   });
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--paper)' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--paper)', isolation: 'isolate' }}>
+      <TopoBackground />
       <header
         style={{
           display: 'flex',

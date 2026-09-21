@@ -88,9 +88,7 @@ them and the spec's rules extend cleanly to them — each is noted in its `.d.ts
   the contour is terrain and is confined to four places, while the collar is the
   sheet it prints on, and a page can be a sheet without being terrain. `ContourMap
   collar` composes it, so the tick geometry has one definition rather than one per
-  surface that wants to look like a map. **Added in phase 8**, when the console
-  turned out to carry no trace of the brand's one bold idea and the honest fix was
-  not more contours — it was the other half of the language.
+  surface that wants to look like a map. **Added in phase 8.**
 
 ## Content fundamentals
 
