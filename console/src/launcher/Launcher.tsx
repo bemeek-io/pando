@@ -31,6 +31,8 @@ import type { App, Section } from '@api/types.gen';
 import { statusLabel } from '../ui/status';
 import { Sheet } from '../ui/Sheet';
 import { Menu, MenuDivider, MenuItem } from '../ui/Menu';
+import { NoMatches, SearchField } from '../ui/SearchField';
+import { matches } from '../ui/search';
 import { TopoBackground, TopoTile } from '../ui/TopoBackground';
 
 type MyApps = { apps: App[] | null; sections: Section[] | null };
@@ -39,6 +41,8 @@ const KEY = ['me', 'apps'];
 
 /** What a dragged tile carries: its app's ID, under a type only tiles use. */
 const DRAG_TYPE = 'application/x-pando-app';
+
+const SEARCH_ID = 'launcher-search';
 
 export function Launcher({
   onAdmin,
@@ -77,6 +81,29 @@ export function Launcher({
   const pinned = all.filter((a) => a.favorite);
   const inSection = (id: string) => all.filter((a) => !a.favorite && a.section_id === id);
   const rest = all.filter((a) => !a.favorite && !(a.section_id && known.has(a.section_id)));
+
+  // Search narrows every group at once, by name. A group it finds nothing in
+  // is hidden, and a collapsed one is opened — a match folded out of sight is
+  // a match not found.
+  const [query, setQuery] = useState('');
+  const searching = query.trim() !== '';
+  const shown = (app: App) => matches(query, app.name, app.slug);
+  const shownPinned = pinned.filter(shown);
+  const shownRest = rest.filter(shown);
+
+  // "/" jumps to the search, as it does on most sites with one, unless focus is
+  // already in something that takes typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement | null)?.isContentEditable) return;
+      e.preventDefault();
+      document.getElementById(SEARCH_ID)?.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   // The app being dragged, if any. While there is one, Your apps shows even
   // when empty, so there is somewhere to drag an app out of every section —
@@ -125,6 +152,7 @@ export function Launcher({
         }}
       >
         <Logo size={20} />
+        <SearchField id={SEARCH_ID} value={query} onChange={setQuery} placeholder="Search apps" width="40ch" />
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
           {onAdmin && (
             <button
@@ -151,20 +179,23 @@ export function Launcher({
         {/* Only when there is something in it: an empty "Favorites" heading on
             every launcher would be a section explaining a feature rather than
             showing anything. */}
-        {pinned.length > 0 && (
+        {shownPinned.length > 0 && (
           <Group
             id="favorites"
             title="Favorites"
             collapsed={collapsed}
             onToggle={toggleCollapsed}
+            open={searching}
             onDropApp={dropInto('favorites')}
           >
-            <Grid>{pinned.map(tile)}</Grid>
+            <Grid>{shownPinned.map(tile)}</Grid>
           </Group>
         )}
 
         {sections.map((section) => {
-          const filed = inSection(section.id);
+          const filed = inSection(section.id).filter(shown);
+          // A search hides every section it finds nothing in, empty ones too.
+          if (searching && filed.length === 0) return null;
           return (
             <Group
               key={section.id}
@@ -172,6 +203,7 @@ export function Launcher({
               title={section.name}
               collapsed={collapsed}
               onToggle={toggleCollapsed}
+              open={searching}
               section={section}
               arrange={arrange}
               onDropApp={dropInto(section.id)}
@@ -187,12 +219,13 @@ export function Launcher({
 
         {/* Hidden once every app has somewhere else to be, rather than saying
             there is nothing shared with you directly under the apps that were. */}
-        {(rest.length > 0 || all.length === 0 || dragging) && (
+        {(shownRest.length > 0 || (!searching && (all.length === 0 || dragging))) && (
           <Group
             id="unsorted"
             title="Your apps"
             collapsed={collapsed}
             onToggle={toggleCollapsed}
+            open={searching}
             onDropApp={dropInto('unsorted')}
           >
             {apps.isPending && <Quiet>Loading your apps.</Quiet>}
@@ -208,7 +241,7 @@ export function Launcher({
               </EmptyState>
             )}
 
-            {rest.length > 0 && <Grid>{rest.map(tile)}</Grid>}
+            {shownRest.length > 0 && <Grid>{shownRest.map(tile)}</Grid>}
 
             {/* Only while dragging: every app is elsewhere, and this is where
                 one goes to be in no section at all. */}
@@ -216,7 +249,13 @@ export function Launcher({
           </Group>
         )}
 
-        {apps.data && all.length > 0 && <NewSection arrange={arrange} />}
+        {searching && !all.some(shown) && (
+          <div style={{ padding: 'var(--space-6) var(--console-padding)' }}>
+            <NoMatches what="apps" query={query} />
+          </div>
+        )}
+
+        {apps.data && all.length > 0 && !searching && <NewSection arrange={arrange} />}
       </main>
     </div>
   );
@@ -336,12 +375,15 @@ function Group({
   section,
   arrange,
   onDropApp,
+  open,
   children,
 }: {
   id: string;
   title: string;
   collapsed: Set<string>;
   onToggle: (id: string) => void;
+  /** Shown open whatever was folded — while searching. */
+  open?: boolean;
   /** Set for a person's own section, which can be renamed and deleted. */
   section?: Section;
   arrange?: Arrange;
@@ -349,7 +391,7 @@ function Group({
   onDropApp?: (appID: string) => void;
   children: React.ReactNode;
 }) {
-  const closed = collapsed.has(id);
+  const closed = !open && collapsed.has(id);
   const [renaming, setRenaming] = useState<string | null>(null);
 
   // Counted, not a flag: dragging across a tile inside the group fires a

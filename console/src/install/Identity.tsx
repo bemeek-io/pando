@@ -12,6 +12,8 @@ import { Badge, Banner, Button, Checkbox, Dialog, Input, Select, Table, Tag } fr
 
 import { api, RequestFailed } from '@api/client';
 import { Quiet, Screen, messageOf } from './Accounts';
+import { NoMatches, SearchField } from '../ui/SearchField';
+import { matches } from '../ui/search';
 
 interface Group {
   id: string;
@@ -41,11 +43,17 @@ interface Account {
 }
 
 export function Identity({ canEdit }: { canEdit: boolean }) {
+  // One search for both lists: they are one screen, and someone looking for
+  // "engineering" should not have to know first whether it is a group or a role.
+  const [query, setQuery] = useState('');
   return (
-    <Screen heading="Groups and roles">
+    <Screen
+      heading="Groups and roles"
+      action={<SearchField value={query} onChange={setQuery} placeholder="Search groups and roles" />}
+    >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-7)' }}>
-        <Groups canEdit={canEdit} />
-        <Roles canEdit={canEdit} />
+        <Groups canEdit={canEdit} query={query} />
+        <Roles canEdit={canEdit} query={query} />
       </div>
     </Screen>
   );
@@ -53,7 +61,7 @@ export function Identity({ canEdit }: { canEdit: boolean }) {
 
 // --- groups ----------------------------------------------------------------
 
-function Groups({ canEdit }: { canEdit: boolean }) {
+function Groups({ canEdit, query }: { canEdit: boolean; query: string }) {
   const [editing, setEditing] = useState<Group | 'new' | null>(null);
   const [deleting, setDeleting] = useState<Group | null>(null);
 
@@ -62,7 +70,8 @@ function Groups({ canEdit }: { canEdit: boolean }) {
     queryFn: () => api.get<{ groups: Group[] | null }>('/groups'),
   });
 
-  const rows = groups.data?.groups ?? [];
+  const all = groups.data?.groups ?? [];
+  const rows = all.filter((g) => matches(query, g.name, g.source ?? 'Pando'));
 
   return (
     <section>
@@ -127,7 +136,13 @@ function Groups({ canEdit }: { canEdit: boolean }) {
             },
           ]}
           rows={rows}
-          empty={<Quiet>No groups yet. Apps can still be shared with one person at a time.</Quiet>}
+          empty={
+            query.trim() && all.length > 0 ? (
+              <NoMatches what="groups" query={query} />
+            ) : (
+              <Quiet>No groups yet. Apps can still be shared with one person at a time.</Quiet>
+            )
+          }
         />
       </div>
 
@@ -214,7 +229,7 @@ function EditGroup({ group, onClose }: { group: Group | 'new'; onClose: () => vo
 
 // --- roles -----------------------------------------------------------------
 
-function Roles({ canEdit }: { canEdit: boolean }) {
+function Roles({ canEdit, query }: { canEdit: boolean; query: string }) {
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<Role | null>(null);
 
@@ -226,7 +241,17 @@ function Roles({ canEdit }: { canEdit: boolean }) {
     queryFn: () => api.get<{ roles: Role[] | null }>('/roles?scope=all'),
   });
 
-  const rows = roles.data?.roles ?? [];
+  // By name, by what it applies to, and by any permission it holds — so
+  // "secrets" finds every role that can touch them.
+  const rows = (roles.data?.roles ?? []).filter((r) =>
+    matches(
+      query,
+      r.name,
+      r.scope === 'install' ? 'whole installation' : 'one app',
+      r.builtin ? 'Pando' : 'This installation',
+      ...r.verbs,
+    ),
+  );
 
   return (
     <section>
@@ -305,6 +330,7 @@ function Roles({ canEdit }: { canEdit: boolean }) {
             },
           ]}
           rows={rows}
+          empty={query.trim() ? <NoMatches what="roles" query={query} /> : undefined}
         />
       </div>
 

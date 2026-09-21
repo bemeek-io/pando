@@ -41,6 +41,8 @@ import { ScoreBadge } from '../ui/ScoreBadge';
 import { Terminal } from './Terminal';
 import { Sheet } from '../ui/Sheet';
 import { TopoBackground } from '../ui/TopoBackground';
+import { NoMatches, SearchField } from '../ui/SearchField';
+import { matches } from '../ui/search';
 
 export function AdminConsole({
   route,
@@ -223,6 +225,11 @@ function AppsList({
   onAdded: (app: App) => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState('');
+
+  // By name, address slug, ID and status — the ID because it is what the CLI
+  // and a log line give somebody to go looking for.
+  const shown = rows.filter((a) => matches(query, a.name, a.slug, a.id, statusLabel(a.state)));
 
   // The page is not capped — a table's rows and rules run to the edge of the
   // window, which is what a wide display should look like. Its content is: the
@@ -238,9 +245,12 @@ function AppsList({
       <Sheet
         heading="Apps"
         action={
-          <Button variant="primary" onClick={() => setAdding(true)}>
-            Add app
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <Button variant="primary" onClick={() => setAdding(true)}>
+              Add app
+            </Button>
+            {rows.length > 0 && <SearchField value={query} onChange={setQuery} placeholder="Search apps" />}
+          </div>
         }
       >
         <Table
@@ -249,6 +259,9 @@ function AppsList({
           // headers over nothing. R-002 is about the tenth app; the first one
           // is what makes the install anything at all.
           empty={
+            rows.length > 0 ? (
+              <NoMatches what="apps" query={query} />
+            ) : (
             <EmptyState
               heading="Add your first app"
               action={
@@ -259,6 +272,7 @@ function AppsList({
             >
               Point Pando at a repository and it works out how to build and run it.
             </EmptyState>
+            )
           }
           columns={[
             { key: 'name', header: 'Name', width: 'minmax(0,40ch)' },
@@ -293,7 +307,7 @@ function AppsList({
               ),
             },
           ]}
-          rows={rows}
+          rows={shown}
         />
       </Sheet>
 

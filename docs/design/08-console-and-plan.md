@@ -68,6 +68,15 @@ The design system has no menu component; `ui/Menu.tsx` is one built from its pop
 (paper-raised, 1px rule, the one popover shadow, 6px corners), with the arrow keys, Escape and
 focus return. It should move into the design project.
 
+**[D] Search.** The launcher has a search field in its header ("/" focuses it), and the admin
+console has one beside the heading of Apps, Accounts, Groups and roles, and Policy. Each filters the
+list the page already has, in the browser: one installation's lists are small (R-015), the API
+already returns them whole, so nothing here is a capability the API lacks (R-261). Matching is
+case-insensitive and needs every word somewhere in the row (`ui/search.ts`). The launcher hides
+groups with no match and opens collapsed ones while searching. Policy searches the rendered text of
+each section — headings, notes, labels, descriptions, options — rather than a keyword list kept
+beside it that would drift the first time a setting was added. Escape clears any of them.
+
 **[D] Settings.** The signed-in person's own settings — theme and signing out — are a page of their
 own at `/admin/settings`, opened by a gear in the launcher header and in the admin sidebar header,
 with a back arrow to wherever it was opened from. Not a section of the admin console: nothing on it

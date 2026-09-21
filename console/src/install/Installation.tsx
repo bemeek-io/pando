@@ -5,12 +5,14 @@
 // no implication graph between verbs (R-082), so a sidebar that assumed one
 // would offer a screen whose every request comes back 403.
 
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banner, Button, EmptyState, Input, Select, StatusIndicator, Switch, Table, Tag } from '@design';
 
 import { api } from '@api/client';
 import { Quiet, Screen, messageOf } from './Accounts';
+import { NoMatches, SearchField } from '../ui/SearchField';
+import { matches } from '../ui/search';
 
 interface AdapterRow {
   ref: string;
@@ -114,6 +116,15 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
   const queries = useQueryClient();
   const [draft, setDraft] = useState<PolicyDoc | null>(null);
 
+  // Search over the settings themselves. Each section is shown when anything
+  // in it matches — its heading, its note, a label, a description, an option —
+  // read from what is on the screen rather than from a list of keywords kept
+  // beside it, which would be a second description of the page that nobody
+  // remembers to update when a setting is added.
+  const [query, setQuery] = useState('');
+  const sectionsRef = useRef<HTMLDivElement>(null);
+  const [nothingMatches, setNothingMatches] = useState(false);
+
   const policy = useQuery({
     queryKey: ['policy'],
     queryFn: () => api.get<PolicyDoc>('/policy'),
@@ -142,6 +153,20 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
   });
 
   const current = draft ?? policy.data ?? {};
+
+  useLayoutEffect(() => {
+    const sections = Array.from(sectionsRef.current?.querySelectorAll<HTMLElement>('section') ?? []);
+    let shown = 0;
+    for (const el of sections) {
+      const match = matches(query, el.textContent ?? '');
+      // Inline, because PolicySection's own inline display: flex outranks the
+      // hidden attribute. Set back to flex, not cleared: React only rewrites a
+      // style it sees change, so a cleared one would stay cleared.
+      el.style.display = match ? 'flex' : 'none';
+      if (match) shown += 1;
+    }
+    setNothingMatches(sections.length > 0 && shown === 0);
+  });
   const edit = (patch: Partial<PolicyDoc>) => {
     // A stale answer is worse than no answer: it says "nothing breaks" about a
     // policy that is no longer the one on screen.
@@ -161,7 +186,8 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
     <Screen
       heading="Policy"
       action={
-        canEdit && draft ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+        {canEdit && draft && (
           <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
             <Button variant="ghost" onClick={() => { setDraft(null); setPreview(null); }}>
               Discard
@@ -177,7 +203,9 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
               {save.isPending ? 'Saving' : 'Save policy'}
             </Button>
           </div>
-        ) : undefined
+        )}
+          <SearchField value={query} onChange={setQuery} placeholder="Search policy" />
+        </div>
       }
     >
       {/* O-10, stated where the decision is made rather than in a tooltip.
@@ -234,7 +262,14 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
         </div>
       )}
 
+      {nothingMatches && (
+        <div style={{ marginTop: 'var(--space-6)' }}>
+          <NoMatches what="settings" query={query} />
+        </div>
+      )}
+
       <div
+        ref={sectionsRef}
         style={{
           display: 'flex',
           flexDirection: 'column',

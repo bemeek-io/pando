@@ -17,6 +17,8 @@ import { Button, Dialog, Input, Select, StatusIndicator, Table, Tag } from '@des
 import { api, RequestFailed } from '@api/client';
 import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
 import { Sheet } from '../ui/Sheet';
+import { SearchField, NoMatches } from '../ui/SearchField';
+import { matches } from '../ui/search';
 
 interface Account {
   id: string;
@@ -39,6 +41,7 @@ export function Accounts() {
   const manage = useInstallVerb(InstallVerb.UsersManage);
   const me = usePrincipal();
   const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState('');
 
   const accounts = useQuery({
     queryKey: ['users'],
@@ -49,17 +52,32 @@ export function Accounts() {
     queryFn: () => api.get<{ roles: Role[] }>('/roles'),
   });
 
-  const rows = accounts.data?.users ?? [];
+  const all = accounts.data?.users ?? [];
+  // By anything the table shows: username, name, email, status and role.
+  const roleName = (id?: string) => roles.data?.roles.find((r) => r.id === id)?.name;
+  const rows = all.filter((a) =>
+    matches(
+      query,
+      a.external_id,
+      a.display_name,
+      a.email,
+      a.status === 'active' ? 'active' : 'suspended',
+      roleName(a.install_role_id),
+    ),
+  );
 
   return (
     <Screen
       heading="Accounts"
       action={
-        manage ? (
-          <Button variant="primary" onClick={() => setAdding(true)}>
-            Add account
-          </Button>
-        ) : undefined
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          {manage && (
+            <Button variant="primary" onClick={() => setAdding(true)}>
+              Add account
+            </Button>
+          )}
+          {all.length > 0 && <SearchField value={query} onChange={setQuery} placeholder="Search accounts" />}
+        </div>
       }
     >
       {accounts.isError && <Quiet>{messageOf(accounts.error)}</Quiet>}
@@ -119,6 +137,7 @@ export function Accounts() {
           },
         ]}
         rows={rows}
+        empty={query.trim() ? <NoMatches what="accounts" query={query} /> : undefined}
       />
 
       {adding && <AddAccount onClose={() => setAdding(false)} />}
