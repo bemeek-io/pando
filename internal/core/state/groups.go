@@ -239,10 +239,13 @@ func scopeWord(scope string) string {
 	return "to a single app"
 }
 
-// List returns every role, of either scope.
+// List returns every role, of either scope: installation roles first, Pando's
+// before the installation's own, and within those the broadest first — so the
+// built-ins read administrator, creator, then owner, operator, viewer.
 func (r *Roles) List(ctx context.Context) ([]RoleRow, error) {
-	rows, err := r.db.Query(ctx,
-		`SELECT id, name, builtin, scope, verbs FROM roles ORDER BY scope, builtin DESC, name`)
+	rows, err := r.db.Query(ctx, `
+		SELECT id, name, builtin, scope, verbs FROM roles
+		ORDER BY scope DESC, builtin DESC, cardinality(verbs) DESC, name`)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not read the roles.", err)
 	}

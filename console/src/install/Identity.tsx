@@ -219,8 +219,11 @@ function Roles({ canEdit }: { canEdit: boolean }) {
   const [deleting, setDeleting] = useState<Role | null>(null);
 
   const roles = useQuery({
-    queryKey: ['roles'],
-    queryFn: () => api.get<{ roles: Role[] | null }>('/roles'),
+    // Both scopes. Without it this listed only the installation roles, and the
+    // app roles — three of Pando's five, and any made here — were not on the
+    // screen that says what every role is.
+    queryKey: ['roles', 'all'],
+    queryFn: () => api.get<{ roles: Role[] | null }>('/roles?scope=all'),
   });
 
   const rows = roles.data?.roles ?? [];

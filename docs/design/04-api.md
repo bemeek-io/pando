@@ -240,7 +240,7 @@ GET  /api/v1/policy                       install.view
 PUT  /api/v1/policy                       R-274; see O-10; install.policy.manage
 POST /api/v1/policy:preview               what this policy would block, unsaved; install.policy.manage
 GET  /api/v1/audit                        filterable; install.audit.read
-GET  /api/v1/roles                        install-scoped roles (R-082); install.view
+GET  /api/v1/roles                        ?scope=install (default) | app | all (R-082); install.view
 GET  /api/v1/backups
 POST /api/v1/backups                      trigger; kind = rolling | dr_bundle
 POST /api/v1/apps/{id}/restore            put one app's data back (R-206); app.deploy

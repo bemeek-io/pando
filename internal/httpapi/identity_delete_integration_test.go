@@ -122,3 +122,38 @@ func TestR078_DeletingAGroupTakesWhatWasSharedWithIt(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, i.do(admin, http.MethodDelete, "/groups/"+group.ID, nil).Code)
 }
+
+// TestR081_EveryBuiltInRoleIsListed asserts the list of every role has all
+// five of Pando's: the screen that says what each role is showed two, because
+// it asked only for the ones granted across the installation.
+func TestR081_EveryBuiltInRoleIsListed(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+	i.customRole(admin, "log reader", "app", "app.view", "app.logs.read")
+
+	list := func(scope string) []string {
+		var out struct {
+			Roles []struct {
+				ID      string `json:"id"`
+				Builtin bool   `json:"builtin"`
+			} `json:"roles"`
+		}
+		got := i.do(admin, http.MethodGet, "/roles"+scope, nil)
+		require.Equal(t, http.StatusOK, got.Code, got.String())
+		got.JSON(t, &out)
+		ids := []string{}
+		for _, r := range out.Roles {
+			if r.Builtin {
+				ids = append(ids, r.ID)
+			}
+		}
+		return ids
+	}
+
+	require.Equal(t,
+		[]string{"role_administrator", "role_creator", "role_owner", "role_operator", "role_viewer"},
+		list("?scope=all"), "installation roles first, broadest first")
+	require.Equal(t, []string{"role_administrator", "role_creator"}, list(""), "the default is unchanged")
+	require.Equal(t, []string{"role_owner", "role_operator", "role_viewer"}, list("?scope=app"))
+	require.Equal(t, http.StatusBadRequest, i.do(admin, http.MethodGet, "/roles?scope=everything", nil).Code)
+}

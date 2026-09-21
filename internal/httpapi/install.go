@@ -11,6 +11,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
+	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
 )
 
@@ -118,12 +119,38 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, map[string]any{"users": out})
 }
 
-// handleListRoles returns the roles that can be granted across the installation.
+// handleListRoles returns roles, read from the database rather than the Go
+// catalog so a custom role (R-082) appears the moment it exists.
 //
-// Read from the database rather than from the Go catalog, so a custom
-// install-scoped role (R-082) appears here the moment it exists.
+// By default the ones that can be granted across the installation, which is
+// what giving someone an installation role needs. `scope=app` gives the roles
+// granted on one app, and `scope=all` both — the list of every role there is,
+// which the Groups and roles screen showed as two of Pando's five because it
+// only ever asked for the first kind.
 func (s *Server) handleListRoles(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireInstall(w, r, authz.InstallView); !ok {
+		return
+	}
+
+	switch scope := r.URL.Query().Get("scope"); scope {
+	case "", "install":
+	case "app", "all":
+		rows, err := s.Roles.List(r.Context())
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		out := make([]state.RoleRow, 0, len(rows))
+		for _, row := range rows {
+			if scope == "all" || row.Scope == scope {
+				out = append(out, row)
+			}
+		}
+		JSON(w, http.StatusOK, map[string]any{"roles": out})
+		return
+	default:
+		Error(w, r, errs.Newf(errs.ValidInvalid, "%q is not a role scope.", scope).
+			WithRemedy("Use install, app or all."))
 		return
 	}
 
