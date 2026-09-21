@@ -13,7 +13,7 @@
 // so the list is the whole mechanism and has to be right.
 
 import { useQuery } from '@tanstack/react-query';
-import { Card, EmptyState, Logo, StatusIndicator } from '@design';
+import { Card, EmptyState, Icon, IconButton, Logo, StatusIndicator } from '@design';
 
 
 import { api } from '@api/client';
@@ -24,12 +24,9 @@ import { TopoBackground } from '../ui/TopoBackground';
 
 export function Launcher({
   onAdmin,
-  onReference,
   onSettings,
 }: {
   onAdmin?: () => void;
-  /** The API screen, which everyone can reach (R-261, R-262). */
-  onReference?: () => void;
   /** Theme and signing out, which everyone can reach. */
   onSettings: () => void;
 }) {
@@ -52,21 +49,6 @@ export function Launcher({
       >
         <Logo size={20} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-        {onReference && (
-          <button
-            onClick={onReference}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              padding: 0,
-              cursor: 'pointer',
-              font: 'var(--type-body-ui)',
-              color: 'var(--ink-secondary)',
-            }}
-          >
-            API and tools
-          </button>
-        )}
         {onAdmin && (
           <button
             onClick={onAdmin}
@@ -82,19 +64,9 @@ export function Launcher({
             Admin
           </button>
         )}
-        <button
-          onClick={onSettings}
-          style={{
-            border: 'none',
-            background: 'transparent',
-            padding: 0,
-            cursor: 'pointer',
-            font: 'var(--type-body-ui)',
-            color: 'var(--ink-secondary)',
-          }}
-        >
-          Settings
-        </button>
+        <IconButton label="Settings" onClick={onSettings}>
+          <Icon name="settings" size={16} />
+        </IconButton>
         </div>
       </header>
 

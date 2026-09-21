@@ -13,7 +13,7 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Banner, Button, EmptyState, Logo, SidebarNav, StatusIndicator, Table, Tabs, Tooltip } from '@design';
+import { Badge, Banner, Button, EmptyState, Icon, IconButton, Logo, SidebarNav, StatusIndicator, Table, Tabs, Tooltip } from '@design';
 import type { SidebarItem } from '@design';
 
 import { api } from '@api/client';
@@ -31,7 +31,6 @@ import { Logs } from './Logs';
 import { Resources } from './Resources';
 import { AddApp } from './AddApp';
 import { Reference } from './Reference';
-import { Settings } from './Settings';
 import { DeleteApp } from './DeleteApp';
 import { DeployButton } from './DeployButton';
 import { Lifecycle } from './Lifecycle';
@@ -47,13 +46,14 @@ export function AdminConsole({
   route,
   go,
   onLeave,
-  onSignedOut,
+  onSettings,
   administrative,
 }: {
   route: Route;
   go: (next: Route, replace?: boolean) => void;
   onLeave: () => void;
-  onSignedOut?: () => void;
+  /** The person's own settings — a page of its own, not a section here. */
+  onSettings: () => void;
   /** Whether this person administers anything. False for somebody who came
    *  here for the API screen, which is open to everyone. */
   administrative: boolean;
@@ -130,8 +130,6 @@ export function AdminConsole({
   // a token are not administration — a developer with one app shared with them
   // needs both.
   items.push({ value: 'api', label: 'API and tools' });
-  // Also for everyone: the person's own preferences and the way out.
-  items.push({ value: 'settings', label: 'Your settings' });
 
   return (
     // isolation makes this the stacking context, so the terrain's negative
@@ -156,19 +154,27 @@ export function AdminConsole({
         // The logo goes home, as it does everywhere else. Home is the launcher
         // (R-264), the same place "Back to my apps" goes.
         header={
-          <button
-            onClick={onLeave}
-            title="Back to my apps"
-            style={{
-              border: 'none',
-              background: 'transparent',
-              padding: 0,
-              cursor: 'pointer',
-              display: 'inline-flex',
-            }}
-          >
-            <Logo size={20} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <button
+              onClick={onLeave}
+              title="Back to my apps"
+              style={{
+                border: 'none',
+                background: 'transparent',
+                padding: 0,
+                cursor: 'pointer',
+                display: 'inline-flex',
+              }}
+            >
+              <Logo size={20} />
+            </button>
+            {/* Where the launcher has it: opposite the logo. Settings belong to
+                the person, not to anything this sidebar administers, so they
+                are not one of its items. */}
+            <IconButton label="Settings" onClick={onSettings}>
+              <Icon name="settings" size={16} />
+            </IconButton>
+          </div>
         }
         items={items}
         footer={
@@ -186,7 +192,6 @@ export function AdminConsole({
         {section === 'backups' && <Backups />}
         {section === 'audit' && <Audit />}
         {section === 'api' && <Reference />}
-        {section === 'settings' && <Settings onSignedOut={onSignedOut} />}
         {section === 'apps' &&
           (selectedID ? (
             <AppScreen
