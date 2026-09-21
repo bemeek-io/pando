@@ -15,18 +15,30 @@
 import { useQuery } from '@tanstack/react-query';
 import { Card, EmptyState, Logo, StatusIndicator } from '@design';
 
+import { ThemeToggle } from '../ui/ThemeToggle';
+
 import { api } from '@api/client';
 import type { App } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
+import { Sheet } from '../ui/Sheet';
+import { TopoBackground } from '../ui/TopoBackground';
 
-export function Launcher({ onAdmin }: { onAdmin?: () => void }) {
+export function Launcher({
+  onAdmin,
+  onReference,
+}: {
+  onAdmin?: () => void;
+  /** The API screen, which everyone can reach (R-261, R-262). */
+  onReference?: () => void;
+}) {
   const apps = useQuery({
     queryKey: ['me', 'apps'],
     queryFn: () => api.get<{ apps: App[] | null }>('/me/apps'),
   });
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--paper)' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--paper)', position: 'relative', isolation: 'isolate' }}>
+      <TopoBackground seed="launcher" />
       <header
         style={{
           display: 'flex',
@@ -37,6 +49,23 @@ export function Launcher({ onAdmin }: { onAdmin?: () => void }) {
         }}
       >
         <Logo size={20} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+        <ThemeToggle />
+        {onReference && (
+          <button
+            onClick={onReference}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              cursor: 'pointer',
+              font: 'var(--type-body-ui)',
+              color: 'var(--ink-secondary)',
+            }}
+          >
+            API and tools
+          </button>
+        )}
         {onAdmin && (
           <button
             onClick={onAdmin}
@@ -52,22 +81,24 @@ export function Launcher({ onAdmin }: { onAdmin?: () => void }) {
             Admin
           </button>
         )}
+        </div>
       </header>
 
-      <main
-        style={{
-          maxWidth: 'var(--console-max)',
-          margin: '0 auto',
-          padding: 'var(--space-7) var(--console-padding)',
-        }}
-      >
-        {apps.isPending && <Quiet>Loading your apps.</Quiet>}
+      <main style={{ maxWidth: 'var(--console-max)', margin: '0 auto' }}>
+        {/* The same sheet the admin console is printed on, so the two halves of
+            the product read as one thing. The launcher is the screen a
+            non-technical person meets first (R-005), and it gets the frame and
+            the corner ticks and nothing else — the contour only turns up when
+            there is nothing to show. */}
+        <Sheet heading="Your apps">
+          {apps.isPending && <Quiet>Loading your apps.</Quiet>}
 
-        {apps.isError && (
-          <Quiet>Pando couldn&rsquo;t load your apps. Reload the page to try again.</Quiet>
-        )}
+          {apps.isError && (
+            <Quiet>Pando couldn&rsquo;t load your apps. Reload the page to try again.</Quiet>
+          )}
 
-        {apps.data && <Tiles apps={apps.data.apps ?? []} />}
+          {apps.data && <Tiles apps={apps.data.apps ?? []} />}
+        </Sheet>
       </main>
     </div>
   );
@@ -127,7 +158,11 @@ function Tile({ app }: { app: App }) {
       as="a"
       interactive
       padding="md"
-      {...({ href: app.address } as object)}
+      // An app is a different place from the console. Opening it over the top
+      // of Pando means the way back is the browser's history, and for someone
+      // who came to the launcher to open two apps it means coming back here
+      // every time.
+      {...({ href: app.address, target: '_blank', rel: 'noopener noreferrer' } as object)}
       style={{ textDecoration: 'none' }}
     >
       {body}

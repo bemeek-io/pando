@@ -48,6 +48,44 @@ with two design systems and neither maintained.
 error a person can act on or paste into an assistant; the design system asks for no apology, no
 `Error:` prefix and no exclamation mark. An API message and a console message reach the same person.
 
+**[D] The console carries generated topographic terrain in its background.** This departs from the
+design system, which confines the contour map to four places (marketing hero, docs home header,
+empty states, 404) and says "never as wallpaper, never behind text". A console built strictly to
+that rule carried no trace of the brand, and the product owner chose to put the terrain behind it.
+
+It covers the whole background, so what keeps it from reading as wallpaper is how quiet it is:
+
+- **Extremely faint, and even.** One colour (`--contour-line`), one line width, one opacity (0.35)
+  across the whole thing. No index contours and no fading in or out — a darker line or a patch
+  that fades draws the eye, which is exactly what a background must not do.
+- **Part of the page.** `console/src/ui/TopoBackground.tsx` fills its page root and scrolls with
+  the content; pinned to the window it looked like a layer floating over the product. It is behind
+  the admin console and the launcher.
+- **In colour, beside the form, on sign-in.** The sign-in and first-run password screens show the
+  same terrain as a picture (`TopoMap`): index contours in `--contour`, the rest in
+  `--contour-line`, and the marker-red summit triangle on the top of the central hill, as on the
+  brand's hero figure. On a wide window the land rises on the right and falls away before the form
+  on the left; below 60em it rises at the top and falls away above the form. There is no panel
+  edge: the map ends where its lowest contour does, an irregular line made by the terrain, not a
+  crop and not a fade. The form is never drawn over the map.
+- **Seamless at any length.** It is a tile, and the terrain is periodic — hills wrap round the
+  tile's edges and the warp uses whole periods — so contours meet across every seam. The tile is
+  1600 × 1200, so a repeat is rarely in view at once.
+- **Different ground per page.** Hills and warp come from a seed: the section, and the app when
+  there is one. Each screen has its own map, the tabs of one app share that app's map, and the same
+  seed always gives the same map.
+- **Real terrain, not a pattern.** A height field of irregular hills, contoured by marching squares
+  and smoothed into curves. Lines are level sets of one surface, so they never cross.
+- **Tokens only.** Nothing new enters the palette, and the night-survey theme follows.
+- **No frame.** Pages are not bordered or boxed; `ui/Sheet.tsx` is only the shared heading-and-
+  content layout, uncapped to match `ui/layout.ts`.
+
+Where the contour figure itself appears, it is by the system's existing recipe: 120px inside empty
+states. The 404 figure (320px, collared, summit mark absent) is **not**
+used for an app whose record fails to load: that figure means "the thing you came for is not here",
+and such an app is in the list — the screen shows the server's own reason (R-105) and offers to
+delete it instead.
+
 ### 1.3 Screens that carry requirement weight
 
 Most screens are ordinary CRUD. These four are where requirements are either honored or lost.
@@ -157,7 +195,7 @@ The remaining surfaces and the second routing adapter.
 
 ## 4. Open decisions added during design
 
-These extend §23 of the requirements document.
+These extend §24 of the requirements document.
 
 | ID | Question | Where |
 |---|---|---|
@@ -166,7 +204,7 @@ These extend §23 of the requirements document.
 | **O-13** | ~~Session revocation mid-websocket~~ — **resolved:** re-authorize on the assertion lifetime, close on failure; falls out of the single revocation window in §06 3.1 | §06 4.2 |
 | **O-14** | ~~DR restore bootstrap ordering~~ — **largely dissolved** by O-11; confirm sequencing in phase 9 | §07 D |
 
-**All four are resolved.** Of the ten in requirements §23, three remain open: O-4 (slot detection,
+**All four are resolved.** Of the ten in requirements §24, three remain open: O-4 (slot detection,
 awaiting measurement rather than decision), O-5 (TLS issuance, genuinely per-adapter), and O-6 (which
 backup destinations ship — provider-shaped; that a destination is *not* an adapter category is settled
 in §03 8.1). None blocks any phase.

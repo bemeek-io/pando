@@ -45,6 +45,76 @@ func bundle(bundleID string, env map[string]secret.Value) api.BundlePlan {
 	}
 }
 
+// TestR020_ACarriedFileIsInTheContainer asserts R-020.
+//
+// A configuration file travels in the spec and is placed in the workload before
+// it starts — the mechanism that replaced turning `./Caddyfile:/etc/caddy/
+// Caddyfile` into a volume Docker refuses to mount. Nothing is read from the
+// repository at deploy time: these bytes came out of the pinned revision.
+func TestR020_ACarriedFileIsInTheContainer(t *testing.T) {
+	ctx := context.Background()
+	a := adapter(t)
+	id := "test-files-" + time.Now().Format("150405")
+	cleanup(t, a, id)
+
+	const body = ":80 {\n  respond \"ok\"\n}\n"
+
+	plan := bundle(id, nil)
+	plan.Workloads[0].Files = []api.FilePlan{
+		{Path: "/etc/caddy/Caddyfile", Content: body},
+		{Path: "/usr/local/bin/start.sh", Content: "#!/bin/sh\nexec sleep 3600\n", Mode: 0o755},
+	}
+	_, err := a.Apply(ctx, plan)
+	require.NoError(t, err)
+
+	t.Run("the file is there, in a directory the image did not have", func(t *testing.T) {
+		require.Equal(t, body, inContainer(t, id, "web", "cat", "/etc/caddy/Caddyfile"))
+	})
+
+	t.Run("the executable one is executable", func(t *testing.T) {
+		out := inContainer(t, id, "web", "stat", "-c", "%a", "/usr/local/bin/start.sh")
+		require.Equal(t, "755", strings.TrimSpace(out))
+	})
+
+	t.Run("and a changed file recreates the workload", func(t *testing.T) {
+		first, err := a.Observe(ctx, api.BundleRef{BundleID: id})
+		require.NoError(t, err)
+		startedAt := first.Workloads[0].StartedAt
+
+		// The same plan changes nothing.
+		_, err = a.Apply(ctx, plan)
+		require.NoError(t, err)
+		same, err := a.Observe(ctx, api.BundleRef{BundleID: id})
+		require.NoError(t, err)
+		require.Equal(t, startedAt, same.Workloads[0].StartedAt)
+
+		// A file's contents are not part of a container's configuration, so
+		// without the digest label an edited Caddyfile would converge to
+		// "already running" and never ship.
+		edited := bundle(id, nil)
+		edited.Workloads[0].Files = []api.FilePlan{
+			{Path: "/etc/caddy/Caddyfile", Content: body + "# changed\n"},
+			{Path: "/usr/local/bin/start.sh", Content: "#!/bin/sh\nexec sleep 3600\n", Mode: 0o755},
+		}
+		_, err = a.Apply(ctx, edited)
+		require.NoError(t, err)
+
+		after, err := a.Observe(ctx, api.BundleRef{BundleID: id})
+		require.NoError(t, err)
+		require.NotEqual(t, startedAt, after.Workloads[0].StartedAt,
+			"an edited file is a workload that no longer matches its plan")
+	})
+}
+
+// inContainer runs a command in a workload and returns its output.
+func inContainer(t *testing.T, bundleID, workload string, args ...string) string {
+	t.Helper()
+	name := "pando-" + bundleID + "-" + workload
+	out, err := exec.Command("docker", append([]string{"exec", name}, args...)...).CombinedOutput()
+	require.NoError(t, err, string(out))
+	return string(out)
+}
+
 func cleanup(t *testing.T, a *dockeradapter.Adapter, bundleID string) {
 	t.Helper()
 	t.Cleanup(func() {
@@ -100,6 +170,47 @@ func TestApplyIsIdempotent(t *testing.T) {
 
 // R-193: a rotated secret changes the resolved environment, and the workload
 // must be recreated rather than left running with the old value.
+// TestR071_LogsArriveWithoutDockerFraming asserts that reading an app's logs
+// gives back what the app printed.
+//
+// Docker frames the output of a container with no TTY: an 8-byte header before
+// every chunk. Pando creates every workload without a TTY, so this stream
+// always carries it, and the logs endpoint copies the adapter's reader straight
+// into the response body — so anything the adapter leaves in shows up in the
+// console, as control bytes at the start of each line. Nothing read this
+// endpoint until the console grew a logs tab, which is why the framing had
+// never been noticed.
+func TestR071_LogsArriveWithoutDockerFraming(t *testing.T) {
+	ctx := context.Background()
+	a := adapter(t)
+	id := "test-logs-" + time.Now().Format("150405")
+	cleanup(t, a, id)
+
+	plan := bundle(id, nil)
+	plan.Workloads[0].Command = []string{"sh", "-c", "echo hello from pando; sleep 3600"}
+
+	_, err := a.Apply(ctx, plan)
+	require.NoError(t, err)
+
+	// The line is printed at startup, and Apply returns once the container is
+	// created rather than once it has said anything.
+	var out []byte
+	require.Eventually(t, func() bool {
+		rc, err := a.Logs(ctx, api.WorkloadRef{BundleID: id, Workload: "web"}, api.LogOptions{Tail: 10})
+		if err != nil {
+			return false
+		}
+		defer func() { _ = rc.Close() }()
+		out, err = io.ReadAll(rc)
+		return err == nil && len(out) > 0
+	}, 20*time.Second, 250*time.Millisecond)
+
+	require.Equal(t, "hello from pando\n", string(out))
+	for _, b := range out {
+		require.Greater(t, b, byte(0x08), "stream framing reached the caller: %q", string(out))
+	}
+}
+
 func TestR193_ChangedEnvironmentCausesRecreate(t *testing.T) {
 	ctx := context.Background()
 	a := adapter(t)

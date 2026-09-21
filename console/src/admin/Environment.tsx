@@ -13,13 +13,14 @@
 // it in every export of this app forever. The form asks which, and defaults to
 // the safe one.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banner, Button, Dialog, Input, Select, Table } from '@design';
 
 import { api } from '@api/client';
 import type { AppSpec, EnvEntry, Workload } from '@api/types.gen';
 import { Quiet, messageOf } from '../install/Accounts';
+import { looksSensitive } from './sensitive';
 
 interface Revision {
   id: string;
@@ -32,11 +33,20 @@ interface Row {
   workload: string;
   kind: 'value' | 'secret' | 'slot';
   shown: string;
+
+  /** Declared by detection and never given a value. */
+  unset: boolean;
 }
 
-export function Environment({ appID }: { appID: string }) {
+export function Environment({ appID, focus }: { appID: string; focus?: boolean }) {
   const queries = useQueryClient();
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Row | null>(null);
+  const heading = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (focus) heading.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [focus]);
 
   // Two requests, because the list deliberately carries no bodies — fifty
   // revisions each with a full spec is a heavy response for a list nobody
@@ -91,6 +101,7 @@ export function Environment({ appID }: { appID: string }) {
       void queries.invalidateQueries({ queryKey: ['apps', appID] });
       void queries.invalidateQueries({ queryKey: ['apps', appID, 'specs'] });
       setAdding(false);
+      setEditing(null);
     },
   });
 
@@ -113,9 +124,10 @@ export function Environment({ appID }: { appID: string }) {
 
   const rows = envRows(latest?.body);
   const workloads = (latest?.body?.workloads ?? []).map((w: Workload) => w.name);
+  const unset = rows.filter((r) => r.unset);
 
   return (
-    <section>
+    <section ref={heading}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Environment</h4>
         {latest && (
@@ -133,24 +145,46 @@ export function Environment({ appID }: { appID: string }) {
       {specs.isError && <Banner tone="failed">{messageOf(specs.error)}</Banner>}
       {remove.isError && <Banner tone="failed">{messageOf(remove.error)}</Banner>}
 
+      {/* Detection reads the names out of `.env.example` and cannot know the
+          values — they are the app's own keys and passwords. Saying how many
+          are still empty is the difference between a list somebody scans and
+          a list somebody finishes. Never a blocker: which of them the app
+          actually needs is what the trial run is for (R-133, O-4). */}
+      {!specs.isError && unset.length > 0 && (
+        <Banner tone="info">
+          {unset.length === 1
+            ? `${unset[0]?.key} has no value yet. The app starts without it.`
+            : `${unset.length} variables have no value yet. The app starts without them.`}
+        </Banner>
+      )}
+
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
           columns={[
-            { key: 'key', header: 'Name', width: 'minmax(0,1fr)', mono: true },
-            { key: 'shown', header: 'Value', width: 'minmax(0,1.4fr)', mono: true, muted: true },
+            { key: 'key', header: 'Name', width: 'minmax(0,26ch)', mono: true },
+            { key: 'shown', header: 'Value', width: 'minmax(0,28ch)', mono: true, muted: true },
             { key: 'workload', header: 'Part of the app', width: '18ch', muted: true },
             {
               key: 'actions',
               header: '',
-              width: '12ch',
+              width: '24ch',
               align: 'right',
               render: (row: Row) =>
                 // A slot is filled on the Dependencies list, and removing it
                 // here would take away the only thing pointing at a database.
                 row.kind === 'slot' ? null : (
-                  <Button variant="ghost" onClick={() => remove.mutate(row)}>
-                    Remove
-                  </Button>
+                  <span style={{ display: 'inline-flex', gap: 'var(--space-3)' }}>
+                    {/* Detection declared these and had no values to put in
+                        them, so the only action on a variable was to delete
+                        it: a list of everything the app reads, and no way to
+                        say what it reads. */}
+                    <Button variant="ghost" onClick={() => setEditing(row)}>
+                      {row.unset ? 'Set value' : 'Change'}
+                    </Button>
+                    <Button variant="ghost" onClick={() => remove.mutate(row)}>
+                      Remove
+                    </Button>
+                  </span>
                 ),
             },
           ]}
@@ -160,9 +194,20 @@ export function Environment({ appID }: { appID: string }) {
       </div>
 
       {adding && latest && (
-        <AddVariable
+        <VariableDialog
           workloads={workloads}
           onClose={() => setAdding(false)}
+          onSave={(entry) => save.mutate(entry)}
+          saving={save.isPending}
+          error={save.isError ? messageOf(save.error) : undefined}
+        />
+      )}
+
+      {editing && latest && (
+        <VariableDialog
+          workloads={[editing.workload]}
+          existing={editing}
+          onClose={() => setEditing(null)}
           onSave={(entry) => save.mutate(entry)}
           saving={save.isPending}
           error={save.isError ? messageOf(save.error) : undefined}
@@ -177,47 +222,65 @@ function envRows(body?: AppSpec): Row[] {
   const out: Row[] = [];
   for (const w of body?.workloads ?? []) {
     for (const e of w.env ?? []) {
+      const unset = !e.secret_ref && !e.slot_ref && (e.value ?? '') === '';
       out.push({
         key: e.key,
         workload: w.name,
         kind: e.secret_ref ? 'secret' : e.slot_ref ? 'slot' : 'value',
+        unset,
         // A stored secret is never shown, here or anywhere (R-194). A slot
         // says where its value comes from rather than what it is, because at
-        // this point it does not have one yet.
+        // this point it does not have one yet. An empty cell said nothing at
+        // all — it reads as a value Pando lost rather than one nobody has
+        // given yet.
         shown: e.secret_ref
           ? 'Set, and not shown'
           : e.slot_ref
             ? `From the ${e.slot_ref} dependency`
-            : (e.value ?? ''),
+            : unset
+              ? 'Not set'
+              : (e.value ?? ''),
       });
     }
   }
   return out;
 }
 
-function AddVariable({
+/**
+ * One dialog for adding a variable and for giving one a value.
+ *
+ * The same two decisions either way — what it is called, and whether it is a
+ * value or a secret — so the same form. With `existing`, the name is fixed:
+ * it came from the app's own `.env.example` and renaming it here would leave
+ * the app reading a variable nothing sets.
+ */
+function VariableDialog({
   workloads,
+  existing,
   onClose,
   onSave,
   saving,
   error,
 }: {
   workloads: string[];
+  existing?: { key: string; kind: 'value' | 'secret' | 'slot' };
   onClose: () => void;
   onSave: (entry: { key: string; value: string; secret: boolean; workload: string }) => void;
   saving: boolean;
   error?: string;
 }) {
-  const [key, setKey] = useState('');
+  const [key, setKey] = useState(existing?.key ?? '');
   const [value, setValue] = useState('');
-  const [secret, setSecret] = useState(false);
+  const [secret, setSecret] = useState(
+    existing ? existing.kind === 'secret' || looksSensitive(existing.key) : false,
+  );
   const [workload, setWorkload] = useState(workloads[0] ?? '');
 
   return (
     <Dialog
       open
       onClose={onClose}
-      title="Add an environment variable"
+      title={existing ? `Set ${existing.key}` : 'Add an environment variable'}
       description="This takes effect at the next deploy."
       footer={
         <>
@@ -229,21 +292,23 @@ function AddVariable({
             disabled={saving || key.trim() === '' || value === '' || workload === ''}
             onClick={() => onSave({ key: key.trim(), value, secret, workload })}
           >
-            {saving ? 'Adding' : 'Add variable'}
+            {saving ? 'Saving' : existing ? 'Save' : 'Add variable'}
           </Button>
         </>
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
-        <Input
-          label="Name"
-          mono
-          autoFocus
-          value={key}
-          placeholder="STRIPE_API_KEY"
-          helper="Exactly as the app reads it."
-          onChange={(e) => setKey(e.target.value)}
-        />
+        {!existing && (
+          <Input
+            label="Name"
+            mono
+            autoFocus
+            value={key}
+            placeholder="STRIPE_API_KEY"
+            helper="Exactly as the app reads it."
+            onChange={(e) => setKey(e.target.value)}
+          />
+        )}
 
         <Select
           label="Kind"
@@ -254,6 +319,17 @@ function AddVariable({
           ]}
           onChange={(e) => setSecret(e.target.value === 'secret')}
         />
+
+        {/* Warned, not prevented. Which variables are credentials is the
+            person's knowledge, not Pando's — but a key stored as a value is
+            in every export of this app from then on, and that is worth one
+            sentence at the moment it would happen (R-190, R-191). */}
+        {!secret && looksSensitive(key) && (
+          <Banner tone="info">
+            {key} reads like a credential. An ordinary setting is kept in the app&rsquo;s
+            configuration, which is exportable; a secret is stored separately and never shown.
+          </Banner>
+        )}
 
         <Input
           label="Value"

@@ -1,27 +1,40 @@
-// One app: what it is, where it is, and its build log.
+// One app: what it is, where it is, and the deploy that put it there.
 //
-// The log streams over EventSource rather than polling, because a deploy log is
-// the one place where a user is watching a thing happen and latency is the
-// whole experience.
+// The log of that deploy is here because this is the screen somebody watches
+// while it happens. Every earlier deploy, and the app's own output, are on the
+// Logs tab — both are histories, and a history on the screen you deploy from is
+// a screen that scrolls forever.
 
-import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Card, CodeBlock, StatusIndicator, Tag } from '@design';
+import { useQuery } from '@tanstack/react-query';
+import { Banner, Button, Card, StatusIndicator, Tag } from '@design';
 
-import { api, base, RequestFailed } from '@api/client';
+import { api } from '@api/client';
 import type { App, Deployment } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { InlineWarning } from '../ui/InlineWarning';
+import { Parts } from './Parts';
+import { MEASURE } from '../ui/layout';
+import { relative } from '../ui/time';
+import { deployLabel, deployStatus } from '../ui/deploys';
+import { Security } from './Security';
 
 interface SpecRevision {
   id: string;
   revision: number;
-  body?: { warnings?: Array<{ code: string; message: string }> };
+  body?: {
+    warnings?: Array<{ code: string; message: string }>;
+    workloads?: Array<{ env?: Array<{ key: string; value?: string; secret_ref?: string; slot_ref?: string }> }>;
+  };
 }
 
-export function AppOverview({ app }: { app: App }) {
-  const queries = useQueryClient();
-
+export function AppOverview({
+  app,
+  onGo,
+}: {
+  app: App;
+  /** Where a warning's fix lives: a tab, and the section on it. */
+  onGo: (tab: string, focus?: string) => void;
+}) {
   const deployments = useQuery({
     queryKey: ['apps', app.id, 'deployments'],
     queryFn: () => api.get<{ deployments: Deployment[] | null }>(`/apps/${app.id}/deployments`),
@@ -62,19 +75,17 @@ export function AppOverview({ app }: { app: App }) {
   // spec without saying so.
   const unshipped = Boolean(newest && pinned && newest.revision > pinned.revision);
 
-  const deploy = useMutation({
-    // The newest revision when there is an unshipped one, so Deploy ships what
-    // the screen is showing. An empty body deploys the pinned spec, which is
-    // right only when they are the same.
-    mutationFn: () =>
-      api.post(`/apps/${app.id}/deployments`, unshipped ? { spec_revision: newest?.revision } : {}),
-    // ['apps'] so the list's status follows the app through building to
-    // running, rather than only this screen.
-    onSuccess: () => queries.invalidateQueries({ queryKey: ['apps'] }),
-  });
-
   const latest = (deployments.data?.deployments ?? [])[0];
   const warnings = pinnedSpec.data?.body?.warnings ?? [];
+
+  // Counted from the spec rather than carried in it. Detection reads the names
+  // of an app's variables out of `.env.example` and cannot know the values, so
+  // an accepted app arrives with a list of empty ones and nothing said about
+  // it. A warning stored at detection would still be here after they were
+  // filled; this one answers the question every time it is asked.
+  const unset = (pinnedSpec.data?.body?.workloads ?? []).flatMap((w) =>
+    (w.env ?? []).filter((e) => !e.secret_ref && !e.slot_ref && (e.value ?? '') === ''),
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
@@ -98,14 +109,7 @@ export function AppOverview({ app }: { app: App }) {
         </Banner>
       )}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.25fr)',
-          gap: 'var(--space-6)',
-          alignItems: 'start',
-        }}
-      >
+      <div style={{ maxWidth: MEASURE }}>
         <Card padding="md">
           <Row label="Status">
             <StatusIndicator status={statusSymbol(app.state)} label={statusLabel(app.state)} />
@@ -116,7 +120,12 @@ export function AppOverview({ app }: { app: App }) {
                 routing (R-261). The old "/" + slug was the path-mode answer
                 shown for every app in every mode. */}
             {app.address ? (
-              <a href={app.address}>{app.address.replace(/^\/\//, '')}</a>
+              // Its own tab: an app is a different place from the console, and
+              // opening it over the top leaves the browser's back button as
+              // the only way back to what you were doing.
+              <a href={app.address} target="_blank" rel="noopener noreferrer">
+                {app.address.replace(/^\/\//, '')}
+              </a>
             ) : (
               <span style={{ color: 'var(--ink-secondary)' }}>
                 This app gets an address when it is first deployed.
@@ -134,59 +143,113 @@ export function AppOverview({ app }: { app: App }) {
               <span style={{ font: 'var(--type-code-sm)' }}>{app.source.commit.slice(0, 12)}</span>
             </Row>
           )}
+          <Row label="Last deploy">
+            {latest ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                <StatusIndicator
+                  status={deployStatus(latest.status, latest.result_state)}
+                  label={`${deployLabel(latest.status, latest.result_state)} ${relative(latest.finished_at ?? latest.started_at)}`}
+                />
+                <Button variant="ghost" onClick={() => onGo('logs')}>
+                  Open logs
+                </Button>
+              </span>
+            ) : (
+              <span style={{ color: 'var(--ink-secondary)' }}>Not deployed yet.</span>
+            )}
+          </Row>
         </Card>
 
-        {latest ? (
-          <DeploymentLog appID={app.id} deployment={latest} />
-        ) : (
-          <Card padding="md">
-            <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
-              This app hasn&rsquo;t been deployed yet.
-            </p>
-          </Card>
-        )}
       </div>
+
+      {/* Why an app is degraded, when it is made of several parts. The app's
+          own state is one word for all of them, and the part that is failing
+          is the thing somebody needs. */}
+      <Parts app={app} onLogs={(workload) => onGo('logs', workload)} />
+
+      {/* The security score, where the deploy log used to be — and across the
+          measure rather than in the column that held it. A log is a column of
+          short lines and a findings table is not: at 1.25fr, "Incorrect
+          certificate validation during TLS session resumption" wrapped one
+          word to a line and the section ran off the bottom of the page. */}
+      <Security appID={app.id} />
+
+      {unset.length > 0 && (
+        <InlineWarning
+          action={
+            <Button
+              variant="secondary"
+              onClick={() => onGo('resources', 'variables')}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              Fill them in
+            </Button>
+          }
+        >
+          {unsetMessage(unset.map((e) => e.key))}
+        </InlineWarning>
+      )}
 
       {/* Warnings inline where they apply, never stacked as banners, never
           looking like the failure above. */}
-      {warnings.map((warning) => (
-        <InlineWarning key={warning.code + warning.message} code={warning.code}>
-          {warning.message}
-        </InlineWarning>
-      ))}
+      {warnings.map((warning) => {
+        const fix = FIXES[warning.code];
+        return (
+          <InlineWarning
+            key={warning.code + warning.message}
+            code={warning.code}
+            action={
+              fix && (
+                <Button
+                  variant="secondary"
+                  onClick={() => onGo(fix.tab, fix.focus)}
+                  style={{ alignSelf: 'flex-start' }}
+                >
+                  {fix.label}
+                </Button>
+              )
+            }
+          >
+            {warning.message}
+          </InlineWarning>
+        );
+      })}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-        <Button
-          variant="primary"
-          onClick={() => deploy.mutate()}
-          disabled={deploy.isPending || app.state === 'deploying'}
-          style={{ alignSelf: 'flex-start' }}
-        >
-          Deploy
-        </Button>
-        {deploy.isError && <Failure error={deploy.error} />}
-      </div>
     </div>
   );
 }
 
-function DeploymentLog({ appID, deployment }: { appID: string; deployment: Deployment }) {
-  const [lines, setLines] = useState<string[]>([]);
-
-  useEffect(() => {
-    // EventSource, not polling: the server already streams this and a deploy
-    // log is watched while it happens.
-    const stream = new EventSource(`${base}/apps/${appID}/deployments/${deployment.id}/logs`);
-
-    stream.onmessage = (event) => setLines((previous) => [...previous, event.data as string]);
-    stream.addEventListener('end', () => stream.close());
-    stream.onerror = () => stream.close();
-
-    return () => stream.close();
-  }, [appID, deployment.id]);
-
-  return <CodeBlock title={`Deploy log · ${deployment.status}`} lines={lines} />;
+/**
+ * What to say about variables nobody has filled in.
+ *
+ * Names first, because the person reading knows their own app: seeing
+ * ANTHROPIC_API_KEY in the sentence is what makes it obvious which of them
+ * matter. Four of them, then a count — a list of thirty is a wall.
+ */
+function unsetMessage(keys: string[]): string {
+  const known = 'Pando read the names from this app’s own configuration and cannot know what they should be.';
+  if (keys.length === 1) {
+    return `${keys[0]} is declared with no value. ${known}`;
+  }
+  const shown = keys.slice(0, 4).join(', ');
+  const rest = keys.length > 4 ? `, and ${keys.length - 4} more` : '';
+  return `${keys.length} variables are declared with no value: ${shown}${rest}. ${known}`;
 }
+
+/**
+ * Where each warning is fixed.
+ *
+ * R-201's persistence warning ends "define one here", and on this screen there
+ * is no here — storage is defined on Settings. A warning a person cannot act on
+ * from where they are reading it is how people learn to dismiss warnings, so
+ * every code the console has a screen for carries the way to it. A code that is
+ * not listed renders as before: text, with nothing claiming to be actionable.
+ */
+const FIXES: Record<string, { label: string; tab: string; focus?: string }> = {
+  WARN_NO_PERSISTENT_VOLUME: { label: 'Add storage', tab: 'resources', focus: 'storage' },
+  WARN_COMPOSE_CONSTRUCT_REWRITTEN: { label: 'Review the configuration', tab: 'detection' },
+  WARN_UNDECLARED_DEPENDENCY_SUSPECTED: { label: 'Open dependencies', tab: 'resources' },
+};
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -215,18 +278,3 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function Failure({ error }: { error: unknown }) {
-  const failed = error instanceof RequestFailed ? error : null;
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-      <p style={{ font: 'var(--type-body-ui)', color: 'var(--marker-deep)', margin: 0 }}>
-        {failed?.message ?? 'Pando couldn’t start a deploy. Try again.'}
-      </p>
-      {failed?.remedy && (
-        <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
-          {failed.remedy}
-        </p>
-      )}
-    </div>
-  );
-}

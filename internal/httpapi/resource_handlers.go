@@ -2,10 +2,14 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/spec"
@@ -311,6 +315,11 @@ func (s *Server) handleCreateAdapter(w http.ResponseWriter, r *http.Request) {
 		Config    json.RawMessage `json:"config"`
 		IsDefault bool            `json:"is_default"`
 		Enabled   *bool           `json:"enabled"`
+
+		// Credentials are write-only and stored encrypted (O-20). A field
+		// omitted here is left as it was; one set to "" is removed. They never
+		// go in Config, which is stored and exported in the clear.
+		Credentials map[string]secret.Value `json:"credentials"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read."))
@@ -318,6 +327,16 @@ func (s *Server) handleCreateAdapter(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ID == "" || req.Category == "" || req.Kind == "" {
 		Error(w, r, errs.New(errs.ValidInvalid, "An adapter needs an id, a category and a kind."))
+		return
+	}
+	if reason := inlineCredential(req.Config); reason != "" {
+		Error(w, r, errs.New(errs.ValidInvalid, reason).
+			WithRemedy(`Send it in the request's "credentials" object instead, for example {"credentials": {"api_key": "…"}}. Pando stores that encrypted.`))
+		return
+	}
+	if len(req.Credentials) > 0 && req.Category == string(api.CategorySecrets) {
+		Error(w, r, errs.New(errs.ValidInvalid,
+			"A secrets adapter cannot be given credentials, because it is the thing Pando would encrypt them with."))
 		return
 	}
 
@@ -334,10 +353,23 @@ func (s *Server) handleCreateAdapter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// After the row exists, because a credential references its adapter.
+	fields := make([]string, 0, len(req.Credentials))
+	for field, value := range req.Credentials {
+		if err := s.AdapterCredentials.Put(r.Context(), req.ID, field, value); err != nil {
+			Error(w, r, err)
+			return
+		}
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+
+	// Which credentials changed, never their values.
 	s.audit(r, audit.Event{
 		PrincipalKind: audit.PrincipalKind(p.Kind), PrincipalID: p.ID, OnBehalfOf: p.UserID,
 		Action: "adapter.configure", TargetKind: "adapter", TargetID: req.ID,
-		Detail: map[string]any{"category": req.Category, "kind": req.Kind, "default": req.IsDefault},
+		Detail: map[string]any{"category": req.Category, "kind": req.Kind, "default": req.IsDefault,
+			"credentials_changed": fields},
 	})
 
 	// Adapters are registered at startup from compiled-in packages (R-253), so
@@ -348,6 +380,29 @@ func (s *Server) handleCreateAdapter(w http.ResponseWriter, r *http.Request) {
 		"id":   req.ID,
 		"note": "Saved. Pando registers adapters at startup, so restart it for this to take effect.",
 	})
+}
+
+// inlineCredential refuses a credential in an adapter's plain configuration.
+//
+// The database refuses the `credentials` key too (migration 000015); this adds
+// the field names credentials usually go by, so the mistake is caught with a
+// message that says what to do instead of a constraint violation.
+func inlineCredential(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var cfg map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return "The adapter's configuration is not a JSON object."
+	}
+	for key := range cfg {
+		switch strings.ToLower(key) {
+		case "credentials", "api_key", "apikey", "token", "secret", "password", "access_key", "secret_key":
+			return fmt.Sprintf("The adapter's configuration contains %q, which looks like a credential. "+
+				"Configuration is stored unencrypted, so Pando does not accept credentials there.", key)
+		}
+	}
+	return ""
 }
 
 // pinnedOrLatest returns the app's pinned spec, or its newest revision.

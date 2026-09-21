@@ -9,7 +9,15 @@ import (
 	"github.com/bemeek-io/pando/internal/core/reconciler"
 )
 
+// want builds a plan. A workload with no image of its own gets one, because a
+// real plan always names an image — the case where it does not is a deployment
+// that recorded nothing per workload, and that has its own test below.
 func want(workloads ...api.WorkloadPlan) api.BundlePlan {
+	for i := range workloads {
+		if workloads[i].Image == "" {
+			workloads[i].Image = "example/" + workloads[i].Name + ":1"
+		}
+	}
 	return api.BundlePlan{BundleID: "app_1", Workloads: workloads}
 }
 
@@ -153,7 +161,7 @@ func TestAWorkloadRunningTheWrongImageIsReconcilable(t *testing.T) {
 		api.ObservedBundle{Exists: true, Workloads: []api.ObservedWorkload{
 			{Name: "web", Present: true, Running: true, ImageDigest: "sha256:beef"},
 		}},
-		reconciler.Inputs{ExpectedDigest: "sha256:cafe"})
+		reconciler.Inputs{ExpectedDigests: map[string]string{"web": "sha256:cafe"}})
 
 	require.Len(t, drift.Reconcilable, 1)
 	require.Equal(t, reconciler.DriftWrongImage, drift.Reconcilable[0].Kind)
@@ -172,4 +180,68 @@ func TestAnUnknownExpectedDigestIsNotDrift(t *testing.T) {
 		reconciler.Inputs{ExpectedDigest: ""})
 
 	require.True(t, drift.None())
+}
+
+// TestR148_EachWorkloadIsComparedAgainstItsOwnImage asserts R-148.
+//
+// An app's parts can be built separately — a compose file with an application
+// and a proxy builds one and pulls the other — and one recorded digest compared
+// against every workload made every part but one look permanently wrong.
+//
+// What followed was worse than a wrong report. "Wrong image" is reconcilable,
+// so the loop recreated the application container from the plan's image, and
+// the plan had the same single image in it: the app was replaced by a second
+// copy of its own proxy, fifteen seconds after every deploy. The app's site was
+// unreachable and Pando called it degraded.
+func TestR148_EachWorkloadIsComparedAgainstItsOwnImage(t *testing.T) {
+	drift := reconciler.Classify(
+		want(
+			api.WorkloadPlan{Name: "app", Image: "pando/app:latest"},
+			api.WorkloadPlan{Name: "proxy", Image: "caddy:2-alpine"},
+		),
+		api.ObservedBundle{Exists: true, Workloads: []api.ObservedWorkload{
+			{Name: "app", Present: true, Running: true, ImageDigest: "sha256:theapp"},
+			{Name: "proxy", Present: true, Running: true, ImageDigest: "sha256:caddy"},
+		}},
+		reconciler.Inputs{ExpectedDigests: map[string]string{
+			"app":   "sha256:theapp",
+			"proxy": "sha256:caddy",
+		}})
+
+	require.True(t, drift.None(), "both parts are running what they were deployed with")
+}
+
+// A workload the deployment recorded nothing for is not checked. Unknown is not
+// drift — the alternative is every workload of every app deployed before the
+// record existed looking wrong at once.
+func TestAWorkloadWithNoRecordedImageIsNotDrift(t *testing.T) {
+	drift := reconciler.Classify(
+		want(
+			api.WorkloadPlan{Name: "app", Image: "pando/app:latest"},
+			api.WorkloadPlan{Name: "proxy", Image: "caddy:2-alpine"},
+		),
+		api.ObservedBundle{Exists: true, Workloads: []api.ObservedWorkload{
+			{Name: "app", Present: true, Running: true, ImageDigest: "sha256:theapp"},
+			{Name: "proxy", Present: true, Running: true, ImageDigest: "sha256:caddy"},
+		}},
+		reconciler.Inputs{ExpectedDigests: map[string]string{"app": "sha256:theapp"}})
+
+	require.True(t, drift.None())
+}
+
+// TestR148_AMissingWorkloadWithNoRecordedImageIsReported asserts R-148.
+//
+// "Reconcile when possible, report when not." A workload built separately by a
+// deployment that recorded only one image for the whole app is the "not": the
+// only image to hand belongs to another part of the app, and starting this one
+// from it is how an application container became a second copy of its proxy.
+func TestR148_AMissingWorkloadWithNoRecordedImageIsReported(t *testing.T) {
+	drift := reconciler.Classify(
+		api.BundlePlan{BundleID: "app_1", Workloads: []api.WorkloadPlan{{Name: "app"}}},
+		api.ObservedBundle{Exists: true},
+		reconciler.Inputs{})
+
+	require.Empty(t, drift.Reconcilable)
+	require.Len(t, drift.ReportOnly, 1)
+	require.Contains(t, drift.ReportOnly[0].Detail, "deploy this app again")
 }
