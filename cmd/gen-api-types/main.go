@@ -42,6 +42,7 @@ import (
 // automatically.
 var exported = []any{
 	state.App{},
+	state.Section{},
 	state.Revision{},
 	state.Deployment{},
 	state.Detection{},

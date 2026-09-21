@@ -251,6 +251,15 @@ func TestEachToolMapsToItsEndpoint(t *testing.T) {
 		// R-341: favorites, from every surface.
 		{"pando_favorite_app", `{"app_id":"app_01HQ8"}`, "PUT", "/me/favorites/app_01HQ8"},
 		{"pando_unfavorite_app", `{"app_id":"app_01HQ8"}`, "DELETE", "/me/favorites/app_01HQ8"},
+
+		// R-342 and renaming: every surface (R-261).
+		{"pando_rename_app", `{"app_id":"app_01HQ8","name":"Notes"}`, "PATCH", "/apps/app_01HQ8"},
+		{"pando_list_my_apps", `{}`, "GET", "/me/apps"},
+		{"pando_create_section", `{"name":"Work"}`, "POST", "/me/sections"},
+		{"pando_rename_section", `{"section_id":"sect_01","name":"Office"}`, "PATCH", "/me/sections/sect_01"},
+		{"pando_delete_section", `{"section_id":"sect_01"}`, "DELETE", "/me/sections/sect_01"},
+		{"pando_add_app_to_section", `{"section_id":"sect_01","app_id":"app_01HQ8"}`, "PUT", "/me/sections/sect_01/apps/app_01HQ8"},
+		{"pando_remove_app_from_section", `{"section_id":"sect_01","app_id":"app_01HQ8"}`, "DELETE", "/me/sections/sect_01/apps/app_01HQ8"},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
 			srv, s := newSession()

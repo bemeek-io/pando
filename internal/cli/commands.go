@@ -45,6 +45,7 @@ func Commands() []*cobra.Command {
 		withServer(logsCmd(client)),
 		withServer(secretCmd(client)),
 		withServer(grantCmd(client)),
+		withServer(sectionCmd(client)),
 		withServer(rollbackCmd(client)),
 		withServer(exportCmd(client)),
 		withServer(backupCmd(client)),
@@ -335,6 +336,25 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 	})
 
 	cmd.AddCommand(appIconCmd(client))
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "rename <app> <new-name>",
+		Short: "Change an app's display name",
+		Long: "Changes the name shown for the app in the console and on everyone's launcher.\n\n" +
+			"The app's ID and address do not change.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("PATCH", "/apps/"+args[0], map[string]string{"name": args[1]}, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Renamed %s to %q.\n", args[0], args[1])
+			return nil
+		},
+	})
 
 	// Favorites (R-341): pinned to the top of your own launcher.
 	for _, f := range []struct {

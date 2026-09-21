@@ -22,24 +22,38 @@ recipient who has never signed in, a console-only notification is invisible in a
 the tile is waiting for them whenever they arrive. Reconsider when an SMTP adapter exists and a share
 can reach someone who is not already looking at Pando; the interface for it is already there (R-232).
 
-**[D] Tiles.** A tile is a square — the app's image (R-340), or when it has none a patch of terrain
-generated from the app's ID — with the name underneath. The terrain is the same generator as the
-console background, on a small grid, printed on one of six sheets drawn from the palette's terrain
-colors (vegetation and water, each light-on-dark and dark-on-light; sand; paper). Red is left out so
-the marker stays rare, and grey because a grey tile on the launcher means an app that will not open. The
-contours make each tile unique; the sheet varies it further. This puts the contour map in a place
-the brand spec does not list, next to the launcher's own background terrain: decided by the product
-owner, on the reasoning that a tile is content — a picture of the app — not decoration.
+**[D] Tiles.** A tile is a small square card holding the app's picture with its name beneath it,
+inside the card. The picture is the app's image (R-340), or when it has none a patch of terrain
+generated from its ID: the console background's generator on a small grid, zoomed so that four to six
+large contours fill it — a mark, not a map — printed on one of five sheets from the palette's terrain
+colors (vegetation and water, each light-on-dark and dark-on-light; sand). Red is left out so the
+marker stays rare; grey because a grey tile means an app that will not open; paper because the card
+is paper and the picture would have no edge. This puts the contour map in a place the brand spec
+does not list: decided by the product owner, on the reasoning that a tile is content — a picture of
+the app — not decoration.
 
-**[D] Favorites.** R-341. A star on each tile, shown always on a favorite and on hover or focus
-otherwise, pins the app into a *Favorites* section above *Your apps*; a pinned app is not repeated
-below. Both sections are split from the one `GET /me/apps` response. The toggle is optimistic and
-rolls back on refusal. It carries **no status line**: an app that is running or degraded and has an
-address is a link, and anything else is greyed out and is not. This is a deliberate exception to the
-design system's "status is a symbol plus a word" rule, decided by the product owner: the launcher is
-for opening apps, "running" is the normal case, and a word on every tile saying so is noise. The
-state is still in each unreachable tile's accessible name and hover title, so the difference is
-never carried by appearance alone.
+A tile carries **no status line**: an app that is running or degraded and has an address is a link,
+and anything else is greyed out and is not. This is a deliberate exception to the design system's
+"status is a symbol plus a word" rule, decided by the product owner: the launcher is for opening
+apps, "running" is the normal case, and a word on every tile saying so is noise. The state is still
+in each unreachable tile's accessible name and hover title, so the difference is never carried by
+appearance alone.
+
+**[D] Arranging the launcher.** R-341, R-342. Everything that arranges the page is in one place: a
+three-dot menu on each tile, shown on hover or focus (always, on a device that cannot hover). It
+offers *Open*, *Add to / Remove from favorites*, and *Move to section…*, whose second page lists
+*Your apps*, the person's sections and *New section…*. A section is only ever made from there, with
+the app already in it, so there is no screen for managing sections and no section is born empty. The
+page shows *Favorites* (when there are any), then the person's sections in the order made, then
+*Your apps* for everything else; a favorite appears once, in *Favorites*. Every group collapses from
+its heading, remembered per browser like the theme. A person's own section has a menu of its own on
+its heading: *Rename* and *Delete section* — no confirmation, because deleting one loses nothing:
+its apps go back to *Your apps*. Favoriting and moving are optimistic and roll back on refusal.
+Someone who never opens a menu sees *Your apps* and nothing else.
+
+The design system has no menu component; `ui/Menu.tsx` is one built from its popover rules
+(paper-raised, 1px rule, the one popover shadow, 6px corners), with the arrow keys, Escape and
+focus return. It should move into the design project.
 
 **[D] Settings.** The signed-in person's own settings — theme and signing out — are a page of their
 own at `/admin/settings`, opened by a gear in the launcher header and in the admin sidebar header,

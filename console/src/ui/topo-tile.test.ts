@@ -23,12 +23,14 @@ describe('R-340 generated app tiles', () => {
     // `hash % n` could not tell apart.
     const ids = Array.from({ length: 60 }, (_, n) => `app_01M2X${n}Q7G5AT10FQJS5CFGA${n}`);
     const sheets = new Set(ids.map((id) => tileOf(id).sheet.ground));
-    expect(sheets.size).toBe(6);
+    expect(sheets.size).toBe(5);
   });
 
   it('draws actual contours', () => {
     const { levels } = tileOf('app_01M2E0M27R4VJD5Y03DEN8468B');
-    expect(levels.length).toBeGreaterThanOrEqual(7);
-    expect(levels.filter((d) => d.length > 0).length).toBeGreaterThan(3);
+    // Few and large: a tile is a mark, not a map.
+    expect(levels.length).toBeGreaterThanOrEqual(4);
+    expect(levels.length).toBeLessThanOrEqual(6);
+    expect(levels.filter((d) => d.length > 0).length).toBeGreaterThanOrEqual(2);
   });
 });

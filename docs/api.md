@@ -33,9 +33,14 @@ one verb says nothing about another (R-082).
 | `DELETE /api/v1/sessions` |  | Sign out, ending this session. |
 | `GET /api/v1/me` |  | Who the caller is, and the install-level verbs they hold. |
 | `POST /api/v1/me/password` |  | Change your own password. Yours only, whatever verbs you hold. |
-| `GET /api/v1/me/apps` |  | The apps you can open, which is a different list from the apps you can administer (R-070, R-071). `favorite` marks the ones you have pinned. |
+| `GET /api/v1/me/apps` |  | The apps you can open, which is a different list from the apps you can administer (R-070, R-071). `favorite` marks the ones you have pinned, `section_id` the section you filed each under, and `sections` lists your sections. |
 | `PUT /api/v1/me/favorites/{appID}` |  | Mark an app you can open as a favorite, pinning it to the top of your launcher. Yours only; it grants nothing (R-341). |
 | `DELETE /api/v1/me/favorites/{appID}` |  | Unpin an app from your favorites. |
+| `POST /api/v1/me/sections` |  | Make a section in your launcher: a named, collapsible grouping of apps. Yours only; it grants nothing (R-342). |
+| `PATCH /api/v1/me/sections/{sectionID}` |  | Rename one of your sections. |
+| `DELETE /api/v1/me/sections/{sectionID}` |  | Delete one of your sections. Its apps go back to Your apps. |
+| `PUT /api/v1/me/sections/{sectionID}/apps/{appID}` |  | File an app you can open into one of your sections, moving it out of any other. |
+| `DELETE /api/v1/me/sections/{sectionID}/apps/{appID}` |  | Take an app out of a section, back to Your apps. |
 
 ### Tokens
 

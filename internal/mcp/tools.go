@@ -333,6 +333,116 @@ var toolList = []tool{
 		},
 	},
 	{
+		Name:        "pando_rename_app",
+		Description: "Change an app's display name. Its ID and address do not change.",
+		Schema: schema(map[string]any{
+			"app_id": str("The app's ID."),
+			"name":   str("The new name."),
+		}, "app_id", "name"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "app_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			name, err := stringArg(args, "name", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "PATCH", appPath(id, ""), map[string]any{"name": name}, nil
+		},
+	},
+	{
+		Name: "pando_list_my_apps",
+		Description: "The apps you can open — your launcher — with which are favorites and which of " +
+			"your sections each is filed under, and your sections. A different list from " +
+			"pando_list_apps, which is the apps you can administer.",
+		Schema: schema(map[string]any{}),
+		request: func(map[string]any) (string, string, any, error) {
+			return "GET", "/me/apps", nil, nil
+		},
+	},
+	{
+		Name:        "pando_create_section",
+		Description: "Make a section in your own launcher: a named grouping of apps. Only you see it.",
+		Schema:      schema(map[string]any{"name": str("The section's name.")}, "name"),
+		request: func(args map[string]any) (string, string, any, error) {
+			name, err := stringArg(args, "name", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "POST", "/me/sections", map[string]any{"name": name}, nil
+		},
+	},
+	{
+		Name:        "pando_rename_section",
+		Description: "Rename one of your launcher sections.",
+		Schema: schema(map[string]any{
+			"section_id": str("The section's ID."),
+			"name":       str("The new name."),
+		}, "section_id", "name"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "section_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			name, err := stringArg(args, "name", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "PATCH", "/me/sections/" + url.PathEscape(id), map[string]any{"name": name}, nil
+		},
+	},
+	{
+		Name:        "pando_delete_section",
+		Description: "Delete one of your launcher sections. Its apps go back to Your apps; nothing else changes.",
+		Schema:      schema(map[string]any{"section_id": str("The section's ID.")}, "section_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "section_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "DELETE", "/me/sections/" + url.PathEscape(id), nil, nil
+		},
+	},
+	{
+		Name:        "pando_add_app_to_section",
+		Description: "Move an app you can open into one of your launcher sections, out of any other.",
+		Schema: schema(map[string]any{
+			"section_id": str("The section's ID."),
+			"app_id":     str("The app's ID."),
+		}, "section_id", "app_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			sid, err := stringArg(args, "section_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			aid, err := stringArg(args, "app_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "PUT", "/me/sections/" + url.PathEscape(sid) + "/apps/" + url.PathEscape(aid), nil, nil
+		},
+	},
+	{
+		Name:        "pando_remove_app_from_section",
+		Description: "Move an app out of one of your launcher sections, back to Your apps.",
+		Schema: schema(map[string]any{
+			"section_id": str("The section's ID."),
+			"app_id":     str("The app's ID."),
+		}, "section_id", "app_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			sid, err := stringArg(args, "section_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			aid, err := stringArg(args, "app_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "DELETE", "/me/sections/" + url.PathEscape(sid) + "/apps/" + url.PathEscape(aid), nil, nil
+		},
+	},
+	{
 		Name: "pando_get_status",
 		Description: "What an app is doing right now: running, degraded, failed, and why — " +
 			"including each part separately, so a single part that is crash-looping is " +

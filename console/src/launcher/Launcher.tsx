@@ -12,20 +12,28 @@
 // R-266: sharing sends no message. An app appearing here is the notification,
 // so the list is the whole mechanism and has to be right.
 //
-// R-341: favorites are the same list, split in two. There is no second
-// request, so the two sections cannot disagree about what you can open.
+// Favorites (R-341) and sections (R-342) are the same list, split up. One
+// request carries the apps, where each is filed and the sections themselves,
+// so no two parts of this page can disagree about what you can open.
+//
+// Everything that arranges the page lives in one place — each tile's menu —
+// and there is no settings screen for it. Someone who never opens a menu sees
+// "Your apps" and nothing else.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { EmptyState, Icon, IconButton, Logo } from '@design';
+import { EmptyState, Icon, IconButton, Input, Logo } from '@design';
 
 import { api, base } from '@api/client';
-import type { App } from '@api/types.gen';
+import type { App, Section } from '@api/types.gen';
 import { statusLabel } from '../ui/status';
 import { Sheet } from '../ui/Sheet';
+import { Menu, MenuDivider, MenuItem } from '../ui/Menu';
 import { TopoBackground, TopoTile } from '../ui/TopoBackground';
 
-type MyApps = { apps: App[] | null };
+type MyApps = { apps: App[] | null; sections: Section[] | null };
+
+const KEY = ['me', 'apps'];
 
 export function Launcher({
   onAdmin,
@@ -35,36 +43,20 @@ export function Launcher({
   /** Theme and signing out, which everyone can reach. */
   onSettings: () => void;
 }) {
-  const queries = useQueryClient();
-  const apps = useQuery({
-    queryKey: ['me', 'apps'],
-    queryFn: () => api.get<MyApps>('/me/apps'),
-  });
-
-  // Optimistic: the star and the section move the moment it is clicked, and
-  // move back if the server refuses. A pin that takes a round trip to show is
-  // a pin people click twice.
-  const favorite = useMutation({
-    mutationFn: ({ app, on }: { app: App; on: boolean }) =>
-      on ? api.put<void>(`/me/favorites/${app.id}`) : api.del<void>(`/me/favorites/${app.id}`),
-    onMutate: async ({ app, on }) => {
-      await queries.cancelQueries({ queryKey: ['me', 'apps'] });
-      const before = queries.getQueryData<MyApps>(['me', 'apps']);
-      queries.setQueryData<MyApps>(['me', 'apps'], (old) => ({
-        apps: (old?.apps ?? []).map((a) => (a.id === app.id ? { ...a, favorite: on } : a)),
-      }));
-      return { before };
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.before) queries.setQueryData(['me', 'apps'], context.before);
-    },
-    onSettled: () => void queries.invalidateQueries({ queryKey: ['me', 'apps'] }),
-  });
-  const toggle = (app: App) => favorite.mutate({ app, on: !app.favorite });
+  const apps = useQuery({ queryKey: KEY, queryFn: () => api.get<MyApps>('/me/apps') });
+  const arrange = useArrange();
+  const [collapsed, toggleCollapsed] = useCollapsed();
 
   const all = apps.data?.apps ?? [];
+  const sections = apps.data?.sections ?? [];
+  const known = new Set(sections.map((s) => s.id));
+
+  // A favorite shows once, in Favorites, whatever section it is filed under.
   const pinned = all.filter((a) => a.favorite);
-  const rest = all.filter((a) => !a.favorite);
+  const inSection = (id: string) => all.filter((a) => !a.favorite && a.section_id === id);
+  const rest = all.filter((a) => !a.favorite && !(a.section_id && known.has(a.section_id)));
+
+  const tile = (app: App) => <Tile key={app.id} app={app} sections={sections} arrange={arrange} />;
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--paper)', position: 'relative', isolation: 'isolate' }}>
@@ -102,24 +94,43 @@ export function Launcher({
       </header>
 
       <main style={{ maxWidth: 'var(--console-max)', margin: '0 auto' }}>
-        {/* Above the rest, and only when there is something in it: an empty
-            "Favorites" heading on every launcher would be a section explaining
-            a feature rather than showing anything. */}
+        {/* Only when there is something in it: an empty "Favorites" heading on
+            every launcher would be a section explaining a feature rather than
+            showing anything. */}
         {pinned.length > 0 && (
-          <Sheet heading="Favorites">
-            <Grid apps={pinned} onToggle={toggle} />
-          </Sheet>
+          <Group id="favorites" title="Favorites" collapsed={collapsed} onToggle={toggleCollapsed}>
+            <Grid>{pinned.map(tile)}</Grid>
+          </Group>
         )}
 
-        {/* Hidden when every app is a favorite, rather than saying there is
-            nothing shared with you directly under the apps that were. */}
-        {(rest.length > 0 || pinned.length === 0) && (
-          <Sheet heading="Your apps">
+        {sections.map((section) => {
+          const filed = inSection(section.id);
+          return (
+            <Group
+              key={section.id}
+              id={section.id}
+              title={section.name}
+              collapsed={collapsed}
+              onToggle={toggleCollapsed}
+              section={section}
+              arrange={arrange}
+            >
+              {filed.length > 0 ? (
+                <Grid>{filed.map(tile)}</Grid>
+              ) : (
+                <Quiet>Nothing here yet. Use an app&rsquo;s menu to move it into this section.</Quiet>
+              )}
+            </Group>
+          );
+        })}
+
+        {/* Hidden once every app has somewhere else to be, rather than saying
+            there is nothing shared with you directly under the apps that were. */}
+        {(rest.length > 0 || all.length === 0) && (
+          <Group id="unsorted" title="Your apps" collapsed={collapsed} onToggle={toggleCollapsed}>
             {apps.isPending && <Quiet>Loading your apps.</Quiet>}
 
-            {apps.isError && (
-              <Quiet>Pando couldn&rsquo;t load your apps. Reload the page to try again.</Quiet>
-            )}
+            {apps.isError && <Quiet>Pando couldn&rsquo;t load your apps. Reload the page to try again.</Quiet>}
 
             {apps.data &&
               (rest.length === 0 ? (
@@ -130,32 +141,232 @@ export function Launcher({
                   When someone shares an app with you, it shows up here.
                 </EmptyState>
               ) : (
-                <Grid apps={rest} onToggle={toggle} />
+                <Grid>{rest.map(tile)}</Grid>
               ))}
-          </Sheet>
+          </Group>
         )}
       </main>
     </div>
   );
 }
 
-function Grid({ apps, onToggle }: { apps: App[]; onToggle: (app: App) => void }) {
+// --- arranging ---------------------------------------------------------------
+
+type Arrange = ReturnType<typeof useArrange>;
+
+/**
+ * Every change a person can make to their own launcher, in one place.
+ *
+ * Favoriting and filing are optimistic — the tile moves the moment it is
+ * clicked, and moves back if the server refuses — because a tile that takes a
+ * round trip to move is a tile people click twice. Making, renaming and
+ * deleting a section wait for the server, which names the section.
+ */
+function useArrange() {
+  const queries = useQueryClient();
+
+  const optimistic = async (change: (apps: App[]) => App[]) => {
+    await queries.cancelQueries({ queryKey: KEY });
+    const before = queries.getQueryData<MyApps>(KEY);
+    queries.setQueryData<MyApps>(KEY, (old) => ({
+      apps: change(old?.apps ?? []),
+      sections: old?.sections ?? [],
+    }));
+    return { before };
+  };
+  const rollback = (_e: unknown, _v: unknown, context?: { before?: MyApps }) => {
+    if (context?.before) queries.setQueryData(KEY, context.before);
+  };
+  const settle = () => void queries.invalidateQueries({ queryKey: KEY });
+
+  const favorite = useMutation({
+    mutationFn: ({ app, on }: { app: App; on: boolean }) =>
+      on ? api.put<void>(`/me/favorites/${app.id}`) : api.del<void>(`/me/favorites/${app.id}`),
+    onMutate: ({ app, on }) => optimistic((apps) => apps.map((a) => (a.id === app.id ? { ...a, favorite: on } : a))),
+    onError: rollback,
+    onSettled: settle,
+  });
+
+  // `to` of null is "Your apps": out of the section it is in.
+  const move = useMutation({
+    mutationFn: ({ app, to }: { app: App; to: string | null }) =>
+      to
+        ? api.put<void>(`/me/sections/${to}/apps/${app.id}`)
+        : api.del<void>(`/me/sections/${app.section_id}/apps/${app.id}`),
+    onMutate: ({ app, to }) =>
+      optimistic((apps) => apps.map((a) => (a.id === app.id ? { ...a, section_id: to ?? undefined } : a))),
+    onError: rollback,
+    onSettled: settle,
+  });
+
+  const create = useMutation({
+    mutationFn: async ({ name, app }: { name: string; app: App }) => {
+      const section = await api.post<Section>('/me/sections', { name });
+      await api.put<void>(`/me/sections/${section.id}/apps/${app.id}`);
+    },
+    onSettled: settle,
+  });
+
+  const rename = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.patch<Section>(`/me/sections/${id}`, { name }),
+    onSettled: settle,
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del<void>(`/me/sections/${id}`),
+    onSettled: settle,
+  });
+
+  return { favorite, move, create, rename, remove };
+}
+
+/**
+ * Which groups are folded away. Per browser, like the theme: it is how a page
+ * is being looked at, not a fact about the person, and nobody needs it to
+ * follow them to another machine. Storage can be refused; then nothing is
+ * remembered and everything starts open.
+ */
+function useCollapsed(): [Set<string>, (id: string) => void] {
+  const STORE = 'pando.launcher.collapsed';
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(window.localStorage.getItem(STORE) ?? '[]') as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORE, JSON.stringify([...collapsed]));
+    } catch {
+      // Remembered for this page only.
+    }
+  }, [collapsed]);
+  const toggle = (id: string) =>
+    setCollapsed((old) => {
+      const next = new Set(old);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  return [collapsed, toggle];
+}
+
+// --- groups ------------------------------------------------------------------
+
+function Group({
+  id,
+  title,
+  collapsed,
+  onToggle,
+  section,
+  arrange,
+  children,
+}: {
+  id: string;
+  title: string;
+  collapsed: Set<string>;
+  onToggle: (id: string) => void;
+  /** Set for a person's own section, which can be renamed and deleted. */
+  section?: Section;
+  arrange?: Arrange;
+  children: React.ReactNode;
+}) {
+  const closed = collapsed.has(id);
+  const [renaming, setRenaming] = useState<string | null>(null);
+
+  const heading =
+    renaming !== null && section && arrange ? (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const name = renaming.trim();
+          if (name && name !== section.name) arrange.rename.mutate({ id: section.id, name });
+          setRenaming(null);
+        }}
+      >
+        <Input
+          aria-label="Section name"
+          value={renaming}
+          autoFocus
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => setRenaming(e.target.value)}
+          onBlur={() => setRenaming(null)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setRenaming(null);
+          }}
+        />
+      </form>
+    ) : (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <button
+          type="button"
+          onClick={() => onToggle(id)}
+          aria-expanded={!closed}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 'var(--space-2)',
+            border: 'none',
+            background: 'transparent',
+            padding: 0,
+            cursor: 'pointer',
+            font: 'inherit',
+            color: 'var(--ink)',
+          }}
+        >
+          <Icon name={closed ? 'chevron-right' : 'chevron-down'} size={16} />
+          {title}
+        </button>
+        {section && arrange && (
+          <Menu label={`Options for the ${section.name} section`} align="start">
+            {(close) => (
+              <>
+                <MenuItem
+                  onSelect={() => {
+                    close();
+                    setRenaming(section.name);
+                  }}
+                >
+                  Rename
+                </MenuItem>
+                {/* No confirmation: deleting a section loses nothing. Its apps
+                    go back to Your apps, and it can be made again. */}
+                <MenuItem
+                  onSelect={() => {
+                    close();
+                    arrange.remove.mutate(section.id);
+                  }}
+                >
+                  Delete section
+                </MenuItem>
+              </>
+            )}
+          </Menu>
+        )}
+      </span>
+    );
+
+  return <Sheet heading={heading}>{closed ? null : children}</Sheet>;
+}
+
+function Grid({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{
         display: 'grid',
-        // Fixed tracks, not 1fr: a square that stretched to fill the row would
-        // be a different size on every window, and a poster on a wide one.
+        // Fixed tracks, not 1fr: a tile that stretched to fill the row would be
+        // a different size on every window, and a poster on a wide one.
         gridTemplateColumns: 'repeat(auto-fill, 16ch)',
-        gap: 'var(--space-6) var(--space-5)',
+        gap: 'var(--space-5)',
       }}
     >
-      {apps.map((app) => (
-        <Tile key={app.id} app={app} onToggle={() => onToggle(app)} />
-      ))}
+      {children}
     </div>
   );
 }
+
+// --- tiles -------------------------------------------------------------------
 
 /**
  * Whether opening the app would reach it.
@@ -167,36 +378,46 @@ function reachable(app: App): boolean {
   return Boolean(app.address) && (app.state === 'running' || app.state === 'degraded');
 }
 
-function Tile({ app, onToggle }: { app: App; onToggle: () => void }) {
-  // A square and a name, and no status line. The launcher is for someone who
-  // came to open an app (R-005), and "running" is the normal case — a word on
-  // every tile saying so is noise. What they need to know is which tiles will
-  // not open, and a greyed-out tile says that without a word.
-  //
-  // The state is still in the accessible name and the hover title, so the
-  // difference is never carried by appearance alone.
+// Touch screens have no hover, so there the menu button is always shown.
+const canHover = typeof window !== 'undefined' && window.matchMedia?.('(hover: hover)').matches;
+
+function Tile({ app, sections, arrange }: { app: App; sections: Section[]; arrange: Arrange }) {
+  // A card with the app's picture and its name, and no status line. The
+  // launcher is for someone who came to open an app (R-005), and "running" is
+  // the normal case — a word on every tile saying so is noise. What they need
+  // to know is which tiles will not open, and a greyed-out tile says that
+  // without a word. The state is still in the accessible name and the hover
+  // title, so the difference is never carried by appearance alone.
   const open = reachable(app);
   const label = open ? app.name : `${app.name} — ${statusLabel(app.state)}`;
 
-  // The star shows on a favorite always, and on anything else when the tile is
-  // pointed at or tabbed into — twenty outlined stars at rest would be twenty
-  // things to look past.
+  // The menu button shows when the tile is pointed at or tabbed into, and
+  // while its menu is open: twenty buttons at rest are twenty things to look
+  // past.
   const [near, setNear] = useState(false);
-  const favorite = Boolean(app.favorite);
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  const body = (
+  const card = (
     <div
       style={{
+        aspectRatio: '1 / 1',
         display: 'flex',
         flexDirection: 'column',
-        gap: 'var(--space-2)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 'var(--space-3)',
+        padding: 'var(--space-4)',
+        background: 'var(--paper-raised)',
+        border: `var(--border-width) solid ${near && open ? 'var(--rule-strong)' : 'var(--rule)'}`,
+        borderRadius: 'var(--radius-md)',
         opacity: open ? 1 : 0.45,
         filter: open ? 'none' : 'grayscale(1)',
       }}
     >
-      <Square app={app} />
+      <Picture app={app} />
       <span
         style={{
+          maxWidth: '100%',
           font: 'var(--type-body-ui)',
           color: 'var(--ink)',
           textAlign: 'center',
@@ -211,24 +432,22 @@ function Tile({ app, onToggle }: { app: App; onToggle: () => void }) {
   );
 
   return (
-    // The star is a sibling of the link, not inside it: a button in an anchor
-    // is two controls in one, and a click on the star would open the app.
+    // The menu is a sibling of the link, not inside it: a button in an anchor
+    // is two controls in one, and a click on the menu would open the app.
     <div
       style={{ position: 'relative' }}
       onMouseEnter={() => setNear(true)}
       onMouseLeave={() => setNear(false)}
       onFocus={() => setNear(true)}
-      onBlur={() => setNear(false)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setNear(false);
+      }}
     >
       {open ? (
-        // An app is a different place from the console. Opening it over the
-        // top of Pando means the way back is the browser's history, and for
-        // someone who came to the launcher to open two apps it means coming
-        // back here every time.
-        //
-        // Every one of these addresses goes through Pando's proxy — there is
-        // no other way in (R-023) — but *which* address depends on how the app
-        // is routed, and the server is what knows.
+        // An app is a different place from the console, so it opens in its
+        // own tab. Every one of these addresses goes through Pando's proxy —
+        // there is no other way in (R-023) — and which address depends on how
+        // the app is routed, which the server knows.
         <a
           href={app.address}
           target="_blank"
@@ -236,24 +455,17 @@ function Tile({ app, onToggle }: { app: App; onToggle: () => void }) {
           aria-label={label}
           style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
         >
-          {body}
+          {card}
         </a>
       ) : (
         <div title={statusLabel(app.state)} aria-label={label} aria-disabled="true">
-          {body}
+          {card}
         </div>
       )}
 
-      {(favorite || near) && (
-        <div style={{ position: 'absolute', top: 'var(--space-2)', right: 'var(--space-2)' }}>
-          <IconButton
-            variant="secondary"
-            label={favorite ? `Remove ${app.name} from favorites` : `Add ${app.name} to favorites`}
-            aria-pressed={favorite}
-            onClick={onToggle}
-          >
-            <Icon name={favorite ? 'star-filled' : 'star'} size={16} color="var(--ink)" />
-          </IconButton>
+      {(canHover ? near || menuOpen : true) && (
+        <div style={{ position: 'absolute', top: 'var(--space-1)', right: 'var(--space-1)' }}>
+          <TileMenu app={app} open={open} sections={sections} arrange={arrange} onOpenChange={setMenuOpen} />
         </div>
       )}
     </div>
@@ -261,10 +473,121 @@ function Tile({ app, onToggle }: { app: App; onToggle: () => void }) {
 }
 
 /**
- * The tile's picture: the app's image when it has one (R-340), and a patch of
- * terrain generated from its ID when it does not.
+ * Open, favorite, and where the app lives. Three things; filing it is a
+ * second page of the same menu rather than a menu of its own, and making a
+ * section is a line at the bottom of that page — there is no other place
+ * sections are made, so there is no empty section to wonder about.
  */
-function Square({ app }: { app: App }) {
+function TileMenu({
+  app,
+  open,
+  sections,
+  arrange,
+  onOpenChange,
+}: {
+  app: App;
+  open: boolean;
+  sections: Section[];
+  arrange: Arrange;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [page, setPage] = useState<'main' | 'sections' | 'new'>('main');
+  const [name, setName] = useState('');
+
+  return (
+    <Menu
+      label={`Options for ${app.name}`}
+      view={page}
+      onOpenChange={(o) => {
+        onOpenChange(o);
+        if (!o) {
+          setPage('main');
+          setName('');
+        }
+      }}
+    >
+      {(close) => {
+        if (page === 'new') {
+          return (
+            <form
+              style={{ padding: 'var(--space-2)' }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                const trimmed = name.trim();
+                if (!trimmed) return;
+                arrange.create.mutate({ name: trimmed, app });
+                close();
+              }}
+            >
+              <Input
+                aria-label="New section name"
+                placeholder="Section name"
+                value={name}
+                autoFocus
+                onChange={(e) => setName(e.target.value)}
+              />
+            </form>
+          );
+        }
+
+        if (page === 'sections') {
+          return (
+            <>
+              <MenuItem
+                checked={!app.section_id}
+                onSelect={() => {
+                  if (app.section_id) arrange.move.mutate({ app, to: null });
+                  close();
+                }}
+              >
+                Your apps
+              </MenuItem>
+              {sections.map((s) => (
+                <MenuItem
+                  key={s.id}
+                  checked={app.section_id === s.id}
+                  onSelect={() => {
+                    if (app.section_id !== s.id) arrange.move.mutate({ app, to: s.id });
+                    close();
+                  }}
+                >
+                  {s.name}
+                </MenuItem>
+              ))}
+              <MenuDivider />
+              <MenuItem onSelect={() => setPage('new')}>New section…</MenuItem>
+            </>
+          );
+        }
+
+        return (
+          <>
+            {open && (
+              <MenuItem href={app.address} onSelect={close}>
+                Open
+              </MenuItem>
+            )}
+            <MenuItem
+              onSelect={() => {
+                arrange.favorite.mutate({ app, on: !app.favorite });
+                close();
+              }}
+            >
+              {app.favorite ? 'Remove from favorites' : 'Add to favorites'}
+            </MenuItem>
+            <MenuItem onSelect={() => setPage('sections')}>Move to section…</MenuItem>
+          </>
+        );
+      }}
+    </Menu>
+  );
+}
+
+/**
+ * The picture inside the card: the app's image when it has one (R-340), and a
+ * patch of terrain generated from its ID when it does not.
+ */
+function Picture({ app }: { app: App }) {
   // The timestamp is in the URL so a new image is a new address, and the
   // browser's cached copy of the old one is never shown.
   const src = app.icon_updated_at
@@ -274,9 +597,10 @@ function Square({ app }: { app: App }) {
   return (
     <div
       style={{
+        width: '55%',
         aspectRatio: '1 / 1',
-        borderRadius: 'var(--radius-md)',
-        border: 'var(--border-width) solid var(--rule)',
+        flex: '0 0 auto',
+        borderRadius: 'var(--radius-sm)',
         overflow: 'hidden',
       }}
     >
@@ -290,7 +614,5 @@ function Square({ app }: { app: App }) {
 }
 
 function Quiet({ children }: { children: React.ReactNode }) {
-  return (
-    <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)' }}>{children}</p>
-  );
+  return <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>{children}</p>;
 }

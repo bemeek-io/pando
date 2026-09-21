@@ -242,7 +242,18 @@ func (s *Server) handleMyApps(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
-	JSON(w, http.StatusOK, map[string]any{"apps": withAddresses(r, apps)})
+
+	// The person's own launcher sections (R-342), in the same response as the
+	// apps filed under them, so the two cannot disagree. A service token has
+	// no person and so no sections.
+	sections := []state.Section{}
+	if p.UserID != "" {
+		if sections, err = s.Apps.Sections(r.Context(), p.UserID); err != nil {
+			Error(w, r, err)
+			return
+		}
+	}
+	JSON(w, http.StatusOK, map[string]any{"apps": withAddresses(r, apps), "sections": sections})
 }
 
 func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {

@@ -85,6 +85,11 @@ type App struct {
 	// (R-341). Only GET /me/apps fills it in: it is a fact about the person
 	// asking, and no other list is answering a question about them.
 	Favorite bool `json:"favorite,omitempty"`
+
+	// SectionID is the caller's launcher section this app is filed under, and
+	// empty when it is under "Your apps" (R-342). Like Favorite, only GET
+	// /me/apps fills it in.
+	SectionID string `json:"section_id,omitempty"`
 }
 
 // Apps stores apps and their spec revisions.
@@ -273,11 +278,12 @@ func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, 
 func (a *Apps) ListForUse(ctx context.Context, p authz.Principal) ([]App, error) {
 	rows, err := a.db.Query(ctx, `
 		SELECT DISTINCT a.id, a.name, a.slug, a.state, r.body->'routing', i.updated_at,
-		       f.app_id IS NOT NULL
+		       f.app_id IS NOT NULL, lp.section_id
 		FROM apps a
 		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
 		LEFT JOIN app_icons i ON i.app_id = a.id
 		LEFT JOIN app_favorites f ON f.app_id = a.id AND f.user_id = $1
+		LEFT JOIN launcher_placements lp ON lp.app_id = a.id AND lp.user_id = $1
 		LEFT JOIN grants g ON g.app_id = a.id AND g.plane = 'data'
 		WHERE a.deleted_at IS NULL
 		  AND (
@@ -299,9 +305,13 @@ func (a *Apps) ListForUse(ctx context.Context, p authz.Principal) ([]App, error)
 	for rows.Next() {
 		var app App
 		var routing []byte
+		var sectionID *string
 		if err := rows.Scan(&app.ID, &app.Name, &app.Slug, &app.State, &routing, &app.IconUpdatedAt,
-			&app.Favorite); err != nil {
+			&app.Favorite, &sectionID); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list apps.", err)
+		}
+		if sectionID != nil {
+			app.SectionID = *sectionID
 		}
 		if len(routing) > 0 {
 			// A routing block that will not parse is not a reason to refuse

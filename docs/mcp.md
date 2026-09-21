@@ -57,5 +57,12 @@ boundary (O-12), and offering a tool policy will refuse wastes the agent's turn.
 | `pando_clear_app_icon` | Remove the image on an app's launcher tile, so the tile shows the map generated for it. | `app_id` |
 | `pando_favorite_app` | Pin an app to the top of your own launcher. It grants nothing and only you see it; you must be able to open the app. | `app_id` |
 | `pando_unfavorite_app` | Unpin an app from your launcher. | `app_id` |
+| `pando_rename_app` | Change an app's display name. Its ID and address do not change. | `app_id`, `name` |
+| `pando_list_my_apps` | The apps you can open — your launcher — with which are favorites and which of your sections each is filed under, and your sections. A different list from pando_list_apps, which is the apps you can administer. | none |
+| `pando_create_section` | Make a section in your own launcher: a named grouping of apps. Only you see it. | `name` |
+| `pando_rename_section` | Rename one of your launcher sections. | `name`, `section_id` |
+| `pando_delete_section` | Delete one of your launcher sections. Its apps go back to Your apps; nothing else changes. | `section_id` |
+| `pando_add_app_to_section` | Move an app you can open into one of your launcher sections, out of any other. | `app_id`, `section_id` |
+| `pando_remove_app_from_section` | Move an app out of one of your launcher sections, back to Your apps. | `app_id`, `section_id` |
 | `pando_get_status` | What an app is doing right now: running, degraded, failed, and why — including each part separately, so a single part that is crash-looping is visible rather than averaged into one word for the app. | `app_id` |
 

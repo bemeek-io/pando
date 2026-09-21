@@ -712,6 +712,8 @@ cannot do one of them says so rather than failing when asked.
 
 **R-341 [D] [V1]** A person may mark apps they can open as **favorites**, and their launcher shows those first, above the rest. Favorites belong to the account, not the browser. They grant nothing, are visible only to the person who set them, and an app they can no longer open is not shown whether it is a favorite or not.
 
+**R-342 [D] [V1]** A person may make **sections** in their launcher — named, collapsible groupings — and file apps they can open into them, one section per app. Anything not filed is under "Your apps", so a person who never makes one sees the launcher as before. Like favorites, sections belong to the account, grant nothing and are visible only to the person who made them; deleting one returns its apps to "Your apps".
+
 ---
 
 ## 20. Configuration and Policy

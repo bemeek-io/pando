@@ -18,6 +18,7 @@ import { relative } from '../ui/time';
 import { deployLabel, deployStatus } from '../ui/deploys';
 import { Security } from './Security';
 import { AppImage } from './AppImage';
+import { AppName } from './AppName';
 
 interface SpecRevision {
   id: string;
@@ -112,6 +113,9 @@ export function AppOverview({
 
       <div style={{ maxWidth: MEASURE }}>
         <Card padding="md">
+          <Row label="Name">
+            <AppName app={app} />
+          </Row>
           <Row label="Status">
             <StatusIndicator status={statusSymbol(app.state)} label={statusLabel(app.state)} />
           </Row>

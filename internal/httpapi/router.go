@@ -271,6 +271,13 @@ func (s *Server) Routes() http.Handler {
 		r.Put("/me/favorites/{appID}", s.handleFavoriteApp)
 		r.Delete("/me/favorites/{appID}", s.handleUnfavoriteApp)
 
+		// Sections (R-342): the caller's own groupings in that list.
+		r.Post("/me/sections", s.handleCreateSection)
+		r.Patch("/me/sections/{sectionID}", s.handleRenameSection)
+		r.Delete("/me/sections/{sectionID}", s.handleDeleteSection)
+		r.Put("/me/sections/{sectionID}/apps/{appID}", s.handlePlaceApp)
+		r.Delete("/me/sections/{sectionID}/apps/{appID}", s.handleUnplaceApp)
+
 		// Accounts. Reading or changing your own needs nothing
 		// administrative; doing either to someone else needs an
 		// install-scoped verb (O-17). Before those verbs existed these were

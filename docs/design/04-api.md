@@ -303,7 +303,18 @@ GET  /api/v1/me/apps                      the launcher tiles (R-264)
 POST /api/v1/me/password                  change your own password (R-046)
 PUT    /api/v1/me/favorites/{id}          pin an app to the top of your launcher (R-341)
 DELETE /api/v1/me/favorites/{id}          unpin it
+POST   /api/v1/me/sections                make a launcher section (R-342)
+PATCH  /api/v1/me/sections/{id}           rename it
+DELETE /api/v1/me/sections/{id}           delete it; its apps go back to Your apps
+PUT    /api/v1/me/sections/{id}/apps/{app}   file an app into it, out of any other
+DELETE /api/v1/me/sections/{id}/apps/{app}   take it back out
 ```
+
+**[D]** Sections (R-342) follow favorites: self only, no verb, a user required, every store call keyed on
+the caller so someone else's section is not-found. Filing an app needs `CheckData` on it; taking one out
+does not. An app is in at most one of a person's sections (primary key on placements), and the composite
+foreign key from placement to `(section id, user id)` makes filing into someone else's section
+unrepresentable. `GET /me/apps` returns `sections` alongside `apps`, and each app's `section_id`.
 
 **[D]** Favorites (R-341) are self-only and carry no verb. `PUT` needs a user — a service token has no
 launcher and is refused — and answers not-found for an app the caller cannot open (`CheckData`), so a

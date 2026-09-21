@@ -159,6 +159,18 @@ List the apps you can manage
 pando app list
 ```
 
+#### `app rename`
+
+Change an app's display name
+
+```
+pando app rename <app> <new-name>
+```
+
+Changes the name shown for the app in the console and on everyone's launcher.
+
+The app's ID and address do not change.
+
 #### `app restart`
 
 Restart an app's workloads, changing nothing
@@ -457,6 +469,62 @@ Set a secret value, read from the terminal
 
 ```
 pando secret set <app> <key>
+```
+
+### `section`
+
+Group the apps in your launcher into sections
+
+```
+pando section
+```
+
+#### `section add`
+
+Move an app into a section
+
+```
+pando section add <section-id> <app>
+```
+
+#### `section create`
+
+Make a section
+
+```
+pando section create <name>
+```
+
+#### `section delete`
+
+Delete a section. Its apps go back to Your apps
+
+```
+pando section delete <section-id>
+```
+
+#### `section list`
+
+The apps you can open, by section
+
+```
+pando section list
+```
+
+#### `section remove`
+
+Move an app out of a section, back to Your apps
+
+```
+pando section remove <section-id> <app>
+```
+
+#### `section rename`
+
+Rename a section
+
+```
+pando section rename <section-id> <name>
 ```
 
 ### `slot`

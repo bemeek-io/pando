@@ -27,9 +27,14 @@ var routeDocs = []reference.Route{
 	{Method: "DELETE", Path: "/api/v1/sessions", Group: "Session", Summary: "Sign out, ending this session."},
 	{Method: "GET", Path: "/api/v1/me", Group: "Session", Summary: "Who the caller is, and the install-level verbs they hold."},
 	{Method: "POST", Path: "/api/v1/me/password", Group: "Session", Summary: "Change your own password. Yours only, whatever verbs you hold."},
-	{Method: "GET", Path: "/api/v1/me/apps", Group: "Session", Summary: "The apps you can open, which is a different list from the apps you can administer (R-070, R-071). `favorite` marks the ones you have pinned."},
+	{Method: "GET", Path: "/api/v1/me/apps", Group: "Session", Summary: "The apps you can open, which is a different list from the apps you can administer (R-070, R-071). `favorite` marks the ones you have pinned, `section_id` the section you filed each under, and `sections` lists your sections."},
 	{Method: "PUT", Path: "/api/v1/me/favorites/{appID}", Group: "Session", Summary: "Mark an app you can open as a favorite, pinning it to the top of your launcher. Yours only; it grants nothing (R-341)."},
 	{Method: "DELETE", Path: "/api/v1/me/favorites/{appID}", Group: "Session", Summary: "Unpin an app from your favorites."},
+	{Method: "POST", Path: "/api/v1/me/sections", Group: "Session", Summary: "Make a section in your launcher: a named, collapsible grouping of apps. Yours only; it grants nothing (R-342)."},
+	{Method: "PATCH", Path: "/api/v1/me/sections/{sectionID}", Group: "Session", Summary: "Rename one of your sections."},
+	{Method: "DELETE", Path: "/api/v1/me/sections/{sectionID}", Group: "Session", Summary: "Delete one of your sections. Its apps go back to Your apps."},
+	{Method: "PUT", Path: "/api/v1/me/sections/{sectionID}/apps/{appID}", Group: "Session", Summary: "File an app you can open into one of your sections, moving it out of any other."},
+	{Method: "DELETE", Path: "/api/v1/me/sections/{sectionID}/apps/{appID}", Group: "Session", Summary: "Take an app out of a section, back to Your apps."},
 
 	// --- tokens -----------------------------------------------------------
 	{Method: "GET", Path: "/api/v1/tokens", Group: "Tokens", Summary: "Your own tokens. Never anyone else's."},

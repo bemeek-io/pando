@@ -25,6 +25,13 @@ export interface App {
   security_verdict?: string;
   icon_updated_at?: string;
   favorite?: boolean;
+  section_id?: string;
+}
+
+export interface Section {
+  id: string;
+  name: string;
+  created_at: string;
 }
 
 export interface Revision {
