@@ -24,6 +24,7 @@ export interface App {
   security_score?: number;
   security_verdict?: string;
   icon_updated_at?: string;
+  favorite?: boolean;
 }
 
 export interface Revision {

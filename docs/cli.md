@@ -114,6 +114,14 @@ is not safe. Pass --discard-data to delete without one.
 | --- | --- | --- |
 | `--discard-data` |  | delete without keeping a backup of the app's storage |
 
+#### `app favorite`
+
+Pin an app to the top of your launcher
+
+```
+pando app favorite <app>
+```
+
 #### `app icon`
 
 Set the image on an app's launcher tile
@@ -124,7 +132,7 @@ pando app icon
 
 ##### `app icon clear`
 
-Remove an app's image, so its tile shows its initial
+Remove an app's image, so its tile shows the map generated for it
 
 ```
 pando app icon clear <app>
@@ -206,6 +214,14 @@ Nothing is removed: its storage, its configuration and its address are kept, and
 `pando app start` brings back the version that was running. A stopped app stays
 stopped — it is the app's desired state, not a one-off act, so it survives Pando
 itself restarting.
+
+#### `app unfavorite`
+
+Unpin an app from your launcher
+
+```
+pando app unfavorite <app>
+```
 
 ### `backup`
 

@@ -33,7 +33,9 @@ one verb says nothing about another (R-082).
 | `DELETE /api/v1/sessions` |  | Sign out, ending this session. |
 | `GET /api/v1/me` |  | Who the caller is, and the install-level verbs they hold. |
 | `POST /api/v1/me/password` |  | Change your own password. Yours only, whatever verbs you hold. |
-| `GET /api/v1/me/apps` |  | The apps you can open, which is a different list from the apps you can administer (R-070, R-071). |
+| `GET /api/v1/me/apps` |  | The apps you can open, which is a different list from the apps you can administer (R-070, R-071). `favorite` marks the ones you have pinned. |
+| `PUT /api/v1/me/favorites/{appID}` |  | Mark an app you can open as a favorite, pinning it to the top of your launcher. Yours only; it grants nothing (R-341). |
+| `DELETE /api/v1/me/favorites/{appID}` |  | Unpin an app from your favorites. |
 
 ### Tokens
 
@@ -56,7 +58,7 @@ one verb says nothing about another (R-082).
 | `DELETE /api/v1/apps/{appID}` | `app.delete` | Delete an app. With storage, `backup=true` keeps a final copy and `force=true` discards it; without either, the request is refused so the decision is taken rather than assumed (R-204, R-205). |
 | `GET /api/v1/apps/{appID}/icon` |  | The image on the app's launcher tile. Anyone who can open the app can load it; `icon_updated_at` on the app says whether there is one and when it changed (R-340). |
 | `PUT /api/v1/apps/{appID}/icon` | `app.spec.edit` | Set the app's tile image. The body is the image itself — PNG, JPEG, WebP or GIF, at most 256 KB. SVG is refused (R-340). |
-| `DELETE /api/v1/apps/{appID}/icon` | `app.spec.edit` | Remove the app's tile image, so the tile shows its initial again. |
+| `DELETE /api/v1/apps/{appID}/icon` | `app.spec.edit` | Remove the app's tile image, so the tile goes back to the map generated for it. |
 | `GET /api/v1/apps/{appID}/status` | `app.view` | What the app is doing now: its state, and each part separately — running, restarting and how often, health, exit code — so a single crash-looping part is visible rather than averaged into one word. |
 | `POST /api/v1/apps/{appID}/start` | `app.restart` | Set the app's desired state to running. The reconciler converges to it, so it survives a restart. |
 | `POST /api/v1/apps/{appID}/stop` | `app.restart` | Set the app's desired state to stopped. |

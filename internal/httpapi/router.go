@@ -266,6 +266,11 @@ func (s *Server) Routes() http.Handler {
 		// list from GET /apps.
 		r.Get("/me/apps", s.handleMyApps)
 
+		// Favorites (R-341): the caller's own, pinned to the top of that
+		// list. Self only, like the password.
+		r.Put("/me/favorites/{appID}", s.handleFavoriteApp)
+		r.Delete("/me/favorites/{appID}", s.handleUnfavoriteApp)
+
 		// Accounts. Reading or changing your own needs nothing
 		// administrative; doing either to someone else needs an
 		// install-scoped verb (O-17). Before those verbs existed these were

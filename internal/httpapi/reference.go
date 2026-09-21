@@ -27,7 +27,9 @@ var routeDocs = []reference.Route{
 	{Method: "DELETE", Path: "/api/v1/sessions", Group: "Session", Summary: "Sign out, ending this session."},
 	{Method: "GET", Path: "/api/v1/me", Group: "Session", Summary: "Who the caller is, and the install-level verbs they hold."},
 	{Method: "POST", Path: "/api/v1/me/password", Group: "Session", Summary: "Change your own password. Yours only, whatever verbs you hold."},
-	{Method: "GET", Path: "/api/v1/me/apps", Group: "Session", Summary: "The apps you can open, which is a different list from the apps you can administer (R-070, R-071)."},
+	{Method: "GET", Path: "/api/v1/me/apps", Group: "Session", Summary: "The apps you can open, which is a different list from the apps you can administer (R-070, R-071). `favorite` marks the ones you have pinned."},
+	{Method: "PUT", Path: "/api/v1/me/favorites/{appID}", Group: "Session", Summary: "Mark an app you can open as a favorite, pinning it to the top of your launcher. Yours only; it grants nothing (R-341)."},
+	{Method: "DELETE", Path: "/api/v1/me/favorites/{appID}", Group: "Session", Summary: "Unpin an app from your favorites."},
 
 	// --- tokens -----------------------------------------------------------
 	{Method: "GET", Path: "/api/v1/tokens", Group: "Tokens", Summary: "Your own tokens. Never anyone else's."},
@@ -44,7 +46,7 @@ var routeDocs = []reference.Route{
 	{Method: "DELETE", Path: "/api/v1/apps/{appID}", Group: "Apps", Summary: "Delete an app. With storage, `backup=true` keeps a final copy and `force=true` discards it; without either, the request is refused so the decision is taken rather than assumed (R-204, R-205).", Verb: string(authz.AppDelete)},
 	{Method: "GET", Path: "/api/v1/apps/{appID}/icon", Group: "Apps", Summary: "The image on the app's launcher tile. Anyone who can open the app can load it; `icon_updated_at` on the app says whether there is one and when it changed (R-340)."},
 	{Method: "PUT", Path: "/api/v1/apps/{appID}/icon", Group: "Apps", Summary: "Set the app's tile image. The body is the image itself — PNG, JPEG, WebP or GIF, at most 256 KB. SVG is refused (R-340).", Verb: string(authz.AppSpecEdit)},
-	{Method: "DELETE", Path: "/api/v1/apps/{appID}/icon", Group: "Apps", Summary: "Remove the app's tile image, so the tile shows its initial again.", Verb: string(authz.AppSpecEdit)},
+	{Method: "DELETE", Path: "/api/v1/apps/{appID}/icon", Group: "Apps", Summary: "Remove the app's tile image, so the tile goes back to the map generated for it.", Verb: string(authz.AppSpecEdit)},
 	{Method: "GET", Path: "/api/v1/apps/{appID}/status", Group: "Apps", Summary: "What the app is doing now: its state, and each part separately — running, restarting and how often, health, exit code — so a single crash-looping part is visible rather than averaged into one word.", Verb: string(authz.AppView)},
 	{Method: "POST", Path: "/api/v1/apps/{appID}/start", Group: "Apps", Summary: "Set the app's desired state to running. The reconciler converges to it, so it survives a restart.", Verb: string(authz.AppRestart)},
 	{Method: "POST", Path: "/api/v1/apps/{appID}/stop", Group: "Apps", Summary: "Set the app's desired state to stopped.", Verb: string(authz.AppRestart)},

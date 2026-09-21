@@ -297,7 +297,7 @@ var toolList = []tool{
 	},
 	{
 		Name:        "pando_clear_app_icon",
-		Description: "Remove the image on an app's launcher tile, so the tile shows the app's initial.",
+		Description: "Remove the image on an app's launcher tile, so the tile shows the map generated for it.",
 		Schema:      schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
 		request: func(args map[string]any) (string, string, any, error) {
 			id, err := stringArg(args, "app_id", true)
@@ -305,6 +305,31 @@ var toolList = []tool{
 				return "", "", nil, err
 			}
 			return "DELETE", appPath(id, "/icon"), nil, nil
+		},
+	},
+	{
+		Name: "pando_favorite_app",
+		Description: "Pin an app to the top of your own launcher. It grants nothing and only you " +
+			"see it; you must be able to open the app.",
+		Schema: schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "app_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "PUT", "/me/favorites/" + url.PathEscape(id), nil, nil
+		},
+	},
+	{
+		Name:        "pando_unfavorite_app",
+		Description: "Unpin an app from your launcher.",
+		Schema:      schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "app_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "DELETE", "/me/favorites/" + url.PathEscape(id), nil, nil
 		},
 	},
 	{

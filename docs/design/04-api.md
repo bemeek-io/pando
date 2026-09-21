@@ -301,7 +301,16 @@ would make `grant.delete` a result for a search for "delete".
 GET  /api/v1/me                           profile, groups, install-scoped verbs
 GET  /api/v1/me/apps                      the launcher tiles (R-264)
 POST /api/v1/me/password                  change your own password (R-046)
+PUT    /api/v1/me/favorites/{id}          pin an app to the top of your launcher (R-341)
+DELETE /api/v1/me/favorites/{id}          unpin it
 ```
+
+**[D]** Favorites (R-341) are self-only and carry no verb. `PUT` needs a user — a service token has no
+launcher and is refused — and answers not-found for an app the caller cannot open (`CheckData`), so a
+favorite cannot be used to probe for apps. `DELETE` checks nothing beyond the caller: removing your own
+row is always allowed, including for an app you have since lost. Both are idempotent and answer `204`.
+`GET /me/apps` carries `favorite` on each app; there is no separate list, because the favorites are a
+subset of that list and a second endpoint could disagree with it.
 
 **[D]** `POST /me/password` takes the current password as well as the new one, even though the caller
 is already authenticated. A session cookie is a bearer credential; without the check, anyone holding

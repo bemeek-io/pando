@@ -247,6 +247,10 @@ func TestEachToolMapsToItsEndpoint(t *testing.T) {
 		// R-340: the tile image, settable from every surface (R-261).
 		{"pando_set_app_icon", `{"app_id":"app_01HQ8","image_base64":"iVBORw=="}`, "PUT", "/apps/app_01HQ8/icon"},
 		{"pando_clear_app_icon", `{"app_id":"app_01HQ8"}`, "DELETE", "/apps/app_01HQ8/icon"},
+
+		// R-341: favorites, from every surface.
+		{"pando_favorite_app", `{"app_id":"app_01HQ8"}`, "PUT", "/me/favorites/app_01HQ8"},
+		{"pando_unfavorite_app", `{"app_id":"app_01HQ8"}`, "DELETE", "/me/favorites/app_01HQ8"},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
 			srv, s := newSession()

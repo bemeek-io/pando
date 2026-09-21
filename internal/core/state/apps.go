@@ -80,6 +80,11 @@ type App struct {
 	// the image's URL and a browser never shows yesterday's picture from cache.
 	// The bytes are at GET /apps/{id}/icon; no list carries them.
 	IconUpdatedAt *time.Time `json:"icon_updated_at,omitempty"`
+
+	// Favorite is whether the caller has marked this app as a favorite
+	// (R-341). Only GET /me/apps fills it in: it is a fact about the person
+	// asking, and no other list is answering a question about them.
+	Favorite bool `json:"favorite,omitempty"`
 }
 
 // Apps stores apps and their spec revisions.
@@ -267,10 +272,12 @@ func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, 
 // endpoints: the launcher shows what you can open, not what you can manage.
 func (a *Apps) ListForUse(ctx context.Context, p authz.Principal) ([]App, error) {
 	rows, err := a.db.Query(ctx, `
-		SELECT DISTINCT a.id, a.name, a.slug, a.state, r.body->'routing', i.updated_at
+		SELECT DISTINCT a.id, a.name, a.slug, a.state, r.body->'routing', i.updated_at,
+		       f.app_id IS NOT NULL
 		FROM apps a
 		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
 		LEFT JOIN app_icons i ON i.app_id = a.id
+		LEFT JOIN app_favorites f ON f.app_id = a.id AND f.user_id = $1
 		LEFT JOIN grants g ON g.app_id = a.id AND g.plane = 'data'
 		WHERE a.deleted_at IS NULL
 		  AND (
@@ -292,7 +299,8 @@ func (a *Apps) ListForUse(ctx context.Context, p authz.Principal) ([]App, error)
 	for rows.Next() {
 		var app App
 		var routing []byte
-		if err := rows.Scan(&app.ID, &app.Name, &app.Slug, &app.State, &routing, &app.IconUpdatedAt); err != nil {
+		if err := rows.Scan(&app.ID, &app.Name, &app.Slug, &app.State, &routing, &app.IconUpdatedAt,
+			&app.Favorite); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list apps.", err)
 		}
 		if len(routing) > 0 {
@@ -359,6 +367,24 @@ func (a *Apps) IconOf(ctx context.Context, appID string) (Icon, bool, error) {
 		return Icon{}, false, errs.Wrap(errs.Internal, "Could not read the app's image.", err)
 	}
 	return icon, true, nil
+}
+
+// SetFavorite marks or unmarks an app as one of a user's favorites (R-341).
+// Both directions are idempotent: the outcome asked for is the one that holds.
+func (a *Apps) SetFavorite(ctx context.Context, userID, appID string, favorite bool) error {
+	var err error
+	if favorite {
+		_, err = a.db.Exec(ctx, `
+			INSERT INTO app_favorites (user_id, app_id) VALUES ($1, $2)
+			ON CONFLICT (user_id, app_id) DO NOTHING`, userID, appID)
+	} else {
+		_, err = a.db.Exec(ctx,
+			`DELETE FROM app_favorites WHERE user_id = $1 AND app_id = $2`, userID, appID)
+	}
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not update your favorites.", err)
+	}
+	return nil
 }
 
 // Archive soft-deletes an app.

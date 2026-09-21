@@ -11,16 +11,21 @@
 //
 // R-266: sharing sends no message. An app appearing here is the notification,
 // so the list is the whole mechanism and has to be right.
+//
+// R-341: favorites are the same list, split in two. There is no second
+// request, so the two sections cannot disagree about what you can open.
 
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { EmptyState, Icon, IconButton, Logo } from '@design';
-
 
 import { api, base } from '@api/client';
 import type { App } from '@api/types.gen';
 import { statusLabel } from '../ui/status';
 import { Sheet } from '../ui/Sheet';
-import { TopoBackground } from '../ui/TopoBackground';
+import { TopoBackground, TopoTile } from '../ui/TopoBackground';
+
+type MyApps = { apps: App[] | null };
 
 export function Launcher({
   onAdmin,
@@ -30,10 +35,36 @@ export function Launcher({
   /** Theme and signing out, which everyone can reach. */
   onSettings: () => void;
 }) {
+  const queries = useQueryClient();
   const apps = useQuery({
     queryKey: ['me', 'apps'],
-    queryFn: () => api.get<{ apps: App[] | null }>('/me/apps'),
+    queryFn: () => api.get<MyApps>('/me/apps'),
   });
+
+  // Optimistic: the star and the section move the moment it is clicked, and
+  // move back if the server refuses. A pin that takes a round trip to show is
+  // a pin people click twice.
+  const favorite = useMutation({
+    mutationFn: ({ app, on }: { app: App; on: boolean }) =>
+      on ? api.put<void>(`/me/favorites/${app.id}`) : api.del<void>(`/me/favorites/${app.id}`),
+    onMutate: async ({ app, on }) => {
+      await queries.cancelQueries({ queryKey: ['me', 'apps'] });
+      const before = queries.getQueryData<MyApps>(['me', 'apps']);
+      queries.setQueryData<MyApps>(['me', 'apps'], (old) => ({
+        apps: (old?.apps ?? []).map((a) => (a.id === app.id ? { ...a, favorite: on } : a)),
+      }));
+      return { before };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.before) queries.setQueryData(['me', 'apps'], context.before);
+    },
+    onSettled: () => void queries.invalidateQueries({ queryKey: ['me', 'apps'] }),
+  });
+  const toggle = (app: App) => favorite.mutate({ app, on: !app.favorite });
+
+  const all = apps.data?.apps ?? [];
+  const pinned = all.filter((a) => a.favorite);
+  const rest = all.filter((a) => !a.favorite);
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--paper)', position: 'relative', isolation: 'isolate' }}>
@@ -49,58 +80,66 @@ export function Launcher({
       >
         <Logo size={20} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-        {onAdmin && (
-          <button
-            onClick={onAdmin}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              padding: 0,
-              cursor: 'pointer',
-              font: 'var(--type-body-ui)',
-              color: 'var(--ink-secondary)',
-            }}
-          >
-            Admin
-          </button>
-        )}
-        <IconButton label="Settings" onClick={onSettings}>
-          <Icon name="settings" size={16} />
-        </IconButton>
+          {onAdmin && (
+            <button
+              onClick={onAdmin}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                padding: 0,
+                cursor: 'pointer',
+                font: 'var(--type-body-ui)',
+                color: 'var(--ink-secondary)',
+              }}
+            >
+              Admin
+            </button>
+          )}
+          <IconButton label="Settings" onClick={onSettings}>
+            <Icon name="settings" size={16} />
+          </IconButton>
         </div>
       </header>
 
       <main style={{ maxWidth: 'var(--console-max)', margin: '0 auto' }}>
-        {/* The same sheet the admin console is printed on, so the two halves of
-            the product read as one thing. The launcher is the screen a
-            non-technical person meets first (R-005), and it gets the frame and
-            the corner ticks and nothing else — the contour only turns up when
-            there is nothing to show. */}
-        <Sheet heading="Your apps">
-          {apps.isPending && <Quiet>Loading your apps.</Quiet>}
+        {/* Above the rest, and only when there is something in it: an empty
+            "Favorites" heading on every launcher would be a section explaining
+            a feature rather than showing anything. */}
+        {pinned.length > 0 && (
+          <Sheet heading="Favorites">
+            <Grid apps={pinned} onToggle={toggle} />
+          </Sheet>
+        )}
 
-          {apps.isError && (
-            <Quiet>Pando couldn&rsquo;t load your apps. Reload the page to try again.</Quiet>
-          )}
+        {/* Hidden when every app is a favorite, rather than saying there is
+            nothing shared with you directly under the apps that were. */}
+        {(rest.length > 0 || pinned.length === 0) && (
+          <Sheet heading="Your apps">
+            {apps.isPending && <Quiet>Loading your apps.</Quiet>}
 
-          {apps.data && <Tiles apps={apps.data.apps ?? []} />}
-        </Sheet>
+            {apps.isError && (
+              <Quiet>Pando couldn&rsquo;t load your apps. Reload the page to try again.</Quiet>
+            )}
+
+            {apps.data &&
+              (rest.length === 0 ? (
+                // Not "you have no apps" — nothing has gone wrong, and an empty
+                // launcher is the normal state for someone who has just been
+                // given an account.
+                <EmptyState heading="Nothing shared with you yet">
+                  When someone shares an app with you, it shows up here.
+                </EmptyState>
+              ) : (
+                <Grid apps={rest} onToggle={toggle} />
+              ))}
+          </Sheet>
+        )}
       </main>
     </div>
   );
 }
 
-function Tiles({ apps }: { apps: App[] }) {
-  if (apps.length === 0) {
-    // Not "you have no apps" — nothing has gone wrong, and an empty launcher is
-    // the normal state for someone who has just been given an account.
-    return (
-      <EmptyState heading="Nothing shared with you yet">
-        When someone shares an app with you, it shows up here.
-      </EmptyState>
-    );
-  }
-
+function Grid({ apps, onToggle }: { apps: App[]; onToggle: (app: App) => void }) {
   return (
     <div
       style={{
@@ -112,7 +151,7 @@ function Tiles({ apps }: { apps: App[] }) {
       }}
     >
       {apps.map((app) => (
-        <Tile key={app.id} app={app} />
+        <Tile key={app.id} app={app} onToggle={() => onToggle(app)} />
       ))}
     </div>
   );
@@ -128,7 +167,7 @@ function reachable(app: App): boolean {
   return Boolean(app.address) && (app.state === 'running' || app.state === 'degraded');
 }
 
-function Tile({ app }: { app: App }) {
+function Tile({ app, onToggle }: { app: App; onToggle: () => void }) {
   // A square and a name, and no status line. The launcher is for someone who
   // came to open an app (R-005), and "running" is the normal case — a word on
   // every tile saying so is noise. What they need to know is which tiles will
@@ -138,6 +177,12 @@ function Tile({ app }: { app: App }) {
   // difference is never carried by appearance alone.
   const open = reachable(app);
   const label = open ? app.name : `${app.name} — ${statusLabel(app.state)}`;
+
+  // The star shows on a favorite always, and on anything else when the tile is
+  // pointed at or tabbed into — twenty outlined stars at rest would be twenty
+  // things to look past.
+  const [near, setNear] = useState(false);
+  const favorite = Boolean(app.favorite);
 
   const body = (
     <div
@@ -165,37 +210,59 @@ function Tile({ app }: { app: App }) {
     </div>
   );
 
-  if (!open) {
-    return (
-      <div title={statusLabel(app.state)} aria-label={label} aria-disabled="true">
-        {body}
-      </div>
-    );
-  }
-
-  // An app is a different place from the console. Opening it over the top of
-  // Pando means the way back is the browser's history, and for someone who
-  // came to the launcher to open two apps it means coming back here every time.
-  //
-  // Every one of these addresses goes through Pando's proxy — there is no
-  // other way in (R-023) — but *which* address depends on how the app is
-  // routed, and the server is what knows.
   return (
-    <a
-      href={app.address}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={label}
-      style={{ textDecoration: 'none', color: 'inherit' }}
+    // The star is a sibling of the link, not inside it: a button in an anchor
+    // is two controls in one, and a click on the star would open the app.
+    <div
+      style={{ position: 'relative' }}
+      onMouseEnter={() => setNear(true)}
+      onMouseLeave={() => setNear(false)}
+      onFocus={() => setNear(true)}
+      onBlur={() => setNear(false)}
     >
-      {body}
-    </a>
+      {open ? (
+        // An app is a different place from the console. Opening it over the
+        // top of Pando means the way back is the browser's history, and for
+        // someone who came to the launcher to open two apps it means coming
+        // back here every time.
+        //
+        // Every one of these addresses goes through Pando's proxy — there is
+        // no other way in (R-023) — but *which* address depends on how the app
+        // is routed, and the server is what knows.
+        <a
+          href={app.address}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={label}
+          style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
+        >
+          {body}
+        </a>
+      ) : (
+        <div title={statusLabel(app.state)} aria-label={label} aria-disabled="true">
+          {body}
+        </div>
+      )}
+
+      {(favorite || near) && (
+        <div style={{ position: 'absolute', top: 'var(--space-2)', right: 'var(--space-2)' }}>
+          <IconButton
+            variant="secondary"
+            label={favorite ? `Remove ${app.name} from favorites` : `Add ${app.name} to favorites`}
+            aria-pressed={favorite}
+            onClick={onToggle}
+          >
+            <Icon name={favorite ? 'star-filled' : 'star'} size={16} color="var(--ink)" />
+          </IconButton>
+        </div>
+      )}
+    </div>
   );
 }
 
 /**
- * The tile's picture: the app's image when it has one (R-340), and its
- * initial when it does not.
+ * The tile's picture: the app's image when it has one (R-340), and a patch of
+ * terrain generated from its ID when it does not.
  */
 function Square({ app }: { app: App }) {
   // The timestamp is in the URL so a new image is a new address, and the
@@ -210,26 +277,16 @@ function Square({ app }: { app: App }) {
         aspectRatio: '1 / 1',
         borderRadius: 'var(--radius-md)',
         border: 'var(--border-width) solid var(--rule)',
-        background: 'var(--paper-sunken)',
         overflow: 'hidden',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
       }}
     >
       {src ? (
         <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
       ) : (
-        <span aria-hidden="true" style={{ font: 'var(--type-display)', color: 'var(--ink-secondary)' }}>
-          {initial(app.name)}
-        </span>
+        <TopoTile seed={app.id} />
       )}
     </div>
   );
-}
-
-function initial(name: string): string {
-  return Array.from(name.trim())[0]?.toUpperCase() ?? '';
 }
 
 function Quiet({ children }: { children: React.ReactNode }) {

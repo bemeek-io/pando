@@ -89,14 +89,14 @@ function surface(seed: string): Height {
 }
 
 /** Every contour of the tile, one path per level, lowest first. */
-function trace(height: Height, levels: number, floor = 0.06): string[] {
-  const w = COLS + 1;
-  const v = new Float64Array(w * (ROWS + 1));
+function trace(height: Height, levels: number, floor = 0.06, cols = COLS, rows = ROWS): string[] {
+  const w = cols + 1;
+  const v = new Float64Array(w * (rows + 1));
   let min = Infinity;
   let max = -Infinity;
-  for (let j = 0; j <= ROWS; j++) {
-    for (let i = 0; i <= COLS; i++) {
-      const h = height(i / COLS, j / ROWS);
+  for (let j = 0; j <= rows; j++) {
+    for (let i = 0; i <= cols; i++) {
+      const h = height(i / cols, j / rows);
       v[j * w + i] = h;
       if (h < min) min = h;
       if (h > max) max = h;
@@ -125,8 +125,8 @@ function trace(height: Height, levels: number, floor = 0.06): string[] {
       (adj.get(b) ?? adj.set(b, []).get(b)!).push(a);
     };
 
-    for (let j = 0; j < ROWS; j++) {
-      for (let i = 0; i < COLS; i++) {
+    for (let j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
         const a = at(i, j);
         const b = at(i + 1, j);
         const c = at(i + 1, j + 1);
@@ -391,6 +391,76 @@ export function TopoMap({ seed, recede }: { seed: string; recede: Recede }) {
         points={`${sx},${sy - s} ${sx + s},${sy + s * 0.8} ${sx - s},${sy + s * 0.8}`}
         fill="var(--marker)"
       />
+    </svg>
+  );
+}
+
+// The survey sheets a tile can be printed on: ground and line, from the
+// palette's own terrain colors. Red is not one of them — the marker is kept
+// rare, and a launcher of red squares would spend all of it at once.
+const SHEETS = [
+  { ground: 'var(--vegetation)', line: 'var(--vegetation-deep)' },
+  { ground: 'var(--status-info-tint)', line: 'var(--water)' },
+  { ground: 'var(--status-building-tint)', line: 'var(--contour)' },
+  { ground: 'var(--paper-raised)', line: 'var(--contour-text)' },
+  { ground: 'var(--paper-sunken)', line: 'var(--ink-muted)' },
+] as const;
+
+// A small, square grid: a tile is drawn a few hundred pixels across at most,
+// and there are as many of them as there are apps.
+const TILE = 48;
+
+const tiles = new Map<string, string[]>();
+
+/** The contours and the sheet for one seed. Pure, and the same every time. */
+export function tileOf(seed: string): { levels: string[]; sheet: (typeof SHEETS)[number] } {
+  let levels = tiles.get(seed);
+  if (!levels) {
+    // Denser or sparser land per app, so tiles differ at a glance and not
+    // only on inspection.
+    const count = 7 + (hash(`${seed}|levels`) % 5);
+    levels = trace(surface(seed), count, 0.05, TILE, TILE);
+    tiles.set(seed, levels);
+  }
+  return { levels, sheet: SHEETS[hash(`${seed}|sheet`) % SHEETS.length]! };
+}
+
+/**
+ * An app's generated picture (R-340): a patch of terrain of its own.
+ *
+ * The seed is the app's ID, so the same app always gets the same land and no
+ * two apps get the same land — the contours are what make it unique, and the
+ * sheet it is printed on varies it further. Each fifth line is an index
+ * contour, heavier, as on the sign-in map.
+ *
+ * Fills its parent, which should be square.
+ */
+export function TopoTile({ seed }: { seed: string }) {
+  const { levels, sheet } = useMemo(() => tileOf(seed), [seed]);
+
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox={`0 0 ${TILE * CELL} ${TILE * CELL}`}
+      preserveAspectRatio="xMidYMid slice"
+      style={{ display: 'block', width: '100%', height: '100%', background: sheet.ground }}
+    >
+      {levels.map((d, i) => {
+        const index = i % 5 === 4;
+        return (
+          <path
+            key={i}
+            d={d}
+            fill="none"
+            stroke={sheet.line}
+            strokeOpacity={index ? 0.9 : 0.55}
+            strokeWidth={index ? 'var(--contour-index-width)' : 'var(--contour-line-width)'}
+            vectorEffect="non-scaling-stroke"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        );
+      })}
     </svg>
   );
 }

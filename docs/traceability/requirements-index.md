@@ -9,10 +9,10 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 
 | | Count | Of total |
 |---|---:|---:|
-| Requirements | 235 | — |
-| Specified in a design doc | 180 | 76% |
+| Requirements | 236 | — |
+| Specified in a design doc | 181 | 76% |
 | Assigned to a phase | 137 | 58% |
-| Covered by a named test | 136 | 57% |
+| Covered by a named test | 137 | 58% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -224,6 +224,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-265** | D | Users holding any administrative verb see an Admin entry point from the launcher, exposing the… | 19. Surfaces | 04, 08 | 08 | `TestR265_TheServerReportsWhatTheConsoleScopesOn` |
 | **R-266** | D | Sharing an app sends no message. | 19. Surfaces | — | — | — |
 | **R-340** | D V1 | An app may carry an image, shown on its launcher tile (R-264). | 19. Surfaces | 04, 08 | — | `TestR340_AppImageRefusesWhatIsNotARasterImage`, `TestR340_AppImageSetByAppAdminSeenByAppUsers`, `TestR340_SetAppIconSendsTheDecodedBytes` |
+| **R-341** | D V1 | A person may mark apps they can open as favorites, and their launcher shows those first, above… | 19. Surfaces | 04, 08 | — | `TestR341_FavoritesArePerPersonAndGrantNothing`, `TestR341_FavoritesNeedASignedInPerson` |
 | **R-270** | D | Pando ships permissive defaults. | 20. Configuration and Policy | 09 | — | `TestR270_AFreshInstallShipsPermissive`, `TestR270_BuildEgressStartsPermissiveAndAppEgressInherits`, `TestR270_TheDefaultDocumentIsPermissive` |
 | **R-271** | D | Configuration may be supplied by: a YAML file loaded at startup, environment variables, the… | 20. Configuration and Policy | 00 | 00 | — |
 | **R-272** | D | The general pattern, applied throughout: a setting has a permissive default; host policy can… | 20. Configuration and Policy | 04, 06, 09, 10 | 01, 06 | `TestR272_AVerbNoRuleMentionsIsUntouched`, `TestR272_HostPolicyIsAFloorForAdministratorsToo`, `TestR272_PolicyIsAFloorAndDeniesTheOwnerToo` |

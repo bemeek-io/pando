@@ -170,7 +170,7 @@ func appIconCmd(client func() (*Client, error)) *cobra.Command {
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "clear <app>",
-		Short: "Remove an app's image, so its tile shows its initial",
+		Short: "Remove an app's image, so its tile shows the map generated for it",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := client()
@@ -335,6 +335,31 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 	})
 
 	cmd.AddCommand(appIconCmd(client))
+
+	// Favorites (R-341): pinned to the top of your own launcher.
+	for _, f := range []struct {
+		use, short, method, done string
+	}{
+		{"favorite <app>", "Pin an app to the top of your launcher", "PUT", "Pinned %s to the top of your launcher.\n"},
+		{"unfavorite <app>", "Unpin an app from your launcher", "DELETE", "Unpinned %s.\n"},
+	} {
+		cmd.AddCommand(&cobra.Command{
+			Use:   f.use,
+			Short: f.short,
+			Args:  cobra.ExactArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				c, err := client()
+				if err != nil {
+					return err
+				}
+				if err := c.Do(f.method, "/me/favorites/"+args[0], nil, nil); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), f.done, args[0])
+				return nil
+			},
+		})
+	}
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "start <app>",

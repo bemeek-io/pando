@@ -3,10 +3,13 @@
 // Setting it needs app.spec.edit, the same as renaming; the server refuses
 // anyone without it, and says so in the message shown here.
 //
+// With no image, the preview is the terrain the launcher generates from the
+// app's ID — what everyone sees until somebody uploads one.
+//
 // The preview loads the same URL the launcher does, which is gated on the data
 // plane. Somebody who administers this app but may not open it gets a
-// not-found for it, and sees the initial instead of a broken image — the
-// upload still works for them.
+// not-found for it, and sees the generated terrain instead of a broken image —
+// the upload still works for them.
 
 import { useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -14,6 +17,7 @@ import { Button } from '@design';
 
 import { api, base } from '@api/client';
 import type { App } from '@api/types.gen';
+import { TopoTile } from '../ui/TopoBackground';
 
 const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif';
 
@@ -53,11 +57,7 @@ export function AppImage({ app }: { app: App }) {
             aspectRatio: '1 / 1',
             borderRadius: 'var(--radius-md)',
             border: 'var(--border-width) solid var(--rule)',
-            background: 'var(--paper-sunken)',
             overflow: 'hidden',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
             flex: '0 0 auto',
           }}
         >
@@ -69,9 +69,7 @@ export function AppImage({ app }: { app: App }) {
               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             />
           ) : (
-            <span aria-hidden="true" style={{ font: 'var(--type-h3)', color: 'var(--ink-secondary)' }}>
-              {Array.from(app.name.trim())[0]?.toUpperCase()}
-            </span>
+            <TopoTile seed={app.id} />
           )}
         </div>
 
@@ -102,7 +100,8 @@ export function AppImage({ app }: { app: App }) {
         <span style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)' }}>{failure.message}</span>
       ) : (
         <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
-          Shown on this app&rsquo;s tile in the launcher. PNG, JPEG, WebP or GIF, up to 256 KB.
+          Shown on this app&rsquo;s tile in the launcher. Without one, the tile shows a map generated for this
+          app. PNG, JPEG, WebP or GIF, up to 256 KB.
         </span>
       )}
     </div>

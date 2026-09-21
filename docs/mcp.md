@@ -54,6 +54,8 @@ boundary (O-12), and offering a tool policy will refuse wastes the agent's turn.
 | `pando_start_app` | Start an app that was stopped, bringing back the version that was running. | `app_id` |
 | `pando_restart_app` | Restart an app's workloads in place. Nothing is rebuilt and nothing is re-read — the same version, started again. | `app_id` |
 | `pando_set_app_icon` | Set the image shown on an app's launcher tile. The image is a PNG, JPEG, WebP or GIF file of at most 256 KB, base64-encoded. SVG is not accepted. | `app_id`, `image_base64` |
-| `pando_clear_app_icon` | Remove the image on an app's launcher tile, so the tile shows the app's initial. | `app_id` |
+| `pando_clear_app_icon` | Remove the image on an app's launcher tile, so the tile shows the map generated for it. | `app_id` |
+| `pando_favorite_app` | Pin an app to the top of your own launcher. It grants nothing and only you see it; you must be able to open the app. | `app_id` |
+| `pando_unfavorite_app` | Unpin an app from your launcher. | `app_id` |
 | `pando_get_status` | What an app is doing right now: running, degraded, failed, and why — including each part separately, so a single part that is crash-looping is visible rather than averaged into one word for the app. | `app_id` |
 

@@ -22,8 +22,18 @@ recipient who has never signed in, a console-only notification is invisible in a
 the tile is waiting for them whenever they arrive. Reconsider when an SMTP adapter exists and a share
 can reach someone who is not already looking at Pando; the interface for it is already there (R-232).
 
-**[D] Tiles.** A tile is a square — the app's image (R-340), or its initial when it has none — with
-the name underneath. It carries **no status line**: an app that is running or degraded and has an
+**[D] Tiles.** A tile is a square — the app's image (R-340), or when it has none a patch of terrain
+generated from the app's ID — with the name underneath. The terrain is the same generator as the
+console background, on a small grid, printed on one of five sheets drawn from the palette's terrain
+colors (vegetation, water, sand, paper, slate); red is left out so the marker stays rare. The
+contours make each tile unique; the sheet varies it further. This puts the contour map in a place
+the brand spec does not list, next to the launcher's own background terrain: decided by the product
+owner, on the reasoning that a tile is content — a picture of the app — not decoration.
+
+**[D] Favorites.** R-341. A star on each tile, shown always on a favorite and on hover or focus
+otherwise, pins the app into a *Favorites* section above *Your apps*; a pinned app is not repeated
+below. Both sections are split from the one `GET /me/apps` response. The toggle is optimistic and
+rolls back on refusal. It carries **no status line**: an app that is running or degraded and has an
 address is a link, and anything else is greyed out and is not. This is a deliberate exception to the
 design system's "status is a symbol plus a word" rule, decided by the product owner: the launcher is
 for opening apps, "running" is the normal case, and a word on every tile saying so is noise. The
