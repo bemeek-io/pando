@@ -20,11 +20,24 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, CodeBlock, Dialog, Icon, IconButton, Input, Select, Tag } from '@design';
+import {
+  Button,
+  Card,
+  CodeBlock,
+  Dialog,
+  Icon,
+  IconButton,
+  Input,
+  Select,
+  StatusIndicator,
+  Table,
+  Tag,
+} from '@design';
 
 import { api, RequestFailed } from '@api/client';
 import type { Candidate, Proposal, Question } from '@api/types.gen';
 import { InlineWarning } from '../ui/InlineWarning';
+import { rejectedEntries } from './rejections';
 
 interface DetectionResponse {
   status: string;
@@ -146,6 +159,10 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
           {answer.isError && <Failure error={answer.error} />}
         </section>
       )}
+
+      <Dependencies proposal={proposal} />
+
+      <Variables proposal={proposal} />
 
       <Warnings proposal={proposal} />
 
@@ -320,6 +337,129 @@ function QuestionCard({
   );
 }
 
+/**
+ * What this app needs beside itself, before anybody accepts it.
+ *
+ * A required slot with nothing filling it refuses the deploy (R-132) — and
+ * until now the first anybody heard of it was that refusal, after accepting,
+ * from a button on another screen. It belongs in the review: this is the page
+ * where somebody reads how their app will run, and "it needs a PostgreSQL
+ * database, and Pando will run one inside it" is part of how it will run.
+ */
+function Dependencies({ proposal }: { proposal: Proposal }) {
+  const slots = proposal.draft_spec?.slots ?? [];
+  if (slots.length === 0) return null;
+
+  return (
+    <section>
+      <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>What this app needs</h4>
+      <Quiet>
+        Things the app expects to find beside it. Anything required and unfilled is refused at
+        deploy rather than started and left to fail on a connection nobody made.
+      </Quiet>
+
+      <div style={{ marginTop: 'var(--space-4)' }}>
+        <Table
+          columns={[
+            { key: 'key', header: 'Variable', width: 'minmax(0,26ch)', mono: true },
+            {
+              key: 'type',
+              header: 'Kind',
+              width: '18ch',
+              render: (row: Slot) => SLOT_NAMES[row.type] ?? row.type,
+            },
+            {
+              key: 'resolution',
+              header: 'Filled by',
+              width: 'minmax(0,30ch)',
+              render: (row: Slot) => fills(row),
+            },
+          ]}
+          rows={slots}
+        />
+      </div>
+    </section>
+  );
+}
+
+const SLOT_NAMES: Record<string, string> = {
+  postgres: 'PostgreSQL',
+  mysql: 'MySQL',
+  redis: 'Redis',
+  s3: 'object storage',
+  smtp: 'email',
+  unknown: 'a value',
+};
+
+/** The same sentences the settings screen uses, so one app reads one way. */
+function fills(slot: Slot) {
+  if (!slot.resolution) {
+    return slot.required ? (
+      <StatusIndicator status="failed" label="You choose after accepting" />
+    ) : (
+      <StatusIndicator status="stopped" label="Nothing, and optional" />
+    );
+  }
+  switch (slot.resolution.mode) {
+    case 'provisioned':
+      return 'Pando runs one inside this app';
+    case 'bound':
+      return slot.resolution.target ?? 'Something already running';
+    case 'literal':
+      return 'A value you set';
+    default:
+      return slot.resolution.mode;
+  }
+}
+
+interface Slot {
+  key: string;
+  type: string;
+  required?: boolean;
+  resolution?: { mode: string; target?: string };
+}
+
+/**
+ * The variables this app reads, which Pando read the names of and not the
+ * values.
+ *
+ * `.env.example` is a list of names: an app's own author writing down what it
+ * reads. The values are that app's keys and passwords, and Pando has none of
+ * them. Saying so here, before anybody accepts, is the difference between
+ * knowing what is left to do and finding eight empty rows later.
+ */
+function Variables({ proposal }: { proposal: Proposal }) {
+  const rows = (proposal.draft_spec?.workloads ?? []).flatMap((w) =>
+    (w.env ?? [])
+      .filter((e) => !e.secret_ref && !e.slot_ref && (e.value ?? '') === '')
+      .map((e) => ({ key: e.key, workload: w.name })),
+  );
+  if (rows.length === 0) return null;
+
+  return (
+    <section>
+      <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>
+        Variables with no value
+      </h4>
+      <Quiet>
+        Declared by the app and not filled in. Pando reads the names from the repository and cannot
+        know the values. Set them under Settings, on the app&rsquo;s environment, after accepting —
+        a key or a password is stored as a secret and never appears in an exported configuration.
+      </Quiet>
+
+      <div style={{ marginTop: 'var(--space-4)' }}>
+        <Table
+          columns={[
+            { key: 'key', header: 'Name', width: 'minmax(0,30ch)', mono: true },
+            { key: 'workload', header: 'Part of the app', width: '18ch', muted: true },
+          ]}
+          rows={rows}
+        />
+      </div>
+    </section>
+  );
+}
+
 function Warnings({ proposal }: { proposal: Proposal }) {
   const warnings = proposal.draft_spec?.warnings ?? [];
   if (warnings.length === 0) return null;
@@ -399,8 +539,18 @@ function Blocked({ proposal }: { proposal: Proposal }) {
   // rather than replaced with a generic failure. The compose importer produces
   // a remedy naming the lines to change.
   const blocked = proposal.blocked;
+
+  // The entries the summary is summarizing.
+  //
+  // They travel in the envelope's details and nothing rendered them, so the
+  // screen said "docker-compose.yml uses 1 construct(s) that cannot run inside
+  // the boundary" and then "Each entry above says why" — above which there was
+  // one line naming the construct and nothing saying why. The why is the whole
+  // reason the importer writes one per rejection (R-105).
+  const rejected = rejectedEntries(blocked?.details);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxWidth: '76ch' }}>
       <div>
         <h4 style={{ font: 'var(--type-h4)', margin: 0, color: 'var(--marker-deep)' }}>
           Pando can&rsquo;t run this app as it&rsquo;s written
@@ -409,6 +559,34 @@ function Blocked({ proposal }: { proposal: Proposal }) {
           {blocked?.message}
         </p>
       </div>
+
+      {rejected.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {rejected.map((entry) => (
+            <div
+              key={entry.service + entry.construct}
+              style={{
+                borderTop: 'var(--border-width) solid var(--rule)',
+                paddingTop: 'var(--space-3)',
+              }}
+            >
+              <div style={{ font: 'var(--type-code-sm)', color: 'var(--ink)' }}>
+                {entry.service} &middot; {entry.construct}
+              </div>
+              <p
+                style={{
+                  font: 'var(--type-body-ui)',
+                  color: 'var(--ink-secondary)',
+                  margin: 'var(--space-2) 0 0',
+                }}
+              >
+                {entry.reason}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {blocked?.remedy && (
         <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
           {blocked.remedy}
@@ -418,6 +596,7 @@ function Blocked({ proposal }: { proposal: Proposal }) {
     </div>
   );
 }
+
 
 function DetectionFailed({
   error,

@@ -1,0 +1,11 @@
+-- What the app was doing when the deploy finished.
+--
+-- A deploy that builds, applies and routes is `succeeded`, and that is true
+-- even when the app it started never reported healthy: the deploy did its work.
+-- The history read "Deployed" three times for an app that had never once served
+-- a request, which is the difference between what happened and what a person
+-- reading the list is asking about.
+--
+-- `running` or `degraded`. Null for a deploy that failed before it got that
+-- far, and for every deploy recorded before this column.
+ALTER TABLE deployments ADD COLUMN result_state text;

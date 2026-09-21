@@ -174,6 +174,41 @@ func TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestR210_AnAppWithNoVolumesDoesNotStopTheRollingBackupSweep asserts that one
+// app's spec cannot take the installation's backups down with it.
+//
+// `AppSpec.Volumes` is tagged `json:"volumes"` with no omitempty, so an app
+// that declares no storage — which is most of them — stores `"volumes": null`.
+// The sweep read that with `->`, which answers with the JSON null rather than
+// SQL NULL, so the coalesce meant to handle "no volumes" never fired and
+// `jsonb_array_length` was handed a scalar. The error came back to the
+// reconciler as "could not list apps for rolling backups", on every pass, and
+// no app on the installation was backed up.
+func TestR210_AnAppWithNoVolumesDoesNotStopTheRollingBackupSweep(t *testing.T) {
+	ctx := context.Background()
+	db := connected(t)
+	alice := seedUser(t, db, "alice")
+	apps := state.NewApps(db)
+
+	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID, spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
+	require.NoError(t, err)
+
+	// minimalSpec declares no volumes, which is the whole point: this is the
+	// ordinary shape of an app, not a corrupted row.
+	rev, err := apps.CreateRevision(ctx, app.ID, minimalSpec(), spec.OriginDetected, alice.ID)
+	require.NoError(t, err)
+	require.NoError(t, apps.Pin(ctx, app.ID, rev.ID, state.StateRunning, alice.ID))
+
+	var kind *string
+	require.NoError(t, db.QueryRow(ctx,
+		`SELECT jsonb_typeof(body->'volumes') FROM spec_revisions WHERE id = $1`, rev.ID).Scan(&kind))
+	require.Equal(t, "null", *kind, "the stored shape this is about")
+
+	found, err := apps.WithStorage(ctx)
+	require.NoError(t, err, "one app's spec must not fail the sweep for every app")
+	require.Empty(t, found, "an app with no volumes has nothing to back up")
+}
+
 // TestR264_LauncherListIsDataPlaneScoped asserts that the two list endpoints
 // answer different questions (R-070, R-071, R-264).
 func TestR264_LauncherListIsDataPlaneScoped(t *testing.T) {

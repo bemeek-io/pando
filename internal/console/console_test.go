@@ -3,6 +3,8 @@ package console_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,6 +24,27 @@ func TestHandlerReportsWhetherTheConsoleWasBuilt(t *testing.T) {
 		t.Skip("the console was not built into this binary; run `make console` to exercise the rest")
 	}
 	require.NotNil(t, h)
+}
+
+// anAssetName returns the name of one file the console build actually emitted.
+//
+// Read from dist/ on disk rather than from the embedded FS, which is
+// unexported: the two are the same bytes, because the embed directive is what
+// put them there. Any asset will do — the assertion is about the prefix rule,
+// not about a particular file, and hashed names change on every build.
+func anAssetName(t *testing.T) string {
+	t.Helper()
+
+	entries, err := os.ReadDir(filepath.Join("dist", "assets"))
+	require.NoError(t, err, "the console is built, so dist/assets exists")
+
+	for _, e := range entries {
+		if !e.IsDir() {
+			return e.Name()
+		}
+	}
+	t.Fatal("dist/assets holds no files")
+	return ""
 }
 
 func serve(t *testing.T, path string) *httptest.ResponseRecorder {
@@ -54,10 +77,24 @@ func TestOnlyHashedAssetsAreCachedHard(t *testing.T) {
 	got := serve(t, "/index.html")
 	require.Equal(t, "no-cache", got.Header().Get("Cache-Control"))
 
-	// An asset path is cached immutably whether or not that exact file exists:
-	// the header is decided by the prefix, and a miss is still a 404.
-	got = serve(t, "/assets/does-not-exist.js")
+	// A real asset is cached immutably. Its name contains the hash of its
+	// contents, so the file behind a given URL can never change.
+	name := anAssetName(t)
+	got = serve(t, "/assets/"+name)
+	require.Equal(t, http.StatusOK, got.Code, name)
 	require.Equal(t, "public, max-age=31536000, immutable", got.Header().Get("Cache-Control"))
+
+	// A miss carries no caching header at all.
+	//
+	// This used to assert the opposite — that the prefix decided the header
+	// whether or not the file existed. Go's http.Error strips Cache-Control
+	// (along with Etag and Last-Modified) before writing an error body, so the
+	// 404 comes back uncached, and that is the better answer: an asset added by
+	// a later build would otherwise be shadowed for a year by a cached 404 for
+	// the same URL.
+	got = serve(t, "/assets/does-not-exist.js")
+	require.Equal(t, http.StatusNotFound, got.Code)
+	require.Empty(t, got.Header().Get("Cache-Control"))
 }
 
 // A traversal out of the embedded filesystem must not reach the host, and there

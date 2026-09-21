@@ -7,12 +7,17 @@ R-261 makes one of these authoritative: **the HTTP API is the product.** The con
 MCP server are clients of it, and none has a capability the API lacks. When two documents here
 disagree, the API reference is the one that is right.
 
+The first three are **generated from the code that serves them** by `make reference`, and CI fails
+when they are out of date. They describe the binary rather than the intent — when one of them
+disagrees with a design document, the design document is the one that is behind.
+
 | Interface | Reference |
 |---|---|
-| HTTP API | [`design/04-api.md`](design/04-api.md) |
+| HTTP API — every endpoint, verb and error code | [`api.md`](api.md) (generated) |
+| CLI — every command and flag | [`cli.md`](cli.md) (generated) |
+| MCP — every tool and its arguments | [`mcp.md`](mcp.md) (generated) |
+| HTTP API, as designed | [`design/04-api.md`](design/04-api.md) |
 | App spec — the object almost everything operates on | [`design/01-spec-schema.md`](design/01-spec-schema.md) |
-| CLI | [`../README.md#cli`](../README.md#cli), and `pando <command> --help` |
-| MCP server | [`../README.md#mcp-server`](../README.md#mcp-server) |
 | Adapter interfaces — for contributing one | [`design/03-adapter-interfaces.md`](design/03-adapter-interfaces.md) |
 | Authorization verbs and the proxy's request contract | [`design/06-authorization-and-proxy.md`](design/06-authorization-and-proxy.md) |
 

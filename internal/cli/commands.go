@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -262,7 +263,160 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 		},
 	})
 
+	cmd.AddCommand(&cobra.Command{
+		Use:   "stop <app>",
+		Short: "Stop an app without deleting it",
+		Long: "Stops an app.\n\n" +
+			"Nothing is removed: its storage, its configuration and its address are kept, and\n" +
+			"`pando app start` brings back the version that was running. A stopped app stays\n" +
+			"stopped — it is the app's desired state, not a one-off act, so it survives Pando\n" +
+			"itself restarting.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("POST", "/apps/"+args[0]+"/stop", map[string]any{}, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Stopping %s. `pando app start %s` brings it back.\n",
+				args[0], args[0])
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "start <app>",
+		Short: "Start an app that was stopped",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("POST", "/apps/"+args[0]+"/start", map[string]any{}, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Starting %s.\n", args[0])
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "restart <app>",
+		Short: "Restart an app's workloads, changing nothing",
+		Long: "Restarts the workloads in place.\n\n" +
+			"Nothing is rebuilt and nothing is re-read: this is the same version, started again.\n" +
+			"To ship a change, deploy.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("POST", "/apps/"+args[0]+"/restart", map[string]any{}, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Restarting %s.\n", args[0])
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "status <app>",
+		Short: "What each part of an app is doing right now",
+		Long: "What each part of an app is doing right now.\n\n" +
+			"An app can be made of several parts, and \"degraded\" is the app's answer for all " +
+			"of them together. This is the per-part answer: which are running, which are " +
+			"restarting and how many times, and which health check is failing. The names are " +
+			"also what `pando logs --workload` takes.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var status struct {
+				State         string `json:"state"`
+				DesiredState  string `json:"desired_state"`
+				Observability string `json:"observability"`
+				Workloads     []struct {
+					Name         string `json:"name"`
+					Primary      bool   `json:"primary"`
+					Present      bool   `json:"present"`
+					Running      bool   `json:"running"`
+					Restarting   bool   `json:"restarting"`
+					RestartCount int    `json:"restart_count"`
+					Healthy      *bool  `json:"healthy"`
+					ExitCode     *int   `json:"exit_code"`
+				} `json:"workloads"`
+			}
+			if err := c.Do("GET", "/apps/"+args[0]+"/status", nil, &status); err != nil {
+				return err
+			}
+
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "%s (wanted: %s)\n", status.State, status.DesiredState)
+			if status.Observability == "unreachable" {
+				fmt.Fprintln(out, "The runtime could not be reached, so what follows is unknown rather than false.")
+				return nil
+			}
+			if len(status.Workloads) == 0 {
+				fmt.Fprintln(out, "Nothing is running.")
+				return nil
+			}
+
+			w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "PART\tSTATE\tHEALTH\tRESTARTS")
+			for _, part := range status.Workloads {
+				name := part.Name
+				if part.Primary {
+					name += " *"
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%d\n",
+					name, partState(part.Present, part.Running, part.Restarting, part.ExitCode),
+					partHealth(part.Healthy), part.RestartCount)
+			}
+			_ = w.Flush()
+			fmt.Fprintln(out, "\n* the part this app's address resolves to.")
+			return nil
+		},
+	})
+
 	return cmd
+}
+
+// partState reads the runtime's facts as one word somebody can act on.
+//
+// Restarting comes before running because a crash-looping container is running
+// at almost every instant somebody looks at it, and that is the reading that
+// makes a broken app look fine.
+func partState(present, running, restarting bool, exit *int) string {
+	switch {
+	case restarting:
+		return "restarting"
+	case running:
+		return "running"
+	case present && exit != nil:
+		return fmt.Sprintf("exited (%d)", *exit)
+	case present:
+		return "stopped"
+	default:
+		return "not running"
+	}
+}
+
+func partHealth(healthy *bool) string {
+	switch {
+	case healthy == nil:
+		// R-221: no health check is not a failing one.
+		return "no check"
+	case *healthy:
+		return "healthy"
+	default:
+		return "failing"
+	}
 }
 
 func deployCmd(client func() (*Client, error)) *cobra.Command {
@@ -557,20 +711,35 @@ func planCmd(client func() (*Client, error)) *cobra.Command {
 }
 
 func logsCmd(client func() (*Client, error)) *cobra.Command {
-	var follow bool
+	var (
+		follow   bool
+		workload string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "logs <app>",
 		Short: "Read an app's logs",
-		Args:  cobra.ExactArgs(1),
+		Long: "Read an app's logs.\n\n" +
+			"An app made of several parts — a web service, a worker, a database it " +
+			"brought with it — has a log per part. Without --workload this is the " +
+			"primary one, which is the part the app's address resolves to. " +
+			"`pando app status <app>` lists the names.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := client()
 			if err != nil {
 				return err
 			}
-			path := "/apps/" + args[0] + "/logs"
+			query := url.Values{}
 			if follow {
-				path += "?follow=true"
+				query.Set("follow", "true")
+			}
+			if workload != "" {
+				query.Set("workload", workload)
+			}
+			path := "/apps/" + args[0] + "/logs"
+			if len(query) > 0 {
+				path += "?" + query.Encode()
 			}
 			body, err := c.Stream("GET", path, nil)
 			if err != nil {
@@ -583,6 +752,8 @@ func logsCmd(client func() (*Client, error)) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "keep the connection open and print new lines")
+	cmd.Flags().StringVarP(&workload, "workload", "w", "",
+		"which part of the app to read (default: the primary one)")
 	return cmd
 }
 

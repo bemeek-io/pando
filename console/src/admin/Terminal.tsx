@@ -21,6 +21,7 @@ import { Button, Card, Select } from '@design';
 
 import { api, base } from '@api/client';
 import type { AppSpec } from '@api/types.gen';
+import { MEASURE } from '../ui/layout';
 
 export function Terminal({ appID }: { appID: string }) {
   const [open, setOpen] = useState(false);
@@ -132,7 +133,7 @@ function Warning({
   onOpen: () => void;
 }) {
   return (
-    <Card padding="md" style={{ maxWidth: 'var(--console-max)' }}>
+    <Card padding="md" style={{ maxWidth: MEASURE }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
         <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Open a terminal in this app</h4>
 

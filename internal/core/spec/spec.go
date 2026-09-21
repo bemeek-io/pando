@@ -189,6 +189,7 @@ type Workload struct {
 	Env       []EnvEntry   `json:"env,omitempty"`
 	Ports     []Port       `json:"ports,omitempty"`
 	Mounts    []Mount      `json:"mounts,omitempty"`
+	Files     []File       `json:"files,omitempty"`
 	DependsOn []string     `json:"depends_on,omitempty"`
 	Health    *Healthcheck `json:"healthcheck,omitempty"`
 
@@ -312,6 +313,42 @@ type Mount struct {
 	Path     string `json:"path"`
 	ReadOnly bool   `json:"read_only"`
 }
+
+// File is a configuration file placed in a workload at start.
+//
+// A Caddyfile, an nginx.conf, a prometheus.yml: the small text file a compose
+// service bind-mounts from the repository. Storage Pando manages is a
+// directory and cannot stand in for a file, and R-020 forbids reading the
+// repository at deploy time, so the file itself is carried here — read once at
+// detection, pinned to the revision, replayed on every start.
+//
+// The same reasoning as Build.GeneratedFiles, one layer along: the spec is the
+// sole record of how an app runs, and a file fetched from a branch at deploy
+// time would make the same revision deploy differently tomorrow. Because it is
+// a snapshot, changing the file in the repository does nothing until somebody
+// re-detects — which is a real limit, and is what the import warning says.
+//
+// Content is text and capped at FileSizeLimit. This is not a way to ship an
+// application: a file big enough to matter is a build input, and builds have
+// their own path.
+type File struct {
+	Path string `json:"path"`
+
+	// Content is stored in the clear and appears in an exported spec. It comes
+	// out of the repository, so it is already as public as the repository —
+	// anything sensitive belongs in a secret or a slot, not in a config file
+	// somebody committed.
+	Content string `json:"content"`
+
+	// Mode is the file's permission bits, defaulting to 0644. Set for the
+	// entrypoint script somebody mounts and expects to be executable.
+	Mode int `json:"mode,omitempty"`
+}
+
+// FileSizeLimit caps one carried file. Config files are kilobytes; the cap
+// exists so that a spec stays something a person can read and a database row
+// stays a database row.
+const FileSizeLimit = 64 << 10
 
 // SlotType is the kind of dependency a slot declares.
 type SlotType string
@@ -520,6 +557,12 @@ const (
 	WarnPathRoutingIncompatible   = "WARN_PATH_ROUTING_INCOMPATIBLE"
 	WarnComposeConstructRewritten = "WARN_COMPOSE_CONSTRUCT_REWRITTEN"
 	WarnUndeclaredDependency      = "WARN_UNDECLARED_DEPENDENCY_SUSPECTED"
+
+	// WarnPrimaryWorkloadAssumed is R-026 with the question unanswered: a
+	// compose file with several services does not say which one a person opens
+	// in a browser, so Pando picks the likeliest and says so rather than
+	// producing a spec that cannot deploy.
+	WarnPrimaryWorkloadAssumed = "WARN_PRIMARY_WORKLOAD_ASSUMED"
 )
 
 // Warning is advisory. It lives in the spec and survives revisions until

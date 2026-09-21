@@ -210,7 +210,9 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
-	JSON(w, http.StatusOK, map[string]any{"apps": withAddresses(r, apps)})
+	JSON(w, http.StatusOK, map[string]any{
+		"apps": s.withVerdicts(r.Context(), withAddresses(r, apps)),
+	})
 }
 
 // withAddresses fills in where each app is reached.

@@ -50,6 +50,10 @@ const (
 	PlanAdapterNotConfigured     Code = "PLAN_ADAPTER_NOT_CONFIGURED"
 	PlanComposeConstructRejected Code = "PLAN_COMPOSE_CONSTRUCT_REJECTED" // R-099
 
+	// PlanSecurityBelowThreshold is R-314: this installation requires a
+	// security score and this app does not have one, or does not clear it.
+	PlanSecurityBelowThreshold Code = "PLAN_SECURITY_BELOW_THRESHOLD"
+
 	// STATE_* — object in the wrong state for this action. 409.
 	StateInvalid                Code = "STATE_INVALID"
 	StateBackupDecisionRequired Code = "STATE_BACKUP_DECISION_REQUIRED" // R-204/205

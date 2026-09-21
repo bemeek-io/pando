@@ -16,6 +16,7 @@ import { Button, Dialog, Input, Select, StatusIndicator, Table, Tag } from '@des
 
 import { api, RequestFailed } from '@api/client';
 import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
+import { Sheet } from '../ui/Sheet';
 
 interface Account {
   id: string;
@@ -65,11 +66,11 @@ export function Accounts() {
 
       <Table
         columns={[
-          { key: 'external_id', header: 'Username', width: 'minmax(0,1.2fr)' },
+          { key: 'external_id', header: 'Username', width: 'minmax(0,24ch)' },
           {
             key: 'display_name',
             header: 'Name',
-            width: 'minmax(0,1fr)',
+            width: 'minmax(0,22ch)',
             muted: true,
             render: (row: Account) => row.display_name || row.email || '—',
           },
@@ -90,20 +91,23 @@ export function Accounts() {
           {
             key: 'install_role_id',
             header: 'Installation role',
-            width: 'minmax(0,1.1fr)',
-            render: (row: Account) =>
-              manage ? (
-                <RolePicker
-                  account={row}
-                  roles={roles.data?.roles ?? []}
-                  // You can demote yourself when somebody else can still
-                  // administer — the server refuses the last one. What the
-                  // console will not do is make that look like a normal edit.
-                  isSelf={row.id === me.data?.user_id}
-                />
-              ) : (
-                <RoleLabel roleID={row.install_role_id} roles={roles.data?.roles ?? []} />
-              ),
+            width: 'minmax(0,24ch)',
+            render: (row: Account) => (
+              <div style={{ padding: 'var(--space-2) 0' }}>
+                {manage ? (
+                  <RolePicker
+                    account={row}
+                    roles={roles.data?.roles ?? []}
+                    // You can demote yourself when somebody else can still
+                    // administer — the server refuses the last one. What the
+                    // console will not do is make that look like a normal edit.
+                    isSelf={row.id === me.data?.user_id}
+                  />
+                ) : (
+                  <RoleLabel roleID={row.install_role_id} roles={roles.data?.roles ?? []} />
+                )}
+              </div>
+            ),
           },
           {
             key: 'actions',
@@ -252,6 +256,7 @@ function AddAccount({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** Every install screen is one sheet. The frame lives in Sheet. */
 export function Screen({
   heading,
   action,
@@ -261,22 +266,13 @@ export function Screen({
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  // Left-aligned and uncapped: the rules under a table run to the window's
+  // edge, and the screen's action sits beside its heading rather than at the
+  // far end of a measure. Sheet keeps both and adds the neatline.
   return (
-    <div style={{ maxWidth: 'var(--console-max)' }}>
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 'var(--space-4)',
-          padding: 'var(--space-6) var(--console-padding) var(--space-4)',
-        }}
-      >
-        <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{heading}</h3>
-        {action}
-      </header>
-      <div style={{ padding: '0 var(--console-padding) var(--space-7)' }}>{children}</div>
-    </div>
+    <Sheet heading={heading} action={action}>
+      {children}
+    </Sheet>
   );
 }
 

@@ -21,6 +21,8 @@ export interface App {
   deleted_at?: string;
   routing: Routing;
   address?: string;
+  security_score?: number;
+  security_verdict?: string;
 }
 
 export interface Revision {
@@ -40,6 +42,7 @@ export interface Deployment {
   spec_id: string;
   trigger: string;
   status: string;
+  result_state?: string;
   error_code?: string;
   error_detail?: string;
   started_at: string;
@@ -138,6 +141,51 @@ export interface Error {
   request_id?: string;
 }
 
+export interface Document {
+  api: API;
+  cli: (Command[] | null);
+  mcp: (ToolDoc[] | null);
+  errors: (CodeDoc[] | null);
+  connect: Connect;
+  install: Install;
+}
+
+export interface Token {
+  id: string;
+  kind: string;
+  name: string;
+  owner_user_id?: string;
+  expires_at?: string;
+  last_used_at?: string;
+  revoked_at?: string;
+}
+
+export interface Report {
+  standing: Standing;
+  scan?: Scan;
+  counts: Counts;
+  worst?: (Finding[] | null);
+  scanner?: string;
+  ignoring_unfixable: boolean;
+}
+
+export interface Document {
+  source_allowlist?: (string[] | null);
+  disabled_verbs?: (string[] | null);
+  agent_disabled_verbs?: (string[] | null);
+  allow_anonymous_grants?: boolean;
+  min_build_isolation?: number;
+  min_runtime_isolation?: number;
+  egress_allowlist?: (string[] | null);
+  require_backup_before_destroy?: boolean;
+  max_token_lifetime_days?: number;
+  max_log_disk_bytes?: number;
+  min_security_score?: number;
+  insecure_action?: string;
+  insecure_grace_hours?: number;
+  ignore_unfixable_findings?: boolean;
+}
+
 export interface Source {
   type: string;
   url?: string;
@@ -193,6 +241,7 @@ export interface Workload {
   env?: (EnvEntry[] | null);
   ports?: (Port[] | null);
   mounts?: (Mount[] | null);
+  files?: (File[] | null);
   depends_on?: (string[] | null);
   healthcheck?: Healthcheck;
   exposed: boolean;
@@ -261,6 +310,89 @@ export interface Warning {
   dismissed_by?: string;
 }
 
+export interface API {
+  base_path: string;
+  auth: (Auth[] | null);
+  routes: (Route[] | null);
+}
+
+export interface Command {
+  name: string;
+  use: string;
+  summary: string;
+  details?: string;
+  flags?: (Flag[] | null);
+  children?: (Command[] | null);
+}
+
+export interface ToolDoc {
+  name: string;
+  description: string;
+  schema: (Record<string, unknown> | null);
+}
+
+export interface CodeDoc {
+  code: string;
+  status: number;
+  meaning: string;
+}
+
+export interface Connect {
+  server_env: string;
+  token_env: string;
+  login_cmd: string;
+  mcp_cmd: string;
+}
+
+export interface Install {
+  repo: string;
+  module: string;
+  homebrew: string;
+  packages: (string[] | null);
+  archive: string;
+  package: string;
+  download: string;
+  platforms: (string[] | null);
+  in_container: string;
+}
+
+export interface Standing {
+  verdict: string;
+  score?: number;
+  threshold: number;
+  scanned: string;
+  stop_at: string;
+}
+
+export interface Scan {
+  id: string;
+  app_id: string;
+  spec_id?: string;
+  scanner_ref: string;
+  scanner?: string;
+  score?: number;
+  score_fixable?: number;
+  findings: (Finding[] | null);
+  error?: string;
+  ran_at: string;
+}
+
+export interface Counts {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  unknown: number;
+}
+
+export interface Finding {
+  id: string;
+  severity: string;
+  title: string;
+  target: string;
+  fix?: string;
+}
+
 export interface KV {
   key: string;
   value: string;
@@ -284,6 +416,12 @@ export interface Mount {
   volume_id: string;
   path: string;
   read_only: boolean;
+}
+
+export interface File {
+  path: string;
+  content: string;
+  mode?: number;
 }
 
 export interface Healthcheck {
@@ -317,5 +455,26 @@ export interface AutoDeploy {
   enabled: boolean;
   trigger?: string;
   branch?: string;
+}
+
+export interface Auth {
+  name: string;
+  how: string;
+  description: string;
+}
+
+export interface Route {
+  method: string;
+  path: string;
+  group: string;
+  summary: string;
+  verb?: string;
+}
+
+export interface Flag {
+  name: string;
+  shorthand?: string;
+  description: string;
+  default?: string;
 }
 

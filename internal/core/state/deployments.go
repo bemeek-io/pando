@@ -34,11 +34,22 @@ const (
 // deployment and leaves the app untouched (R-146). Collapsing them would make
 // that distinction impossible to express.
 type Deployment struct {
-	ID          string     `json:"id"`
-	AppID       string     `json:"app_id"`
-	SpecID      string     `json:"spec_id"`
-	Trigger     string     `json:"trigger"`
-	Status      string     `json:"status"`
+	ID      string `json:"id"`
+	AppID   string `json:"app_id"`
+	SpecID  string `json:"spec_id"`
+	Trigger string `json:"trigger"`
+	Status  string `json:"status"`
+
+	// ResultState is what the app was doing when this deploy finished:
+	// "running", or "degraded" when it started and never reported healthy.
+	// Empty for a deploy that failed before it got that far.
+	//
+	// The deploy's own status answers "did Pando do the work"; this answers
+	// "did the app come up", which is what somebody reading a list of deploys
+	// is asking. Three rows reading "Deployed" for an app that had never
+	// served a request is a true answer to the wrong question.
+	ResultState string `json:"result_state,omitempty"`
+
 	ErrorCode   string     `json:"error_code,omitempty"`
 	ErrorDetail string     `json:"error_detail,omitempty"`
 	StartedAt   time.Time  `json:"started_at"`
@@ -81,6 +92,17 @@ func (d *Deployments) SetStatus(ctx context.Context, deploymentID, status string
 }
 
 // Finish closes a deployment out.
+// SetResultState records what the app was doing when the deploy finished.
+func (d *Deployments) SetResultState(ctx context.Context, deploymentID, appState string) error {
+	_, err := d.db.Exec(ctx,
+		`UPDATE deployments SET result_state = NULLIF($2, '') WHERE id = $1`,
+		deploymentID, appState)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not record how the app came up.", err)
+	}
+	return nil
+}
+
 func (d *Deployments) Finish(ctx context.Context, deploymentID, status, errorCode, message string) error {
 	var detail any
 	if message != "" {
@@ -104,9 +126,9 @@ func (d *Deployments) ByID(ctx context.Context, deploymentID string) (Deployment
 	var code *string
 	var detail []byte
 	err := d.db.QueryRow(ctx, `
-		SELECT id, app_id, spec_id, trigger, status, error_code, error_detail, started_at, finished_at, created_by
+		SELECT id, app_id, spec_id, trigger, status, coalesce(result_state, ''), error_code, error_detail, started_at, finished_at, created_by
 		FROM deployments WHERE id = $1`, deploymentID).
-		Scan(&dep.ID, &dep.AppID, &dep.SpecID, &dep.Trigger, &dep.Status, &code, &detail,
+		Scan(&dep.ID, &dep.AppID, &dep.SpecID, &dep.Trigger, &dep.Status, &dep.ResultState, &code, &detail,
 			&dep.StartedAt, &dep.FinishedAt, &dep.CreatedBy)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Deployment{}, false, nil
@@ -129,7 +151,7 @@ func (d *Deployments) ByID(ctx context.Context, deploymentID string) (Deployment
 // ListForApp returns an app's deployments, newest first.
 func (d *Deployments) ListForApp(ctx context.Context, appID string) ([]Deployment, error) {
 	rows, err := d.db.Query(ctx, `
-		SELECT id, app_id, spec_id, trigger, status, error_code, started_at, finished_at, created_by
+		SELECT id, app_id, spec_id, trigger, status, coalesce(result_state, ''), error_code, started_at, finished_at, created_by
 		FROM deployments WHERE app_id = $1 ORDER BY started_at DESC LIMIT 50`, appID)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not list the app's deploys.", err)
@@ -140,7 +162,8 @@ func (d *Deployments) ListForApp(ctx context.Context, appID string) ([]Deploymen
 	for rows.Next() {
 		var dep Deployment
 		var code *string
-		if err := rows.Scan(&dep.ID, &dep.AppID, &dep.SpecID, &dep.Trigger, &dep.Status, &code,
+		if err := rows.Scan(&dep.ID, &dep.AppID, &dep.SpecID, &dep.Trigger, &dep.Status,
+			&dep.ResultState, &code,
 			&dep.StartedAt, &dep.FinishedAt, &dep.CreatedBy); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list the app's deploys.", err)
 		}
@@ -178,15 +201,66 @@ func (d *Deployments) InFlight(ctx context.Context, appID string) (bool, error) 
 // The digest is what makes "a workload exists with the wrong image" detectable.
 // A reference cannot be compared against a running container — the container
 // reports a digest — and a tag can point somewhere new without changing.
-func (d *Deployments) SetImageRef(ctx context.Context, deploymentID, imageRef, digest string) error {
-	if imageRef == "" && digest == "" {
+func (d *Deployments) SetImageRef(ctx context.Context, deploymentID, imageRef, digest string, perWorkload map[string]WorkloadImage) error {
+	if imageRef == "" && digest == "" && len(perWorkload) == 0 {
 		return nil
 	}
+
+	// Per workload as well, because one image is the whole story only for an
+	// app built from one Dockerfile. A compose app builds per service, and a
+	// reconciler restoring every workload from the app's single recorded image
+	// replaces the application with a second copy of its proxy.
+	var encoded []byte
+	if len(perWorkload) > 0 {
+		var err error
+		if encoded, err = json.Marshal(perWorkload); err != nil {
+			return errs.Wrap(errs.Internal, "Could not record the deployed images.", err)
+		}
+	}
+
 	_, err := d.db.Exec(ctx,
-		`UPDATE deployments SET image_ref = NULLIF($2, ''), image_digest = NULLIF($3, '')
-		 WHERE id = $1`, deploymentID, imageRef, digest)
+		`UPDATE deployments
+		    SET image_ref = NULLIF($2, ''), image_digest = NULLIF($3, ''), workload_images = $4
+		  WHERE id = $1`, deploymentID, imageRef, digest, encoded)
 	if err != nil {
 		return errs.Wrap(errs.Internal, "Could not record the deployed image.", err)
 	}
 	return nil
+}
+
+// WorkloadImage is what one part of an app ran.
+type WorkloadImage struct {
+	Ref    string `json:"ref,omitempty"`
+	Digest string `json:"digest,omitempty"`
+}
+
+// LastImage returns the image the app's newest successful deploy shipped.
+//
+// What a rescan looks at (R-312): the image that is running, not one derived
+// from the app's name. Empty for an app that has never deployed, or one whose
+// deploys never carried an image — an app that runs somebody else's published
+// image has one, and an app that has never been built does not.
+func (d *Deployments) LastImage(ctx context.Context, appID string) (string, error) {
+	var ref *string
+	// The digest when there is no reference. A deploy from before the
+	// reference was recorded correctly still names what ran — a digest is a
+	// perfectly good thing to hand a scanner, and is in fact the more exact of
+	// the two.
+	err := d.db.QueryRow(ctx, `
+		SELECT coalesce(image_ref, image_digest)
+		FROM deployments
+		WHERE app_id = $1 AND status = $2
+		  AND (image_ref IS NOT NULL OR image_digest IS NOT NULL)
+		ORDER BY started_at DESC
+		LIMIT 1`, appID, DeploySucceeded).Scan(&ref)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", errs.Wrap(errs.Internal, "Could not read the app's deploys.", err)
+	}
+	if ref == nil {
+		return "", nil
+	}
+	return *ref, nil
 }

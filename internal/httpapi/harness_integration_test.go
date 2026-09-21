@@ -38,6 +38,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/detection"
 	"github.com/bemeek-io/pando/internal/core/planner"
 	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
+	"github.com/bemeek-io/pando/internal/core/security"
 	"github.com/bemeek-io/pando/internal/core/source"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
@@ -197,6 +198,7 @@ func newInstall(t *testing.T) *install {
 		Allocations: allocations,
 		Planner:     appPlanner,
 		Deployments: deployments,
+		Reconciles:  state.NewReconciles(db),
 		Deployer:    deployer,
 		Logs:        logStore,
 		Secrets:     secrets,
@@ -227,6 +229,19 @@ func newInstall(t *testing.T) *install {
 		},
 		BundleSource: state.NewBundleSource(db),
 		Idempotency:  state.NewIdempotency(db),
+
+		// The real service against a registry with no scanner in it, which is
+		// the shipped state of an installation that has not configured one
+		// (R-317). Reading a standing still works there and says so; scanning
+		// is what has nothing to scan with.
+		Security: &security.Service{
+			Scans:       state.NewScans(db),
+			Deployments: deployments,
+			Registry:    registry,
+			Policy:      hostPolicy,
+			Auditor:     auditor,
+			Logger:      zap.NewNop(),
+		},
 	}
 
 	return &install{
