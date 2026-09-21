@@ -77,12 +77,14 @@ groups with no match and opens collapsed ones while searching. Policy searches t
 each section — headings, notes, labels, descriptions, options — rather than a keyword list kept
 beside it that would drift the first time a setting was added. Escape clears any of them.
 
-**[D] Filters.** Beside the search, Apps filters by status (only the states some app is in) and
-Accounts by status and installation role. The audit log filters on the server, because it pages and
-the console never holds all of it: what happened (an action prefix), who (a picker of accounts, or an
-ID for a reader without `install.view`), what it was done to (kind and ID), and when (presets, or a
-range) — all `GET /audit` parameters, which combine, and which the CLI (`pando audit`) and MCP
-(`pando_list_audit`) take too.
+**[D] Filters.** Tables filter by column, from a button in the column's header (`ui/Table.tsx`): a
+"contains" field for free text, a checklist of the values present, with counts, for a column of a few
+kinds of value. Filters on several columns combine, with the page's search, in the browser. Apps
+filters on name, status and security; Accounts on username, name, status and installation role. The
+audit log filters on the server instead, because it pages and the console never holds all of it:
+action (prefix), actor, target type, target ID and time range — all `GET /audit` parameters, which
+combine, and which the CLI (`pando audit`) and MCP (`pando_list_audit`) take too. Its labels use the
+audit vocabulary as is; whoever reads an audit log knows what an actor and a target are.
 
 **[D] Phone width.** At 48em and below (`ui/narrow.css`, `ui/narrow.ts`): the page padding token
 drops to `--space-4`; headings and their actions wrap; the admin sidebar becomes a menu behind a

@@ -597,12 +597,12 @@ const TARGET_KINDS = [
 ];
 
 const WHEN: { value: string; label: string; hours?: number }[] = [
-  { value: '', label: 'Any time' },
+  { value: '', label: 'All time' },
   { value: '1h', label: 'Last hour', hours: 1 },
   { value: '24h', label: 'Last 24 hours', hours: 24 },
   { value: '7d', label: 'Last 7 days', hours: 24 * 7 },
   { value: '30d', label: 'Last 30 days', hours: 24 * 30 },
-  { value: 'custom', label: 'Between…' },
+  { value: 'custom', label: 'Custom range' },
 ];
 
 /** The query string for a set of filters, times resolved now. */
@@ -654,79 +654,83 @@ export function Audit() {
 
   const events = log.data?.pages.flatMap((p) => p.events ?? []) ?? [];
 
+  const custom = filters.when === 'custom';
+  const range = (
+    <Field>
+      <Select
+        label="Time range"
+        value={filters.when}
+        options={WHEN.map((w) => ({ value: w.value, label: w.label }))}
+        onChange={(e) => set({ when: e.target.value })}
+      />
+    </Field>
+  );
+
   return (
     <Screen heading="Audit log">
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'flex-end',
-          gap: 'var(--space-3) var(--space-4)',
-          marginBottom: 'var(--space-5)',
-        }}
-      >
-        <Field>
-          <Input
-            label="What happened"
-            mono
-            value={filters.action}
-            placeholder="app."
-            onChange={(e) => set({ action: e.target.value })}
-          />
-        </Field>
-
-        <Field>
-          {users.isSuccess ? (
-            <Select
-              label="Who"
-              value={filters.actor}
-              options={[
-                { value: '', label: 'Anyone' },
-                ...people.map((u) => ({ value: u.id, label: u.display_name ? `${u.external_id} (${u.display_name})` : u.external_id })),
-              ]}
-              onChange={(e) => set({ actor: e.target.value })}
-            />
-          ) : (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
+        <FilterRow>
+          <Field>
             <Input
-              label="Who"
+              label="Action"
               mono
-              placeholder="usr_…"
-              value={filters.actor}
-              onChange={(e) => set({ actor: e.target.value.trim() })}
+              value={filters.action}
+              placeholder="Prefix, e.g. app."
+              onChange={(e) => set({ action: e.target.value })}
             />
-          )}
-        </Field>
+          </Field>
 
-        <Field>
-          <Select
-            label="Done to"
-            value={filters.targetKind}
-            options={[{ value: '', label: 'Anything' }, ...TARGET_KINDS.map((k) => ({ value: k, label: k.replace(/_/g, ' ') }))]}
-            onChange={(e) => set({ targetKind: e.target.value })}
-          />
-        </Field>
+          <Field>
+            {users.isSuccess ? (
+              <Select
+                label="Actor"
+                value={filters.actor}
+                options={[
+                  { value: '', label: 'Any' },
+                  ...people.map((u) => ({ value: u.id, label: u.display_name ? `${u.external_id} (${u.display_name})` : u.external_id })),
+                ]}
+                onChange={(e) => set({ actor: e.target.value })}
+              />
+            ) : (
+              <Input
+                label="Actor"
+                mono
+                placeholder="usr_… or tok_…"
+                value={filters.actor}
+                onChange={(e) => set({ actor: e.target.value.trim() })}
+              />
+            )}
+          </Field>
 
-        <Field>
-          <Input
-            label="Target ID"
-            mono
-            placeholder="app_…"
-            value={filters.targetID}
-            onChange={(e) => set({ targetID: e.target.value })}
-          />
-        </Field>
+          <Field>
+            <Select
+              label="Target type"
+              value={filters.targetKind}
+              options={[{ value: '', label: 'Any' }, ...TARGET_KINDS.map((k) => ({ value: k, label: k }))]}
+              onChange={(e) => set({ targetKind: e.target.value })}
+            />
+          </Field>
 
-        <Field>
-          <Select
-            label="When"
-            value={filters.when}
-            options={WHEN.map((w) => ({ value: w.value, label: w.label }))}
-            onChange={(e) => set({ when: e.target.value })}
-          />
-        </Field>
+          <Field>
+            <Input
+              label="Target ID"
+              mono
+              placeholder="app_…"
+              value={filters.targetID}
+              onChange={(e) => set({ targetID: e.target.value })}
+            />
+          </Field>
 
-        {filters.when === 'custom' && (
-          <>
+          {!custom && range}
+
+          {filtered && !custom && <ClearFilters onClear={() => setFilters(NO_FILTERS)} />}
+        </FilterRow>
+
+        {/* A custom range is three fields that belong together, so they take
+            a row of their own rather than wrapping one at a time onto it. */}
+        {custom && (
+          <FilterRow>
+            {range}
             <Field>
               <Input
                 label="From"
@@ -743,13 +747,8 @@ export function Audit() {
                 onChange={(e) => set({ until: e.target.value })}
               />
             </Field>
-          </>
-        )}
-
-        {filtered && (
-          <Button variant="ghost" onClick={() => setFilters(NO_FILTERS)}>
-            Clear filters
-          </Button>
+            <ClearFilters onClear={() => setFilters(NO_FILTERS)} />
+          </FilterRow>
         )}
       </div>
 
@@ -761,16 +760,16 @@ export function Audit() {
         // identical as an empty table, and on this screen "nothing happened"
         // and "your filter is wrong" are very different answers.
         empty={
-          <EmptyState heading={filtered ? 'No events match these filters' : 'Nothing recorded yet'}>
+          <EmptyState heading={filtered ? 'No matching events' : 'No events recorded'}>
             {filtered
-              ? 'What happened is matched from the start, so app. finds every app event. Clear the filters to see everything.'
-              : 'Every action Pando takes is written here, and nothing can rewrite it afterwards.'}
+              ? 'Action is a prefix match: app. matches every app event.'
+              : 'The audit log is append-only; recorded events cannot be modified or deleted.'}
           </EmptyState>
         }
         columns={[
           {
             key: 'occurred_at',
-            header: 'When',
+            header: 'Time',
             width: '20ch',
             muted: true,
             render: (row: AuditRecord) => new Date(row.occurred_at).toLocaleString(),
@@ -778,7 +777,7 @@ export function Audit() {
           { key: 'action', header: 'Action', width: 'minmax(0,26ch)', mono: true },
           {
             key: 'principal_id',
-            header: 'Who',
+            header: 'Actor',
             width: 'minmax(0,20ch)',
             mono: true,
             // A delegated token records both itself and the person it acted
@@ -805,11 +804,27 @@ export function Audit() {
       {log.hasNextPage && (
         <div style={{ marginTop: 'var(--space-4)' }}>
           <Button variant="secondary" disabled={log.isFetchingNextPage} onClick={() => void log.fetchNextPage()}>
-            {log.isFetchingNextPage ? 'Loading' : 'Show older'}
+            {log.isFetchingNextPage ? 'Loading' : 'Load older events'}
           </Button>
         </div>
       )}
     </Screen>
+  );
+}
+
+function FilterRow({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 'var(--space-3) var(--space-4)' }}>
+      {children}
+    </div>
+  );
+}
+
+function ClearFilters({ onClear }: { onClear: () => void }) {
+  return (
+    <Button variant="ghost" onClick={onClear}>
+      Clear filters
+    </Button>
   );
 }
 

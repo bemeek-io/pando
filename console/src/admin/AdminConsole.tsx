@@ -13,7 +13,7 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Banner, Button, EmptyState, Icon, IconButton, Logo, Select, SidebarNav, StatusIndicator, Tabs, Tooltip } from '@design';
+import { Badge, Banner, Button, EmptyState, Icon, IconButton, Logo, SidebarNav, StatusIndicator, Tabs, Tooltip } from '@design';
 import type { SidebarItem } from '@design';
 
 import { api } from '@api/client';
@@ -298,15 +298,11 @@ function AppsList({
 }) {
   const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState('');
-  const [state, setState] = useState('');
 
   // By name, address slug, ID and status — the ID because it is what the CLI
-  // and a log line give somebody to go looking for. The status filter is exact;
-  // it offers only the states some app is in, so no choice shows nothing.
-  const states = [...new Set(rows.map((a) => a.state))];
-  const shown = rows.filter(
-    (a) => (!state || a.state === state) && matches(query, a.name, a.slug, a.id, statusLabel(a.state)),
-  );
+  // and a log line give somebody to go looking for. Narrowing by one column is
+  // the column filters' job, in the table's own headers.
+  const shown = rows.filter((a) => matches(query, a.name, a.slug, a.id, statusLabel(a.state)));
 
   // The page is not capped — a table's rows and rules run to the edge of the
   // window, which is what a wide display should look like. Its content is: the
@@ -327,19 +323,6 @@ function AppsList({
               Add app
             </Button>
             {rows.length > 0 && <SearchField value={query} onChange={setQuery} placeholder="Search apps" />}
-            {rows.length > 0 && (
-              <div style={{ width: '20ch' }}>
-                <Select
-                  aria-label="Status"
-                  value={state}
-                  options={[
-                    { value: '', label: 'Every status' },
-                    ...states.map((s) => ({ value: s, label: statusLabel(s) })),
-                  ]}
-                  onChange={(e) => setState(e.target.value)}
-                />
-              </div>
-            )}
           </div>
         }
       >
@@ -350,7 +333,7 @@ function AppsList({
           // is what makes the install anything at all.
           empty={
             rows.length > 0 ? (
-              <Quiet>No apps match these filters.</Quiet>
+              <Quiet>No apps match &ldquo;{query.trim()}&rdquo;.</Quiet>
             ) : (
             <EmptyState
               heading="Add your first app"
@@ -365,11 +348,13 @@ function AppsList({
             )
           }
           columns={[
-            { key: 'name', header: 'Name', width: 'minmax(0,40ch)' },
+            { key: 'name', header: 'Name', width: 'minmax(0,40ch)', filter: 'text' },
             {
               key: 'state',
               header: 'Status',
               width: '16ch',
+              filter: 'values',
+              filterValue: (row: App) => statusLabel(row.state),
               render: (row: App) => (
                 <StatusIndicator
                   status={statusSymbol(row.state)}
@@ -381,6 +366,13 @@ function AppsList({
               key: 'security_score',
               header: 'Security',
               width: '14ch',
+              filter: 'values',
+              filterValue: (row: App) =>
+                row.security_score == null
+                  ? 'Not scanned'
+                  : row.security_verdict === 'insecure'
+                    ? 'Below minimum'
+                    : 'Scanned',
               render: (row: App) => (
                 <ScoreBadge score={row.security_score} verdict={row.security_verdict as never} full />
               ),

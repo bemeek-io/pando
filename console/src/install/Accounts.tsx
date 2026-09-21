@@ -43,8 +43,6 @@ export function Accounts() {
   const me = usePrincipal();
   const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState('');
-  const [role, setRole] = useState('');
 
   const accounts = useQuery({
     queryKey: ['users'],
@@ -59,8 +57,6 @@ export function Accounts() {
   // By anything the table shows: username, name, email, status and role.
   const roleName = (id?: string) => roles.data?.roles.find((r) => r.id === id)?.name;
   const rows = all.filter((a) =>
-    (!status || a.status === status) &&
-    (!role || (role === 'none' ? !a.install_role_id : a.install_role_id === role)) &&
     matches(
       query,
       a.external_id,
@@ -82,34 +78,7 @@ export function Accounts() {
             </Button>
           )}
           {all.length > 0 && <SearchField value={query} onChange={setQuery} placeholder="Search accounts" />}
-          {all.length > 0 && (
-            <>
-              <div style={{ width: '18ch' }}>
-                <Select
-                  aria-label="Status"
-                  value={status}
-                  options={[
-                    { value: '', label: 'Every status' },
-                    { value: 'active', label: 'Active' },
-                    { value: 'suspended', label: 'Suspended' },
-                  ]}
-                  onChange={(e) => setStatus(e.target.value)}
-                />
-              </div>
-              <div style={{ width: '20ch' }}>
-                <Select
-                  aria-label="Installation role"
-                  value={role}
-                  options={[
-                    { value: '', label: 'Any role' },
-                    { value: 'none', label: 'No role' },
-                    ...(roles.data?.roles ?? []).map((r) => ({ value: r.id, label: sentence(r.name) })),
-                  ]}
-                  onChange={(e) => setRole(e.target.value)}
-                />
-              </div>
-            </>
-          )}
+
         </div>
       }
     >
@@ -117,18 +86,22 @@ export function Accounts() {
 
       <Table
         columns={[
-          { key: 'external_id', header: 'Username', width: 'minmax(0,24ch)' },
+          { key: 'external_id', header: 'Username', width: 'minmax(0,24ch)', filter: 'text' },
           {
             key: 'display_name',
             header: 'Name',
             width: 'minmax(0,22ch)',
             muted: true,
+            filter: 'text',
+            filterValue: (row: Account) => `${row.display_name ?? ''} ${row.email ?? ''}`,
             render: (row: Account) => row.display_name || row.email || '—',
           },
           {
             key: 'status',
             header: 'Status',
             width: '14ch',
+            filter: 'values',
+            filterValue: (row: Account) => (row.status === 'active' ? 'Active' : 'Suspended'),
             render: (row: Account) => (
               <StatusIndicator
                 // Suspended is a stopped account, not a failed one. Marker red
@@ -143,6 +116,11 @@ export function Accounts() {
             key: 'install_role_id',
             header: 'Installation role',
             width: 'minmax(0,24ch)',
+            filter: 'values',
+            filterValue: (row: Account) => {
+              const r = roles.data?.roles.find((x) => x.id === row.install_role_id);
+              return r ? sentence(r.name) : 'None';
+            },
             render: (row: Account) => (
               <div style={{ padding: 'var(--space-2) 0' }}>
                 {manage ? (
@@ -170,7 +148,7 @@ export function Accounts() {
           },
         ]}
         rows={rows}
-        empty={all.length > 0 ? <Quiet>No accounts match these filters.</Quiet> : undefined}
+        empty={all.length > 0 ? <Quiet>No accounts match &ldquo;{query.trim()}&rdquo;.</Quiet> : undefined}
       />
 
       {adding && <AddAccount onClose={() => setAdding(false)} />}
