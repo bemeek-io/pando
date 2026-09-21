@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/url"
 )
@@ -24,6 +25,13 @@ type tool struct {
 
 	// request turns arguments into an API call.
 	request func(args map[string]any) (method, path string, body any, err error)
+}
+
+// Bytes is a request body sent as-is rather than encoded as JSON, for the
+// endpoints whose body is a file.
+type Bytes struct {
+	ContentType string
+	Data        []byte
 }
 
 func stringArg(args map[string]any, key string, required bool) (string, error) {
@@ -261,6 +269,42 @@ var toolList = []tool{
 				return "", "", nil, err
 			}
 			return "POST", appPath(id, "/restart"), map[string]any{}, nil
+		},
+	},
+	{
+		Name: "pando_set_app_icon",
+		Description: "Set the image shown on an app's launcher tile. The image is a PNG, JPEG, " +
+			"WebP or GIF file of at most 256 KB, base64-encoded. SVG is not accepted.",
+		Schema: schema(map[string]any{
+			"app_id":       str("The app's ID."),
+			"image_base64": str("The image file's bytes, base64-encoded."),
+		}, "app_id", "image_base64"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "app_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			encoded, err := stringArg(args, "image_base64", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			data, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil {
+				return "", "", nil, fmt.Errorf("image_base64 is not valid base64: %w", err)
+			}
+			return "PUT", appPath(id, "/icon"), Bytes{ContentType: "application/octet-stream", Data: data}, nil
+		},
+	},
+	{
+		Name:        "pando_clear_app_icon",
+		Description: "Remove the image on an app's launcher tile, so the tile shows the app's initial.",
+		Schema:      schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "app_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "DELETE", appPath(id, "/icon"), nil, nil
 		},
 	},
 	{

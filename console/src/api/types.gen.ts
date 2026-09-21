@@ -23,6 +23,7 @@ export interface App {
   address?: string;
   security_score?: number;
   security_verdict?: string;
+  icon_updated_at?: string;
 }
 
 export interface Revision {

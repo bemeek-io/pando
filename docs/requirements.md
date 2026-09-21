@@ -708,6 +708,8 @@ cannot do one of them says so rather than failing when asked.
 
 **R-266 [D]** Sharing an app sends no message. The app appears in the recipient's launcher tiles (R-264), and for v1 that is the notification. A notify-adapter message would be console-only (R-231) and so would arrive beside the tile that already appeared — and would be invisible to a recipient who has never signed in, which a waiting tile is not. Revisit when an adapter can reach someone who is not already looking at Pando (R-232).
 
+**R-340 [D] [V1]** An app may carry an **image**, shown on its launcher tile (R-264). Anyone who may change the app's spec may set or remove it (`app.spec.edit`); anyone who can open the app can see it. It is presentation, not configuration: it is not part of the spec (R-020) and a rollback does not change it. An app with no image shows its initial.
+
 ---
 
 ## 20. Configuration and Policy

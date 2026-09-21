@@ -12,7 +12,7 @@
 // why this screen says so: someone who picks dark here and finds a different
 // laptop still light has not found a bug.
 
-import { Button, Icon, IconButton, Logo, Radio } from '@design';
+import { Icon, IconButton, Logo, Radio } from '@design';
 
 import { usePrincipal } from '../app/principal';
 import { useTheme } from '../ui/theme';
@@ -30,14 +30,9 @@ const THEMES: { value: Preference; label: string; description?: string }[] = [
 
 export function Settings({
   onBack,
-  onReference,
   onSignedOut,
 }: {
   onBack: () => void;
-  /** The API screen. The launcher no longer links to it, and somebody with no
-   *  administrative verbs has no sidebar to find it in — so without this, the
-   *  console would lose the way to mint a token for them (R-261). */
-  onReference: () => void;
   onSignedOut?: () => void;
 }) {
   const me = usePrincipal();
@@ -84,16 +79,6 @@ export function Settings({
                   />
                 ))}
               </div>
-            </section>
-
-            <section>
-              <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>API and tools</h4>
-              <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: '0 0 var(--space-3)' }}>
-                API tokens, the command-line tool and the MCP server for AI assistants.
-              </p>
-              <Button variant="secondary" onClick={onReference}>
-                Open API and tools
-              </Button>
             </section>
 
             <section>

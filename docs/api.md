@@ -54,6 +54,9 @@ one verb says nothing about another (R-082).
 | `GET /api/v1/apps/{appID}` | `app.view` | One app: name, source, state and pinned spec. |
 | `PATCH /api/v1/apps/{appID}` | `app.spec.edit` | Rename an app or change its source. |
 | `DELETE /api/v1/apps/{appID}` | `app.delete` | Delete an app. With storage, `backup=true` keeps a final copy and `force=true` discards it; without either, the request is refused so the decision is taken rather than assumed (R-204, R-205). |
+| `GET /api/v1/apps/{appID}/icon` |  | The image on the app's launcher tile. Anyone who can open the app can load it; `icon_updated_at` on the app says whether there is one and when it changed (R-340). |
+| `PUT /api/v1/apps/{appID}/icon` | `app.spec.edit` | Set the app's tile image. The body is the image itself — PNG, JPEG, WebP or GIF, at most 256 KB. SVG is refused (R-340). |
+| `DELETE /api/v1/apps/{appID}/icon` | `app.spec.edit` | Remove the app's tile image, so the tile shows its initial again. |
 | `GET /api/v1/apps/{appID}/status` | `app.view` | What the app is doing now: its state, and each part separately — running, restarting and how often, health, exit code — so a single crash-looping part is visible rather than averaged into one word. |
 | `POST /api/v1/apps/{appID}/start` | `app.restart` | Set the app's desired state to running. The reconciler converges to it, so it survives a restart. |
 | `POST /api/v1/apps/{appID}/stop` | `app.restart` | Set the app's desired state to stopped. |

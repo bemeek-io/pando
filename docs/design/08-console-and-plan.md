@@ -22,6 +22,20 @@ recipient who has never signed in, a console-only notification is invisible in a
 the tile is waiting for them whenever they arrive. Reconsider when an SMTP adapter exists and a share
 can reach someone who is not already looking at Pando; the interface for it is already there (R-232).
 
+**[D] Tiles.** A tile is a square — the app's image (R-340), or its initial when it has none — with
+the name underneath. It carries **no status line**: an app that is running or degraded and has an
+address is a link, and anything else is greyed out and is not. This is a deliberate exception to the
+design system's "status is a symbol plus a word" rule, decided by the product owner: the launcher is
+for opening apps, "running" is the normal case, and a word on every tile saying so is noise. The
+state is still in each unreachable tile's accessible name and hover title, so the difference is
+never carried by appearance alone.
+
+**[D] Settings.** The signed-in person's own settings — theme and signing out — are a page of their
+own at `/admin/settings`, opened by a gear in the launcher header and in the admin sidebar header,
+with a back arrow to wherever it was opened from. Not a section of the admin console: nothing on it
+is administration. Under `/admin` only because that prefix is already reserved against app slugs
+(R-023). The launcher does not link to *API and tools*; it is in the admin console.
+
 ### 1.2 Stack [P]
 
 | Concern | Choice |

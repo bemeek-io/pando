@@ -32,10 +32,15 @@ POST   /api/v1/apps                      create — begins onboarding; app.creat
 GET    /api/v1/apps/{id}
 PATCH  /api/v1/apps/{id}                 name, owner
 DELETE /api/v1/apps/{id}                 R-204/205 — see below
+GET    /api/v1/apps/{id}/icon            the launcher tile's image — data plane (R-340)
+PUT    /api/v1/apps/{id}/icon            body is the image; app.spec.edit
+DELETE /api/v1/apps/{id}/icon            app.spec.edit
 POST   /api/v1/apps/{id}:start
 POST   /api/v1/apps/{id}:stop
 POST   /api/v1/apps/{id}:restart
 ```
+
+**Icon** (R-340). The body of `PUT` is the image bytes, not JSON. The type is sniffed from the bytes, never taken from `Content-Type`; PNG, JPEG, WebP and GIF are accepted and SVG is not, because it is a document that can carry script and would be served from Pando's origin. 256 KB at most. `GET` is gated on the data plane (`CheckData`), the same as the tile it is drawn on, and answers not-found to anyone who cannot open the app. It is served with `nosniff`, a `sandbox` CSP and `Cache-Control: private`. Every app representation carries `icon_updated_at`, absent when there is no image, so a client can put it in the image URL and never show a stale picture.
 
 **Create** takes a source and, optionally, routing and runtime choices. It does not deploy. It returns an app in `draft` with a detection job started.
 

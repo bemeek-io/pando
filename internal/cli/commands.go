@@ -140,6 +140,54 @@ func loginCmd(server *string) *cobra.Command {
 	return cmd
 }
 
+// appIconCmd sets or removes the image on an app's launcher tile (R-340).
+func appIconCmd(client func() (*Client, error)) *cobra.Command {
+	cmd := &cobra.Command{Use: "icon", Short: "Set the image on an app's launcher tile"}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "set <app> <image-file>",
+		Short: "Set an app's image from a PNG, JPEG, WebP or GIF file",
+		Long: "Sets the image shown on the app's tile in everyone's launcher.\n\n" +
+			"PNG, JPEG, WebP or GIF, at most 256 KB. SVG is not accepted. A square image a few\n" +
+			"hundred pixels across is plenty.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			image, err := os.ReadFile(args[1])
+			if err != nil {
+				return err
+			}
+			if err := c.UploadIcon(args[0], image); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Set the image for %s.\n", args[0])
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "clear <app>",
+		Short: "Remove an app's image, so its tile shows its initial",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("DELETE", "/apps/"+args[0]+"/icon", nil, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Removed the image for %s.\n", args[0])
+			return nil
+		},
+	})
+
+	return cmd
+}
+
 func appCmd(client func() (*Client, error)) *cobra.Command {
 	cmd := &cobra.Command{Use: "app", Short: "Work with apps"}
 
@@ -285,6 +333,8 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 			return nil
 		},
 	})
+
+	cmd.AddCommand(appIconCmd(client))
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "start <app>",

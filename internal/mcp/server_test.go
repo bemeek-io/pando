@@ -243,6 +243,10 @@ func TestEachToolMapsToItsEndpoint(t *testing.T) {
 		{"pando_stop_app", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/stop"},
 		{"pando_start_app", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/start"},
 		{"pando_restart_app", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/restart"},
+
+		// R-340: the tile image, settable from every surface (R-261).
+		{"pando_set_app_icon", `{"app_id":"app_01HQ8","image_base64":"iVBORw=="}`, "PUT", "/apps/app_01HQ8/icon"},
+		{"pando_clear_app_icon", `{"app_id":"app_01HQ8"}`, "DELETE", "/apps/app_01HQ8/icon"},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
 			srv, s := newSession()
@@ -411,4 +415,24 @@ func TestRequestsAreAnsweredInOrderOverOneStream(t *testing.T) {
 		require.EqualValues(t, i+1, reply["id"])
 		require.Equal(t, "2.0", reply["jsonrpc"])
 	}
+}
+
+// TestR340_SetAppIconSendsTheDecodedBytes asserts the MCP half of R-340: the
+// agent sends base64, and the API receives the file itself — not JSON.
+func TestR340_SetAppIconSendsTheDecodedBytes(t *testing.T) {
+	srv, s := newSession()
+	s.run(t, srv, call(1, "pando_set_app_icon", `{"app_id":"app_01HQ8","image_base64":"iVBORw=="}`))
+
+	require.Len(t, s.calls, 1)
+	raw, ok := s.calls[0].body.(mcp.Bytes)
+	require.True(t, ok, "the body should be sent as bytes, not encoded as JSON")
+	require.Equal(t, []byte{0x89, 'P', 'N', 'G'}, raw.Data)
+}
+
+func TestSetAppIconRefusesBadBase64WithoutCallingTheAPI(t *testing.T) {
+	srv, s := newSession()
+	replies := s.run(t, srv, call(1, "pando_set_app_icon", `{"app_id":"app_01HQ8","image_base64":"not base64!"}`))
+
+	require.Empty(t, s.calls)
+	require.Equal(t, true, result(t, replies[0])["isError"])
 }

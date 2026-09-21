@@ -72,7 +72,6 @@ export function App() {
     return (
       <Settings
         onBack={() => go(cameFrom.current ?? { view: 'launcher', section: 'apps' })}
-        onReference={() => go({ view: 'admin', section: 'api' })}
         onSignedOut={signedOut}
       />
     );

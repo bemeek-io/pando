@@ -17,6 +17,7 @@ import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { deployLabel, deployStatus } from '../ui/deploys';
 import { Security } from './Security';
+import { AppImage } from './AppImage';
 
 interface SpecRevision {
   id: string;
@@ -131,6 +132,9 @@ export function AppOverview({
                 This app gets an address when it is first deployed.
               </span>
             )}
+          </Row>
+          <Row label="Launcher image">
+            <AppImage app={app} />
           </Row>
           {app.source?.url && (
             <Row label="Repository">

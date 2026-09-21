@@ -114,6 +114,35 @@ is not safe. Pass --discard-data to delete without one.
 | --- | --- | --- |
 | `--discard-data` |  | delete without keeping a backup of the app's storage |
 
+#### `app icon`
+
+Set the image on an app's launcher tile
+
+```
+pando app icon
+```
+
+##### `app icon clear`
+
+Remove an app's image, so its tile shows its initial
+
+```
+pando app icon clear <app>
+```
+
+##### `app icon set`
+
+Set an app's image from a PNG, JPEG, WebP or GIF file
+
+```
+pando app icon set <app> <image-file>
+```
+
+Sets the image shown on the app's tile in everyone's launcher.
+
+PNG, JPEG, WebP or GIF, at most 256 KB. SVG is not accepted. A square image a few
+hundred pixels across is plenty.
+
 #### `app list`
 
 List the apps you can manage

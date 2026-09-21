@@ -125,12 +125,23 @@ func PackDirectory(dir string) ([]byte, int, error) {
 
 // UploadSource sends a packed directory as an app's source.
 func (c *Client) UploadSource(appID string, archive []byte) error {
-	req, err := http.NewRequest("POST",
-		c.BaseURL+"/api/v1/apps/"+appID+"/source", bytes.NewReader(archive))
+	return c.sendBytes("POST", "/apps/"+appID+"/source", "application/gzip", archive, nil)
+}
+
+// UploadIcon sets an app's tile image (R-340). The server decides what the
+// bytes are; the content type sent is only a courtesy.
+func (c *Client) UploadIcon(appID string, image []byte) error {
+	return c.sendBytes("PUT", "/apps/"+appID+"/icon", "application/octet-stream", image, nil)
+}
+
+// sendBytes sends a body as-is rather than as JSON, for the endpoints whose
+// body is a file. The response, when out is non-nil, is decoded into it.
+func (c *Client) sendBytes(method, path, contentType string, body []byte, out any) error {
+	req, err := http.NewRequest(method, c.BaseURL+"/api/v1"+path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/gzip")
+	req.Header.Set("Content-Type", contentType)
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
@@ -151,6 +162,13 @@ func (c *Client) UploadSource(appID string, archive []byte) error {
 			}
 		}
 		return apiErr
+	}
+	if out != nil {
+		raw, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		return decodeInto(raw, out)
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil

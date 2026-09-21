@@ -13,12 +13,12 @@
 // so the list is the whole mechanism and has to be right.
 
 import { useQuery } from '@tanstack/react-query';
-import { Card, EmptyState, Icon, IconButton, Logo, StatusIndicator } from '@design';
+import { EmptyState, Icon, IconButton, Logo } from '@design';
 
 
-import { api } from '@api/client';
+import { api, base } from '@api/client';
 import type { App } from '@api/types.gen';
-import { statusLabel, statusSymbol } from '../ui/status';
+import { statusLabel } from '../ui/status';
 import { Sheet } from '../ui/Sheet';
 import { TopoBackground } from '../ui/TopoBackground';
 
@@ -105,8 +105,10 @@ function Tiles({ apps }: { apps: App[] }) {
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(22ch, 1fr))',
-        gap: 'var(--space-4)',
+        // Fixed tracks, not 1fr: a square that stretched to fill the row would
+        // be a different size on every window, and a poster on a wide one.
+        gridTemplateColumns: 'repeat(auto-fill, 16ch)',
+        gap: 'var(--space-6) var(--space-5)',
       }}
     >
       {apps.map((app) => (
@@ -116,44 +118,118 @@ function Tiles({ apps }: { apps: App[] }) {
   );
 }
 
+/**
+ * Whether opening the app would reach it.
+ *
+ * Running or degraded — degraded is still serving, just not every part of it
+ * — and with an address. Anything else is greyed out and is not a link.
+ */
+function reachable(app: App): boolean {
+  return Boolean(app.address) && (app.state === 'running' || app.state === 'degraded');
+}
+
 function Tile({ app }: { app: App }) {
-  // The tile is the whole link, which is what `interactive` is for. Every one
-  // of these addresses goes through Pando's proxy — there is no other way in
-  // (R-023) — but *which* address depends on how the app is routed, and the
-  // server is what knows. This used to be "/" + slug, the path-mode answer,
-  // handed out on installs where no app is in path mode: on a laptop every app
-  // is on its own port, and every tile here linked to a page that was not it.
+  // A square and a name, and no status line. The launcher is for someone who
+  // came to open an app (R-005), and "running" is the normal case — a word on
+  // every tile saying so is noise. What they need to know is which tiles will
+  // not open, and a greyed-out tile says that without a word.
   //
-  // An app that has never been deployed has no address at all, and its tile is
-  // not a link. Falling back to a guess would put the same wrong address back,
-  // just for fewer apps — and the status underneath already says why there is
-  // nowhere to go yet.
+  // The state is still in the accessible name and the hover title, so the
+  // difference is never carried by appearance alone.
+  const open = reachable(app);
+  const label = open ? app.name : `${app.name} — ${statusLabel(app.state)}`;
+
   const body = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-      <span style={{ font: 'var(--type-h4)', color: 'var(--ink)' }}>{app.name}</span>
-      <StatusIndicator status={statusSymbol(app.state)} label={statusLabel(app.state)} />
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-2)',
+        opacity: open ? 1 : 0.45,
+        filter: open ? 'none' : 'grayscale(1)',
+      }}
+    >
+      <Square app={app} />
+      <span
+        style={{
+          font: 'var(--type-body-ui)',
+          color: 'var(--ink)',
+          textAlign: 'center',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {app.name}
+      </span>
     </div>
   );
 
-  if (!app.address) {
-    return <Card padding="md">{body}</Card>;
+  if (!open) {
+    return (
+      <div title={statusLabel(app.state)} aria-label={label} aria-disabled="true">
+        {body}
+      </div>
+    );
   }
 
+  // An app is a different place from the console. Opening it over the top of
+  // Pando means the way back is the browser's history, and for someone who
+  // came to the launcher to open two apps it means coming back here every time.
+  //
+  // Every one of these addresses goes through Pando's proxy — there is no
+  // other way in (R-023) — but *which* address depends on how the app is
+  // routed, and the server is what knows.
   return (
-    <Card
-      as="a"
-      interactive
-      padding="md"
-      // An app is a different place from the console. Opening it over the top
-      // of Pando means the way back is the browser's history, and for someone
-      // who came to the launcher to open two apps it means coming back here
-      // every time.
-      {...({ href: app.address, target: '_blank', rel: 'noopener noreferrer' } as object)}
-      style={{ textDecoration: 'none' }}
+    <a
+      href={app.address}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={label}
+      style={{ textDecoration: 'none', color: 'inherit' }}
     >
       {body}
-    </Card>
+    </a>
   );
+}
+
+/**
+ * The tile's picture: the app's image when it has one (R-340), and its
+ * initial when it does not.
+ */
+function Square({ app }: { app: App }) {
+  // The timestamp is in the URL so a new image is a new address, and the
+  // browser's cached copy of the old one is never shown.
+  const src = app.icon_updated_at
+    ? `${base}/apps/${app.id}/icon?v=${encodeURIComponent(app.icon_updated_at)}`
+    : null;
+
+  return (
+    <div
+      style={{
+        aspectRatio: '1 / 1',
+        borderRadius: 'var(--radius-md)',
+        border: 'var(--border-width) solid var(--rule)',
+        background: 'var(--paper-sunken)',
+        overflow: 'hidden',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {src ? (
+        <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      ) : (
+        <span aria-hidden="true" style={{ font: 'var(--type-display)', color: 'var(--ink-secondary)' }}>
+          {initial(app.name)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function initial(name: string): string {
+  return Array.from(name.trim())[0]?.toUpperCase() ?? '';
 }
 
 function Quiet({ children }: { children: React.ReactNode }) {

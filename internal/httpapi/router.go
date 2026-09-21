@@ -377,6 +377,12 @@ func (s *Server) Routes() http.Handler {
 				r.Patch("/", s.handlePatchApp)
 				r.Delete("/", s.handleDeleteApp)
 
+				// The launcher tile's image (R-340). Reading it is the data
+				// plane, like the tile itself; setting it is app.spec.edit.
+				r.Get("/icon", s.handleGetAppIcon)
+				r.Put("/icon", s.handleSetAppIcon)
+				r.Delete("/icon", s.handleClearAppIcon)
+
 				// Lifecycle. Start and stop set desired state and let the
 				// reconciler converge (design 05), so "stopped" survives a
 				// Pando restart. Restart is an act rather than a state and

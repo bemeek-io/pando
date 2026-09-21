@@ -74,6 +74,12 @@ type App struct {
 	// policy document and on whether a scanner is configured, and neither is
 	// the store's to know.
 	SecurityVerdict string `json:"security_verdict,omitempty"`
+
+	// IconUpdatedAt is when the app's tile image last changed, and nil when it
+	// has none (R-340). The time rather than a flag so a client can put it in
+	// the image's URL and a browser never shows yesterday's picture from cache.
+	// The bytes are at GET /apps/{id}/icon; no list carries them.
+	IconUpdatedAt *time.Time `json:"icon_updated_at,omitempty"`
 }
 
 // Apps stores apps and their spec revisions.
@@ -153,9 +159,10 @@ func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 	err := a.db.QueryRow(ctx, `
 		SELECT a.id, a.name, a.slug, a.owner_user_id, a.state, a.desired_state, a.pinned_spec_id,
 		       a.source, a.created_at, a.updated_at, a.deleted_at, r.body->'routing',
-		       s.score, s.score_fixable
+		       s.score, s.score_fixable, i.updated_at
 		FROM apps a
 		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
+		LEFT JOIN app_icons i ON i.app_id = a.id
 		LEFT JOIN LATERAL (
 		    SELECT sc.score, sc.score_fixable
 		    FROM app_scans sc
@@ -167,7 +174,7 @@ func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 		WHERE a.id = $1 AND a.deleted_at IS NULL`, appID).
 		Scan(&app.ID, &app.Name, &app.Slug, &owner, &app.State, &app.DesiredState, &pinned,
 			&source, &app.CreatedAt, &app.UpdatedAt, &app.DeletedAt, &routing,
-			&app.SecurityScore, &app.SecurityScoreFixable)
+			&app.SecurityScore, &app.SecurityScoreFixable, &app.IconUpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return App{}, false, nil
 	}
@@ -197,9 +204,11 @@ func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, error) {
 	rows, err := a.db.Query(ctx, `
 		SELECT DISTINCT a.id, a.name, a.slug, a.owner_user_id, a.state, a.desired_state,
-		       a.pinned_spec_id, a.created_at, a.updated_at, r.body->'routing', s.score, s.score_fixable
+		       a.pinned_spec_id, a.created_at, a.updated_at, r.body->'routing', s.score, s.score_fixable,
+		       i.updated_at
 		FROM apps a
 		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
+		LEFT JOIN app_icons i ON i.app_id = a.id
 		-- The newest scan of the revision this app is running, and failing that
 		-- the newest that belongs to no revision — which is what detection
 		-- produces, from the source, before a revision exists. Never another
@@ -235,7 +244,7 @@ func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, 
 		var routing []byte
 		if err := rows.Scan(&app.ID, &app.Name, &app.Slug, &owner, &app.State, &app.DesiredState,
 			&pinned, &app.CreatedAt, &app.UpdatedAt, &routing,
-			&app.SecurityScore, &app.SecurityScoreFixable); err != nil {
+			&app.SecurityScore, &app.SecurityScoreFixable, &app.IconUpdatedAt); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list apps.", err)
 		}
 		if len(routing) > 0 {
@@ -258,9 +267,10 @@ func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, 
 // endpoints: the launcher shows what you can open, not what you can manage.
 func (a *Apps) ListForUse(ctx context.Context, p authz.Principal) ([]App, error) {
 	rows, err := a.db.Query(ctx, `
-		SELECT DISTINCT a.id, a.name, a.slug, a.state, r.body->'routing'
+		SELECT DISTINCT a.id, a.name, a.slug, a.state, r.body->'routing', i.updated_at
 		FROM apps a
 		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
+		LEFT JOIN app_icons i ON i.app_id = a.id
 		LEFT JOIN grants g ON g.app_id = a.id AND g.plane = 'data'
 		WHERE a.deleted_at IS NULL
 		  AND (
@@ -282,7 +292,7 @@ func (a *Apps) ListForUse(ctx context.Context, p authz.Principal) ([]App, error)
 	for rows.Next() {
 		var app App
 		var routing []byte
-		if err := rows.Scan(&app.ID, &app.Name, &app.Slug, &app.State, &routing); err != nil {
+		if err := rows.Scan(&app.ID, &app.Name, &app.Slug, &app.State, &routing, &app.IconUpdatedAt); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list apps.", err)
 		}
 		if len(routing) > 0 {
@@ -303,6 +313,52 @@ func (a *Apps) Rename(ctx context.Context, appID, name string) error {
 		return errs.Wrap(errs.Internal, "Could not rename the app.", err)
 	}
 	return nil
+}
+
+// Icon is an app's tile image (R-340).
+type Icon struct {
+	ContentType string
+	Data        []byte
+	UpdatedAt   time.Time
+}
+
+// SetIcon replaces an app's tile image. The caller has already checked the
+// bytes are an image of an allowed type; the table's CHECK is the backstop.
+func (a *Apps) SetIcon(ctx context.Context, appID, contentType string, data []byte) error {
+	_, err := a.db.Exec(ctx, `
+		INSERT INTO app_icons (app_id, content_type, data)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (app_id) DO UPDATE
+		SET content_type = EXCLUDED.content_type, data = EXCLUDED.data, updated_at = now()`,
+		appID, contentType, data)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not save the app's image.", err)
+	}
+	return nil
+}
+
+// ClearIcon removes an app's tile image. Clearing one that is not there is
+// not an error: the outcome asked for is the outcome that holds.
+func (a *Apps) ClearIcon(ctx context.Context, appID string) error {
+	if _, err := a.db.Exec(ctx, `DELETE FROM app_icons WHERE app_id = $1`, appID); err != nil {
+		return errs.Wrap(errs.Internal, "Could not remove the app's image.", err)
+	}
+	return nil
+}
+
+// IconOf returns an app's tile image, and false when it has none.
+func (a *Apps) IconOf(ctx context.Context, appID string) (Icon, bool, error) {
+	var icon Icon
+	err := a.db.QueryRow(ctx,
+		`SELECT content_type, data, updated_at FROM app_icons WHERE app_id = $1`, appID).
+		Scan(&icon.ContentType, &icon.Data, &icon.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Icon{}, false, nil
+	}
+	if err != nil {
+		return Icon{}, false, errs.Wrap(errs.Internal, "Could not read the app's image.", err)
+	}
+	return icon, true, nil
 }
 
 // Archive soft-deletes an app.
