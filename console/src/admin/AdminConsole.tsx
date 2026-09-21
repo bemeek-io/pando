@@ -36,6 +36,7 @@ import { DeployButton } from './DeployButton';
 import { Lifecycle } from './Lifecycle';
 import type { Route, Section } from '../app/route';
 import { ThemeToggle } from '../ui/ThemeToggle';
+import { SignOut } from '../ui/SignOut';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { ScoreBadge } from '../ui/ScoreBadge';
@@ -47,11 +48,13 @@ export function AdminConsole({
   route,
   go,
   onLeave,
+  onSignedOut,
   administrative,
 }: {
   route: Route;
   go: (next: Route, replace?: boolean) => void;
   onLeave: () => void;
+  onSignedOut?: () => void;
   /** Whether this person administers anything. False for somebody who came
    *  here for the API screen, which is open to everyone. */
   administrative: boolean;
@@ -149,14 +152,33 @@ export function AdminConsole({
         // and calling both pushed two history entries — so one Back went to a
         // URL that looked identical and nothing appeared to happen.
         onChange={(v) => setSection(v as Section)}
-        header={<Logo size={20} />}
+        // The logo goes home, as it does everywhere else. Home is the launcher
+        // (R-264), the same place "Back to my apps" goes.
+        header={
+          <button
+            onClick={onLeave}
+            title="Back to my apps"
+            style={{
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              cursor: 'pointer',
+              display: 'inline-flex',
+            }}
+          >
+            <Logo size={20} />
+          </button>
+        }
         items={items}
         footer={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-2)' }}>
             <Button variant="ghost" onClick={onLeave}>
               Back to my apps
             </Button>
-            <ThemeToggle />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <ThemeToggle />
+              <SignOut onSignedOut={onSignedOut} />
+            </div>
           </div>
         }
       />
