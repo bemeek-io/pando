@@ -18,6 +18,14 @@ describe('R-340 generated app tiles', () => {
     expect(drawn.size).toBe(ids.length);
   });
 
+  it('prints on every sheet, not a few of them', () => {
+    // IDs that differ in a pair of characters, which is what a naive
+    // `hash % n` could not tell apart.
+    const ids = Array.from({ length: 60 }, (_, n) => `app_01M2X${n}Q7G5AT10FQJS5CFGA${n}`);
+    const sheets = new Set(ids.map((id) => tileOf(id).sheet.ground));
+    expect(sheets.size).toBe(6);
+  });
+
   it('draws actual contours', () => {
     const { levels } = tileOf('app_01M2E0M27R4VJD5Y03DEN8468B');
     expect(levels.length).toBeGreaterThanOrEqual(7);

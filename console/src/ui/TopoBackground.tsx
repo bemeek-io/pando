@@ -397,13 +397,15 @@ export function TopoMap({ seed, recede }: { seed: string; recede: Recede }) {
 
 // The survey sheets a tile can be printed on: ground and line, from the
 // palette's own terrain colors. Red is not one of them — the marker is kept
-// rare, and a launcher of red squares would spend all of it at once.
+// rare, and a launcher of red squares would spend all of it at once. Nor is
+// grey: on the launcher a grey tile means an app that will not open.
 const SHEETS = [
   { ground: 'var(--vegetation)', line: 'var(--vegetation-deep)' },
+  { ground: 'var(--vegetation-deep)', line: 'var(--vegetation)' },
   { ground: 'var(--status-info-tint)', line: 'var(--water)' },
+  { ground: 'var(--water)', line: 'var(--status-info-tint)' },
   { ground: 'var(--status-building-tint)', line: 'var(--contour)' },
   { ground: 'var(--paper-raised)', line: 'var(--contour-text)' },
-  { ground: 'var(--paper-sunken)', line: 'var(--ink-muted)' },
 ] as const;
 
 // A small, square grid: a tile is drawn a few hundred pixels across at most,
@@ -418,11 +420,21 @@ export function tileOf(seed: string): { levels: string[]; sheet: (typeof SHEETS)
   if (!levels) {
     // Denser or sparser land per app, so tiles differ at a glance and not
     // only on inspection.
-    const count = 7 + (hash(`${seed}|levels`) % 5);
+    const count = 7 + pick(`${seed}|levels`, 5);
     levels = trace(surface(seed), count, 0.05, TILE, TILE);
     tiles.set(seed, levels);
   }
-  return { levels, sheet: SHEETS[hash(`${seed}|sheet`) % SHEETS.length]! };
+  return { levels, sheet: SHEETS[pick(`${seed}|sheet`, SHEETS.length)]! };
+}
+
+/**
+ * A choice among n, from a string. Through the generator rather than `hash % n`:
+ * FNV's low bits are poorly mixed — its lowest is the parity of the input's
+ * characters — so IDs that differ in a pair of characters landed on the same
+ * half of the sheets every time.
+ */
+function pick(s: string, n: number): number {
+  return Math.floor(rng(hash(s))() * n);
 }
 
 /**

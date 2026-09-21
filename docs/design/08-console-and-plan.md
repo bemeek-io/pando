@@ -24,8 +24,9 @@ can reach someone who is not already looking at Pando; the interface for it is a
 
 **[D] Tiles.** A tile is a square — the app's image (R-340), or when it has none a patch of terrain
 generated from the app's ID — with the name underneath. The terrain is the same generator as the
-console background, on a small grid, printed on one of five sheets drawn from the palette's terrain
-colors (vegetation, water, sand, paper, slate); red is left out so the marker stays rare. The
+console background, on a small grid, printed on one of six sheets drawn from the palette's terrain
+colors (vegetation and water, each light-on-dark and dark-on-light; sand; paper). Red is left out so
+the marker stays rare, and grey because a grey tile on the launcher means an app that will not open. The
 contours make each tile unique; the sheet varies it further. This puts the contour map in a place
 the brand spec does not list, next to the launcher's own background terrain: decided by the product
 owner, on the reasoning that a tile is content — a picture of the app — not decoration.
