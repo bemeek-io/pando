@@ -57,8 +57,10 @@ Tiles also **drag** between groups — native HTML drag and drop, carrying the a
 its own (`application/x-pando-app`) so a group ignores anything else dragged over it. Dropping on
 *Favorites* favorites the app; dropping anywhere else files it there and un-favorites it, since a
 favorite only shows in *Favorites* and a drop out of it would otherwise change nothing visible. While a
-tile is being dragged, *Favorites* and *Your apps* show even when empty, so every group can be
-reached; the group under the pointer takes a dashed outline. Dragging is a shortcut, not the only way:
+tile is being dragged, *Your apps* shows even when empty, at the foot of the page where appearing moves
+nothing. An empty *Favorites* does not appear: at the top, it pushed the page down under the pointer as
+the drag began, so the first favorite comes from the menu. The group under the pointer takes a dashed
+outline. Dragging is a shortcut, not the only way:
 the menu does all of it, which is the path for a keyboard and for touch screens, where HTML drag and
 drop is unreliable.
 

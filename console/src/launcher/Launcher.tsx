@@ -78,9 +78,11 @@ export function Launcher({
   const inSection = (id: string) => all.filter((a) => !a.favorite && a.section_id === id);
   const rest = all.filter((a) => !a.favorite && !(a.section_id && known.has(a.section_id)));
 
-  // The app being dragged, if any. While there is one, every group is a place
-  // to drop it — including Favorites and Your apps when they are empty and
-  // otherwise hidden, since there is no other way to drag into them.
+  // The app being dragged, if any. While there is one, Your apps shows even
+  // when empty, so there is somewhere to drag an app out of every section —
+  // it sits at the foot of the page, so appearing moves nothing. An empty
+  // Favorites does not: at the top, it pushed the whole page down under the
+  // pointer the moment a drag began. The first favorite comes from the menu.
   const [dragging, setDragging] = useState<App | null>(null);
 
   // What a drop means depends only on where it lands. Favorites favorites it.
@@ -149,7 +151,7 @@ export function Launcher({
         {/* Only when there is something in it: an empty "Favorites" heading on
             every launcher would be a section explaining a feature rather than
             showing anything. */}
-        {(pinned.length > 0 || dragging) && (
+        {pinned.length > 0 && (
           <Group
             id="favorites"
             title="Favorites"
@@ -157,7 +159,7 @@ export function Launcher({
             onToggle={toggleCollapsed}
             onDropApp={dropInto('favorites')}
           >
-            {pinned.length > 0 ? <Grid>{pinned.map(tile)}</Grid> : <Quiet>Drop an app here.</Quiet>}
+            <Grid>{pinned.map(tile)}</Grid>
           </Group>
         )}
 
