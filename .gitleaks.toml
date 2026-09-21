@@ -39,6 +39,11 @@ regexes = [
   # The name of a cipher, in prose. SECURITY.md names the algorithms in use,
   # and the generic-api-key rule reads this one as a high-entropy string.
   '''ChaCha20-Poly1305''',
+
+  # internal/cli/env_test.go — a made-up service token the CLI tests set in the
+  # environment to check it is read from there. Not a credential: the ID is the
+  # design doc's example prefix and the secret half is the word "secret".
+  '''tok_01HQ8\.secret''',
 ]
 
 [[allowlists]]
@@ -49,4 +54,5 @@ regexes = [
   '''\$argon2id\$v=19\$m=65536,t=3,p=2\$Y2Fubm90Z3Vlc3N0aGlz''',
   '''eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0\.eyJzdWIiOiJ1c3JfYWRtaW4ifQ\.''',
   '''ChaCha20-Poly1305''',
+  '''tok_01HQ8\.secret''',
 ]
