@@ -17,11 +17,12 @@
 // so no two parts of this page can disagree about what you can open.
 //
 // Arranging the page happens on the page: each tile's menu, each section's
-// heading, and one quiet "New section" at the foot. There is no settings
-// screen for it. Someone who never opens a menu sees "Your apps" and nothing
-// else.
+// heading, one quiet "New section" at the foot, and dragging a tile from one
+// group to another. The menu does everything dragging does, for a keyboard or
+// a touch screen. There is no settings screen for it. Someone who never opens
+// a menu sees "Your apps" and nothing else.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, EmptyState, Icon, IconButton, Input, Logo } from '@design';
 
@@ -35,6 +36,9 @@ import { TopoBackground, TopoTile } from '../ui/TopoBackground';
 type MyApps = { apps: App[] | null; sections: Section[] | null };
 
 const KEY = ['me', 'apps'];
+
+/** What a dragged tile carries: its app's ID, under a type only tiles use. */
+const DRAG_TYPE = 'application/x-pando-app';
 
 export function Launcher({
   onAdmin,
@@ -74,6 +78,27 @@ export function Launcher({
   const inSection = (id: string) => all.filter((a) => !a.favorite && a.section_id === id);
   const rest = all.filter((a) => !a.favorite && !(a.section_id && known.has(a.section_id)));
 
+  // The app being dragged, if any. While there is one, every group is a place
+  // to drop it — including Favorites and Your apps when they are empty and
+  // otherwise hidden, since there is no other way to drag into them.
+  const [dragging, setDragging] = useState<App | null>(null);
+
+  // What a drop means depends only on where it lands. Favorites favorites it.
+  // Anywhere else files it there — and un-favorites it, because a favorite is
+  // only shown in Favorites, and a tile dragged out of Favorites that stayed
+  // there would look like a drop that did nothing.
+  const dropInto = (target: 'favorites' | 'unsorted' | string) => (appID: string) => {
+    const app = all.find((a) => a.id === appID);
+    if (!app) return;
+    if (target === 'favorites') {
+      if (!app.favorite) arrange.favorite.mutate({ app, on: true });
+      return;
+    }
+    if (app.favorite) arrange.favorite.mutate({ app, on: false });
+    const to = target === 'unsorted' ? null : target;
+    if ((app.section_id ?? null) !== to) arrange.move.mutate({ app, to });
+  };
+
   const tile = (app: App) => (
     <Tile
       key={app.id}
@@ -81,6 +106,7 @@ export function Launcher({
       sections={sections}
       arrange={arrange}
       onManage={onManage && manageable.has(app.id) ? () => onManage(app.id) : undefined}
+      onDragChange={(on) => setDragging(on ? app : null)}
     />
   );
 
@@ -123,9 +149,15 @@ export function Launcher({
         {/* Only when there is something in it: an empty "Favorites" heading on
             every launcher would be a section explaining a feature rather than
             showing anything. */}
-        {pinned.length > 0 && (
-          <Group id="favorites" title="Favorites" collapsed={collapsed} onToggle={toggleCollapsed}>
-            <Grid>{pinned.map(tile)}</Grid>
+        {(pinned.length > 0 || dragging) && (
+          <Group
+            id="favorites"
+            title="Favorites"
+            collapsed={collapsed}
+            onToggle={toggleCollapsed}
+            onDropApp={dropInto('favorites')}
+          >
+            {pinned.length > 0 ? <Grid>{pinned.map(tile)}</Grid> : <Quiet>Drop an app here.</Quiet>}
           </Group>
         )}
 
@@ -140,11 +172,12 @@ export function Launcher({
               onToggle={toggleCollapsed}
               section={section}
               arrange={arrange}
+              onDropApp={dropInto(section.id)}
             >
               {filed.length > 0 ? (
                 <Grid>{filed.map(tile)}</Grid>
               ) : (
-                <Quiet>Nothing here yet. Use an app&rsquo;s menu to move it into this section.</Quiet>
+                <Quiet>Nothing here yet. Drag an app here, or use its menu to move it.</Quiet>
               )}
             </Group>
           );
@@ -152,23 +185,32 @@ export function Launcher({
 
         {/* Hidden once every app has somewhere else to be, rather than saying
             there is nothing shared with you directly under the apps that were. */}
-        {(rest.length > 0 || all.length === 0) && (
-          <Group id="unsorted" title="Your apps" collapsed={collapsed} onToggle={toggleCollapsed}>
+        {(rest.length > 0 || all.length === 0 || dragging) && (
+          <Group
+            id="unsorted"
+            title="Your apps"
+            collapsed={collapsed}
+            onToggle={toggleCollapsed}
+            onDropApp={dropInto('unsorted')}
+          >
             {apps.isPending && <Quiet>Loading your apps.</Quiet>}
 
             {apps.isError && <Quiet>Pando couldn&rsquo;t load your apps. Reload the page to try again.</Quiet>}
 
-            {apps.data &&
-              (rest.length === 0 ? (
-                // Not "you have no apps" — nothing has gone wrong, and an empty
-                // launcher is the normal state for someone who has just been
-                // given an account.
-                <EmptyState heading="Nothing shared with you yet">
-                  When someone shares an app with you, it shows up here.
-                </EmptyState>
-              ) : (
-                <Grid>{rest.map(tile)}</Grid>
-              ))}
+            {/* Not "you have no apps" — nothing has gone wrong, and an empty
+                launcher is the normal state for someone who has just been given
+                an account. */}
+            {apps.data && all.length === 0 && (
+              <EmptyState heading="Nothing shared with you yet">
+                When someone shares an app with you, it shows up here.
+              </EmptyState>
+            )}
+
+            {rest.length > 0 && <Grid>{rest.map(tile)}</Grid>}
+
+            {/* Only while dragging: every app is elsewhere, and this is where
+                one goes to be in no section at all. */}
+            {all.length > 0 && rest.length === 0 && <Quiet>Drop an app here.</Quiet>}
           </Group>
         )}
 
@@ -291,6 +333,7 @@ function Group({
   onToggle,
   section,
   arrange,
+  onDropApp,
   children,
 }: {
   id: string;
@@ -300,10 +343,43 @@ function Group({
   /** Set for a person's own section, which can be renamed and deleted. */
   section?: Section;
   arrange?: Arrange;
+  /** A tile was dropped here. Collapsed or not, the whole group takes it. */
+  onDropApp?: (appID: string) => void;
   children: React.ReactNode;
 }) {
   const closed = collapsed.has(id);
   const [renaming, setRenaming] = useState<string | null>(null);
+
+  // Counted, not a flag: dragging across a tile inside the group fires a
+  // leave for the group and an enter for the tile, and a flag would flicker
+  // off while still over the group.
+  const [over, setOver] = useState(false);
+  const depth = useRef(0);
+  const ours = (e: React.DragEvent) => e.dataTransfer.types.includes(DRAG_TYPE);
+  const drop = onDropApp && {
+    onDragEnter: (e: React.DragEvent) => {
+      if (!ours(e)) return;
+      depth.current += 1;
+      setOver(true);
+    },
+    onDragOver: (e: React.DragEvent) => {
+      if (!ours(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!ours(e)) return;
+      depth.current = Math.max(0, depth.current - 1);
+      if (depth.current === 0) setOver(false);
+    },
+    onDrop: (e: React.DragEvent) => {
+      if (!ours(e)) return;
+      e.preventDefault();
+      depth.current = 0;
+      setOver(false);
+      onDropApp(e.dataTransfer.getData(DRAG_TYPE));
+    },
+  };
 
   const heading =
     renaming !== null && section && arrange ? (
@@ -377,7 +453,19 @@ function Group({
       </span>
     );
 
-  return <Sheet heading={heading}>{closed ? null : children}</Sheet>;
+  return (
+    <div
+      {...drop}
+      style={{
+        // Room for the outline, so showing it does not move anything.
+        outline: `var(--border-width) dashed ${over ? 'var(--rule-strong)' : 'transparent'}`,
+        outlineOffset: 'calc(-1 * var(--space-2))',
+        borderRadius: 'var(--radius-md)',
+      }}
+    >
+      <Sheet heading={heading}>{closed ? null : children}</Sheet>
+    </div>
+  );
 }
 
 function Grid({ children }: { children: React.ReactNode }) {
@@ -416,11 +504,13 @@ function Tile({
   sections,
   arrange,
   onManage,
+  onDragChange,
 }: {
   app: App;
   sections: Section[];
   arrange: Arrange;
   onManage?: () => void;
+  onDragChange: (dragging: boolean) => void;
 }) {
   // A card with the app's picture and its name, and no status line. The
   // launcher is for someone who came to open an app (R-005), and "running" is
@@ -436,6 +526,7 @@ function Tile({
   // past.
   const [near, setNear] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [lifted, setLifted] = useState(false);
 
   const card = (
     <div
@@ -450,7 +541,7 @@ function Tile({
         background: 'var(--paper-raised)',
         border: `var(--border-width) solid ${near && open ? 'var(--rule-strong)' : 'var(--rule)'}`,
         borderRadius: 'var(--radius-md)',
-        opacity: open ? 1 : 0.45,
+        opacity: lifted ? 0.4 : open ? 1 : 0.45,
         filter: open ? 'none' : 'grayscale(1)',
       }}
     >
@@ -475,7 +566,22 @@ function Tile({
     // The menu is a sibling of the link, not inside it: a button in an anchor
     // is two controls in one, and a click on the menu would open the app.
     <div
-      style={{ position: 'relative' }}
+      style={{ position: 'relative', cursor: lifted ? 'grabbing' : undefined }}
+      // The whole tile drags, link and all. What travels is the app's ID
+      // under a type of our own, so a group ignores anything else dragged
+      // over it — a file, some text, another tab's link.
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData(DRAG_TYPE, app.id);
+        e.dataTransfer.effectAllowed = 'move';
+        setLifted(true);
+        setNear(false);
+        onDragChange(true);
+      }}
+      onDragEnd={() => {
+        setLifted(false);
+        onDragChange(false);
+      }}
       onMouseEnter={() => setNear(true)}
       onMouseLeave={() => setNear(false)}
       onFocus={() => setNear(true)}
@@ -492,6 +598,9 @@ function Tile({
           href={app.address}
           target="_blank"
           rel="noopener noreferrer"
+          // The tile drags, not the link: a dragged link carries its address
+          // and would leave the browser offering to open it somewhere.
+          draggable={false}
           aria-label={label}
           style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
         >

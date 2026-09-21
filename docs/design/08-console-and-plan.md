@@ -53,6 +53,15 @@ its heading: *Rename* and *Delete section* — no confirmation, because deleting
 its apps go back to *Your apps*. Favoriting and moving are optimistic and roll back on refusal.
 Someone who never opens a menu sees *Your apps* and nothing else.
 
+Tiles also **drag** between groups — native HTML drag and drop, carrying the app's ID under a type of
+its own (`application/x-pando-app`) so a group ignores anything else dragged over it. Dropping on
+*Favorites* favorites the app; dropping anywhere else files it there and un-favorites it, since a
+favorite only shows in *Favorites* and a drop out of it would otherwise change nothing visible. While a
+tile is being dragged, *Favorites* and *Your apps* show even when empty, so every group can be
+reached; the group under the pointer takes a dashed outline. Dragging is a shortcut, not the only way:
+the menu does all of it, which is the path for a keyboard and for touch screens, where HTML drag and
+drop is unreliable.
+
 The design system has no menu component; `ui/Menu.tsx` is one built from its popover rules
 (paper-raised, 1px rule, the one popover shadow, 6px corners), with the arrow keys, Escape and
 focus return. It should move into the design project.
