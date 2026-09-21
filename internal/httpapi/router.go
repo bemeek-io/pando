@@ -50,8 +50,14 @@ type Server struct {
 	Auditor  *audit.Writer
 	Authent  *Authenticator
 
-	Registry    *api.Registry
-	Adapters    *state.Adapters
+	Registry *api.Registry
+	Adapters *state.Adapters
+
+	// Reconciles is the loop's bookkeeping. The lifecycle handlers touch it
+	// for one reason: a person starting an app Pando gave up on is the human
+	// intervention R-151 requires, and the failure count has to be cleared for
+	// the loop to look at the app again.
+	Reconciles  *state.Reconciles
 	Planner     *planner.Planner
 	Allocations *state.Allocations
 	Deployments *state.Deployments

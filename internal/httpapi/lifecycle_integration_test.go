@@ -6,6 +6,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -130,6 +131,57 @@ func TestStartingAndStoppingRecordTheDesiredState(t *testing.T) {
 		got.JSON(t, &app)
 		require.Equal(t, "running", app["desired_state"])
 	}
+}
+
+// TestR151_AHumanCanStartAnAppPandoGaveUpOn asserts R-151.
+//
+// "A failed app stays failed until a human intervenes." The reconciler has no
+// code path that touches a failed app — that absence is the mechanism — so
+// desired state alone converges to nothing for one: pressing Start recorded
+// `running` and the app sat in `failed` forever, which is a dead end rather
+// than an intervention.
+//
+// Starting one is the human, so it clears the failure count and hands the app
+// back to the loop. Nothing here retries on its own, which is what R-151
+// forbids.
+func TestR151_AHumanCanStartAnAppPandoGaveUpOn(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+	id := i.createApp(admin, "notes")
+
+	_, err := i.db.Exec(context.Background(),
+		`UPDATE apps SET state = 'failed', consecutive_failures = 10 WHERE id = $1`, id)
+	require.NoError(t, err)
+
+	got := i.do(admin, http.MethodPost, "/apps/"+id+"/start", nil)
+	require.Less(t, got.Code, 400, got.String())
+
+	var appState string
+	var failures int
+	require.NoError(t, i.db.QueryRow(context.Background(),
+		`SELECT state, consecutive_failures FROM apps WHERE id = $1`, id).Scan(&appState, &failures))
+
+	require.NotEqual(t, "failed", appState, "the loop can look at it again")
+	require.Zero(t, failures, "or it gives up again on the first tick")
+}
+
+// Stopping one works too, and for the same reason: the loop is never coming.
+func TestStoppingAFailedAppIsRecorded(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+	id := i.createApp(admin, "notes")
+
+	_, err := i.db.Exec(context.Background(),
+		`UPDATE apps SET state = 'failed' WHERE id = $1`, id)
+	require.NoError(t, err)
+
+	got := i.do(admin, http.MethodPost, "/apps/"+id+"/stop", nil)
+	require.Less(t, got.Code, 400, got.String())
+
+	var desired string
+	require.NoError(t, i.db.QueryRow(context.Background(),
+		`SELECT desired_state FROM apps WHERE id = $1`, id).Scan(&desired))
+	require.Equal(t, "stopped", desired)
 }
 
 // --- uploaded source (R-262) -----------------------------------------------

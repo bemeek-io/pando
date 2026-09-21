@@ -198,6 +198,7 @@ func newInstall(t *testing.T) *install {
 		Allocations: allocations,
 		Planner:     appPlanner,
 		Deployments: deployments,
+		Reconciles:  state.NewReconciles(db),
 		Deployer:    deployer,
 		Logs:        logStore,
 		Secrets:     secrets,

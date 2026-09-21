@@ -922,3 +922,36 @@ when it does not arrive. That state is recorded on the deployment now, and the
 list reads "Deployed, not healthy" with the same symbol a degraded app carries
 everywhere else. A deploy from before the column is unchanged, because repainting
 an app's whole history on an upgrade would be its own lie.
+
+## "Pando has stopped trying to start this app", and the restart count climbing
+
+Both true at once, which means one of them was a lie.
+
+**The runtime was doing the restarting, not Pando.** Every workload was created
+with Docker's `unless-stopped` policy, so a container that exited came back
+immediately, forever, with no backoff and no end. That is the seat R-149's
+backoff and R-150's give-up rule are meant to occupy: an app that cannot start
+was restarted every two seconds while Pando counted ten failures, gave up, and
+said so — and the loop carried on underneath the message.
+
+It also hid itself. A container restarted that often reports Running at almost
+every instant the reconciler looks at it, which is why the app read healthy for
+so long before it read degraded.
+
+No restart policy now. A workload that exits is started again by the next tick,
+which is fifteen seconds rather than instant, and that is the trade: a restart
+Pando paces and counts beats one it never sees.
+
+**And giving up stops the app.** The sentence has to be true of the host as well
+as of the state machine, so reaching the threshold stops the bundle. Nothing is
+destroyed — the containers, the storage and the address stay, and the app is one
+deploy away — what stops is the churn.
+
+**A failed app can be stopped and started by a person.** The reconciler has no
+code path that touches one, which is how R-151 is enforced, and that left both
+lifecycle endpoints converging to nothing for exactly the app somebody most
+wants to act on: Stop recorded a desired state nothing honored, Start recorded
+one nothing acted on. R-151 says a failed app stays failed "until a human
+intervenes" — so Stop now stops it directly, and Start clears the failure count
+and hands it back to the loop. Neither is Pando retrying on its own, which is
+the thing the requirement forbids.

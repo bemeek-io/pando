@@ -253,7 +253,7 @@ func (r *Reconciler) reconcileOne(ctx context.Context, app state.Reconcilable) {
 	case drift.None():
 		// Matches the spec and is not healthy. Nothing to converge — the app
 		// itself is unwell, which is degraded and counts toward the threshold.
-		r.degrade(ctx, app, "the app is running but not healthy")
+		r.degrade(ctx, app, runtime, "the app is running but not healthy")
 
 	case len(drift.ReportOnly) > 0:
 		// R-148: reconcile when possible, report when not. A single
@@ -361,7 +361,7 @@ func (r *Reconciler) holdStopped(ctx context.Context, app state.Reconcilable, ru
 	}
 
 	if err := runtime.Stop(ctx, api.BundleRef{BundleID: app.ID}); err != nil {
-		r.attempt(ctx, app, reason(err))
+		r.attempt(ctx, app, runtime, reason(err))
 		return
 	}
 	_ = r.Auditor.Write(ctx, AuditEvent{
@@ -388,12 +388,12 @@ func (r *Reconciler) correct(ctx context.Context, app state.Reconcilable, runtim
 		zap.Int("previous_attempts", app.ConsecutiveFailures))
 
 	if _, err := runtime.Apply(ctx, want); err != nil {
-		r.attempt(ctx, app, "could not start the app: "+reason(err))
+		r.attempt(ctx, app, runtime, "could not start the app: "+reason(err))
 		return
 	}
 
 	if err := r.ensureRoute(ctx, app, s); err != nil {
-		r.attempt(ctx, app, "could not route traffic to the app: "+reason(err))
+		r.attempt(ctx, app, runtime, "could not route traffic to the app: "+reason(err))
 		return
 	}
 
@@ -406,7 +406,7 @@ func (r *Reconciler) correct(ctx context.Context, app state.Reconcilable, runtim
 	// Not settled to running here, and counted as an attempt rather than a
 	// success. The next observation is the only thing entitled to say whether
 	// the correction held — and if it did, that is where the counter clears.
-	r.attempt(ctx, app, "corrected: "+drift.Describe())
+	r.attempt(ctx, app, runtime, "corrected: "+drift.Describe())
 }
 
 // ensureRoute re-points routing at Pando's proxy.
@@ -435,8 +435,8 @@ func (r *Reconciler) ensureRoute(ctx context.Context, app state.Reconcilable, s 
 // An app that matches its spec and is not healthy has nothing to converge —
 // there is no drift — but it is not working either, and a permanently unhealthy
 // app must reach `failed` rather than being reported as degraded forever.
-func (r *Reconciler) degrade(ctx context.Context, app state.Reconcilable, why string) {
-	r.attempt(ctx, app, why)
+func (r *Reconciler) degrade(ctx context.Context, app state.Reconcilable, runtime api.RuntimeAdapter, why string) {
+	r.attempt(ctx, app, runtime, why)
 }
 
 // report records drift the reconciler must not act on (R-148).
@@ -467,7 +467,7 @@ func (r *Reconciler) report(ctx context.Context, app state.Reconcilable, drift D
 // that needed correcting was not working; whether the correction returned an
 // error is a detail of how it was not working. What resets the count is the app
 // actually running with health passing, and nothing else.
-func (r *Reconciler) attempt(ctx context.Context, app state.Reconcilable, reason string) {
+func (r *Reconciler) attempt(ctx context.Context, app state.Reconcilable, runtime api.RuntimeAdapter, reason string) {
 	count, err := r.Reconciles.RecordFailure(ctx, app.ID, reason, r.failureWindow(), r.nextAttempt(app.ConsecutiveFailures+1))
 	if err != nil {
 		r.Logger.Warn("could not record the attempt", zap.String("app_id", app.ID), zap.Error(err))
@@ -484,6 +484,23 @@ func (r *Reconciler) attempt(ctx context.Context, app state.Reconcilable, reason
 	// R-150, and then stop. There is deliberately no path back from here that
 	// does not involve a person (R-151).
 	_ = r.Apps.SetState(ctx, app.ID, state.StateFailed)
+
+	// And stop it, because "Pando has stopped trying to start this app" has to
+	// be true. A crash-looping workload is restarted by the runtime, not by
+	// Pando, so giving up on it left the app failed in the console and looping
+	// on the host — the restart count climbing under a banner saying nothing
+	// was trying any more.
+	//
+	// Not destructive and therefore not R-148's problem: the containers stay,
+	// the storage stays, the app is one deploy away from running. What stops is
+	// the churn.
+	if runtime != nil {
+		if err := runtime.Stop(ctx, api.BundleRef{BundleID: app.ID}); err != nil {
+			r.Logger.Warn("could not stop an app Pando has given up on",
+				zap.String("app_id", app.ID), zap.Error(err))
+		}
+	}
+
 	_ = r.Auditor.Write(ctx, AuditEvent{
 		Action: "app.failed",
 		AppID:  app.ID,

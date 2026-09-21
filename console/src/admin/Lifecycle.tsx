@@ -35,7 +35,11 @@ export function Lifecycle({ app }: { app: App }) {
   // Nothing to stop or start before there is something to run.
   if (!app.pinned_spec_id) return null;
 
-  const stopped = app.desired_state === 'stopped';
+  // An app Pando gave up on offers Start, whatever its desired state says.
+  // R-151 keeps a failed app failed "until a human intervenes", and this is
+  // the control that intervention arrives through — without it the only way
+  // back is a deploy, even when nothing about the app has changed.
+  const stopped = app.desired_state === 'stopped' || app.state === 'failed';
 
   return (
     <>

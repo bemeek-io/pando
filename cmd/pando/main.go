@@ -443,6 +443,7 @@ func serve(ctx context.Context, configPath string) error {
 		Allocations: allocations,
 		Planner:     appPlanner,
 		Deployments: deployments,
+		Reconciles:  reconciles,
 		Deployer:    deployer,
 		Logs:        logStore,
 		Secrets:     secrets,

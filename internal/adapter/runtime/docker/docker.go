@@ -314,8 +314,24 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 	}
 
 	hostCfg := &container.HostConfig{
-		Binds:         mounts,
-		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
+		Binds: mounts,
+
+		// No restart policy. Restarting a workload that stopped is the
+		// reconciler's job, and it is the only thing that can do it to Pando's
+		// rules: back off between attempts (R-149), give up at the threshold
+		// (R-150), and then leave the app alone (R-151).
+		//
+		// `unless-stopped` put Docker in that seat instead, with no backoff and
+		// no end. An app that could not start was restarted every two seconds
+		// forever; Pando gave up on it, said "Pando has stopped trying to start
+		// this app", and the restart count kept climbing underneath the
+		// message. The loop also hid itself — a container restarted that often
+		// reports Running at almost every instant the reconciler looks.
+		//
+		// A container that exits is started again by the next tick, which is
+		// fifteen seconds rather than instant, and that is the trade: a paced
+		// restart Pando knows about beats an instant one it does not.
+		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyDisabled},
 		Resources: container.Resources{
 			NanoCPUs: int64(w.Resources.CPUMillis) * 1_000_000,
 			Memory:   w.Resources.MemoryBytes,
