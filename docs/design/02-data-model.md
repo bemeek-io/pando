@@ -120,7 +120,7 @@ CREATE TABLE roles (
 );
 ```
 
-**[D]** Built-in rows (`viewer`, `operator`, `owner`, `administrator`) are seeded by migration and protected by a trigger against `UPDATE`/`DELETE` (R-081). New verbs added in a later Pando version are added to built-in roles **by migration**, which is the mechanism R-081 promises.
+**[D]** Built-in rows (`viewer`, `operator`, `owner`, `administrator`, `creator`) are seeded by migration and protected by a trigger against `UPDATE`/`DELETE` (R-081). New verbs added in a later Pando version are added to built-in roles **by migration**, which is the mechanism R-081 promises.
 
 **[D]** A role is scoped. A role carrying install verbs granted on a single app is nonsense, and a role carrying app verbs granted install-wide is worse. `administrator` is the only install-scoped built-in; custom roles (R-082) are composed within one scope.
 

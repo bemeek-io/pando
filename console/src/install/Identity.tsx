@@ -341,7 +341,7 @@ function AddRole({ onClose }: { onClose: () => void }) {
         <Input
           label="Name"
           value={name}
-          helper="What this set of permissions is called, for example deployer."
+          helper="What this set of permissions is called, for example support or release manager."
           onChange={(e) => setName(e.target.value)}
         />
 

@@ -250,7 +250,7 @@ App-scoped:
 | `app.egress.override` | Define an app-level egress allowlist, replacing the install-wide one (R-184) |
 | `app.delete` | Delete the app |
 
-**R-081 [D]** Four **immutable** built-in roles ship out of the box. They cannot be edited; Pando may add newly-introduced verbs to them across versions.
+**R-081 [D]** Five **immutable** built-in roles ship out of the box. They cannot be edited; Pando may add newly-introduced verbs to them across versions.
 
 | Role | Scope | Verbs |
 |---|---|---|
@@ -258,6 +258,7 @@ App-scoped:
 | **Operator** | app | Viewer + `app.deploy`, `app.restart`, `app.spec.edit`, `app.secrets.write` |
 | **Owner** | app | All app-scoped verbs |
 | **Administrator** | install | All install-scoped verbs |
+| **Creator** | install | `app.create` — makes apps, and so owns and manages the ones it makes (R-073), and nothing else |
 
 Owner and Administrator partition the catalog; neither contains a verb from the other's scope. An
 Owner of every app in the installation still administers nothing, and an Administrator is not an

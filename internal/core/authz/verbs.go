@@ -105,6 +105,12 @@ const (
 	// every app has an owner of record — surviving the arrival of an admin role
 	// rather than being quietly overridden by it.
 	RoleAdministrator = "role_administrator"
+
+	// RoleCreator is install-scoped and holds one verb, app.create. A creator
+	// manages the apps they make because making one writes them its owner
+	// (R-073) — not because this role says anything about apps — so they
+	// manage those and nothing else in the installation.
+	RoleCreator = "role_creator"
 )
 
 // Role is a named set of verbs.
