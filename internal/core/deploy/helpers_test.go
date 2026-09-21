@@ -271,3 +271,49 @@ func TestR130_AVariableNobodyFilledInIsNotSetToNothing(t *testing.T) {
 	require.True(t, ok, "somebody chose this")
 	require.Equal(t, "", set.Reveal())
 }
+
+// TestR148_EachPartOfAnAppRecordsItsOwnImage asserts R-148.
+//
+// The reconciler restores a missing workload from the image the deployment
+// recorded. With one image for the whole app that was the primary workload's,
+// so a compose app's application container was restored from its proxy's
+// image — and then, being "wrong", recreated from it on every tick.
+func TestR148_EachPartOfAnAppRecordsItsOwnImage(t *testing.T) {
+	s := &spec.AppSpec{Workloads: []spec.Workload{
+		{Name: "app", Build: &spec.WorkloadBuild{Context: "."}},
+		{Name: "proxy", Image: "caddy:2-alpine", Primary: true},
+	}}
+
+	got := workloadImages(context.Background(), observing{bundle: api.ObservedBundle{
+		Workloads: []api.ObservedWorkload{
+			{Name: "app", ImageDigest: "sha256:theapp"},
+			{Name: "proxy", ImageDigest: "sha256:caddy"},
+		},
+	}}, s, map[string]string{"app": "pando/app:latest"}, "", "app_01HQ8")
+
+	require.Equal(t, "pando/app:latest", got["app"].Ref)
+	require.Equal(t, "sha256:theapp", got["app"].Digest)
+	require.Equal(t, "caddy:2-alpine", got["proxy"].Ref)
+	require.Equal(t, "sha256:caddy", got["proxy"].Digest)
+}
+
+// A workload that builds its own image never takes the app's.
+//
+// The app-level image belongs to the app-level build, and a compose app has
+// none — so for one of its services, "the app's image" is another service's.
+// Empty is the honest answer: nothing starts a workload from an image Pando
+// cannot name.
+func TestAWorkloadThatBuildsItsOwnDoesNotTakeTheApps(t *testing.T) {
+	building := spec.Workload{Name: "app", Build: &spec.WorkloadBuild{Context: "."}}
+	require.Empty(t, workloadImage(building, nil, "caddy:2-alpine"))
+	require.Equal(t, "pando/app:latest",
+		workloadImage(building, map[string]string{"app": "pando/app:latest"}, "caddy:2-alpine"))
+
+	// One that names an image keeps it, and one that does neither is the
+	// single-image app the app-level build produced.
+	named := spec.Workload{Name: "proxy", Image: "caddy:2-alpine"}
+	require.Equal(t, "caddy:2-alpine", workloadImage(named, nil, "pando/app:latest"))
+
+	plain := spec.Workload{Name: "web"}
+	require.Equal(t, "pando/app:latest", workloadImage(plain, nil, "pando/app:latest"))
+}

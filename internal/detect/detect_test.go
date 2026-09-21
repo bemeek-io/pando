@@ -943,6 +943,49 @@ func TestEnvironmentOverridesTheEnvFile(t *testing.T) {
 	require.Equal(t, 1, count, "one entry, not two with undefined precedence")
 }
 
+// A file inside the service's own build context is already in the image that
+// build produces, so the mount is dropped rather than carried — and rather than
+// refusing the import, which is what a 300 KB `package-lock.json` did.
+//
+// docker/awesome-compose's react-express-mysql is the shape: `build: backend`
+// beside `./backend/package.json:/code/package.json`, the dev trick for seeing
+// edits without rebuilding. Pando deploys a built image, so a deploy is how a
+// change reaches the app.
+func TestAFileTheBuildAlreadyProvidesIsNotCarried(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yaml": "services:\n  backend:\n    build: backend\n" +
+			"    volumes:\n      - ./backend/package.json:/code/package.json\n" +
+			"      - ./config/app.conf:/etc/app.conf\n",
+		"backend/package.json": `{"name":"backend"}`,
+		"backend/Dockerfile":   "FROM node:20\n",
+		"config/app.conf":      "listen = 8080\n",
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, detect.StatusBlocked, result.Status)
+
+	files := result.Winner.Draft.Workloads[0].Files
+	require.Len(t, files, 1, "only the one the build does not provide")
+	require.Equal(t, "/etc/app.conf", files[0].Path)
+
+	// And says what happened to the other, because it is a change to how the
+	// app runs (R-102).
+	require.True(t, hasWarning(result.Winner.Draft.Warnings,
+		spec.WarnComposeConstructRewritten, "build context"))
+}
+
+// The build context is the whole repository when `build: .`, so everything in
+// it is already in the image.
+func TestAWholeRepositoryBuildContextCoversEverything(t *testing.T) {
+	result, err := auction().Run(context.Background(), memSource{
+		"compose.yaml": "services:\n  app:\n    build: .\n" +
+			"    volumes:\n      - ./app.conf:/etc/app.conf\n",
+		"Dockerfile": "FROM node:20\n",
+		"app.conf":   "listen = 8080\n",
+	})
+	require.NoError(t, err)
+	require.Empty(t, result.Winner.Draft.Workloads[0].Files)
+}
+
 // A relative bind mount is data until proven otherwise (R-203).
 func TestARelativeBindMountBecomesAManagedVolume(t *testing.T) {
 	result, err := auction().Run(context.Background(), memSource{
