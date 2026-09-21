@@ -14,6 +14,8 @@ import { Quiet, Screen, messageOf } from './Accounts';
 import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
 import { Table } from '../ui/Table';
+import { ActorField } from './ActorField';
+import type { Person } from './ActorField';
 
 interface AdapterRow {
   ref: string;
@@ -646,7 +648,7 @@ export function Audit() {
   // IDs, which is what it did before.
   const users = useQuery({
     queryKey: ['users'],
-    queryFn: () => api.get<{ users: Array<{ id: string; external_id: string; display_name?: string }> }>('/users'),
+    queryFn: () => api.get<{ users: Person[] }>('/users'),
     retry: false,
   });
   const people = users.data?.users ?? [];
@@ -681,25 +683,10 @@ export function Audit() {
           </Field>
 
           <Field>
-            {users.isSuccess ? (
-              <Select
-                label="Actor"
-                value={filters.actor}
-                options={[
-                  { value: '', label: 'Any' },
-                  ...people.map((u) => ({ value: u.id, label: u.display_name ? `${u.external_id} (${u.display_name})` : u.external_id })),
-                ]}
-                onChange={(e) => set({ actor: e.target.value })}
-              />
-            ) : (
-              <Input
-                label="Actor"
-                mono
-                placeholder="usr_… or tok_…"
-                value={filters.actor}
-                onChange={(e) => set({ actor: e.target.value.trim() })}
-              />
-            )}
+            {/* Typed, not picked from a list: an installation has too many
+                accounts for a dropdown to be usable. Without the accounts list
+                (no install.view) it still takes an ID. */}
+            <ActorField people={people} value={filters.actor} onChange={(actor) => set({ actor })} />
           </Field>
 
           <Field>

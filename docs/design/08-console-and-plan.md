@@ -82,7 +82,7 @@ beside it that would drift the first time a setting was added. Escape clears any
 kinds of value. Filters on several columns combine, with the page's search, in the browser. Apps
 filters on name, status and security; Accounts on username, name, status and installation role. The
 audit log filters on the server instead, because it pages and the console never holds all of it:
-action (prefix), actor, target type, target ID and time range — all `GET /audit` parameters, which
+action (prefix), actor (typed: username, email or ID, with suggestions — an installation has too many accounts for a dropdown), target type, target ID and time range — all `GET /audit` parameters, which
 combine, and which the CLI (`pando audit`) and MCP (`pando_list_audit`) take too. Its labels use the
 audit vocabulary as is; whoever reads an audit log knows what an actor and a target are.
 
