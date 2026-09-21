@@ -96,6 +96,8 @@ func satisfiesCategory(a Adapter) error {
 		_, ok = a.(NotifyAdapter)
 	case CategoryBackup:
 		_, ok = a.(BackupAdapter)
+	case CategoryAI:
+		_, ok = a.(AIAdapter)
 	default:
 		return fmt.Errorf("unknown category %q", a.Category())
 	}
@@ -229,6 +231,38 @@ func (r *Registry) Backup(ref string) (BackupAdapter, bool) {
 	}
 	b, ok := a.(BackupAdapter)
 	return b, ok
+}
+
+// AI returns an AI adapter by reference (R-258).
+func (r *Registry) AI(ref string) (AIAdapter, bool) {
+	a, ok := r.Get(ref)
+	if !ok {
+		return nil, false
+	}
+	ai, ok := a.(AIAdapter)
+	return ai, ok
+}
+
+// DefaultAI returns the install's AI adapter, if it has one.
+//
+// Returning (nil, "", false) is an ordinary outcome, not a failure. R-315: no
+// adapter configured leaves the deterministic proposal exactly as it was, and
+// every caller of this has to be written that way.
+func (r *Registry) DefaultAI() (AIAdapter, string, bool) {
+	ref, ok := r.Default(CategoryAI)
+	if !ok {
+		// An install may have configured one without marking it default.
+		refs := r.ByCategory(CategoryAI)
+		if len(refs) == 0 {
+			return nil, "", false
+		}
+		ref = refs[0]
+	}
+	ai, ok := r.AI(ref)
+	if !ok {
+		return nil, "", false
+	}
+	return ai, ref, true
 }
 
 // HealthCheckAll reports which adapters are unhealthy, by reference.

@@ -87,6 +87,8 @@ export interface Proposal {
   blocked?: Error;
   trial_log?: string;
   commit?: string;
+  trial: TrialObservation;
+  screening?: Outcome;
 }
 
 export interface Candidate {
@@ -157,6 +159,27 @@ export interface Routing {
   hostname?: string;
   path_prefix?: string;
   port?: number;
+}
+
+export interface TrialObservation {
+  ran?: boolean;
+  started?: boolean;
+  crashed?: boolean;
+  observed_ports?: (number[] | null);
+  observed_writes?: (string[] | null);
+}
+
+export interface Outcome {
+  ran: boolean;
+  skipped?: string;
+  adapter_ref?: string;
+  model?: string;
+  files_read?: (string[] | null);
+  applied?: (Applied[] | null);
+  refused?: (Refused[] | null);
+  answers?: (Record<string, string> | null);
+  notes?: (string[] | null);
+  duration_ms?: number;
 }
 
 export interface Draft {
@@ -261,6 +284,16 @@ export interface Warning {
   dismissed_by?: string;
 }
 
+export interface Applied {
+  amendment: Amendment;
+  summary: string;
+}
+
+export interface Refused {
+  amendment: Amendment;
+  reason: string;
+}
+
 export interface KV {
   key: string;
   value: string;
@@ -317,5 +350,19 @@ export interface AutoDeploy {
   enabled: boolean;
   trigger?: string;
   branch?: string;
+}
+
+export interface Amendment {
+  kind: string;
+  workload?: string;
+  key?: string;
+  value?: string;
+  command?: (string[] | null);
+  path?: string;
+  port?: number;
+  slot_type?: string;
+  required?: boolean;
+  reason: string;
+  evidence: (string[] | null);
 }
 

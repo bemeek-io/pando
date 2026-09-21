@@ -231,7 +231,7 @@ func (a *Auction) Run(ctx context.Context, src api.SourceView) (Result, error) {
 	// The same rule the job applies after the trial run, from one function, so
 	// the status a caller sees before the trial and the one it sees after
 	// cannot disagree about what "ready" means.
-	status := statusFor(winner, questions)
+	status := StatusFor(winner, questions)
 
 	// A blocked winner overrides everything else. There is no point asking
 	// which service is primary in a compose file that cannot be imported.

@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
+	aianthropic "github.com/bemeek-io/pando/internal/adapter/ai/anthropic"
 	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
 	backuplocal "github.com/bemeek-io/pando/internal/adapter/backup/local"
 	buildkitadapter "github.com/bemeek-io/pando/internal/adapter/builder/buildkit"
@@ -355,6 +356,17 @@ func serve(ctx context.Context, configPath string) error {
 		},
 	}
 
+	// Screening (R-310, design 09). Optional in the strong sense: an install
+	// with no AI adapter configured is not a degraded install, because
+	// everything the auction produced is in the proposal either way (R-315).
+	if ai, ref, found := registry.DefaultAI(); found {
+		detector.Screener = ai
+		detector.ScreenerRef = ref
+		detector.ScreenPolicy = hostPolicy
+		detector.Auditor = detectionAuditor{auditor}
+		logger.Info("detection proposals will be screened", zap.String("adapter", ref))
+	}
+
 	// Assertions are what an app can actually trust about a caller (R-051).
 	// The signing key is generated per process for now; persisting it across
 	// restarts is phase 9's concern, since the DR bundle carries it (R-212).
@@ -623,6 +635,25 @@ func serve(ctx context.Context, configPath string) error {
 	return srv.Shutdown(shutdownCtx)
 }
 
+// detectionAuditor adapts the audit writer to what detection needs.
+//
+// A screening is an action by Pando, not by the person who created the app:
+// detection runs in the background after app creation, and the principal that
+// read the repository is the install. KindSystem is what that is (R-317).
+type detectionAuditor struct{ w *audit.Writer }
+
+func (a detectionAuditor) Write(ctx context.Context, e detection.AuditEvent) error {
+	return a.w.Write(ctx, audit.Event{
+		PrincipalKind: audit.KindSystem,
+		PrincipalID:   "system",
+		Action:        e.Action,
+		AppID:         e.AppID,
+		TargetKind:    "app",
+		TargetID:      e.AppID,
+		Detail:        e.Detail,
+	})
+}
+
 // registerAdapters configures the compiled-in adapters from adapter_configs,
 // seeding the defaults on a fresh install.
 //
@@ -662,6 +693,12 @@ func registerAdapters(ctx context.Context, store *state.Adapters, notifications 
 			adapter = servicesdocker.New()
 		case c.Category == string(adapterapi.CategoryRouting) && c.Kind == traefik.Kind:
 			adapter = traefik.New()
+		case c.Category == string(adapterapi.CategoryAI) && c.Kind == aianthropic.Kind:
+			// Not seeded (design 09 §7): there is no AI adapter that works
+			// without a credential, and seeding one would put a permanently
+			// unhealthy adapter in every install's console. An install that
+			// wants screening configures this row itself.
+			adapter = aianthropic.New()
 		case c.Category == string(adapterapi.CategoryNotify) && c.Kind == notifyconsole.Kind:
 			// The sink is supplied by core. The adapter stores nothing itself,
 			// which is R-027 — an adapter never touches state.

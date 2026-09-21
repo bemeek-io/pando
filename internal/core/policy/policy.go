@@ -76,6 +76,17 @@ type Document struct {
 	// is recreating containers, which the reconciler may not do on a schedule
 	// because an unrelated app turned chatty.
 	MaxLogDiskBytes int64 `json:"max_log_disk_bytes,omitempty"`
+
+	// DisableAIScreening forbids AI screening of deployment plans install-wide
+	// (R-316). Default false, like everything else here: Pando ships permissive
+	// and configuration narrows (R-270).
+	//
+	// Worth an explicit setting rather than leaving it to whether an adapter is
+	// configured, because the two are different decisions made by different
+	// people. Screening sends repository contents to a provider (R-317), and an
+	// administrator who has to say no to that should not have to do it by
+	// deleting somebody else's adapter.
+	DisableAIScreening bool `json:"disable_ai_screening,omitempty"`
 }
 
 // Default is the permissive starting posture (R-270).
@@ -215,6 +226,24 @@ func (e *Evaluator) IsolationFloors(ctx context.Context) (build, runtime spec.Is
 		return 0, 0, err
 	}
 	return doc.MinBuildIsolation, doc.MinRuntimeIsolation, nil
+}
+
+// AllowsScreening is host policy's veto over AI screening (R-316).
+//
+// A reason rather than an error, and empty when it is allowed. This is not a
+// failure — it is a posture, and it is shown in the review as one. An
+// unreadable policy document denies: a screening that cannot be checked against
+// policy is one that has not been checked, and the safe direction is the one
+// that sends nothing anywhere.
+func (e *Evaluator) AllowsScreening(ctx context.Context) string {
+	doc, err := e.load(ctx)
+	if err != nil {
+		return "Pando could not read its host policy, so it did not screen this plan."
+	}
+	if doc.DisableAIScreening {
+		return "An administrator has turned off AI screening on this installation."
+	}
+	return ""
 }
 
 // Document returns the current policy.

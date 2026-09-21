@@ -16,6 +16,7 @@ riskiest work happens while it is still cheap to change.
 | 8 | `phase-08-console.md` | The launcher and the four weight-bearing screens | 5 |
 | 9 | `phase-09-backup-and-dr.md` | Sequence D — verify-then-restore | 7 |
 | 10 | `phase-10-cli-mcp-traefik.md` | The remaining surfaces, and the abstraction test | 8 |
+| 11 | `phase-11-ai-assistance.md` | AI screening of detection proposals (R-106, §7.4) | 6 |
 
 ## How to pick up a phase
 

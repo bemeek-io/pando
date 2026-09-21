@@ -348,6 +348,60 @@ itself, to a registry or a daemon, and the daemon is forbidden.
 
 **R-107 [D]** The correct failure: a repo needs Postgres and never mentions it anywhere — no compose service, no `DATABASE_URL` in any sample. The trial run crashes. Pando shows the log and stops. That is the right outcome, not a gap to close with inference.
 
+### 7.4 Screening a deployment plan
+
+R-106 says AI assistance is optional supporting functionality and names three places it may be
+applied. This section specifies the first of them to be built: a screening pass over the proposal the
+deterministic pipeline has already produced. Its purpose is to raise the share of repositories that
+deploy on the first attempt without anyone being asked a question.
+
+**R-310 [D]** **Screening reviews Pando's own answer; it is not a second detector.** An AI adapter
+does not bid in the auction (R-093) and does not rank against one. It is given the repository and the
+proposal the detectors produced, and reports what that proposal got wrong or left out. The auction
+stays a pure function of the source, and is still the whole answer when no screener is configured.
+
+**R-311 [D]** **Screening amends the spec and nothing else.** Amendments land in the draft spec
+(R-020: the spec is the sole record of how an app runs), are shown in the review alongside everything
+detection worked out, and pin only when a person accepts the proposal (R-098). There is no path from a
+model's output to a running app that does not pass the review gate R-106 requires.
+
+**R-312 [D]** **The amendable surface is a closed set.** A screener expresses a change as one of a
+fixed list of typed amendments. No amendment in the list changes host policy, isolation class,
+adapter selection, routing, resource limits, egress, grants, or a secret's value, so a screener has no
+way to request those changes.
+
+**R-313 [D]** **An observation outranks a screening.** Where the trial run established a fact — a port
+the process bound, a directory it wrote — a screener may not overwrite it (R-097). It may supply what
+was not observed.
+
+**R-314 [D]** **Every amendment carries evidence and is attributed.** Each one names the files in the
+repository it rests on and states its reason to the R-105 standard. The review shows which adapter and
+which model produced it, and the spec records screened provenance on the fields it touched, the way
+`Port.Source` and `EnvEntry.Source` already record observed and human ones. An amendment that cites
+no file is refused.
+
+**R-315 [D]** **Screening never blocks and never fails a detection.** No adapter configured, an
+unreachable provider, an expired budget, a timeout, an answer that does not parse: each one leaves the
+deterministic proposal exactly as it was (R-106). Screening runs after the proposal is complete, so
+when it fails the proposal is the one Pando would have produced without it.
+
+**R-316 [P]** **Screening is on when an AI adapter is configured.** Configuring one means supplying a
+credential, which is the deliberate act; asking a second time would charge the setup cost twice
+(R-002). Host policy may forbid screening install-wide, and an install may turn it off per adapter.
+
+**R-317 [D]** **Screening sends repository contents to the adapter's provider, and records that it did.**
+Every screening writes an audit event naming the adapter, the model, and the files that were read. The
+spec half of what is sent is safe by construction — R-020 makes an export safe to hand to someone, so
+it carries no secret values — and the repository half is not. The person who configured the adapter is
+the person who decided that, which is why R-316 makes configuring it the opt-in.
+
+**R-318 [D]** **A screener may answer Pando's own questions.** An answer is an amendment like any
+other: evidenced, attributed, shown in the review, and refused if it does not match an outstanding
+question. Each question answered this way is one fewer for a person to answer (R-103, R-105).
+
+**R-319 [P]** Screening is bounded by files read, bytes read, and wall clock, declared per adapter and
+capped by the install. An exhausted budget ends the screening and keeps what it produced, under R-315.
+
 ---
 
 ## 8. Build
@@ -601,7 +655,7 @@ without touching core (O-6 resolved).
 
 **R-251 [D]** Core never learns a provider's vocabulary. A requirement crossing the interface is expressed in Pando's terms — "2 GB, one persistent volume, one exposed HTTP port" — and the adapter turns it into a VM profile or container arguments.
 
-**R-252 [D]** Adapter categories: identity, routing/ingress, builder, runtime, secrets, services, notification, **backup**.
+**R-252 [D]** Adapter categories: identity, routing/ingress, builder, runtime, secrets, services, notification, **backup**. **AI** is the ninth (R-258).
 
 Backup was added in phase 9, reversing an earlier decision that a backup destination was a byte sink
 rather than a category (design 03 §8.1). The earlier reasoning still describes a *destination*
@@ -618,6 +672,19 @@ assertion. A `Destination` interface would have had to grow one anyway, under a 
 **R-255 [D]** Runtime adapters declare an isolation class. Host policy may require a minimum (R-114).
 
 **R-256 [P]** Multi-machine capability comes entirely from adapters that span machines (e.g. Incus placing VMs across a cluster). Pando remains a single control plane, models no host objects, and performs no placement logic. The scope line (R-010) holds: Pando delegates to something that schedules; it does not schedule.
+
+**R-258 [D]** **AI is the ninth adapter category.** It passes both halves of the test design 03 §8.1
+states before a category may be added. The planner's half: whether a screener can read a repository at
+all, how much of one it can read, and which functions it performs are questions with consequences
+before any work starts, and R-254 says those belong in a capabilities struct rather than in a type
+assertion. The vocabulary half: models, context windows, tokens, tool calls and system prompts are a
+provider's vocabulary and a large one, and R-251 says core never learns it. Core says "screen this
+proposal against this source"; what that costs and how it is asked is the adapter's business.
+
+**R-259 [D]** An AI adapter declares which **functions** it performs as capabilities data. Screening a
+deployment plan (§7.4) is the first. Reading README prose, disambiguating monorepo entrypoints and
+proposing repairs from a failed build log are the others R-106 already names, and an adapter that
+cannot do one of them says so rather than failing when asked.
 
 **R-257 [D]** A runtime adapter may be swapped under an existing app, and it is **neither a migration nor a plain redeploy**: it is a destructive spec change requiring explicit confirmation, with volumes resolved through the keep-or-discard flow (R-204). Pando does not move volume contents between adapters — it cannot know what is inside a volume (R-206), and relocating running workloads is one step from the scheduling R-010 forbids.
 

@@ -684,6 +684,14 @@ need to ask it a question, and does it have a vocabulary worth hiding?** Backup 
 consequences. It passes the second thinly: "bucket" and "prefix" are a vocabulary, if a small one.
 A category that passes neither is a library.
 
+**[D] The ninth is AI (R-258), and it passes both halves wide.** Whether a screener can read a
+repository, how much of one, and which of R-106's three functions it performs are all questions with
+consequences before any work starts — capabilities data, per R-254. And models, context windows,
+tokens, tool calls and system prompts are as much a provider's vocabulary as anything in this
+document; R-251 says core never learns it. Core says "screen this proposal against this source". The
+interface, the closed set of amendments it may return, and why it returns amendments rather than a
+spec are in [09-ai-assistance.md](09-ai-assistance.md).
+
 ---
 
 ## 9. Registration
@@ -716,3 +724,4 @@ func (r *Registry) Default(c Category) (Adapter, error)
 | backup | `local` | a filesystem path; retention owned by Pando |
 | services | `docker` | postgres, mysql, redis in-bundle |
 | notify | `console` | R-231 |
+| ai | `anthropic` | screens deployment plans (design 09). Not seeded — needs a credential. |

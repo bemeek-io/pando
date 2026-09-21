@@ -1,10 +1,10 @@
 # Open decisions
 
-Eighteen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
+Twenty questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
 design; O-15 through O-17 were found while implementing phases 6, 7 and 8; O-18 was found while
-setting up the release build; O-19 was found by turning `gosec` on. **Seventeen are resolved. Two
-remain, and neither is a design decision** — O-4 needs a measurement and O-18 needs somebody to pick
-a host and pay for it.
+setting up the release build; O-19 was found by turning `gosec` on; O-20 was found while building the
+first AI adapter. **Seventeen are resolved. Three remain.** O-4 needs a measurement, O-18 needs
+somebody to pick a host and pay for it, and O-20 is a design decision.
 
 O-5 was the other long-standing one and is now resolved: "per-adapter" answered it until R-174 made
 Pando run the edge and write its configuration, at which point Pando became the thing choosing.
@@ -19,6 +19,7 @@ resolution both here and in the requirements or design doc that owns it.
 |---|---|---|---|
 | **O-4** | Required vs optional slot detection — the forty-key `.env.example` problem | Has a `[P]` answer that needs measuring, not deciding | Phase 6 |
 | **O-18** | Where a signed apt repository is hosted, so `apt install pando` works without downloading a file first | Costs money or custody of a signing key; neither is an engineering call | Not blocking — the `.deb` is already published |
+| **O-20** | Where an install-scoped credential lives — an AI provider's API key is the first | No adapter before this one held a credential, and the secrets adapter only stores app-scoped secrets | Not blocking — `api_key_env` keeps the key out of the database today |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything not typed to
 a known service, and let the trial run settle it — a slot whose absence crashes the trial run is
@@ -43,6 +44,26 @@ key:
 
 The choice matters more than it looks: an unsigned repository, or one added with `[trusted=yes]`,
 tells every user of a product that argues for provenance to skip checking ours.
+
+**O-20** exists because the Anthropic adapter (design 09 §6) is the first adapter that holds a
+credential. Adapter configuration lives in `adapter_configs.config` as plain JSON. `GET /adapters` does
+not return it, but it sits in the database unencrypted. That is inconsistent with R-190, which
+encrypts secrets at rest, and with R-194's aim that a secret should not be readable anywhere it did
+not have to be. The options the design already makes available:
+
+- **An environment variable, named in the config.** Shipped as the interim answer: `api_key_env`,
+  with `ANTHROPIC_API_KEY` as the fallback. The database holds a name. The cost is R-002 — somebody
+  has to set a variable where Pando runs, which the console cannot do.
+- **Install-scoped secrets in the secrets adapter.** The secrets adapter stores app-scoped secrets
+  only. Adding an install scope is a schema change and an authorization change, since it needs a verb
+  deciding who may write one. The adapter would then receive the resolved value at `Configure`, the
+  same way a runtime adapter receives a resolved `Env`.
+- **Encrypting `adapter_configs.config` with the local secrets key.** The smallest change. It
+  encrypts every adapter's config, most of which is not secret, and ties adapter configuration to the
+  secrets adapter's key custody.
+
+`api_key` inline still works, so an install can configure screening from the console today. The
+design doc says that it is stored in the clear.
 
 **O-19 — the session cookie's `Secure` attribute. Resolved:** option 3, an explicit
 `PANDO_SERVER_EXTERNAL_URL`. The operator states the scheme browsers reach the installation on, and

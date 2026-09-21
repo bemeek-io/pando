@@ -25,6 +25,12 @@ const (
 	// carries the reversal and the reasoning, rather than the change being
 	// visible only here.
 	CategoryBackup Category = "backup"
+
+	// CategoryAI is the ninth (R-258), and the first that is optional in the
+	// strong sense: an install with none configured is not degraded, because
+	// everything the auction produces is produced either way (R-106).
+	// Design 09 has the argument for why it is a category at all.
+	CategoryAI Category = "ai"
 )
 
 // Adapter is implemented by every adapter in every category.
