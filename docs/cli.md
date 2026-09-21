@@ -235,6 +235,30 @@ Unpin an app from your launcher
 pando app unfavorite <app>
 ```
 
+### `audit`
+
+Read the audit log
+
+```
+pando audit
+```
+
+Lists what was done on this installation, newest first. The filters combine.
+
+--since and --until take a time (2026-09-21T09:00:00Z) or a duration back from now
+(24h, 30m), so --since 24h is the last day.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--action` |  | actions starting with this, e.g. app. or grant.delete |
+| `--actor` |  | who did it: a user or token ID |
+| `--app` |  | events on this app |
+| `--limit` | `0` | how many events (default 100, at most 500) |
+| `--since` |  | from this time, or this long ago (24h) |
+| `--target` |  | the ID of the thing it was done to |
+| `--target-kind` |  | what kind of thing it was done to, e.g. user, role, app |
+| `--until` |  | up to this time, or this long ago |
+
 ### `backup`
 
 Back up and restore this installation

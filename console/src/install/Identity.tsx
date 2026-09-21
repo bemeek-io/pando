@@ -8,12 +8,13 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Badge, Banner, Button, Checkbox, Dialog, Input, Select, Table, Tag } from '@design';
+import { Badge, Banner, Button, Checkbox, Dialog, Input, Select, Tag } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 import { Quiet, Screen, messageOf } from './Accounts';
 import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
+import { Table } from '../ui/Table';
 
 interface Group {
   id: string;

@@ -33,6 +33,7 @@ import { Sheet } from '../ui/Sheet';
 import { Menu, MenuDivider, MenuItem } from '../ui/Menu';
 import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
+import { useNarrow } from '../ui/narrow';
 import { TopoBackground, TopoTile } from '../ui/TopoBackground';
 
 type MyApps = { apps: App[] | null; sections: Section[] | null };
@@ -57,6 +58,7 @@ export function Launcher({
   onManage?: (appID: string) => void;
 }) {
   const apps = useQuery({ queryKey: KEY, queryFn: () => api.get<MyApps>('/me/apps') });
+  const narrow = useNarrow();
 
   // Which of these apps the person can also administer: GET /apps, the
   // control-plane list — the same query the Admin entry is decided by, so it
@@ -147,12 +149,24 @@ export function Launcher({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: 'var(--space-5) var(--console-padding)',
+          // On a phone the search takes a line of its own under the logo and
+          // the controls, rather than being squeezed between them.
+          flexWrap: narrow ? 'wrap' : undefined,
+          gap: narrow ? 'var(--space-3)' : undefined,
+          padding: `${narrow ? 'var(--space-4)' : 'var(--space-5)'} var(--console-padding)`,
           borderBottom: 'var(--border-width) solid var(--rule)',
         }}
       >
         <Logo size={20} />
-        <SearchField id={SEARCH_ID} value={query} onChange={setQuery} placeholder="Search apps" width="40ch" />
+        <div style={narrow ? { order: 3, flexBasis: '100%' } : undefined}>
+          <SearchField
+            id={SEARCH_ID}
+            value={query}
+            onChange={setQuery}
+            placeholder="Search apps"
+            width={narrow ? '100%' : '40ch'}
+          />
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
           {onAdmin && (
             <button

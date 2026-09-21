@@ -64,5 +64,6 @@ boundary (O-12), and offering a tool policy will refuse wastes the agent's turn.
 | `pando_delete_section` | Delete one of your launcher sections. Its apps go back to Your apps; nothing else changes. | `section_id` |
 | `pando_add_app_to_section` | Move an app you can open into one of your launcher sections, out of any other. | `app_id`, `section_id` |
 | `pando_remove_app_from_section` | Move an app out of one of your launcher sections, back to Your apps. | `app_id`, `section_id` |
+| `pando_list_audit` | Read the audit log, newest first. Every filter is optional and they combine: what was done (an action prefix such as app. or grant.delete), who did it, which app, what it was done to, and when (RFC 3339 times; since inclusive, until exclusive). | `action` (optional), `app_id` (optional), `before` (optional), `principal_id` (optional), `since` (optional), `target_id` (optional), `target_kind` (optional), `until` (optional) |
 | `pando_get_status` | What an app is doing right now: running, degraded, failed, and why — including each part separately, so a single part that is crash-looping is visible rather than averaged into one word for the app. | `app_id` |
 

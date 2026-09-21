@@ -255,6 +255,8 @@ func TestEachToolMapsToItsEndpoint(t *testing.T) {
 		// R-342 and renaming: every surface (R-261).
 		{"pando_rename_app", `{"app_id":"app_01HQ8","name":"Notes"}`, "PATCH", "/apps/app_01HQ8"},
 		{"pando_list_my_apps", `{}`, "GET", "/me/apps"},
+		{"pando_list_audit", `{"principal_id":"usr_1","target_kind":"app","since":"2026-09-21T00:00:00Z"}`, "GET",
+			"/audit?principal_id=usr_1&since=2026-09-21T00%3A00%3A00Z&target_kind=app"},
 		{"pando_create_section", `{"name":"Work"}`, "POST", "/me/sections"},
 		{"pando_rename_section", `{"section_id":"sect_01","name":"Office"}`, "PATCH", "/me/sections/sect_01"},
 		{"pando_delete_section", `{"section_id":"sect_01"}`, "DELETE", "/me/sections/sect_01"},

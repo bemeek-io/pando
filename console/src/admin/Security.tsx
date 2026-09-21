@@ -15,7 +15,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, StatusIndicator, Table, Tag } from '@design';
+import { Banner, Button, StatusIndicator, Tag } from '@design';
 
 import { api } from '@api/client';
 import type { Finding, Report } from '@api/types.gen';
@@ -23,6 +23,7 @@ import { Quiet, messageOf } from '../install/Accounts';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { ScoreBadge } from '../ui/ScoreBadge';
+import { Table } from '../ui/Table';
 
 export function Security({ appID }: { appID: string }) {
   const queries = useQueryClient();

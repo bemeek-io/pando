@@ -1,0 +1,25 @@
+/* The console at phone width.
+ *
+ * Everything else in the console is inline styles from tokens, which cannot
+ * hold a media query; these few rules are the ones that have to. 48em is the
+ * same breakpoint useNarrow() reads, so the markup that changes and the styles
+ * that change agree about when.
+ */
+@media (max-width: 48em) {
+  /* A page's side padding: a desktop gutter on each side of a phone is a
+     third of its width. */
+  :root {
+    --console-padding: var(--space-4);
+  }
+
+  /* A table keeps its columns at the widths they were given and scrolls
+     sideways inside itself, rather than squeezing every column to nothing —
+     which ran the headers into one another and cut every value to an ellipsis.
+     Each row gets the same minimum, so the columns still line up. */
+  .pando-table {
+    overflow-x: auto;
+  }
+  .pando-table > * {
+    min-width: 44em;
+  }
+}

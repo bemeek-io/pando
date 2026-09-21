@@ -7,13 +7,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Dialog, Input, Select, StatusIndicator, Table } from '@design';
+import { Banner, Button, Dialog, Input, Select, StatusIndicator } from '@design';
 
 import { api } from '@api/client';
 import { Quiet, messageOf } from '../install/Accounts';
 import { Environment } from './Environment';
 import { CarriedFiles } from './CarriedFiles';
 import { BuildPlan } from './BuildPlan';
+import { Table } from '../ui/Table';
 
 interface Slot {
   key: string;

@@ -12,10 +12,11 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Dialog, EmptyState, Input, Table, Tag } from '@design';
+import { Banner, Button, Dialog, EmptyState, Input, Tag } from '@design';
 
 import { api } from '@api/client';
 import { Quiet, Screen, messageOf } from './Accounts';
+import { Table } from '../ui/Table';
 
 interface BackupRow {
   id: string;

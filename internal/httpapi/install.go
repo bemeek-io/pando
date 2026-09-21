@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -400,6 +401,26 @@ func (s *Server) handleListAudit(w http.ResponseWriter, r *http.Request) {
 		Action:      r.URL.Query().Get("action"),
 		AppID:       r.URL.Query().Get("app_id"),
 		PrincipalID: r.URL.Query().Get("principal_id"),
+		TargetKind:  r.URL.Query().Get("target_kind"),
+		TargetID:    r.URL.Query().Get("target_id"),
+	}
+	// RFC 3339, like every time on the wire. A bound that will not parse is an
+	// error rather than ignored: an investigation that silently searched all
+	// of time would answer a different question than the one asked.
+	for _, bound := range []struct {
+		name string
+		into *time.Time
+	}{{"since", &q.Since}, {"until", &q.Until}} {
+		v := r.URL.Query().Get(bound.name)
+		if v == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			Error(w, r, errs.Newf(errs.ValidInvalid, "%s must be a time in RFC 3339 form, such as 2026-09-21T09:00:00Z.", bound.name))
+			return
+		}
+		*bound.into = t
 	}
 	if v := r.URL.Query().Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)

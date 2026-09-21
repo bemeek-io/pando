@@ -20,25 +20,14 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Button,
-  Card,
-  CodeBlock,
-  Dialog,
-  Icon,
-  IconButton,
-  Input,
-  Select,
-  StatusIndicator,
-  Table,
-  Tag,
-} from '@design';
+import { Button, Card, CodeBlock, Dialog, Icon, IconButton, Input, Select, StatusIndicator, Tag } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 import type { Candidate, Proposal, Question } from '@api/types.gen';
 import { InlineWarning } from '../ui/InlineWarning';
 import { rejectedEntries } from './rejections';
 import { Screening } from './Screening';
+import { Table } from '../ui/Table';
 
 interface DetectionResponse {
   status: string;

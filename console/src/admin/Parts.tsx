@@ -10,12 +10,13 @@
 // pando_get_status use.
 
 import { useQuery } from '@tanstack/react-query';
-import { Button, StatusIndicator, Table, Tag } from '@design';
+import { Button, StatusIndicator, Tag } from '@design';
 
 import { api } from '@api/client';
 import type { App } from '@api/types.gen';
 import { Quiet, messageOf } from '../install/Accounts';
 import { MEASURE } from '../ui/layout';
+import { Table } from '../ui/Table';
 
 export interface Part {
   name: string;

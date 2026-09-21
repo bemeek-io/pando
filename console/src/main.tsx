@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import './design/styles.css';
+import './ui/narrow.css';
 import { App } from './app/App';
 
 // Server state lives in the query cache; there is no client store. Design 08

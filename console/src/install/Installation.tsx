@@ -6,13 +6,14 @@
 // would offer a screen whose every request comes back 403.
 
 import { useLayoutEffect, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, EmptyState, Input, Select, StatusIndicator, Switch, Table, Tag } from '@design';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Banner, Button, EmptyState, Input, Select, StatusIndicator, Switch, Tag } from '@design';
 
 import { api } from '@api/client';
 import { Quiet, Screen, messageOf } from './Accounts';
 import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
+import { Table } from '../ui/Table';
 
 interface AdapterRow {
   ref: string;
@@ -186,7 +187,7 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
     <Screen
       heading="Policy"
       action={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3)' }}>
         {canEdit && draft && (
           <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
             <Button variant="ghost" onClick={() => { setDraft(null); setPreview(null); }}>
@@ -560,44 +561,209 @@ interface AuditRecord {
   target_id?: string;
 }
 
-export function Audit() {
-  const [filter, setFilter] = useState('');
+// What the audit log can be narrowed by. Each maps to a GET /audit parameter,
+// and they combine — "Dana's changes to roles in the last day" is one query.
+interface AuditFilters {
+  action: string;
+  actor: string;
+  targetKind: string;
+  targetID: string;
+  when: string;
+  since: string;
+  until: string;
+}
 
-  const log = useQuery({
-    queryKey: ['audit', filter],
-    queryFn: () =>
-      api.get<{ events: AuditRecord[]; next_before: string }>(
-        '/audit' + (filter ? `?action=${encodeURIComponent(filter)}` : ''),
-      ),
+const NO_FILTERS: AuditFilters = { action: '', actor: '', targetKind: '', targetID: '', when: '', since: '', until: '' };
+
+// The kinds of thing the server records events against.
+const TARGET_KINDS = [
+  'app',
+  'user',
+  'group',
+  'role',
+  'grant',
+  'token',
+  'session',
+  'secret',
+  'backup',
+  'deployment',
+  'policy',
+  'adapter',
+  'volume',
+  'slot',
+  'spec_revision',
+  'workload',
+  'launcher_section',
+];
+
+const WHEN: { value: string; label: string; hours?: number }[] = [
+  { value: '', label: 'Any time' },
+  { value: '1h', label: 'Last hour', hours: 1 },
+  { value: '24h', label: 'Last 24 hours', hours: 24 },
+  { value: '7d', label: 'Last 7 days', hours: 24 * 7 },
+  { value: '30d', label: 'Last 30 days', hours: 24 * 30 },
+  { value: 'custom', label: 'Between…' },
+];
+
+/** The query string for a set of filters, times resolved now. */
+function auditQuery(f: AuditFilters, before?: string): string {
+  const q = new URLSearchParams();
+  if (f.action) q.set('action', f.action);
+  if (f.actor) q.set('principal_id', f.actor);
+  if (f.targetKind) q.set('target_kind', f.targetKind);
+  if (f.targetID) q.set('target_id', f.targetID.trim());
+  const preset = WHEN.find((w) => w.value === f.when);
+  if (preset?.hours) q.set('since', new Date(Date.now() - preset.hours * 3_600_000).toISOString());
+  if (f.when === 'custom') {
+    // datetime-local is the viewer's own clock; the wire is UTC (RFC 3339).
+    if (f.since) q.set('since', new Date(f.since).toISOString());
+    if (f.until) q.set('until', new Date(f.until).toISOString());
+  }
+  if (before) q.set('before', before);
+  const s = q.toString();
+  return s ? `?${s}` : '';
+}
+
+export function Audit() {
+  const [filters, setFilters] = useState<AuditFilters>(NO_FILTERS);
+  const set = (patch: Partial<AuditFilters>) => setFilters((f) => ({ ...f, ...patch }));
+  const filtered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS);
+
+  // Pages on the server's cursor (design 04 §2.8): "Show older" asks for the
+  // page before the last one shown, so events arriving meanwhile never shift
+  // what has already been read.
+  const log = useInfiniteQuery({
+    queryKey: ['audit', filters],
+    initialPageParam: '',
+    queryFn: ({ pageParam }) =>
+      api.get<{ events: AuditRecord[] | null; next_before: string }>('/audit' + auditQuery(filters, pageParam || undefined)),
+    getNextPageParam: (last) => last.next_before || undefined,
   });
 
-  const events = log.data?.events ?? [];
+  // Names for the "who" column and the actor picker. install.audit.read does
+  // not imply install.view — an account can hold only the first — so when the
+  // list is refused, the picker becomes a field for an ID and the column shows
+  // IDs, which is what it did before.
+  const users = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.get<{ users: Array<{ id: string; external_id: string; display_name?: string }> }>('/users'),
+    retry: false,
+  });
+  const people = users.data?.users ?? [];
+  const nameOf = (id?: string) => (id ? (people.find((u) => u.id === id)?.external_id ?? id) : '');
+
+  const events = log.data?.pages.flatMap((p) => p.events ?? []) ?? [];
 
   return (
     <Screen heading="Audit log">
-      <div style={{ maxWidth: '40ch', marginBottom: 'var(--space-5)' }}>
-        <Input
-          label="Action"
-          mono
-          value={filter}
-          placeholder="app."
-          helper="Matches the start of an action, so app. finds every app event."
-          onChange={(e) => setFilter(e.target.value)}
-        />
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'flex-end',
+          gap: 'var(--space-3) var(--space-4)',
+          marginBottom: 'var(--space-5)',
+        }}
+      >
+        <Field>
+          <Input
+            label="What happened"
+            mono
+            value={filters.action}
+            placeholder="app."
+            onChange={(e) => set({ action: e.target.value })}
+          />
+        </Field>
+
+        <Field>
+          {users.isSuccess ? (
+            <Select
+              label="Who"
+              value={filters.actor}
+              options={[
+                { value: '', label: 'Anyone' },
+                ...people.map((u) => ({ value: u.id, label: u.display_name ? `${u.external_id} (${u.display_name})` : u.external_id })),
+              ]}
+              onChange={(e) => set({ actor: e.target.value })}
+            />
+          ) : (
+            <Input
+              label="Who"
+              mono
+              placeholder="usr_…"
+              value={filters.actor}
+              onChange={(e) => set({ actor: e.target.value.trim() })}
+            />
+          )}
+        </Field>
+
+        <Field>
+          <Select
+            label="Done to"
+            value={filters.targetKind}
+            options={[{ value: '', label: 'Anything' }, ...TARGET_KINDS.map((k) => ({ value: k, label: k.replace(/_/g, ' ') }))]}
+            onChange={(e) => set({ targetKind: e.target.value })}
+          />
+        </Field>
+
+        <Field>
+          <Input
+            label="Target ID"
+            mono
+            placeholder="app_…"
+            value={filters.targetID}
+            onChange={(e) => set({ targetID: e.target.value })}
+          />
+        </Field>
+
+        <Field>
+          <Select
+            label="When"
+            value={filters.when}
+            options={WHEN.map((w) => ({ value: w.value, label: w.label }))}
+            onChange={(e) => set({ when: e.target.value })}
+          />
+        </Field>
+
+        {filters.when === 'custom' && (
+          <>
+            <Field>
+              <Input
+                label="From"
+                type="datetime-local"
+                value={filters.since}
+                onChange={(e) => set({ since: e.target.value })}
+              />
+            </Field>
+            <Field>
+              <Input
+                label="To"
+                type="datetime-local"
+                value={filters.until}
+                onChange={(e) => set({ until: e.target.value })}
+              />
+            </Field>
+          </>
+        )}
+
+        {filtered && (
+          <Button variant="ghost" onClick={() => setFilters(NO_FILTERS)}>
+            Clear filters
+          </Button>
+        )}
       </div>
 
       {log.isError && <Quiet>{messageOf(log.error)}</Quiet>}
 
       <Table
         dense
-        // Column headers over nothing, until now. A filter that matches
-        // nothing and a log that holds nothing look identical in that state,
-        // and this is the screen where "nothing happened" and "your filter is
-        // wrong" are very different answers.
+        // A filter that matches nothing and a log that holds nothing look
+        // identical as an empty table, and on this screen "nothing happened"
+        // and "your filter is wrong" are very different answers.
         empty={
-          <EmptyState heading={filter ? 'No events match that action' : 'Nothing recorded yet'}>
-            {filter
-              ? 'Actions are matched from the start, so app. finds every app event. Clear the filter to see everything.'
+          <EmptyState heading={filtered ? 'No events match these filters' : 'Nothing recorded yet'}>
+            {filtered
+              ? 'What happened is matched from the start, so app. finds every app event. Clear the filters to see everything.'
               : 'Every action Pando takes is written here, and nothing can rewrite it afterwards.'}
           </EmptyState>
         }
@@ -620,22 +786,35 @@ export function Audit() {
             // stops being answerable.
             render: (row: AuditRecord) =>
               row.on_behalf_of && row.on_behalf_of !== row.principal_id
-                ? `${row.principal_id} for ${row.on_behalf_of}`
-                : row.principal_id || row.principal_kind,
+                ? `${nameOf(row.principal_id)} for ${nameOf(row.on_behalf_of)}`
+                : nameOf(row.principal_id) || row.principal_kind,
           },
           {
             key: 'target_id',
             header: 'Target',
-            width: 'minmax(0,18ch)',
+            width: 'minmax(0,24ch)',
             mono: true,
             muted: true,
-            render: (row: AuditRecord) => row.target_id || row.app_id || '—',
+            render: (row: AuditRecord) =>
+              row.target_id ? `${row.target_kind ? row.target_kind + ' ' : ''}${row.target_kind === 'user' ? nameOf(row.target_id) : row.target_id}` : row.app_id || '—',
           },
         ]}
         rows={events}
       />
+
+      {log.hasNextPage && (
+        <div style={{ marginTop: 'var(--space-4)' }}>
+          <Button variant="secondary" disabled={log.isFetchingNextPage} onClick={() => void log.fetchNextPage()}>
+            {log.isFetchingNextPage ? 'Loading' : 'Show older'}
+          </Button>
+        </div>
+      )}
     </Screen>
   );
+}
+
+function Field({ children }: { children: React.ReactNode }) {
+  return <div style={{ flex: '1 1 18ch', minWidth: '18ch', maxWidth: '28ch' }}>{children}</div>;
 }
 
 /** GET /adapters has returned both shapes during this phase; accept either

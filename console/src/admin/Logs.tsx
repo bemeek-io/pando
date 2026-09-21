@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, CodeBlock, Select, StatusIndicator, Table } from '@design';
+import { Button, CodeBlock, Select, StatusIndicator } from '@design';
 
 import { api, base } from '@api/client';
 import type { App, Deployment } from '@api/types.gen';
@@ -21,6 +21,7 @@ import { Quiet, messageOf } from '../install/Accounts';
 import { MEASURE } from '../ui/layout';
 import { Parts, useParts, labelFor } from './Parts';
 import { deployLabel, deployStatus } from '../ui/deploys';
+import { Table } from '../ui/Table';
 
 /**
  * A log, at a height that leaves the rest of the page reachable.

@@ -51,6 +51,17 @@ type Query struct {
 	AppID       string
 	PrincipalID string
 
+	// TargetKind and TargetID narrow to what the action was done to — "every
+	// change to this user", "everything done to any role". Exact matches.
+	TargetKind string
+	TargetID   string
+
+	// Since and Until bound when it happened: Since inclusive, Until
+	// exclusive, so consecutive ranges neither overlap nor leave a gap. Zero
+	// means unbounded.
+	Since time.Time
+	Until time.Time
+
 	// Limit defaults to 100, capped at 500. PageSize is the clamp.
 	Limit int
 
@@ -113,6 +124,18 @@ func (r *Reader) List(ctx context.Context, q Query) ([]Record, error) {
 		// (R-229), and "what did this person do" must find both.
 		p := arg(q.PrincipalID)
 		where = append(where, "(principal_id = "+p+" OR on_behalf_of = "+p+")")
+	}
+	if q.TargetKind != "" {
+		where = append(where, "target_kind = "+arg(q.TargetKind))
+	}
+	if q.TargetID != "" {
+		where = append(where, "target_id = "+arg(q.TargetID))
+	}
+	if !q.Since.IsZero() {
+		where = append(where, "occurred_at >= "+arg(q.Since))
+	}
+	if !q.Until.IsZero() {
+		where = append(where, "occurred_at < "+arg(q.Until))
 	}
 	if q.Cursor > 0 {
 		where = append(where, "id < "+arg(q.Cursor))

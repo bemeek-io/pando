@@ -168,7 +168,7 @@ one verb says nothing about another (R-082).
 | `GET /api/v1/policy` | `install.view` | Host policy. Reading the rules you work under is not the same privilege as changing them (R-274). |
 | `PUT /api/v1/policy` | `install.policy.manage` | Replace host policy. Policy is a floor, never an override (R-272). |
 | `POST /api/v1/policy/preview` | `install.policy.manage` | Which apps a candidate policy would block, before it is saved. |
-| `GET /api/v1/audit` | `install.audit.read` | The audit log. Append-only: no endpoint edits or deletes an event, and the database refuses it too (R-027). |
+| `GET /api/v1/audit` | `install.audit.read` | The audit log, newest first. Filters combine: `action` (a prefix), `principal_id` (who did it, including through a token), `app_id`, `target_kind` and `target_id` (what it was done to), and `since`/`until` (RFC 3339; since inclusive, until exclusive). Pages with `before`. Append-only: no endpoint edits or deletes an event, and the database refuses it too (R-027). |
 | `GET /api/v1/backups` | `install.backup.manage` | The backups this installation holds. |
 | `POST /api/v1/backups` | `install.backup.manage` | Take a backup now. |
 | `POST /api/v1/backups/{backupID}/verify` | `install.backup.manage` | Check a backup before it is needed, rather than at the moment of disaster (R-216). |

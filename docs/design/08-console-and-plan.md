@@ -77,6 +77,19 @@ groups with no match and opens collapsed ones while searching. Policy searches t
 each section — headings, notes, labels, descriptions, options — rather than a keyword list kept
 beside it that would drift the first time a setting was added. Escape clears any of them.
 
+**[D] Filters.** Beside the search, Apps filters by status (only the states some app is in) and
+Accounts by status and installation role. The audit log filters on the server, because it pages and
+the console never holds all of it: what happened (an action prefix), who (a picker of accounts, or an
+ID for a reader without `install.view`), what it was done to (kind and ID), and when (presets, or a
+range) — all `GET /audit` parameters, which combine, and which the CLI (`pando audit`) and MCP
+(`pando_list_audit`) take too.
+
+**[D] Phone width.** At 48em and below (`ui/narrow.css`, `ui/narrow.ts`): the page padding token
+drops to `--space-4`; headings and their actions wrap; the admin sidebar becomes a menu behind a
+button in a top bar that keeps the way home and settings; the launcher's search takes its own line;
+and a table keeps its columns and scrolls sideways inside itself (`ui/Table.tsx` adds the class),
+rather than squeezing every column to an ellipsis.
+
 **[D] Settings.** The signed-in person's own settings — theme and signing out — are a page of their
 own at `/admin/settings`, opened by a gear in the launcher header and in the admin sidebar header,
 with a back arrow to wherever it was opened from. Not a section of the admin console: nothing on it
