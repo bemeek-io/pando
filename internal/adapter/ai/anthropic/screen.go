@@ -11,7 +11,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/api"
 )
 
-// ScreenPlan reviews a proposal against its source (R-310).
+// ScreenPlan reviews a proposal against its source (R-330).
 //
 // A manual loop rather than the SDK's tool runner, for one reason: the budget.
 // Each read has to be counted, refused when the ceiling is reached, and turned
@@ -62,7 +62,7 @@ func (a *Adapter) ScreenPlan(ctx context.Context, req api.ScreenRequest) (api.Sc
 		params.Messages = append(params.Messages, resp.ToParam())
 
 		// A refusal is an answer, not a transport failure. Reported as an
-		// error so R-315 keeps the deterministic proposal, with the category
+		// error so R-335 keeps the deterministic proposal, with the category
 		// carried so an operator can tell it from an outage.
 		if resp.StopReason == anthropic.StopReasonRefusal {
 			return api.ScreenResult{}, fmt.Errorf(
@@ -172,7 +172,7 @@ func (a *Adapter) findings(use anthropic.ToolUseBlock, src *reader) (api.ScreenR
 }
 
 // limit takes the lower of what core asked for and what this adapter will do.
-// Neither side raises the other's (design 09 §2).
+// Neither side raises the other's (design 10 §2).
 func (a *Adapter) limit(asked, own int) int {
 	if asked <= 0 || asked > own {
 		return own

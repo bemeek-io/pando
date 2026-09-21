@@ -237,10 +237,10 @@ func TestTheEvaluatorIsTheAuthorizersPolicy(t *testing.T) {
 	var _ authz.Policy = policy.Static(policy.Default())
 }
 
-// R-316: host policy may forbid AI screening install-wide. It ships allowed
+// R-336: host policy may forbid AI screening install-wide. It ships allowed
 // (R-270), an unreadable document denies — the direction that sends nothing
 // anywhere — and a reason, not an error, is what comes back.
-func TestR316_HostPolicyCanForbidAIScreening(t *testing.T) {
+func TestR336_HostPolicyCanForbidAIScreening(t *testing.T) {
 	allowed := policy.New(func(context.Context) (policy.Document, error) { return policy.Default(), nil })
 	require.Empty(t, allowed.AllowsScreening(ctx()))
 

@@ -108,9 +108,9 @@ func request() api.ScreenRequest {
 	}
 }
 
-// TestR310_AScreeningReadsTheRepositoryThenSubmitsFindings drives the whole
+// TestR330_AScreeningReadsTheRepositoryThenSubmitsFindings drives the whole
 // loop: the model lists files, reads two, and submits one amendment.
-func TestR310_AScreeningReadsTheRepositoryThenSubmitsFindings(t *testing.T) {
+func TestR330_AScreeningReadsTheRepositoryThenSubmitsFindings(t *testing.T) {
 	a, fake := withFake(t,
 		message("tool_use",
 			toolUse("t1", "list_files", `{"pattern":"*"}`),
@@ -151,9 +151,9 @@ func TestR310_AScreeningReadsTheRepositoryThenSubmitsFindings(t *testing.T) {
 	require.Contains(t, string(tools), `"strict":true`, "findings are schema-checked by the API")
 }
 
-// TestR312_TheToolSchemaIsTheClosedSet asserts R-312 one layer before core:
+// TestR332_TheToolSchemaIsTheClosedSet asserts R-332 one layer before core:
 // the enum the model is given contains exactly the amendment kinds Pando has.
-func TestR312_TheToolSchemaIsTheClosedSet(t *testing.T) {
+func TestR332_TheToolSchemaIsTheClosedSet(t *testing.T) {
 	a, fake := withFake(t, message("tool_use", toolUse("t1", "submit_findings", `{"amendments":[]}`)))
 
 	result, err := a.ScreenPlan(context.Background(), request())
@@ -172,17 +172,17 @@ func TestR312_TheToolSchemaIsTheClosedSet(t *testing.T) {
 	require.NotContains(t, string(tools), "egress")
 }
 
-// TestR315_AModelThatStopsWithoutFindingsIsAFailureNotACleanBill asserts R-315:
+// TestR335_AModelThatStopsWithoutFindingsIsAFailureNotACleanBill asserts R-335:
 // "found nothing" and "did not finish" mean opposite things in the review.
-func TestR315_AModelThatStopsWithoutFindingsIsAFailureNotACleanBill(t *testing.T) {
+func TestR335_AModelThatStopsWithoutFindingsIsAFailureNotACleanBill(t *testing.T) {
 	a, _ := withFake(t, message("end_turn", `{"type":"text","text":"Looks fine."}`))
 	_, err := a.ScreenPlan(context.Background(), request())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "without submitting")
 }
 
-// TestR315_ARefusalIsReportedAsAFailure asserts R-315 for a declined request.
-func TestR315_ARefusalIsReportedAsAFailure(t *testing.T) {
+// TestR335_ARefusalIsReportedAsAFailure asserts R-335 for a declined request.
+func TestR335_ARefusalIsReportedAsAFailure(t *testing.T) {
 	a, _ := withFake(t, `{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5",`+
 		`"content":[],"stop_reason":"refusal","stop_details":{"type":"refusal","category":"cyber"},`+
 		`"usage":{"input_tokens":1,"output_tokens":1}}`)
@@ -216,7 +216,7 @@ func TestR020_ToolCallsThatLeaveTheCheckoutAreRefused(t *testing.T) {
 	require.Contains(t, string(second), "no tool by that name")
 }
 
-// TestHealthCheckAsksTheAPIAboutTheConfiguredModel asserts design 09 §6: a
+// TestHealthCheckAsksTheAPIAboutTheConfiguredModel asserts design 10 §6: a
 // credential that does not work or a model nobody serves is caught before a
 // screening, at no token cost.
 func TestHealthCheckAsksTheAPIAboutTheConfiguredModel(t *testing.T) {
@@ -225,8 +225,8 @@ func TestHealthCheckAsksTheAPIAboutTheConfiguredModel(t *testing.T) {
 	require.Error(t, anthropicadapter.New().HealthCheck(context.Background()), "unconfigured")
 }
 
-// TestR316_AnAdapterTurnedOffForScreeningDoesNotScreen asserts R-316.
-func TestR316_AnAdapterTurnedOffForScreeningDoesNotScreen(t *testing.T) {
+// TestR336_AnAdapterTurnedOffForScreeningDoesNotScreen asserts R-336.
+func TestR336_AnAdapterTurnedOffForScreeningDoesNotScreen(t *testing.T) {
 	a := anthropicadapter.New()
 	require.NoError(t, a.Configure(context.Background(),
 		json.RawMessage(`{"credentials":{"api_key":"sk-ant-test"},"screen_plans":false}`)))

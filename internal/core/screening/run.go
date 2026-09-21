@@ -9,7 +9,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/api"
 )
 
-// Default budget (R-319). Overridden downward by an adapter's own capabilities
+// Default budget (R-339). Overridden downward by an adapter's own capabilities
 // and by the install's configuration; never raised by either.
 const (
 	DefaultMaxFiles = 40
@@ -29,7 +29,7 @@ type Screener interface {
 // Run calls the screener under the budget and returns what it said.
 //
 // It never returns an error. Every failure becomes a skipped Outcome carrying
-// its reason, because R-315 is that a screening which cannot run leaves the
+// its reason, because R-335 is that a screening which cannot run leaves the
 // deterministic proposal exactly as it was — and a caller that has to remember
 // to ignore an error is a caller that will one day not.
 func Run(ctx context.Context, s Screener, ref string, req api.ScreenRequest) (api.ScreenResult, Outcome) {
@@ -100,7 +100,7 @@ func budget(want api.ScreenBudget, caps api.AICapabilities) api.ScreenBudget {
 
 // Split separates answers to detection's questions from spec amendments.
 //
-// R-318 makes an answer an amendment like any other — evidenced, attributed,
+// R-338 makes an answer an amendment like any other — evidenced, attributed,
 // refused when it does not match an outstanding question — but it is applied
 // through detection's own answer machinery rather than here, because that
 // machinery already knows that answering "which service is primary" changes

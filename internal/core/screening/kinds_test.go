@@ -13,10 +13,10 @@ import (
 	"github.com/bemeek-io/pando/internal/core/spec"
 )
 
-// Every amendment kind, landing and refused. The closed set (R-312) is only a
+// Every amendment kind, landing and refused. The closed set (R-332) is only a
 // mechanism if each member does exactly what it says and refuses what it must.
 
-func TestR312_EachAmendmentKindLandsWhereItSays(t *testing.T) {
+func TestR332_EachAmendmentKindLandsWhereItSays(t *testing.T) {
 	s := draft()
 	s.Workloads[0].Ports = []spec.Port{{Number: 3000, Protocol: "http", Source: spec.PortFramework}}
 	repo["public/index.html"] = "<html>"
@@ -44,7 +44,7 @@ func TestR312_EachAmendmentKindLandsWhereItSays(t *testing.T) {
 	require.False(t, s.Slots[0].Required)
 }
 
-func TestR312_ACommandLineIsHandedToAShell(t *testing.T) {
+func TestR332_ACommandLineIsHandedToAShell(t *testing.T) {
 	s := draft()
 	_, refused := screening.Apply(s, env(), []api.Amendment{
 		sound(api.Amendment{Kind: api.AmendSetCommand, Value: `node server.js --name "a b"`}),
@@ -54,7 +54,7 @@ func TestR312_ACommandLineIsHandedToAShell(t *testing.T) {
 	require.Len(t, refused, 1, "an empty command is refused")
 }
 
-func TestR312_EachAmendmentKindRefusesWhatItMust(t *testing.T) {
+func TestR332_EachAmendmentKindRefusesWhatItMust(t *testing.T) {
 	s := draft()
 	s.Slots = []spec.Slot{{Key: "DATABASE_URL", Type: spec.SlotPostgres}}
 	s.Workloads[0].Mounts = []spec.Mount{{VolumeID: "data", Path: "/data"}}
@@ -89,7 +89,7 @@ func TestR312_EachAmendmentKindRefusesWhatItMust(t *testing.T) {
 	}
 }
 
-func TestR312_AnAmendmentMustSayWhichWorkloadWhenThereIsNoPrimary(t *testing.T) {
+func TestR332_AnAmendmentMustSayWhichWorkloadWhenThereIsNoPrimary(t *testing.T) {
 	s := draft()
 	s.Workloads = []spec.Workload{{Name: "api"}, {Name: "worker"}}
 
@@ -110,7 +110,7 @@ func TestR312_AnAmendmentMustSayWhichWorkloadWhenThereIsNoPrimary(t *testing.T) 
 	require.Len(t, applied, 1, "one workload is the one an amendment means")
 }
 
-func TestR311_AScreenerMayReplaceAValueDetectionInferred(t *testing.T) {
+func TestR331_AScreenerMayReplaceAValueDetectionInferred(t *testing.T) {
 	s := draft()
 	old := "development"
 	s.Workloads[0].Env = []spec.EnvEntry{{Key: "NODE_ENV", Value: &old, Source: spec.EnvFromDetection}}
@@ -137,7 +137,7 @@ func TestR201_TwoVolumesAtSimilarPathsGetDistinctNames(t *testing.T) {
 	require.Equal(t, "data-3", s.Volumes[2].ID, "the root path is named data too, and still distinct")
 }
 
-func TestR314_AnEmptyEvidenceEntryIsIgnoredRatherThanChecked(t *testing.T) {
+func TestR334_AnEmptyEvidenceEntryIsIgnoredRatherThanChecked(t *testing.T) {
 	applied, refused := screening.Apply(draft(), env(), []api.Amendment{{
 		Kind: api.AmendAddWarning, Reason: "Worth knowing.", Evidence: []string{"", "README.md"},
 	}})
@@ -171,8 +171,8 @@ func screens() api.AICapabilities {
 	return api.AICapabilities{Functions: []api.AIFunction{api.AIFunctionScreenPlan}, Model: "m-caps"}
 }
 
-// TestR315_EveryWayRunCanFailIsASkipWithAReason asserts R-315 for Run itself.
-func TestR315_EveryWayRunCanFailIsASkipWithAReason(t *testing.T) {
+// TestR335_EveryWayRunCanFailIsASkipWithAReason asserts R-335 for Run itself.
+func TestR335_EveryWayRunCanFailIsASkipWithAReason(t *testing.T) {
 	ctx := context.Background()
 	for name, tc := range map[string]struct {
 		s    screening.Screener
@@ -191,8 +191,8 @@ func TestR315_EveryWayRunCanFailIsASkipWithAReason(t *testing.T) {
 	}
 }
 
-// TestR319_RunLowersTheBudgetToTheAdaptersAndSetsADeadline asserts R-319.
-func TestR319_RunLowersTheBudgetToTheAdaptersAndSetsADeadline(t *testing.T) {
+// TestR339_RunLowersTheBudgetToTheAdaptersAndSetsADeadline asserts R-339.
+func TestR339_RunLowersTheBudgetToTheAdaptersAndSetsADeadline(t *testing.T) {
 	caps := screens()
 	caps.MaxFiles, caps.MaxBytes = 5, 1000
 	s := &screener{caps: caps, result: api.ScreenResult{FilesRead: []string{"a"}, Notes: []string{"n"}}}
@@ -222,7 +222,7 @@ func TestOutcomeChangedAndElapsed(t *testing.T) {
 	require.Equal(t, int64(1500), screening.Outcome{}.Elapsed(1500*time.Millisecond).DurationMS)
 }
 
-func TestR318_AnAnswerMayNotBeEmptyOrGivenTwice(t *testing.T) {
+func TestR338_AnAnswerMayNotBeEmptyOrGivenTwice(t *testing.T) {
 	answers, _, refused := screening.Split(env(), []api.Amendment{
 		sound(api.Amendment{Kind: api.AmendAnswerQuestion, Key: "primary_port", Value: " "}),
 		sound(api.Amendment{Kind: api.AmendAnswerQuestion, Key: "primary_port", Value: "3000"}),

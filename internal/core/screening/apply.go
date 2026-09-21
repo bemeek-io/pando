@@ -21,7 +21,7 @@ const MaxAmendments = 32
 // Env is what Apply needs beyond the spec to decide.
 type Env struct {
 	// Source is the repository, read-only. Used to check that the paths an
-	// amendment rests on exist (R-314) — the cheapest available check on
+	// amendment rests on exist (R-334) — the cheapest available check on
 	// whether the screener read this repository or recalled a framework.
 	//
 	// A nil Source refuses every amendment: evidence that cannot be checked is
@@ -29,7 +29,7 @@ type Env struct {
 	// keeps the deterministic proposal.
 	Source api.SourceView
 
-	// Trial is what was observed (R-313), and whether the app crashed, which
+	// Trial is what was observed (R-333), and whether the app crashed, which
 	// is what decides whether a screener-added slot may be Required (O-4).
 	Trial api.TrialSummary
 }
@@ -40,7 +40,7 @@ var envKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 //
 // It never returns an error. Every way an amendment can be wrong produces a
 // Refused with a reason, because a screening that fails a detection is the
-// thing R-315 forbids — and one bad amendment must not discard the good ones
+// thing R-335 forbids — and one bad amendment must not discard the good ones
 // beside it.
 func Apply(s *spec.AppSpec, env Env, amendments []api.Amendment) (applied []Applied, refused []Refused) {
 	for i, a := range amendments {
@@ -69,10 +69,10 @@ func Apply(s *spec.AppSpec, env Env, amendments []api.Amendment) (applied []Appl
 // check is what every amendment must satisfy regardless of kind.
 func check(env Env, a api.Amendment) string {
 	if strings.TrimSpace(a.Reason) == "" {
-		return "The amendment gave no reason. R-314: an amendment states why it was made."
+		return "The amendment gave no reason. R-334: an amendment states why it was made."
 	}
 	if len(a.Evidence) == 0 {
-		return "The amendment named no file it rests on. R-314: an amendment resting on nothing is refused."
+		return "The amendment named no file it rests on. R-334: an amendment resting on nothing is refused."
 	}
 	if env.Source == nil {
 		return "Pando had no readable copy of the repository to check the amendment's evidence against."
@@ -119,7 +119,7 @@ func one(s *spec.AppSpec, env Env, a api.Amendment) (summary, reason string) {
 		// person's answers go through. One arriving here is a caller bug.
 		return "", "An answer to a detection question is not applied here."
 	default:
-		// The closed set doing its job (R-312). A kind nobody implemented says
+		// The closed set doing its job (R-332). A kind nobody implemented says
 		// nothing Pando can act on, which is the property, not a gap.
 		return "", fmt.Sprintf("Pando has no amendment of kind %q.", a.Kind)
 	}
@@ -194,7 +194,7 @@ func setEnv(s *spec.AppSpec, a api.Amendment) (string, string) {
 	return fmt.Sprintf("%s: %s set to %s", s.Workloads[i].Name, key, value), ""
 }
 
-// setPort is R-313's refusal.
+// setPort is R-333's refusal.
 //
 // The asymmetry runs one way only. Where nothing was observed a screened port
 // beats a question; where something was, R-097 exists because watching the

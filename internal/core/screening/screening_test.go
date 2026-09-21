@@ -76,7 +76,7 @@ func env() screening.Env {
 	return screening.Env{Source: repo}
 }
 
-// sound is an amendment with everything R-314 requires, so a test that is about
+// sound is an amendment with everything R-334 requires, so a test that is about
 // one rule is not also about that one.
 func sound(a api.Amendment) api.Amendment {
 	if a.Reason == "" {
@@ -88,8 +88,8 @@ func sound(a api.Amendment) api.Amendment {
 	return a
 }
 
-// TestR314_AnAmendmentRestingOnNothingIsRefused asserts R-314.
-func TestR314_AnAmendmentRestingOnNothingIsRefused(t *testing.T) {
+// TestR334_AnAmendmentRestingOnNothingIsRefused asserts R-334.
+func TestR334_AnAmendmentRestingOnNothingIsRefused(t *testing.T) {
 	s := draft()
 	applied, refused := screening.Apply(s, env(), []api.Amendment{{
 		Kind: api.AmendSetEnv, Key: "HOST", Value: "0.0.0.0",
@@ -103,13 +103,13 @@ func TestR314_AnAmendmentRestingOnNothingIsRefused(t *testing.T) {
 	require.Empty(t, s.Workloads[0].Env, "nothing was written")
 }
 
-// TestR314_EvidenceThatIsNotInTheRepositoryIsRefused asserts R-314.
+// TestR334_EvidenceThatIsNotInTheRepositoryIsRefused asserts R-334.
 //
 // This is the cheapest available check on whether the screener read this
 // repository or recalled a framework, and it is the one that catches the
 // failure mode that matters: a confident amendment about a file that is not
 // there.
-func TestR314_EvidenceThatIsNotInTheRepositoryIsRefused(t *testing.T) {
+func TestR334_EvidenceThatIsNotInTheRepositoryIsRefused(t *testing.T) {
 	s := draft()
 	applied, refused := screening.Apply(s, env(), []api.Amendment{{
 		Kind: api.AmendSetEnv, Key: "HOST", Value: "0.0.0.0",
@@ -123,11 +123,11 @@ func TestR314_EvidenceThatIsNotInTheRepositoryIsRefused(t *testing.T) {
 	require.Contains(t, refused[0].Reason, "not in this repository")
 }
 
-// TestR314_AnAppliedAmendmentRecordsScreenedProvenance asserts R-314.
+// TestR334_AnAppliedAmendmentRecordsScreenedProvenance asserts R-334.
 //
 // The review shows where a value came from, and "a model read your README" is
 // not the same claim as "you set this" or "we watched it happen".
-func TestR314_AnAppliedAmendmentRecordsScreenedProvenance(t *testing.T) {
+func TestR334_AnAppliedAmendmentRecordsScreenedProvenance(t *testing.T) {
 	s := draft()
 	applied, refused := screening.Apply(s, env(), []api.Amendment{sound(api.Amendment{
 		Kind: api.AmendSetEnv, Key: "HOST", Value: "0.0.0.0",
@@ -143,12 +143,12 @@ func TestR314_AnAppliedAmendmentRecordsScreenedProvenance(t *testing.T) {
 		"a screener is not a person, and spec.Carry treats the two differently")
 }
 
-// TestR313_AnObservationOutranksAScreening asserts R-313.
+// TestR333_AnObservationOutranksAScreening asserts R-333.
 //
 // The rule most likely to be argued with. R-097 exists because watching the
 // process bind beats asking about it, and a model's reading of a framework's
 // documentation is a more elaborate form of asking.
-func TestR313_AnObservationOutranksAScreening(t *testing.T) {
+func TestR333_AnObservationOutranksAScreening(t *testing.T) {
 	s := draft()
 	s.Workloads[0].Ports = []spec.Port{{Number: 3000, Protocol: "http", Source: spec.PortObserved}}
 
@@ -164,12 +164,12 @@ func TestR313_AnObservationOutranksAScreening(t *testing.T) {
 	require.Equal(t, spec.PortObserved, s.Workloads[0].Ports[0].Source)
 }
 
-// TestR313_AScreenedPortFillsWhatWasNotObserved asserts R-313.
+// TestR333_AScreenedPortFillsWhatWasNotObserved asserts R-333.
 //
 // The asymmetry runs one way. Where nothing was observed, a screened port beats
 // a question — which is the whole reason the rule is a refusal rather than a
 // ban.
-func TestR313_AScreenedPortFillsWhatWasNotObserved(t *testing.T) {
+func TestR333_AScreenedPortFillsWhatWasNotObserved(t *testing.T) {
 	s := draft()
 	applied, refused := screening.Apply(s, env(), []api.Amendment{sound(api.Amendment{
 		Kind: api.AmendSetPort, Port: 3000,
@@ -182,12 +182,12 @@ func TestR313_AScreenedPortFillsWhatWasNotObserved(t *testing.T) {
 	require.Equal(t, spec.PortScreened, s.Workloads[0].Ports[0].Source)
 }
 
-// TestR312_AnAmendmentKindThatIsNotInTheSetSaysNothing asserts R-312.
+// TestR332_AnAmendmentKindThatIsNotInTheSetSaysNothing asserts R-332.
 //
 // The closed set is the mechanism. A screener asking for something outside it
 // has not said anything Pando can act on — which is why this is a refusal with
 // no special case for the words it used.
-func TestR312_AnAmendmentKindThatIsNotInTheSetSaysNothing(t *testing.T) {
+func TestR332_AnAmendmentKindThatIsNotInTheSetSaysNothing(t *testing.T) {
 	s := draft()
 	before := *s
 
@@ -206,12 +206,12 @@ func TestR312_AnAmendmentKindThatIsNotInTheSetSaysNothing(t *testing.T) {
 	require.Equal(t, before.Routing, s.Routing)
 }
 
-// TestR312_RefusalsAreRecordedNeverSilent asserts R-312.
+// TestR332_RefusalsAreRecordedNeverSilent asserts R-332.
 //
 // An amendment that vanishes because core did not like it teaches nobody
 // anything, and the refusals are how the next version of the prompt gets
 // written.
-func TestR312_RefusalsAreRecordedNeverSilent(t *testing.T) {
+func TestR332_RefusalsAreRecordedNeverSilent(t *testing.T) {
 	s := draft()
 	applied, refused := screening.Apply(s, env(), []api.Amendment{
 		sound(api.Amendment{Kind: api.AmendSetEnv, Key: "HOST", Value: "0.0.0.0"}),
@@ -226,7 +226,7 @@ func TestR312_RefusalsAreRecordedNeverSilent(t *testing.T) {
 }
 
 // TestO4_AScreenerMayNotMarkASlotRequiredOnACleanTrialRun asserts O-4's
-// fallback, applied to screening (design 09 §3.2).
+// fallback, applied to screening (design 10 §3.2).
 //
 // R-132 blocks a deploy on an unfilled required slot, so a screener marking
 // slots required freely turns "this app might not start" into "this app cannot
@@ -260,9 +260,9 @@ func TestO4_ACrashedTrialRunLetsAScreenerMarkASlotRequired(t *testing.T) {
 	require.Contains(t, s.Slots[0].Evidence, "package.json", "the evidence travels onto the slot")
 }
 
-// TestR311_AScreenerCannotOverwriteAValueAPersonSet asserts R-311 and R-022's
+// TestR331_AScreenerCannotOverwriteAValueAPersonSet asserts R-331 and R-022's
 // rule: a decision a person made outlives anything Pando worked out for itself.
-func TestR311_AScreenerCannotOverwriteAValueAPersonSet(t *testing.T) {
+func TestR331_AScreenerCannotOverwriteAValueAPersonSet(t *testing.T) {
 	s := draft()
 	mine := "1"
 	s.Workloads[0].Env = []spec.EnvEntry{{Key: "DEBUG", Value: &mine, Source: spec.EnvFromUser}}
@@ -277,11 +277,11 @@ func TestR311_AScreenerCannotOverwriteAValueAPersonSet(t *testing.T) {
 	require.Equal(t, "1", *s.Workloads[0].Env[0].Value)
 }
 
-// TestR311_AScreenerCannotWriteOverADependencyOrASecret asserts R-311.
+// TestR331_AScreenerCannotWriteOverADependencyOrASecret asserts R-331.
 //
 // Writing a literal over a database URL Pando is about to provision would
 // replace a resolved dependency with a string a model wrote.
-func TestR311_AScreenerCannotWriteOverADependencyOrASecret(t *testing.T) {
+func TestR331_AScreenerCannotWriteOverADependencyOrASecret(t *testing.T) {
 	s := draft()
 	s.Slots = []spec.Slot{{Key: "DATABASE_URL", Type: spec.SlotPostgres}}
 	ref := "DATABASE_URL"
@@ -332,8 +332,8 @@ func TestR106_AMonorepoEntrypointIsWhatScreeningIsFor(t *testing.T) {
 	require.Equal(t, spec.BuildDockerfile, s.Build.Strategy)
 }
 
-// TestR318_AnAnswerToAQuestionNobodyAskedIsRefused asserts R-318.
-func TestR318_AnAnswerToAQuestionNobodyAskedIsRefused(t *testing.T) {
+// TestR338_AnAnswerToAQuestionNobodyAskedIsRefused asserts R-338.
+func TestR338_AnAnswerToAQuestionNobodyAskedIsRefused(t *testing.T) {
 	answers, rest, refused := screening.Split(env(), []api.Amendment{
 		sound(api.Amendment{Kind: api.AmendAnswerQuestion, Key: "primary_port", Value: "3000"}),
 		sound(api.Amendment{Kind: api.AmendAnswerQuestion, Key: "favorite_color", Value: "green"}),
@@ -346,8 +346,8 @@ func TestR318_AnAnswerToAQuestionNobodyAskedIsRefused(t *testing.T) {
 	require.Contains(t, refused[0].Reason, "favorite_color")
 }
 
-// TestR318_AnAnswerIsHeldToTheSameEvidenceRule asserts R-318 and R-314.
-func TestR318_AnAnswerIsHeldToTheSameEvidenceRule(t *testing.T) {
+// TestR338_AnAnswerIsHeldToTheSameEvidenceRule asserts R-338 and R-334.
+func TestR338_AnAnswerIsHeldToTheSameEvidenceRule(t *testing.T) {
 	answers, _, refused := screening.Split(env(), []api.Amendment{{
 		Kind: api.AmendAnswerQuestion, Key: "primary_port", Value: "3000",
 		Reason: "It is 3000.",
@@ -373,11 +373,11 @@ func TestR098_AScreeningCannotFloodTheReview(t *testing.T) {
 	require.Len(t, refused, 5)
 }
 
-// TestR314_WithoutAReadableRepositoryNothingIsApplied asserts R-314.
+// TestR334_WithoutAReadableRepositoryNothingIsApplied asserts R-334.
 //
 // Evidence that cannot be checked is evidence that was not checked, and the
 // honest failure is the one that keeps the deterministic proposal.
-func TestR314_WithoutAReadableRepositoryNothingIsApplied(t *testing.T) {
+func TestR334_WithoutAReadableRepositoryNothingIsApplied(t *testing.T) {
 	applied, refused := screening.Apply(draft(), screening.Env{}, []api.Amendment{
 		sound(api.Amendment{Kind: api.AmendSetEnv, Key: "HOST", Value: "0.0.0.0"}),
 	})

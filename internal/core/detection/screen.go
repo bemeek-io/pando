@@ -11,17 +11,17 @@ import (
 )
 
 // Screening: Sequence A's step 12a, after the install's defaults and before the
-// proposal is stored. Design 09 §4.
+// proposal is stored. Design 10 §4.
 //
 // It is here rather than in internal/detect for three reasons, and the first is
 // the one that matters. The auction is a pure function of the source, testable
-// without a network and without a model, and R-310 says a screener is not a
+// without a network and without a model, and R-330 says a screener is not a
 // detector — keeping it out of that package is how that stays true rather than
 // being asserted. The other two are practical: R-027 forbids an adapter writing
-// an audit event, so R-317's event has to be written by core, and host policy is
+// an audit event, so R-337's event has to be written by core, and host policy is
 // already read here.
 
-// ScreenPolicy is host policy's veto over screening (R-316).
+// ScreenPolicy is host policy's veto over screening (R-336).
 //
 // Its own interface rather than a method on SourcePolicy, because a nil one
 // means "allowed" and every existing implementation of SourcePolicy would
@@ -33,7 +33,7 @@ type ScreenPolicy interface {
 	AllowsScreening(ctx context.Context) string
 }
 
-// Auditor records that a repository's contents left the host (R-317).
+// Auditor records that a repository's contents left the host (R-337).
 type Auditor interface {
 	Write(ctx context.Context, e AuditEvent) error
 }
@@ -45,13 +45,13 @@ type AuditEvent struct {
 	Detail map[string]any
 }
 
-// ActionScreen is R-317's event.
+// ActionScreen is R-337's event.
 const ActionScreen = "detection.screen"
 
 // screen reviews the proposal and folds in what it may.
 //
 // It mutates proposal and returns the outcome. It never returns an error:
-// R-315 makes every failure here leave the deterministic proposal exactly as it
+// R-335 makes every failure here leave the deterministic proposal exactly as it
 // was, and the only trace is a reason recorded on the outcome.
 func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Proposal, view api.SourceView) screening.Outcome {
 	if r.Screener == nil {
@@ -98,7 +98,7 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 
 	// Answers first. One of them can change which reading of the repository the
 	// rest applies to — the tie-break — and detection's own answer machinery is
-	// where that is already known (design 09 §5, detect.WithScreenedAnswers).
+	// where that is already known (design 10 §5, detect.WithScreenedAnswers).
 	answers, rest, refused := screening.Split(env, result.Amendments, outstanding(proposal.Questions))
 	outcome.Refused = append(outcome.Refused, refused...)
 	if len(answers) > 0 {
@@ -157,7 +157,7 @@ func (r *Runner) auditScreen(ctx context.Context, appID string, o screening.Outc
 	}
 
 	// A failure to audit does not fail the detection, and it does not fail the
-	// screening either — which already happened. R-315 holds here too.
+	// screening either — which already happened. R-335 holds here too.
 	_ = r.Auditor.Write(ctx, AuditEvent{Action: ActionScreen, AppID: appID, Detail: detail})
 }
 

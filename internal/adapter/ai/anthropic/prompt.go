@@ -12,7 +12,7 @@ import (
 // systemPrompt states the job and the rules core will enforce anyway.
 //
 // Stating them twice is not redundancy. Core refuses an amendment that breaks
-// one of these (design 09 §3), so a model that has not been told is a model
+// one of these (design 10 §3), so a model that has not been told is a model
 // whose work is thrown away — the refusal is correct and the screening is
 // wasted. Telling it here is what turns a refusal into a rarity.
 const systemPrompt = `You are screening a deployment plan for Pando, a self-hosted platform that builds

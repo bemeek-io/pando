@@ -77,11 +77,11 @@ func TestR259_CapabilitiesAreDataNotATypeAssertion(t *testing.T) {
 	require.Equal(t, anthropicadapter.DefaultModel, caps.Model)
 }
 
-// TestR316_ScreeningIsOnWhenTheAdapterIsConfigured asserts R-316.
+// TestR336_ScreeningIsOnWhenTheAdapterIsConfigured asserts R-336.
 //
 // Configuring the adapter meant supplying a credential, and that was the
 // decision. Asking a second time would charge the setup cost twice (R-002).
-func TestR316_ScreeningIsOnWhenTheAdapterIsConfigured(t *testing.T) {
+func TestR336_ScreeningIsOnWhenTheAdapterIsConfigured(t *testing.T) {
 	on := configured(t, `{"credentials":{"api_key":"sk-ant-test"}}`)
 	caps, err := on.Capabilities(context.Background())
 	require.NoError(t, err)
@@ -94,7 +94,7 @@ func TestR316_ScreeningIsOnWhenTheAdapterIsConfigured(t *testing.T) {
 		"an install may keep the adapter and turn this function off")
 }
 
-// TestAnAdapterWithNoCredentialRefusesToConfigure asserts design 09 §7.
+// TestAnAdapterWithNoCredentialRefusesToConfigure asserts design 10 §7.
 //
 // Registering it would put a permanently unhealthy adapter in the console with
 // no way to tell it from a provider outage.
@@ -118,11 +118,11 @@ func TestO20_AKeyInTheStoredConfigurationIsRefused(t *testing.T) {
 	require.NotContains(t, err.Error(), "sk-ant-plaintext", "and the error does not repeat it")
 }
 
-// TestR315_AnUnconfiguredAdapterFailsRatherThanPretends asserts R-315.
+// TestR335_AnUnconfiguredAdapterFailsRatherThanPretends asserts R-335.
 //
 // The failure is an error the caller turns into a skipped screening, which
 // leaves the deterministic proposal exactly as it was.
-func TestR315_AnUnconfiguredAdapterFailsRatherThanPretends(t *testing.T) {
+func TestR335_AnUnconfiguredAdapterFailsRatherThanPretends(t *testing.T) {
 	_, err := anthropicadapter.New().ScreenPlan(context.Background(), api.ScreenRequest{
 		Source: memSource{"a.txt": "x"},
 	})
@@ -137,9 +137,9 @@ func TestR020_ScreeningNeedsAReadableRepository(t *testing.T) {
 	require.Contains(t, err.Error(), "repository")
 }
 
-// TestR319_TheBudgetIsTheLowerOfWhatCoreAsksAndWhatTheAdapterWillDo asserts
-// R-319: neither side raises the other's.
-func TestR319_TheBudgetIsTheLowerOfWhatCoreAsksAndWhatTheAdapterWillDo(t *testing.T) {
+// TestR339_TheBudgetIsTheLowerOfWhatCoreAsksAndWhatTheAdapterWillDo asserts
+// R-339: neither side raises the other's.
+func TestR339_TheBudgetIsTheLowerOfWhatCoreAsksAndWhatTheAdapterWillDo(t *testing.T) {
 	a := configured(t, `{"credentials":{"api_key":"sk-ant-test"},"max_files":5,"max_bytes":1024}`)
 	caps, err := a.Capabilities(context.Background())
 	require.NoError(t, err)

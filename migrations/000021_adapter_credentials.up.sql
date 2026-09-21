@@ -1,10 +1,10 @@
--- The ninth adapter category (R-258). A category that exists only in Go is a
+-- The tenth adapter category (R-258). A category that exists only in Go is a
 -- category no adapter can be configured in, which is what 000010 found for
--- backup and what this finds for ai.
+-- backup, 000016 for scanner, and this for ai.
 ALTER TABLE adapter_configs DROP CONSTRAINT adapter_configs_category_check;
 ALTER TABLE adapter_configs ADD CONSTRAINT adapter_configs_category_check
     CHECK (category IN ('runtime', 'routing', 'builder', 'secrets',
-                        'services', 'identity', 'notify', 'backup', 'ai'));
+                        'services', 'identity', 'notify', 'backup', 'scanner', 'ai'));
 
 -- Adapter credentials (R-190, R-194; resolves O-20).
 --

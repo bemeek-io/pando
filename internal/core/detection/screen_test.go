@@ -87,11 +87,11 @@ func proposal() detect.Proposal {
 	}
 }
 
-// TestR315_NoAdapterConfiguredLeavesTheProposalAlone asserts R-315.
+// TestR335_NoAdapterConfiguredLeavesTheProposalAlone asserts R-335.
 //
 // An install with no AI adapter is not a degraded install: everything the
 // auction produced is in the proposal either way (R-106).
-func TestR315_NoAdapterConfiguredLeavesTheProposalAlone(t *testing.T) {
+func TestR335_NoAdapterConfiguredLeavesTheProposalAlone(t *testing.T) {
 	p := proposal()
 	before := p.DraftSpec
 
@@ -103,11 +103,11 @@ func TestR315_NoAdapterConfiguredLeavesTheProposalAlone(t *testing.T) {
 	require.Equal(t, before, p.DraftSpec)
 }
 
-// TestR315_AProviderThatFailsDoesNotFailTheDetection asserts R-315.
+// TestR335_AProviderThatFailsDoesNotFailTheDetection asserts R-335.
 //
 // A detection that failed because a provider was down is a detection that did
 // not need to fail.
-func TestR315_AProviderThatFailsDoesNotFailTheDetection(t *testing.T) {
+func TestR335_AProviderThatFailsDoesNotFailTheDetection(t *testing.T) {
 	p := proposal()
 	before := p.DraftSpec
 	audit := &recorder{}
@@ -123,11 +123,11 @@ func TestR315_AProviderThatFailsDoesNotFailTheDetection(t *testing.T) {
 	require.Len(t, audit.events, 1, "the attempt is still recorded")
 }
 
-// TestR316_HostPolicyCanForbidScreeningInstallWide asserts R-316.
+// TestR336_HostPolicyCanForbidScreeningInstallWide asserts R-336.
 //
 // And nothing is sent: the veto is checked before the adapter is reached, so a
 // forbidden screening is one where no repository contents left the host.
-func TestR316_HostPolicyCanForbidScreeningInstallWide(t *testing.T) {
+func TestR336_HostPolicyCanForbidScreeningInstallWide(t *testing.T) {
 	p := proposal()
 	screener := &fakeScreener{}
 
@@ -142,9 +142,9 @@ func TestR316_HostPolicyCanForbidScreeningInstallWide(t *testing.T) {
 	require.Zero(t, screener.called, "the adapter was never reached")
 }
 
-// TestR311_AnAmendmentLandsInTheDraftSpecAndIsAttributed asserts R-311 and
-// R-314 together: the change is real, and the review can say who made it.
-func TestR311_AnAmendmentLandsInTheDraftSpecAndIsAttributed(t *testing.T) {
+// TestR331_AnAmendmentLandsInTheDraftSpecAndIsAttributed asserts R-331 and
+// R-334 together: the change is real, and the review can say who made it.
+func TestR331_AnAmendmentLandsInTheDraftSpecAndIsAttributed(t *testing.T) {
 	p := proposal()
 	audit := &recorder{}
 
@@ -176,15 +176,15 @@ func TestR311_AnAmendmentLandsInTheDraftSpecAndIsAttributed(t *testing.T) {
 	require.Equal(t, p.DraftSpec.Workloads, p.Winner.Draft.Workloads,
 		"the winner's draft is what the review renders, and must not drift from the spec")
 
-	// R-317: what left the host is recorded.
+	// R-337: what left the host is recorded.
 	require.Len(t, audit.events, 1)
 	require.Equal(t, ActionScreen, audit.events[0].Action)
 	require.Equal(t, []string{"package.json", "server.js"}, audit.events[0].Detail["files_read"])
 }
 
-// TestR313_AScreeningDoesNotOverruleTheTrialRun asserts R-313 through the
+// TestR333_AScreeningDoesNotOverruleTheTrialRun asserts R-333 through the
 // whole path, not only through Apply.
-func TestR313_AScreeningDoesNotOverruleTheTrialRun(t *testing.T) {
+func TestR333_AScreeningDoesNotOverruleTheTrialRun(t *testing.T) {
 	p := proposal()
 
 	outcome := (&Runner{Screener: &fakeScreener{result: api.ScreenResult{
@@ -201,11 +201,11 @@ func TestR313_AScreeningDoesNotOverruleTheTrialRun(t *testing.T) {
 	require.Equal(t, spec.PortObserved, p.DraftSpec.Workloads[0].Ports[0].Source)
 }
 
-// TestR318_AnAnsweredQuestionStopsBeingAsked asserts R-318.
+// TestR338_AnAnsweredQuestionStopsBeingAsked asserts R-338.
 //
 // R-103 is the metric this moves: a question answered from the repository is a
 // question a person did not have to carry to an assistant and back (R-105).
-func TestR318_AnAnsweredQuestionStopsBeingAsked(t *testing.T) {
+func TestR338_AnAnsweredQuestionStopsBeingAsked(t *testing.T) {
 	p := proposal()
 	p.DraftSpec.Workloads[0].Ports = nil
 	p.Trial = detect.TrialObservation{Ran: true, Started: true}
@@ -250,13 +250,13 @@ func TestR099_ABlockedProposalIsNotScreened(t *testing.T) {
 	require.Zero(t, screener.called)
 }
 
-// TestR310_ScreeningDoesNotReRankTheAuction asserts R-310.
+// TestR330_ScreeningDoesNotReRankTheAuction asserts R-330.
 //
 // A screener is not a detector. Whatever it amends, the auction's reading of
 // the repository — which detector won, with what confidence and evidence, and
 // who came second — is exactly what it was. That is what keeps a proposal
 // explainable (R-102): "a model ranked it highest" is not a reason.
-func TestR310_ScreeningDoesNotReRankTheAuction(t *testing.T) {
+func TestR330_ScreeningDoesNotReRankTheAuction(t *testing.T) {
 	p := proposal()
 	p.Winner.Detector = "buildpack"
 	p.Winner.Evidence = []string{"package.json declares a start script"}

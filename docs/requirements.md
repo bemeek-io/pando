@@ -13,7 +13,7 @@ Each requirement is tagged so its authority is unambiguous.
 |---|---|
 | **[D]** | Decided. Settled in design discussion. Changing it changes the product. |
 | **[P]** | Proposed. A default filled in to make the system buildable. Override freely. |
-| **[O]** | Open. Explicitly unresolved; listed in §23. |
+| **[O]** | Open. Explicitly unresolved; listed in §24. |
 | **[V1]** | In the first release. |
 | **[LATER]** | Designed for, deliberately deferred. |
 
@@ -330,6 +330,8 @@ itself, to a registry or a daemon, and the daemon is forbidden.
 
 **R-099 [D]** Compose constructs incompatible with the boundary are rejected or rewritten, with the reason shown: `network_mode: host`, `privileged: true`, bind mounts to host paths, `deploy.replicas`. Host policy governs whether an admin may override (R-190).
 
+**R-099a [D]** A **configuration file** a compose service bind-mounts from the repository — a Caddyfile, an `nginx.conf`, an `init.sql` — is copied into the spec at detection and placed in the workload at every start. It is a snapshot, and the import says so: changing the file in the repository does nothing until the app is read again. This is R-020 rather than an exception to it — the spec remains the sole record of how the app runs. Files are text and capped; anything larger is a build input and is refused with that reason. A runtime that cannot place a file declares so in its capabilities, and the planner refuses before anything is created (R-254).
+
 **R-100 [D]** A user may **promote** a compose-declared service to a Pando-managed one — e.g. binding an ad-hoc Postgres to a real one. Shown as an explicit diff, never automatic.
 
 **R-101 [D]** There is always a bottom escape hatch: supply an image reference and a command, skipping detection.
@@ -355,52 +357,52 @@ applied. This section specifies the first of them to be built: a screening pass 
 deterministic pipeline has already produced. Its purpose is to raise the share of repositories that
 deploy on the first attempt without anyone being asked a question.
 
-**R-310 [D]** **Screening reviews Pando's own answer; it is not a second detector.** An AI adapter
+**R-330 [D]** **Screening reviews Pando's own answer; it is not a second detector.** An AI adapter
 does not bid in the auction (R-093) and does not rank against one. It is given the repository and the
 proposal the detectors produced, and reports what that proposal got wrong or left out. The auction
 stays a pure function of the source, and is still the whole answer when no screener is configured.
 
-**R-311 [D]** **Screening amends the spec and nothing else.** Amendments land in the draft spec
+**R-331 [D]** **Screening amends the spec and nothing else.** Amendments land in the draft spec
 (R-020: the spec is the sole record of how an app runs), are shown in the review alongside everything
 detection worked out, and pin only when a person accepts the proposal (R-098). There is no path from a
 model's output to a running app that does not pass the review gate R-106 requires.
 
-**R-312 [D]** **The amendable surface is a closed set.** A screener expresses a change as one of a
+**R-332 [D]** **The amendable surface is a closed set.** A screener expresses a change as one of a
 fixed list of typed amendments. No amendment in the list changes host policy, isolation class,
 adapter selection, routing, resource limits, egress, grants, or a secret's value, so a screener has no
 way to request those changes.
 
-**R-313 [D]** **An observation outranks a screening.** Where the trial run established a fact — a port
+**R-333 [D]** **An observation outranks a screening.** Where the trial run established a fact — a port
 the process bound, a directory it wrote — a screener may not overwrite it (R-097). It may supply what
 was not observed.
 
-**R-314 [D]** **Every amendment carries evidence and is attributed.** Each one names the files in the
+**R-334 [D]** **Every amendment carries evidence and is attributed.** Each one names the files in the
 repository it rests on and states its reason to the R-105 standard. The review shows which adapter and
 which model produced it, and the spec records screened provenance on the fields it touched, the way
 `Port.Source` and `EnvEntry.Source` already record observed and human ones. An amendment that cites
 no file is refused.
 
-**R-315 [D]** **Screening never blocks and never fails a detection.** No adapter configured, an
+**R-335 [D]** **Screening never blocks and never fails a detection.** No adapter configured, an
 unreachable provider, an expired budget, a timeout, an answer that does not parse: each one leaves the
 deterministic proposal exactly as it was (R-106). Screening runs after the proposal is complete, so
 when it fails the proposal is the one Pando would have produced without it.
 
-**R-316 [P]** **Screening is on when an AI adapter is configured.** Configuring one means supplying a
+**R-336 [P]** **Screening is on when an AI adapter is configured.** Configuring one means supplying a
 credential, which is the deliberate act; asking a second time would charge the setup cost twice
 (R-002). Host policy may forbid screening install-wide, and an install may turn it off per adapter.
 
-**R-317 [D]** **Screening sends repository contents to the adapter's provider, and records that it did.**
+**R-337 [D]** **Screening sends repository contents to the adapter's provider, and records that it did.**
 Every screening writes an audit event naming the adapter, the model, and the files that were read. The
 spec half of what is sent is safe by construction — R-020 makes an export safe to hand to someone, so
 it carries no secret values — and the repository half is not. The person who configured the adapter is
-the person who decided that, which is why R-316 makes configuring it the opt-in.
+the person who decided that, which is why R-336 makes configuring it the opt-in.
 
-**R-318 [D]** **A screener may answer Pando's own questions.** An answer is an amendment like any
+**R-338 [D]** **A screener may answer Pando's own questions.** An answer is an amendment like any
 other: evidenced, attributed, shown in the review, and refused if it does not match an outstanding
 question. Each question answered this way is one fewer for a person to answer (R-103, R-105).
 
-**R-319 [P]** Screening is bounded by files read, bytes read, and wall clock, declared per adapter and
-capped by the install. An exhausted budget ends the screening and keeps what it produced, under R-315.
+**R-339 [P]** Screening is bounded by files read, bytes read, and wall clock, declared per adapter and
+capped by the install. An exhausted budget ends the screening and keeps what it produced, under R-335.
 
 ---
 
@@ -655,7 +657,7 @@ without touching core (O-6 resolved).
 
 **R-251 [D]** Core never learns a provider's vocabulary. A requirement crossing the interface is expressed in Pando's terms — "2 GB, one persistent volume, one exposed HTTP port" — and the adapter turns it into a VM profile or container arguments.
 
-**R-252 [D]** Adapter categories: identity, routing/ingress, builder, runtime, secrets, services, notification, **backup**. **AI** is the ninth (R-258).
+**R-252 [D]** Adapter categories: identity, routing/ingress, builder, runtime, secrets, services, notification, **backup**. **Scanner** is the ninth (R-317) and **AI** the tenth (R-258).
 
 Backup was added in phase 9, reversing an earlier decision that a backup destination was a byte sink
 rather than a category (design 03 §8.1). The earlier reasoning still describes a *destination*
@@ -673,7 +675,7 @@ assertion. A `Destination` interface would have had to grow one anyway, under a 
 
 **R-256 [P]** Multi-machine capability comes entirely from adapters that span machines (e.g. Incus placing VMs across a cluster). Pando remains a single control plane, models no host objects, and performs no placement logic. The scope line (R-010) holds: Pando delegates to something that schedules; it does not schedule.
 
-**R-258 [D]** **AI is the ninth adapter category.** It passes both halves of the test design 03 §8.1
+**R-258 [D]** **AI is the tenth adapter category.** It passes both halves of the test design 03 §8.1
 states before a category may be added. The planner's half: whether a screener can read a repository at
 all, how much of one it can read, and which functions it performs are questions with consequences
 before any work starts, and R-254 says those belong in a capabilities struct rather than in a type
@@ -754,7 +756,70 @@ cannot do one of them says so rather than failing when asked.
 
 ---
 
-## 23. Open Decisions
+## 23. Security Scanning
+
+**R-310 [D]** **Every app has a security score: a whole number from 0 to 100.** It is Pando's answer
+to "is this app safe to run here", in one number a non-technical deployer can act on (R-005), with
+the findings behind it available to anyone who can view the app.
+
+**R-311 [D]** The score comes from **scanning what the app actually deploys** — the image that was
+built and the source it was built from — not from a questionnaire and not from the repository's
+reputation.
+
+**R-312 [D]** **An app is scanned whenever what it runs changes**, which means on every deploy, and
+**on demand** from the app's settings at any time. A score describes a specific spec revision and
+the image built from it.
+
+**R-313 [P]** **The score is derived from findings by severity**, starting at 100 and deducting per
+finding: critical 25, high 10, medium 3, low 1, floored at 0. The weights are a proposal — the
+property that matters is that one critical finding cannot hide behind fifty low ones, and that the
+number is stable enough to set a threshold against.
+
+**R-313a [P]** **Host policy may say that a finding with no fix available does not count.** Off by
+default, so the score answers "what is wrong with this app" rather than "what could its owner do
+about it today" — and an upgrade does not silently move every score. Where it is on, the same filter
+drives the number and the list: what is counted is what is shown, because a score that ignored a
+finding the list displayed would leave somebody working out why fixing one changed nothing.
+
+**R-313b [D]** **Findings are shown worst first**, and the same scan orders the same way twice. A
+list in the scanner's output order changes under the reader for no reason.
+
+**R-314 [D]** **Host policy may set a minimum score, 0 to 100.** Below it, **a deploy is refused at
+plan time** with a `PLAN_*` error naming the score, the threshold and the findings that cost the
+most — the same contract as every other plan-time refusal (R-024, R-132): fail before anything is
+created, and say what to do.
+
+**R-315 [D]** **An app that is already running when it falls below the threshold is not stopped on
+the spot.** It is marked insecure, warned about in the console wherever it appears, and its owner is
+notified. A running app is somebody's working service, and a policy change or a newly published CVE
+is not a reason to take it away without warning.
+
+**R-316 [D]** **Host policy may say that insecure apps are stopped**, with a **grace period** stated
+in the policy. The grace starts when the app is first found below the threshold, and the owner is
+told at that moment what will happen and when. Stopping is `desired_state = stopped`, which is
+reversible and survives a restart — never a delete, and never a change to the app's configuration.
+
+**R-317 [D]** **Scanning is an adapter category** (§18). Pando does not implement a scanner; it
+translates one's findings into the score and the policy decision. An installation with no scanner
+adapter configured has no scores, and a threshold set on it is inert and says so — a policy that
+silently blocks every deploy because a component is missing is worse than one that is visibly off.
+
+**R-318 [P]** **A scanner that fails does not block a deploy.** The previous score stands, the
+failure is recorded and shown, and the app is not treated as insecure because Pando could not look.
+An app that has *never* been scanned while a threshold is set is refused, with the remedy naming the
+scan — the difference is between "we know nothing" and "we know it was fine and cannot check today".
+
+**R-319 [D]** **Scans, score changes, policy-driven warnings and policy-driven stops are audited**
+(R-227), with the score, the threshold and the scanner recorded. "Why did my app stop" must be
+answerable from the audit log alone.
+
+**R-320 [P]** The score is **not** shown as a grade, a badge, or a color alone. It is a number and a
+sentence about what is behind it, in the console's own status vocabulary — a red pill saying "F"
+tells a deployer nothing they can act on.
+
+---
+
+## 24. Open Decisions
 
 | ID | Question | Notes |
 |---|---|---|
@@ -768,10 +833,12 @@ cannot do one of them says so rather than failing when asked.
 | **O-8** | ~~Runtime adapter swap under a running app~~ | **Resolved.** Neither: a destructive spec change with the existing keep-or-discard volume flow. R-257, design 01 §4. |
 | **O-9** | ~~Share notifications~~ | **Resolved.** No message; the launcher tile is the notification. R-266, design 08 §1.1. |
 | **O-10** | ~~Retroactive policy application~~ | **Resolved.** Running apps are untouched; the next deploy fails at plan time with `POLICY_*`. Report now, block on next deploy. Design 05 §3. |
+| **O-19** | What "bad code practice" covers | The first scanner reports vulnerable dependencies, leaked secrets and misconfiguration. Static analysis of the app's own code — a different class of tool, per-language, and noisy — is not in the score yet. R-311, design 09 §2. |
+| **O-20** | Whether a score ages | A scan from three weeks ago describes three-week-old vulnerability data, and nothing rescans an app that has not been deployed since. A scheduled rescan is the obvious answer and needs a decision about what it costs on a small host. Design 09 §5. |
 
 ---
 
-## 24. v1 Scope
+## 25. v1 Scope
 
 Confirmed for the first release:
 
@@ -793,7 +860,7 @@ Explicitly deferred: per-user instances, SCIM, external identity adapters, priva
 
 ---
 
-## 25. Licensing and Governance
+## 26. Licensing and Governance
 
 **R-300 [D]** **AGPL, dual-licensed with commercial exceptions available.** All functionality is available to everyone under the AGPL; nothing is paywalled. Companies that cannot accept AGPL terms purchase an exception. What is sold is a license, never a feature.
 

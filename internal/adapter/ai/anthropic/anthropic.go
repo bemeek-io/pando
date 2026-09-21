@@ -1,4 +1,4 @@
-// Package anthropic screens deployment plans with Claude (design 09 §6).
+// Package anthropic screens deployment plans with Claude (design 10 §6).
 //
 // The first AI adapter, and the one the interface in adapter/api was shaped
 // against. It talks to the Messages API through the official Go SDK, reads the
@@ -50,7 +50,7 @@ const (
 	maxTokens = 8192
 )
 
-// Config is the adapter's own configuration (design 09 §7).
+// Config is the adapter's own configuration (design 10 §7).
 type Config struct {
 	// Credentials are supplied by core, decrypted from adapter_credentials at
 	// startup (O-20). They are never part of the stored configuration: the
@@ -68,7 +68,7 @@ type Config struct {
 	// BaseURL points at a gateway or a proxy. Empty is the Anthropic API.
 	BaseURL string `json:"base_url,omitempty"`
 
-	// ScreenPlans defaults to true (R-316): configuring this adapter meant
+	// ScreenPlans defaults to true (R-336): configuring this adapter meant
 	// supplying a credential, and that was the decision. An install that wants
 	// the adapter for something else turns it off here.
 	ScreenPlans *bool `json:"screen_plans,omitempty"`
@@ -197,7 +197,7 @@ func resolveKey(cfg Config, getenv func(string) string) secret.Value {
 
 func (a *Adapter) screensPlans() bool {
 	if a.cfg.ScreenPlans == nil {
-		return true // R-316
+		return true // R-336
 	}
 	return *a.cfg.ScreenPlans
 }

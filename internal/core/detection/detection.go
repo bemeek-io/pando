@@ -65,21 +65,41 @@ type Runner struct {
 	PortRangeStart int
 	PortRangeEnd   int
 
-	// Screener reviews the finished proposal against the repository (R-310).
+	// Screener reviews the finished proposal against the repository (R-330).
 	// Nil is the ordinary case: an install with no AI adapter configured is not
 	// a degraded install, because everything the auction produced is there
-	// either way (R-106, R-315).
+	// either way (R-106, R-335).
 	Screener     screening.Screener
 	ScreenerRef  string
 	ScreenPolicy ScreenPolicy
 
-	// Auditor records that a repository's contents left the host (R-317).
+	// Auditor records that a repository's contents left the host (R-337).
 	Auditor Auditor
 
-	// Screening budget (R-319). Zero means the package default.
+	// Screening budget (R-339). Zero means the package default.
 	ScreenMaxFiles int
 	ScreenMaxBytes int64
 	ScreenTimeout  time.Duration
+
+	// Scanner scores the checkout while it is still on disk (R-312).
+	//
+	// Detection is the first and, for a while, the only moment Pando holds an
+	// app's source: an app that has been added and not yet deployed has no
+	// image to look at, and waiting for one means the first thing anybody sees
+	// about a new app is "not scanned yet". A committed key or a vulnerable
+	// lockfile is exactly what somebody wants to know *before* deciding to
+	// deploy it.
+	//
+	// Optional, and never fatal. An installation with no scanner detects
+	// exactly as before, and a scanner that fails does not fail a detection —
+	// the proposal is the thing being produced here.
+	Scanner SourceScanner
+}
+
+// SourceScanner scans a checkout. One method, so detection cannot reach into
+// the rest of the security service.
+type SourceScanner interface {
+	ScanSource(ctx context.Context, appID, dir string)
 }
 
 // PortAllocator hands out host ports for port-mode routing.
@@ -155,6 +175,12 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 		return detect.Proposal{}, err
 	}
 
+	// While the checkout exists, and after the proposal is in hand: a scan is
+	// worth having and is not worth failing a detection for.
+	if r.Scanner != nil {
+		r.Scanner.ScanSource(ctx, appID, checkout.Dir)
+	}
+
 	// Fill in the install's own answers before the proposal is shown, not when
 	// it is accepted. The review is where someone sees how their app will run,
 	// and a draft that says nothing about routing or limits is not something
@@ -181,13 +207,13 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 	proposal.Commit = checkout.Commit
 	proposal.DraftSpec.Source.Commit = checkout.Commit
 
-	// Step 12a — screening (R-310, design 09 §4). After the defaults, because a
+	// Step 12a — screening (R-330, design 10 §4). After the defaults, because a
 	// screener handed a spec with no routing mode and no limits is reviewing
 	// blanks for the same reason a person would be. Before the proposal is
 	// stored, because what is stored is what gets reviewed.
 	//
 	// The outcome is recorded whatever it is, including "nothing ran and here
-	// is why". Screening never fails a detection (R-315), so there is nothing
+	// is why". Screening never fails a detection (R-335), so there is nothing
 	// to check here and that is the point.
 	outcome := r.screen(ctx, appID, &proposal, checkout.View(src.Subdir))
 	proposal.Screening = &outcome

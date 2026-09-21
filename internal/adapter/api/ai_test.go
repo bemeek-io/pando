@@ -40,7 +40,7 @@ func TestR258_AIIsAnAdapterCategory(t *testing.T) {
 	require.Contains(t, err.Error(), "ai adapter interface")
 }
 
-// TestR258_NoAIAdapterIsAnOrdinaryOutcome asserts R-258 and R-315.
+// TestR258_NoAIAdapterIsAnOrdinaryOutcome asserts R-258 and R-335.
 //
 // Every caller of DefaultAI has to be written so that "none" is the normal
 // case: an install with no AI adapter is not a degraded install.

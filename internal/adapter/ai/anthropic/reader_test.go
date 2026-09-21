@@ -34,8 +34,8 @@ func (m files) Stat(name string) (api.FileInfo, error) {
 
 func (m files) Glob(string) ([]string, error) { return nil, nil }
 
-// TestR319_TheFileBudgetIsEnforced asserts R-319.
-func TestR319_TheFileBudgetIsEnforced(t *testing.T) {
+// TestR339_TheFileBudgetIsEnforced asserts R-339.
+func TestR339_TheFileBudgetIsEnforced(t *testing.T) {
 	r := newReader(files{"a": "1", "b": "2", "c": "3"}, 2, 1<<20)
 
 	_, err := r.open("a")
@@ -50,11 +50,11 @@ func TestR319_TheFileBudgetIsEnforced(t *testing.T) {
 	require.ElementsMatch(t, []string{"a", "b"}, r.files())
 }
 
-// TestR319_RereadingAFileIsFree asserts R-319.
+// TestR339_RereadingAFileIsFree asserts R-339.
 //
 // A model asking for a file twice lost track; it is not spending a second file
 // of budget, and charging it would end screenings early for no gain.
-func TestR319_RereadingAFileIsFree(t *testing.T) {
+func TestR339_RereadingAFileIsFree(t *testing.T) {
 	r := newReader(files{"a": "1", "b": "2"}, 1, 1<<20)
 
 	_, err := r.open("a")
@@ -67,8 +67,8 @@ func TestR319_RereadingAFileIsFree(t *testing.T) {
 	require.Len(t, r.files(), 1)
 }
 
-// TestR319_TheByteBudgetIsEnforced asserts R-319.
-func TestR319_TheByteBudgetIsEnforced(t *testing.T) {
+// TestR339_TheByteBudgetIsEnforced asserts R-339.
+func TestR339_TheByteBudgetIsEnforced(t *testing.T) {
 	r := newReader(files{"big": strings.Repeat("x", 4096), "next": "y"}, 10, 512)
 
 	body, err := r.open("big")
@@ -96,12 +96,12 @@ func TestR020_AReadCannotLeaveTheCheckout(t *testing.T) {
 	require.Empty(t, r.files(), "nothing refused was recorded as read")
 }
 
-// TestR317_WhatWasReadIsRecordedInOrder asserts R-317.
+// TestR337_WhatWasReadIsRecordedInOrder asserts R-337.
 //
 // Not a security boundary — an adapter that lied has already read the file. It
 // is the operator's record of what was sent, which is the thing somebody wants
 // after the fact and cannot reconstruct.
-func TestR317_WhatWasReadIsRecordedInOrder(t *testing.T) {
+func TestR337_WhatWasReadIsRecordedInOrder(t *testing.T) {
 	r := newReader(files{"a": "1", "b": "2", "c": "3"}, 10, 1<<20)
 
 	for _, name := range []string{"b", "a", "b", "c"} {

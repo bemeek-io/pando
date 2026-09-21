@@ -20,7 +20,8 @@ Tags carry the same meaning throughout: **[D]** decided, **[P]** proposed, **[O]
 | 06 | `06-authorization-and-proxy.md` | Evaluation order, the proxy request path, assertion minting |
 | 07 | `07-sequences.md` | Four end-to-end flows = integration acceptance criteria |
 | 08 | `08-console-and-plan.md` | Console architecture, build order, risk register |
-| 09 | `09-ai-assistance.md` | The AI category, and screening a deployment plan (R-106, §7.4) |
+| 09 | `09-security-scanning.md` | The security score: the scanner adapter, the arithmetic, and the two places policy enforces it |
+| 10 | `10-ai-assistance.md` | The AI category, and screening a deployment plan (R-106, §7.4) |
 
 ## Reading order
 
@@ -28,9 +29,9 @@ Tags carry the same meaning throughout: **[D]** decided, **[P]** proposed, **[O]
 
 **Anyone touching authorization or the proxy:** 06 in full, then Sequence C in 07. Do not skip.
 
-**Anyone writing an adapter:** 03, then the relevant section of 01. An AI adapter: 09, then 03 §1.
+**Anyone writing an adapter:** 03, then the relevant section of 01. An AI adapter: 10, then 03 §1.
 
-**Anyone touching detection:** 07 Sequence A, then 09 — screening runs at the end of it.
+**Anyone touching detection:** 07 Sequence A, then 10 — screening runs at the end of it.
 
 ## Requirements needing structural enforcement
 

@@ -26,10 +26,15 @@ const (
 	// visible only here.
 	CategoryBackup Category = "backup"
 
-	// CategoryAI is the ninth (R-258), and the first that is optional in the
+	// CategoryScanner is the ninth (R-317), added with the security score.
+	// Pando translates a scanner's findings into a number and a policy
+	// decision; it does not implement one. See design 09.
+	CategoryScanner Category = "scanner"
+
+	// CategoryAI is the tenth (R-258), and the first that is optional in the
 	// strong sense: an install with none configured is not degraded, because
 	// everything the auction produces is produced either way (R-106).
-	// Design 09 has the argument for why it is a category at all.
+	// Design 10 has the argument for why it is a category at all.
 	CategoryAI Category = "ai"
 )
 

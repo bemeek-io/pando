@@ -242,6 +242,13 @@ func (p *Planner) checkCapabilities(ctx context.Context, s *spec.AppSpec, runtim
 			map[string]any{"adapter_ref": s.Runtime.AdapterRef, "capability": "persistent_volumes"})
 	}
 
+	if carriesFiles(s) && !runtimeCaps.SupportsCarriedFiles {
+		return runtimeCaps, routingCaps, unsupported(
+			fmt.Sprintf("This app carries a configuration file into one of its parts, and %q cannot place one.", s.Runtime.AdapterRef),
+			"Use a runtime that can, or build the file into the image and remove it from the app's configuration.",
+			map[string]any{"adapter_ref": s.Runtime.AdapterRef, "capability": "carried_files"})
+	}
+
 	if s.Deploy.Strategy == spec.DeployStartThenSwap && !runtimeCaps.SupportsStartThenSwap {
 		return runtimeCaps, routingCaps, unsupported(
 			fmt.Sprintf("This app is set to start the new version before stopping the old one, and %q cannot do that.", s.Runtime.AdapterRef),
@@ -264,6 +271,16 @@ func (p *Planner) checkCapabilities(ctx context.Context, s *spec.AppSpec, runtim
 // Build and runtime floors are checked separately and reported separately,
 // because they are different requirements and an operator who set one and not
 // the other deserves to be told which.
+// carriesFiles reports whether any workload has configuration to place.
+func carriesFiles(s *spec.AppSpec) bool {
+	for _, w := range s.Workloads {
+		if len(w.Files) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *Planner) checkIsolation(ctx context.Context, s *spec.AppSpec, runtimeCaps api.RuntimeCapabilities) error {
 	if p.policy == nil {
 		return nil

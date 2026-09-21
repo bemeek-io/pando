@@ -44,21 +44,21 @@ type Proposal struct {
 	// Kept on the proposal because the log is not the whole of what the trial
 	// established and two things need the rest of it. A screening pass has to
 	// know whether the app crashed, because that is what decides whether a
-	// dependency it found may be marked required (O-4's fallback, design 09
+	// dependency it found may be marked required (O-4's fallback, design 10
 	// §3.2). And "no trial ran" and "a trial ran and saw nothing" are different
 	// facts that an empty log reports identically.
 	Trial TrialObservation `json:"trial,omitzero"`
 
-	// Screening is what an AI adapter made of this proposal (R-311, design 09
+	// Screening is what an AI adapter made of this proposal (R-331, design 10
 	// §5): which adapter, which model, what it read, what it changed and why,
 	// and what it asked for that Pando refused.
 	//
 	// On the proposal rather than only in the audit log, because the console
-	// renders it as a section of the review. R-314 calls for attribution, and
+	// renders it as a section of the review. R-334 calls for attribution, and
 	// attribution nobody can see is a record rather than attribution.
 	//
 	// Nil means no screening ran, which is the ordinary case for an install
-	// with no AI adapter configured — and not a degraded one (R-315).
+	// with no AI adapter configured — and not a degraded one (R-335).
 	Screening *screening.Outcome `json:"screening,omitempty"`
 }
 
@@ -82,7 +82,7 @@ func (t Trial) Observation() TrialObservation {
 	}
 }
 
-// TrialSummary is the trial as an AI screener sees it (R-310, design 09 §2).
+// TrialSummary is the trial as an AI screener sees it (R-330, design 10 §2).
 func (p Proposal) TrialSummary() api.TrialSummary {
 	return api.TrialSummary{
 		Ran:            p.Trial.Ran,

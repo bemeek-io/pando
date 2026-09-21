@@ -54,6 +54,29 @@ function reservedPrefix(): string {
   return path === prefix || path.startsWith(prefix + '/') ? prefix : '';
 }
 
+/**
+ * A plain-text GET.
+ *
+ * `GET /apps/{id}/logs` answers `text/plain` — it is a runtime's output copied
+ * through, not a document — and running that through `response.json()` throws
+ * on the first line of it.
+ */
+async function requestText(path: string): Promise<string> {
+  const response = await fetch(base + path, { credentials: 'same-origin' });
+
+  if (!response.ok) {
+    let envelope: ApiError | null = null;
+    try {
+      envelope = (await response.json()) as ApiError;
+    } catch {
+      envelope = null;
+    }
+    throw new RequestFailed(response.status, envelope, `The request failed (${response.status}).`);
+  }
+
+  return await response.text();
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(base + path, {
     method,
@@ -80,6 +103,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
+  text: (path: string) => requestText(path),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),

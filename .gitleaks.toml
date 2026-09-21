@@ -36,14 +36,15 @@ regexes = [
   # that it is refused. A token that verified would fail the test.
   '''eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0\.eyJzdWIiOiJ1c3JfYWRtaW4ifQ\.''',
 
+  # internal/cli/env_test.go — the fixture the environment-credential tests
+  # set and then assert comes back unchanged. `tok_` is Pando's own token
+  # prefix and the body is the word "secret", which together are what the
+  # generic rule reads as a credential. There is no such token.
+  '''tok_01HQ8\.secret''',
+
   # The name of a cipher, in prose. SECURITY.md names the algorithms in use,
   # and the generic-api-key rule reads this one as a high-entropy string.
   '''ChaCha20-Poly1305''',
-
-  # internal/cli/env_test.go — a made-up service token the CLI tests set in the
-  # environment to check it is read from there. Not a credential: the ID is the
-  # design doc's example prefix and the secret half is the word "secret".
-  '''tok_01HQ8\.secret''',
 ]
 
 [[allowlists]]

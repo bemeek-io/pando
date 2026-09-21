@@ -1,4 +1,4 @@
-// Wording for the screening section of detection review (design 09 §5).
+// Wording for the screening section of detection review (design 10 §5).
 //
 // A refused amendment has no server-written summary — only an applied one does —
 // so the console says what it proposed. Kept as a plain function beside the
@@ -40,7 +40,7 @@ export function describeAmendment(a: Amendment): string {
 /**
  * Whether the section is worth showing at all.
  *
- * An install with no AI adapter is not a degraded install (R-315), so a
+ * An install with no AI adapter is not a degraded install (R-335), so a
  * screening that never ran for that reason says nothing. Any other reason it
  * did not run — host policy, a provider that failed — is shown, because the
  * person who configured the adapter will want to know it did not do its job.

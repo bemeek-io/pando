@@ -15,9 +15,9 @@ import (
 // reader is the repository, bounded.
 //
 // Every read goes through here rather than straight to the SourceView, for two
-// reasons that are not the same. The budget (R-319) is one: a screening has a
+// reasons that are not the same. The budget (R-339) is one: a screening has a
 // ceiling in files and bytes and something has to hold the running total. The
-// other is that this is the list of what left the host, which R-317 says the
+// other is that this is the list of what left the host, which R-337 says the
 // audit event carries — and a count kept beside the reads is a count that
 // cannot disagree with them.
 type reader struct {

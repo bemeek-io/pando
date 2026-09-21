@@ -7,7 +7,7 @@ import (
 // The three tools a screening gets: two to read the repository, one to answer.
 //
 // Answering through a tool rather than in prose is deliberate. The schema is
-// the closed set from design 09 §3, so a malformed amendment is rejected before
+// the closed set from design 10 §3, so a malformed amendment is rejected before
 // it reaches Pando, and the shape core validates is the shape the model was
 // given. Parsing amendments out of prose would mean two descriptions of the
 // same structure, kept in step by hand.
@@ -89,7 +89,7 @@ func tools() []anthropic.ToolUnionParam {
 // amendmentSchema is the closed set, as JSON Schema.
 //
 // It mirrors api.Amendment, and the mirroring is the point: a kind that is not
-// in this enum cannot be asked for, which is R-312 arriving one layer earlier
+// in this enum cannot be asked for, which is R-332 arriving one layer earlier
 // than core's validation rather than instead of it.
 func amendmentSchema() map[string]any {
 	return map[string]any{

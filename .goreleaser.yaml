@@ -132,6 +132,14 @@ nfpms:
   - id: pando
     ids: [pando]
     package_name: pando
+    # Named like the archives rather than by each packager's convention, which
+    # is goreleaser's default: conventional naming gives a .deb
+    # `pando_1.2.3_amd64.deb` and an .rpm `pando-1.2.3.x86_64.rpm`, so the
+    # download line in the documentation would have to be a different line per
+    # format and per architecture, spelled from memory. One template means one
+    # documented name, and `TestInstallInstructionsMatchWhatATagPublishes`
+    # checks the documentation against this line.
+    file_name_template: '{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     vendor: Bemeek
     homepage: https://github.com/bemeek-io/pando
     maintainer: Ben Meeker <ben@benmeeker.com>

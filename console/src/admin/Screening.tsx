@@ -1,8 +1,8 @@
-// The screening section of detection review (R-311, R-314; design 09 §5).
+// The screening section of detection review (R-331, R-334; design 10 §5).
 //
 // An AI adapter amended the plan the person is about to accept, so what it
 // changed is shown beside everything else Pando worked out: each change with
-// its reason and the files it rests on, which files left the host (R-317), and
+// its reason and the files it rests on, which files left the host (R-337), and
 // what it asked for that Pando refused. The refusals are shown rather than
 // dropped — a change that disappears without a word is one nobody can check.
 //

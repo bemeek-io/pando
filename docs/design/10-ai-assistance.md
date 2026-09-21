@@ -5,8 +5,8 @@ optional supporting functionality, names three places it may be applied, and set
 matters: it emits the same spec object and passes the same review gate, and with nothing configured
 each tap degrades to a question rather than a dead end.
 
-This document designs the ninth adapter category (R-258) and the first function it performs:
-**screening a deployment plan** (§7.4, R-310 through R-319). The other two functions R-106 names —
+This document designs the tenth adapter category (R-258) and the first function it performs:
+**screening a deployment plan** (§7.4, R-330 through R-339). The other two functions R-106 names —
 reading README prose and proposing repairs from a failed build log — are not built here. The
 capabilities struct is shaped so they arrive without changing the interface.
 
@@ -21,7 +21,7 @@ and §07 A is the sequence it follows.
 Screening runs **after** that, on the finished proposal, and asks one question: *given this repository,
 what did that proposal get wrong or leave out?* The answer comes back as amendments to the spec.
 
-**[D] It is not a detector and does not bid** (R-310). The tempting design is a tenth detector that
+**[D] It is not a detector and does not bid** (R-330). The tempting design is a tenth detector that
 bids in the auction alongside the Dockerfile and compose ones, and it is wrong in two directions. A
 model that bids competes with evidence it should be using: the compose detector's reading of a compose
 file is better than a model's, and a confidence score is the wrong way to express "that reading is
@@ -62,7 +62,7 @@ will see.
 
 ## 2. The interface
 
-Package `internal/adapter/api`, alongside the other eight.
+Package `internal/adapter/api`, alongside the other nine.
 
 ```go
 type AIAdapter interface {
@@ -129,20 +129,20 @@ bounded by §3, not by keeping it secret.
 type ScreenResult struct {
     Amendments []Amendment
     Notes      []string   // things worth saying that change nothing
-    FilesRead  []string   // what left the host. Audited (R-317)
+    FilesRead  []string   // what left the host. Audited (R-337)
     Model      string
 }
 ```
 
 **[D]** `FilesRead` is reported by the adapter and recorded in the audit event. It is not a security
 boundary, since an adapter that misreported it would already have read the file. It is the operator's
-record of what was sent to the provider, which R-317 requires.
+record of what was sent to the provider, which R-337 requires.
 
 ---
 
 ## 3. Amendments: the closed set
 
-**[D] This is the load-bearing decision of the document** (R-312).
+**[D] This is the load-bearing decision of the document** (R-332).
 
 The obvious interface is `ScreenPlan` returning a `spec.AppSpec` — the amended proposal, whole. It is
 wrong, and the reason is not that a model might be careless. It is that a returned spec can express
@@ -160,7 +160,7 @@ in the list changes any of those fields.
 |---|---|---|
 | `set_command` | a workload's command | the command is empty, or the workload does not exist |
 | `set_env` | one literal environment entry | the key is a declared slot, or the existing entry resolves from a slot or a secret |
-| `set_port` | the primary port | a port on that workload was observed (R-313) |
+| `set_port` | the primary port | a port on that workload was observed (R-333) |
 | `set_health` | health path and port | the path is not absolute |
 | `add_slot` | a declared dependency Pando missed | the key already exists |
 | `set_build_context` | the build context directory | the path is absent from the source, or escapes it |
@@ -170,7 +170,7 @@ in the list changes any of those fields.
 | `answer_question` | one of detection's questions | no outstanding question has that key |
 | `add_warning` | says something, changes nothing | — |
 
-**[D] Every amendment requires evidence** (R-314): at least one path in the repository it rests on,
+**[D] Every amendment requires evidence** (R-334): at least one path in the repository it rests on,
 and the paths are checked against the source. A model that names a file that is not there has its
 amendment refused with that as the reason. This check catches amendments based on what a framework
 usually does rather than on what this repository contains, and it costs one `Stat` per path.
@@ -185,7 +185,7 @@ emit `WARN_COMPOSE_CONSTRUCT_REWRITTEN` can claim the compose importer rewrote s
 
 ### 3.1 An observation outranks a screening
 
-**[D]** R-313, and it is the rule most likely to be argued with. The trial run watched the process bind
+**[D]** R-333, and it is the rule most likely to be argued with. The trial run watched the process bind
 3000 and wrote `Port.Source: observed`. A screener that has read the framework's documentation and
 believes it serves on 8080 is refused.
 
@@ -222,7 +222,7 @@ core/detection.Runner.Detect
   ├─ detect.Job.Run                   → proposal   ← deterministic, unchanged
   ├─ applyDefaults                    → the install's answers
   ├─ screening.Run                    → amendments, applied and refused   ← this document
-  ├─ audit: detection.screen (R-317)
+  ├─ audit: detection.screen (R-337)
   └─ Detections.Save
 ```
 
@@ -239,7 +239,7 @@ turns the second into the first.
 
 ### 4.1 Failure is the deterministic proposal
 
-**[D]** R-315. Every one of these leaves the proposal untouched and records why in `Outcome.Skipped`:
+**[D]** R-335. Every one of these leaves the proposal untouched and records why in `Outcome.Skipped`:
 
 - no AI adapter configured
 - the adapter does not advertise `screen_plan`
@@ -258,7 +258,7 @@ optional step did not run.
 
 **[D] Amendments are applied, not queued for per-item approval.** Holding each one for a click would
 add a question per amendment, which R-103 counts against the product. The proposal a person reviews is
-the amended one, and it passes the same review gate as any other proposal (R-311, R-098).
+the amended one, and it passes the same review gate as any other proposal (R-331, R-098).
 
 **[D] The spec records screened provenance**, alongside the sources it already records:
 
@@ -272,7 +272,7 @@ Three properties follow from reusing those fields rather than adding a flag. The
 renders provenance, so "we watched your app bind 3000" and "Anthropic read your Dockerfile and set
 NODE_ENV" are shown by the same code. `spec.Carry` (§01, re-detection) already keeps only `user`
 sources, so a screened value is replaced by the next screening rather than carried forward as though a
-person had chosen it — which is right: re-detection re-screens. And R-313's refusal is a comparison
+person had chosen it — which is right: re-detection re-screens. And R-333's refusal is a comparison
 between two values of a field the spec already has.
 
 **[D] The outcome is recorded on the proposal**, not only in the audit log:
@@ -287,7 +287,7 @@ type Outcome struct {
     FilesRead  []string
     Applied    []Applied
     Refused    []Refused
-    Answers    map[string]string // detection questions it answered (R-318)
+    Answers    map[string]string // detection questions it answered (R-338)
     Notes      []string
     DurationMS int64
 }
@@ -361,7 +361,7 @@ configuration. Core decrypts the credential at startup and passes it to `Configu
 environment can instead set `api_key_env`, or `ANTHROPIC_API_KEY`, which the adapter reads when no
 credential is stored.
 
-**[P] `screen_plans` defaults to true** (R-316). Configuring the adapter required a credential; that
+**[P] `screen_plans` defaults to true** (R-336). Configuring the adapter required a credential; that
 was the decision.
 
 **[P] Host policy carries `DisableAIScreening`**, install-wide, evaluated in `core/detection` beside

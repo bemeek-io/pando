@@ -189,6 +189,7 @@ type Workload struct {
 	Env       []EnvEntry   `json:"env,omitempty"`
 	Ports     []Port       `json:"ports,omitempty"`
 	Mounts    []Mount      `json:"mounts,omitempty"`
+	Files     []File       `json:"files,omitempty"`
 	DependsOn []string     `json:"depends_on,omitempty"`
 	Health    *Healthcheck `json:"healthcheck,omitempty"`
 
@@ -262,7 +263,7 @@ const (
 	// person, because there was no way to add one by hand.
 	EnvFromDetection EnvSource = "detected"
 
-	// EnvFromScreening was set by an AI screener (R-314, design 09 §5).
+	// EnvFromScreening was set by an AI screener (R-334, design 10 §5).
 	//
 	// Deliberately not EnvFromUser. A screener is not a person: its value is
 	// replaced by the next screening rather than carried across a re-detection,
@@ -285,7 +286,7 @@ const (
 	PortUser      PortSource = "user"
 
 	// PortScreened was supplied by an AI screener, and only where nothing was
-	// observed. R-313: watching the process bind beats reading about it, so a
+	// observed. R-333: watching the process bind beats reading about it, so a
 	// screener may fill this field and may never overwrite PortObserved.
 	PortScreened PortSource = "screened"
 )
@@ -305,7 +306,7 @@ const (
 	VolumeFromUser    VolumeSource = "user"
 	VolumeFromWarning VolumeSource = "detected-warning"
 
-	// VolumeFromScreening was added by an AI screener (design 09 §3).
+	// VolumeFromScreening was added by an AI screener (design 10 §3).
 	VolumeFromScreening VolumeSource = "screened"
 )
 
@@ -327,6 +328,42 @@ type Mount struct {
 	Path     string `json:"path"`
 	ReadOnly bool   `json:"read_only"`
 }
+
+// File is a configuration file placed in a workload at start.
+//
+// A Caddyfile, an nginx.conf, a prometheus.yml: the small text file a compose
+// service bind-mounts from the repository. Storage Pando manages is a
+// directory and cannot stand in for a file, and R-020 forbids reading the
+// repository at deploy time, so the file itself is carried here — read once at
+// detection, pinned to the revision, replayed on every start.
+//
+// The same reasoning as Build.GeneratedFiles, one layer along: the spec is the
+// sole record of how an app runs, and a file fetched from a branch at deploy
+// time would make the same revision deploy differently tomorrow. Because it is
+// a snapshot, changing the file in the repository does nothing until somebody
+// re-detects — which is a real limit, and is what the import warning says.
+//
+// Content is text and capped at FileSizeLimit. This is not a way to ship an
+// application: a file big enough to matter is a build input, and builds have
+// their own path.
+type File struct {
+	Path string `json:"path"`
+
+	// Content is stored in the clear and appears in an exported spec. It comes
+	// out of the repository, so it is already as public as the repository —
+	// anything sensitive belongs in a secret or a slot, not in a config file
+	// somebody committed.
+	Content string `json:"content"`
+
+	// Mode is the file's permission bits, defaulting to 0644. Set for the
+	// entrypoint script somebody mounts and expects to be executable.
+	Mode int `json:"mode,omitempty"`
+}
+
+// FileSizeLimit caps one carried file. Config files are kilobytes; the cap
+// exists so that a spec stays something a person can read and a database row
+// stays a database row.
+const FileSizeLimit = 64 << 10
 
 // SlotType is the kind of dependency a slot declares.
 type SlotType string
@@ -536,8 +573,14 @@ const (
 	WarnComposeConstructRewritten = "WARN_COMPOSE_CONSTRUCT_REWRITTEN"
 	WarnUndeclaredDependency      = "WARN_UNDECLARED_DEPENDENCY_SUSPECTED"
 
+	// WarnPrimaryWorkloadAssumed is R-026 with the question unanswered: a
+	// compose file with several services does not say which one a person opens
+	// in a browser, so Pando picks the likeliest and says so rather than
+	// producing a spec that cannot deploy.
+	WarnPrimaryWorkloadAssumed = "WARN_PRIMARY_WORKLOAD_ASSUMED"
+
 	// WarnScreeningAdvisory is the one code an AI screener may emit, and it is
-	// not its choice (design 09 §3). The codes above mean specific things that
+	// not its choice (design 10 §3). The codes above mean specific things that
 	// specific parts of Pando produced; a screener able to pick one could claim
 	// the compose importer rewrote something it never touched.
 	WarnScreeningAdvisory = "WARN_SCREENING_ADVISORY"

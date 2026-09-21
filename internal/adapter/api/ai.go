@@ -7,9 +7,9 @@ import (
 	"github.com/bemeek-io/pando/internal/core/spec"
 )
 
-// The AI category (R-258), and the screening function (R-310 … R-319).
+// The AI category (R-258), and the screening function (R-330 … R-339).
 //
-// Design 09 is the whole argument; two things from it are worth repeating where
+// Design 10 is the whole argument; two things from it are worth repeating where
 // an implementer will see them.
 //
 // A screener is not a detector. It does not bid in the auction (R-093) and does
@@ -18,7 +18,7 @@ import (
 // out. The auction stays a pure function of the source.
 //
 // And a screener does not return a spec. It returns amendments drawn from the
-// closed set below, which is what makes R-312 a mechanism rather than a rule:
+// closed set below, which is what makes R-332 a mechanism rather than a rule:
 // there is no amendment that says "lower the isolation floor", so there is no
 // sentence in which a model can ask for one.
 
@@ -67,7 +67,7 @@ func (c AICapabilities) Does(f AIFunction) bool {
 // AIAdapter is optional supporting functionality, never required (R-106).
 //
 // Every method may fail, and no failure of one is a failure of the thing that
-// called it: R-315 says a screening that cannot run leaves the deterministic
+// called it: R-335 says a screening that cannot run leaves the deterministic
 // proposal exactly as it was.
 type AIAdapter interface {
 	Adapter
@@ -99,7 +99,7 @@ type ScreenRequest struct {
 	Evidence []string
 
 	// Questions are what detection could not work out. A screener may answer
-	// one, and that is an amendment like any other (R-318).
+	// one, and that is an amendment like any other (R-338).
 	Questions []Question
 
 	// Trial is what the trial run saw, including the app's own output.
@@ -123,7 +123,7 @@ type TrialSummary struct {
 	Log            string
 }
 
-// ScreenBudget bounds a screening in files, bytes and wall clock (R-319).
+// ScreenBudget bounds a screening in files, bytes and wall clock (R-339).
 type ScreenBudget struct {
 	MaxFiles int
 	MaxBytes int64
@@ -139,7 +139,7 @@ type ScreenResult struct {
 	// ignore warnings.
 	Notes []string
 
-	// FilesRead is what left the host, recorded in the audit event (R-317).
+	// FilesRead is what left the host, recorded in the audit event (R-337).
 	//
 	// Not a security boundary: an adapter that lied about it has already read
 	// the file. It is the operator's record of what was sent, which is the
@@ -149,7 +149,7 @@ type ScreenResult struct {
 	Model string
 }
 
-// AmendmentKind is the closed set (R-312, design 09 §3).
+// AmendmentKind is the closed set (R-332, design 10 §3).
 //
 // The obvious interface returns a whole spec and is wrong — not because a model
 // might be careless, but because a returned spec can express every field there
@@ -174,7 +174,7 @@ const (
 	AmendSetEnv AmendmentKind = "set_env"
 
 	// AmendSetPort sets the port a workload serves HTTP on, and only where the
-	// trial run observed nothing (R-313).
+	// trial run observed nothing (R-333).
 	AmendSetPort AmendmentKind = "set_port"
 
 	// AmendSetHealth sets the health path and port.
@@ -242,7 +242,7 @@ type Amendment struct {
 	Reason string `json:"reason"`
 
 	// Evidence names the files in the source this rests on, and is required
-	// (R-314). The paths are checked to exist. A model that names a file that
+	// (R-334). The paths are checked to exist. A model that names a file that
 	// is not there is refused with that as the reason — the cheapest available
 	// check on whether it read the repository or recalled a framework.
 	Evidence []string `json:"evidence"`

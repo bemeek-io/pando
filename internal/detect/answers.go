@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -60,7 +61,7 @@ func (p Proposal) WithAnswers(answers map[string]string) spec.AppSpec {
 	return p.withAnswers(answers, spec.PortUser)
 }
 
-// WithScreenedAnswers folds in answers an AI screener produced (R-318).
+// WithScreenedAnswers folds in answers an AI screener produced (R-338).
 //
 // The same machinery, deliberately: an answer that changes which workload the
 // other answers mean does so whoever supplied it, and two ways to apply an
@@ -114,7 +115,10 @@ func (p Proposal) withAnswers(answers map[string]string, portSource spec.PortSou
 			// spec describing one detector's reading under another's name.
 		}
 	}
-	return out
+
+	// Last, after every answer: an answer naming the primary wins, and the
+	// election only fills a gap nobody filled.
+	return withElectedPrimary(out)
 }
 
 // chosen returns the reading the answers select, defaulting to the winner's.
@@ -217,4 +221,81 @@ func withStartCommand(s spec.AppSpec, command string) spec.AppSpec {
 		break
 	}
 	return s
+}
+
+// withElectedPrimary makes sure exactly one workload is primary.
+//
+// A compose file with several services does not say which one serves the app
+// (R-026), so detection asks — and the question rides on the compose candidate,
+// which is not necessarily the one a person adopts when they answer the
+// tie-break. Accepting without that answer produced a spec with no primary at
+// all: refused at deploy with "mark exactly one workload as primary", on a
+// screen with nothing to mark it with. A dead end, and this is the end of it.
+//
+// [P] overriding design 01's "asks rather than picks": it still asks, and now
+// it also picks, and says which it picked. R-104's rule is that a thing with a
+// sane default is configuration rather than a blocker; R-102's is that the
+// person sees the reasoning. A warning carries both.
+func withElectedPrimary(s spec.AppSpec) spec.AppSpec {
+	if len(s.Workloads) == 0 {
+		return s
+	}
+	for _, w := range s.Workloads {
+		if w.Primary {
+			return s
+		}
+	}
+
+	// Depended on by nothing, and serving HTTP: the shape of the thing a person
+	// opens. `app depends_on db` makes the app the candidate and the database
+	// not one, which is the usual compose file.
+	dependedOn := map[string]bool{}
+	for _, w := range s.Workloads {
+		for _, dep := range w.DependsOn {
+			dependedOn[dep] = true
+		}
+	}
+
+	pick := -1
+	for i, w := range s.Workloads {
+		if dependedOn[w.Name] {
+			continue
+		}
+		if !servesHTTP(w) {
+			continue
+		}
+		pick = i
+		break
+	}
+	if pick < 0 {
+		// Nothing obvious. The first workload is still a better answer than
+		// none: it produces a deployable app somebody can correct, where no
+		// primary produces a refusal they cannot.
+		pick = 0
+	}
+
+	s.Workloads = append([]spec.Workload(nil), s.Workloads...)
+	s.Workloads[pick].Primary = true
+	s.Workloads[pick].Exposed = true
+
+	s.Warnings = append(s.Warnings, spec.Warning{
+		Code: spec.WarnPrimaryWorkloadAssumed,
+		Message: fmt.Sprintf(
+			"This app has %d parts and did not say which one people open in a browser. "+
+				"Pando is sending traffic to %q. If that is wrong, answer the question on this app's "+
+				"configuration and accept it again.",
+			len(s.Workloads), s.Workloads[pick].Name),
+	})
+	return s
+}
+
+// servesHTTP reports whether a workload declares a port that looks like a web
+// endpoint.
+func servesHTTP(w spec.Workload) bool {
+	for _, p := range w.Ports {
+		if p.Protocol == "" || p.Protocol == "http" || p.Protocol == "https" {
+			return true
+		}
+	}
+	return false
 }
