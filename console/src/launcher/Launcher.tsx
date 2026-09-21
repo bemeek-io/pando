@@ -527,6 +527,10 @@ function Tile({
   const [near, setNear] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [lifted, setLifted] = useState(false);
+  // Whether this tile's drag is still going. A drag that ends inside a frame
+  // would otherwise have its start applied after its end, and leave the page
+  // stuck showing a drag that is over.
+  const dragActive = useRef(false);
 
   const card = (
     <div
@@ -574,11 +578,21 @@ function Tile({
       onDragStart={(e) => {
         e.dataTransfer.setData(DRAG_TYPE, app.id);
         e.dataTransfer.effectAllowed = 'move';
-        setLifted(true);
-        setNear(false);
-        onDragChange(true);
+        // Everything that changes the page waits a frame. Chrome ends a drag
+        // the moment it starts if the page moves under it during dragstart —
+        // and this moves it: the empty groups appear above, the menu button
+        // goes. Done synchronously, every drag was cancelled before the
+        // pointer had moved.
+        dragActive.current = true;
+        requestAnimationFrame(() => {
+          if (!dragActive.current) return;
+          setLifted(true);
+          setNear(false);
+          onDragChange(true);
+        });
       }}
       onDragEnd={() => {
+        dragActive.current = false;
         setLifted(false);
         onDragChange(false);
       }}
@@ -598,9 +612,6 @@ function Tile({
           href={app.address}
           target="_blank"
           rel="noopener noreferrer"
-          // The tile drags, not the link: a dragged link carries its address
-          // and would leave the browser offering to open it somewhere.
-          draggable={false}
           aria-label={label}
           style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
         >
