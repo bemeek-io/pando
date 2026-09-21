@@ -6,30 +6,26 @@
 // surface — which is what makes it read as a real survey map rather than a
 // pattern.
 //
-// Each page gets its own terrain. The hills, the warp and where the map shows
-// through are all drawn from a seed — the section, and the app when there is
-// one — so moving through the console moves across different ground, while the
-// tabs of one app share that app's map. The same seed always gives the same
-// map.
+// It is part of the page, not pinned to the window: it scrolls with the
+// content. To cover a page of any length it is a tile, and the terrain is
+// periodic — hills wrap around the tile's edges and the warp uses whole
+// periods — so the lines meet across every seam and there is no edge to see.
 //
-// It spans the viewport but shows through a few soft patches placed by the
-// same seed, so it is never uniform wallpaper and never parked in one corner.
-// It is kept faint: contour tokens at low opacity, and index contours at the
-// ordinary line width, distinguished by colour alone.
+// Extremely quiet by design: one colour, one line width, one opacity across
+// the whole thing, and no index contours. Each page gets its own terrain from a
+// seed (the section, and the app when there is one); the same seed always
+// gives the same map.
 
 import { useMemo } from 'react';
 
-const COLS = 120;
-const ROWS = 80;
+// One tile, in CSS pixels. Large, so a repeat is rarely in view at once.
+const COLS = 160;
+const ROWS = 120;
 const CELL = 10;
-const LEVELS = 16;
+const LEVELS = 12;
+const TAU = Math.PI * 2;
 
 type Pt = [number, number];
-type Contour = { d: string; index: boolean };
-interface Terrain {
-  contours: Contour[];
-  mask: string;
-}
 
 /** FNV-1a, so a route string becomes a stable 32-bit seed. */
 function hash(s: string): number {
@@ -52,47 +48,44 @@ function rng(seed: number): () => number {
   };
 }
 
-function generate(seed: string): Terrain {
+/** Distance on a unit circle, so a hill near one edge continues past it. */
+function wrap(d: number): number {
+  const a = Math.abs(d) % 1;
+  return Math.min(a, 1 - a);
+}
+
+function generate(seed: string): string {
   const r = rng(hash(seed));
   const between = (lo: number, hi: number) => lo + r() * (hi - lo);
 
-  const hills = Array.from({ length: 6 + Math.floor(r() * 3) }, () => ({
-    cx: between(-0.05, 1.05),
-    cy: between(-0.05, 1.05),
-    sx: between(0.08, 0.22),
+  const hills = Array.from({ length: 7 + Math.floor(r() * 4) }, () => ({
+    cx: r(),
+    cy: r(),
+    sx: between(0.07, 0.18),
     sy: between(0.08, 0.2),
     a: between(0.3, 1),
   }));
-  const p = Array.from({ length: 6 }, () => between(0, Math.PI * 2));
+  const p = Array.from({ length: 6 }, () => between(0, TAU));
 
+  // Every term is periodic over the tile, so opposite edges have equal
+  // heights and the contours line up across the seam.
   const height = (x: number, y: number) => {
-    // A warp so hills are irregular rather than elliptical.
-    const wx = x + 0.035 * Math.sin(11 * y + p[0]!) + 0.02 * Math.sin(23 * y + p[1]!);
-    const wy = y + 0.035 * Math.sin(13 * x + p[2]!) + 0.02 * Math.sin(19 * x + p[3]!);
+    const wx = x + 0.03 * Math.sin(TAU * 2 * y + p[0]!) + 0.015 * Math.sin(TAU * 5 * y + p[1]!);
+    const wy = y + 0.03 * Math.sin(TAU * 2 * x + p[2]!) + 0.015 * Math.sin(TAU * 4 * x + p[3]!);
     let h = 0;
     for (const k of hills) {
-      const dx = (wx - k.cx) / k.sx;
-      const dy = (wy - k.cy) / k.sy;
+      const dx = wrap(wx - k.cx) / k.sx;
+      const dy = wrap(wy - k.cy) / k.sy;
       h += k.a * Math.exp(-(dx * dx + dy * dy));
     }
-    return h + 0.05 * Math.sin(7 * x + p[4]!) * Math.cos(6 * y + p[5]!);
+    return h + 0.05 * Math.sin(TAU * x + p[4]!) * Math.cos(TAU * y + p[5]!);
   };
 
-  // Where the map shows through: a few soft patches. None is centred on the
-  // top-left, which is where every page's heading and first rows are.
-  const patches = Array.from({ length: 3 }, () => {
-    let x = between(0.1, 1.05);
-    let y = between(0.1, 1.05);
-    if (x < 0.4 && y < 0.35) y += 0.45;
-    const s = between(30, 50);
-    return `radial-gradient(ellipse ${s.toFixed(0)}% ${(s * 1.25).toFixed(0)}% at ${(x * 100).toFixed(0)}% ${(y * 100).toFixed(0)}%, black 15%, transparent 100%)`;
-  });
-
-  return { contours: trace(height), mask: patches.join(', ') };
+  return trace(height);
 }
 
-/** Contour paths, one entry per level, bottom level first. */
-function trace(height: (x: number, y: number) => number): Contour[] {
+/** Every contour of the tile, as one path. */
+function trace(height: (x: number, y: number) => number): string {
   const w = COLS + 1;
   const v = new Float64Array(w * (ROWS + 1));
   let min = Infinity;
@@ -107,9 +100,9 @@ function trace(height: (x: number, y: number) => number): Contour[] {
   }
   const at = (i: number, j: number): number => v[j * w + i] ?? 0;
 
-  const out: Contour[] = [];
-  const lo = min + (max - min) * 0.08;
-  const hi = max - (max - min) * 0.03;
+  let out = '';
+  const lo = min + (max - min) * 0.06;
+  const hi = max - (max - min) * 0.04;
 
   for (let l = 0; l < LEVELS; l++) {
     const t = lo + ((hi - lo) * l) / (LEVELS - 1);
@@ -162,8 +155,8 @@ function trace(height: (x: number, y: number) => number): Contour[] {
       }
     }
 
-    // Join segments into lines: open ones first (they end at the border),
-    // then the closed loops that remain.
+    // Join segments into lines: open ones first (they end at the tile edge,
+    // where the neighbouring tile continues them), then closed loops.
     const used = new Set<string>();
     const walk = (start: string): Pt[] => {
       const chain = [start];
@@ -180,19 +173,18 @@ function trace(height: (x: number, y: number) => number): Contour[] {
       return chain.map((k) => pts.get(k) ?? [0, 0]);
     };
 
-    let d = '';
     const ends = [...adj.keys()].filter((k) => adj.get(k)?.length === 1);
     for (const k of [...ends, ...adj.keys()]) {
       if (used.has(k)) continue;
       const line = walk(k);
-      if (line.length >= 3) d += smooth(line);
+      if (line.length >= 2) out += smooth(line);
     }
-    out.push({ d, index: l % 5 === 4 });
   }
   return out;
 }
 
-/** A curve through the midpoints of a polyline, so traced steps read as terrain. */
+/** A curve through the midpoints of a polyline, so traced steps read as terrain.
+ *  Endpoints are kept exact, so lines still meet their neighbours at a seam. */
 function smooth(p: Pt[]): string {
   const f = (n: number) => n.toFixed(1);
   const pt = (i: number): Pt => p[i] ?? [0, 0];
@@ -206,47 +198,51 @@ function smooth(p: Pt[]): string {
   return d + `L${f(lx)} ${f(ly)}`;
 }
 
-const cache = new Map<string, Terrain>();
+const cache = new Map<string, string>();
 
+/**
+ * Place as the first child of a page root that has `position: relative` and
+ * `isolation: isolate`. It fills that root — its full scrolling height — and
+ * sits above the root's paper and below everything else.
+ */
 export function TopoBackground({ seed }: { seed: string }) {
-  const terrain = useMemo(() => {
+  const d = useMemo(() => {
     let t = cache.get(seed);
-    if (!t) {
+    if (t === undefined) {
       t = generate(seed);
       cache.set(seed, t);
     }
     return t;
   }, [seed]);
 
+  const id = `topo-${hash(seed).toString(36)}`;
+
   return (
     <svg
       aria-hidden="true"
-      viewBox={`0 0 ${COLS * CELL} ${ROWS * CELL}`}
-      preserveAspectRatio="xMidYMid slice"
       style={{
-        position: 'fixed',
+        position: 'absolute',
         inset: 0,
-        width: '100vw',
-        height: '100vh',
+        width: '100%',
+        height: '100%',
         zIndex: -1,
         pointerEvents: 'none',
-        opacity: 0.5,
-        maskImage: terrain.mask,
-        WebkitMaskImage: terrain.mask,
+        opacity: 0.35,
       }}
     >
-      {terrain.contours.map(({ d, index }, i) => (
-        <path
-          key={i}
-          d={d}
-          fill="none"
-          stroke={index ? 'var(--contour)' : 'var(--contour-line)'}
-          strokeWidth="var(--contour-line-width)"
-          vectorEffect="non-scaling-stroke"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      ))}
+      <defs>
+        <pattern id={id} width={COLS * CELL} height={ROWS * CELL} patternUnits="userSpaceOnUse">
+          <path
+            d={d}
+            fill="none"
+            stroke="var(--contour-line)"
+            strokeWidth="var(--contour-line-width)"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill={`url(#${id})`} />
     </svg>
   );
 }

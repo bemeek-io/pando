@@ -53,22 +53,23 @@ design system, which confines the contour map to four places (marketing hero, do
 empty states, 404) and says "never as wallpaper, never behind text". A console built strictly to
 that rule carried no trace of the brand, and the product owner chose to put the terrain behind it.
 
-The departure is bounded, which is what keeps it from being wallpaper:
+It covers the whole background, so what keeps it from reading as wallpaper is how quiet it is:
 
-- **Patches, not a sheet.** `console/src/ui/TopoBackground.tsx` spans the viewport but shows
-  through only a few soft patches, none centred on the top-left where a page's heading and first
-  rows are. It is behind the admin console and the launcher; the sign-in screen keeps its own
-  figure.
-- **Faint.** Half opacity, and index contours at the ordinary line width, set apart by colour
-  alone.
-- **Different ground per page.** Hills, warp and patch positions come from a seed: the section, and
-  the app when there is one. Each screen has its own map, the tabs of one app share that app's map,
-  and the same seed always gives the same map.
+- **Extremely faint, and even.** One colour (`--contour-line`), one line width, one opacity (0.35)
+  across the whole thing. No index contours and no fading in or out — a darker line or a patch
+  that fades draws the eye, which is exactly what a background must not do.
+- **Part of the page.** `console/src/ui/TopoBackground.tsx` fills its page root and scrolls with
+  the content; pinned to the window it looked like a layer floating over the product. It is behind
+  the admin console and the launcher; the sign-in screen keeps its own figure.
+- **Seamless at any length.** It is a tile, and the terrain is periodic — hills wrap round the
+  tile's edges and the warp uses whole periods — so contours meet across every seam. The tile is
+  1600 × 1200, so a repeat is rarely in view at once.
+- **Different ground per page.** Hills and warp come from a seed: the section, and the app when
+  there is one. Each screen has its own map, the tabs of one app share that app's map, and the same
+  seed always gives the same map.
 - **Real terrain, not a pattern.** A height field of irregular hills, contoured by marching squares
-  and smoothed into curves. Lines are level sets of one surface, so they never cross. Every fifth
-  is an index contour.
-- **Tokens only.** `--contour` and `--contour-line`, so the night-survey theme follows and nothing
-  new enters the palette.
+  and smoothed into curves. Lines are level sets of one surface, so they never cross.
+- **Tokens only.** Nothing new enters the palette, and the night-survey theme follows.
 - **No frame.** Pages are not bordered or boxed; `ui/Sheet.tsx` is only the shared heading-and-
   content layout, uncapped to match `ui/layout.ts`.
 

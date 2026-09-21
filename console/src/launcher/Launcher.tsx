@@ -37,7 +37,7 @@ export function Launcher({
   });
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--paper)', isolation: 'isolate' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--paper)', position: 'relative', isolation: 'isolate' }}>
       <TopoBackground seed="launcher" />
       <header
         style={{

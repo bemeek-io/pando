@@ -132,7 +132,15 @@ export function AdminConsole({
   return (
     // isolation makes this the stacking context, so the terrain's negative
     // z-index puts it above the paper and below everything else.
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--paper)', isolation: 'isolate' }}>
+    <div
+      style={{
+        display: 'flex',
+        minHeight: '100vh',
+        background: 'var(--paper)',
+        position: 'relative',
+        isolation: 'isolate',
+      }}
+    >
       {/* A different map per screen; the tabs of one app share its map. */}
       <TopoBackground seed={`${section}/${selectedID ?? ''}`} />
       <SidebarNav
