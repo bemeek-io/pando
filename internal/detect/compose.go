@@ -237,7 +237,11 @@ func (c *composeImport) rejectIncompatible() error {
 			// it in the container at start, so the app runs the way its author
 			// wrote it. What cannot be carried is refused here: too big to
 			// belong in a spec, or not text.
-			if c.isFile(mount.hostPath) {
+			//
+			// Unless the service builds from a context that already contains
+			// it, in which case there is nothing to carry: the file is in the
+			// image. See files below.
+			if c.isFile(mount.hostPath) && !c.inBuildContext(name, mount.hostPath) {
 				if why, ok := c.uncarryable(mount.hostPath); !ok {
 					found = append(found, rejection{name, "volume " + mount.raw, why})
 				}
@@ -672,6 +676,25 @@ func (c *composeImport) files(name string, s composeService) []spec.File {
 		if m.hostPath == "" || !c.isFile(m.hostPath) {
 			continue
 		}
+
+		// A file inside this service's own build context is already in the
+		// image the build produces. The mount is there so edits show up
+		// without rebuilding — `./backend/package.json:/code/package.json`
+		// beside `build: backend` — and under Pando the image is built from
+		// the pinned commit, so dropping it loses nothing and carrying it
+		// would ship a second copy of a file the build already placed.
+		//
+		// It is also what keeps a `package-lock.json` from refusing an import:
+		// a lockfile is far too big to travel in a spec, and it never needed
+		// to.
+		if c.inBuildContext(name, m.hostPath) {
+			c.rewrote(name, "volume "+m.raw,
+				m.hostPath+" is inside this service's build context, so it is already in the "+
+					"image the build produces. The mount showed edits without rebuilding; Pando "+
+					"deploys a built image, and a deploy is how a change reaches this app.")
+			continue
+		}
+
 		content, ok := c.read(m.hostPath)
 		if !ok {
 			continue
@@ -685,6 +708,25 @@ func (c *composeImport) files(name string, s composeService) []spec.File {
 				"until this app is read again.")
 	}
 	return files
+}
+
+// inBuildContext reports whether a path is inside the build context of the
+// service that mounts it — which is to say, whether the image already has it.
+func (c *composeImport) inBuildContext(service, hostPath string) bool {
+	s := c.file.Services[service]
+	if s.Build == nil {
+		return false
+	}
+
+	context, _, _ := buildFields(s.Build)
+	dir := path.Clean(strings.TrimPrefix(strings.TrimSpace(context), "./"))
+	if dir == "" || dir == "." {
+		// The whole repository is the context, so everything in it is.
+		return true
+	}
+
+	file := path.Clean(strings.TrimPrefix(hostPath, "./"))
+	return strings.HasPrefix(file, dir+"/")
 }
 
 // read returns a repository file's contents, if it is one Pando can carry.

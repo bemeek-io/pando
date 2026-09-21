@@ -29,6 +29,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
@@ -268,12 +269,43 @@ type copyIn struct {
 	body io.Reader
 }
 
+// ensureImage fetches the scanner image if it is not already here.
+func (a *Adapter) ensureImage(ctx context.Context) error {
+	if _, err := a.cli.ImageInspect(ctx, a.config.Image); err == nil {
+		return nil
+	}
+
+	rc, err := a.cli.ImagePull(ctx, a.config.Image, image.PullOptions{})
+	if err != nil {
+		return errs.Wrap(errs.AdapterFailed,
+			"Could not fetch the scanner image "+a.config.Image+".", err).
+			WithRemedy("The host needs to reach the registry once, or the image can be pulled " +
+				"by hand and the adapter pointed at a mirror.")
+	}
+	defer func() { _ = rc.Close() }()
+
+	// Drained, because a pull that is not read to the end is a pull that does
+	// not finish.
+	_, _ = io.Copy(io.Discard, rc)
+	return nil
+}
+
 // run starts the scanner and returns its stdout.
 func (a *Adapter) run(ctx context.Context, cmd []string, file copyIn, archive io.Reader) ([]byte, error) {
 	return a.runWith(ctx, nil, cmd, file, archive)
 }
 
 func (a *Adapter) runWith(ctx context.Context, entrypoint, cmd []string, file copyIn, archive io.Reader) ([]byte, error) {
+	// The scanner's own image, fetched if this host does not have it yet.
+	//
+	// It is pinned by digest, so fetching it is not a decision about what to
+	// run — the bytes are the ones this version of Pando was built against.
+	// Without this the first scan on a fresh install failed with the daemon's
+	// "No such image", which reads as though the scanner were misconfigured.
+	if err := a.ensureImage(ctx); err != nil {
+		return nil, err
+	}
+
 	created, err := a.cli.ContainerCreate(ctx,
 		&container.Config{
 			Image:        a.config.Image,
