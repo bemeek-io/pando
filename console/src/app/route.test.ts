@@ -16,6 +16,10 @@ describe('route', () => {
     expect(parse(format(route))).toEqual(route);
   });
 
+  it('still opens the adapters screen at its old address', () => {
+    expect(parse('/admin/installation')).toEqual({ view: 'admin', section: 'adapters' });
+  });
+
   it('keeps settings under the reserved /admin prefix', () => {
     // A top-level /settings would be a slug no app could have (R-023).
     expect(format({ view: 'settings', section: 'apps' })).toBe('/admin/settings');

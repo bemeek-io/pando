@@ -136,7 +136,7 @@ export function AdminConsole({
   // screen answering both is how an authorization model turns into a list of
   // people with special powers (R-078).
   if (canView || canManageUsers) items.push({ value: 'identity', label: 'Groups and roles' });
-  if (canView) items.push({ value: 'installation', label: 'Installation' });
+  if (canView) items.push({ value: 'adapters', label: 'Adapters' });
   if (canView || canManagePolicy) items.push({ value: 'policy', label: 'Policy' });
   if (canManageBackups) items.push({ value: 'backups', label: 'Backups' });
   if (canReadAudit) items.push({ value: 'audit', label: 'Audit log' });
@@ -261,7 +261,7 @@ export function AdminConsole({
       <main style={{ flex: 1, minWidth: 0 }}>
         {section === 'accounts' && <Accounts />}
         {section === 'identity' && <Identity canEdit={canManageUsers} />}
-        {section === 'installation' && <Installation />}
+        {section === 'adapters' && <Installation />}
         {section === 'policy' && <Policy canEdit={canManagePolicy} />}
         {section === 'backups' && <Backups />}
         {section === 'audit' && <Audit />}

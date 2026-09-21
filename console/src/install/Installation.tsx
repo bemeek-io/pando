@@ -38,7 +38,7 @@ export function Installation() {
   const rows = normalize(adapters.data);
 
   return (
-    <Screen heading="Installation">
+    <Screen heading="Adapters">
       {adapters.isError && <Quiet>{messageOf(adapters.error)}</Quiet>}
 
       <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>Adapters</h4>

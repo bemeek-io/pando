@@ -18,7 +18,7 @@ export type Section =
   | 'api'
   | 'accounts'
   | 'identity'
-  | 'installation'
+  | 'adapters'
   | 'policy'
   | 'backups'
   | 'audit';
@@ -38,7 +38,7 @@ const SECTIONS: Section[] = [
   'api',
   'accounts',
   'identity',
-  'installation',
+  'adapters',
   'policy',
   'backups',
   'audit',
@@ -55,6 +55,10 @@ export function parse(pathname: string): Route {
   if (parts[1] === 'apps' && parts[2]) {
     return { view: 'admin', section: 'apps', appID: parts[2], tab: parts[3] };
   }
+
+  // The adapters screen was called Installation, and a link to it may still
+  // say so.
+  if (parts[1] === 'installation') return { view: 'admin', section: 'adapters' };
 
   const section = SECTIONS.find((s) => s === parts[1]);
   return { view: 'admin', section: section ?? 'apps' };
