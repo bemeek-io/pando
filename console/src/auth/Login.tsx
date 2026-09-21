@@ -11,10 +11,11 @@
 
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Button, ContourMap, Input, Logo } from '@design';
+import { Button, Input, Logo } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 
+import { TopoBackground } from '../ui/TopoBackground';
 import { returnTo } from './return-to';
 
 export function Login() {
@@ -193,10 +194,10 @@ export function ChangePassword({ username }: { username?: string }) {
  * places the contour figure appears.
  *
  * So the one screen every person sees before anything else carried no trace of
- * the brand's single bold idea. It gets the figure at docs-header scale — 320px,
- * no collar — which is the system's recipe for the quiet page that opens a
- * section, and this is the console's front door. Text stays left-aligned beneath
- * it; the contour is beside the form, never behind it.
+ * the brand's single bold idea. It gets the whole map: the same generated
+ * terrain that sits behind the console, at full strength. The console keeps it
+ * extremely quiet because a table has to be read over it; this screen has a
+ * heading and two fields, and can carry far more.
  */
 function Frame({
   heading = 'Sign in to Pando',
@@ -208,27 +209,19 @@ function Frame({
   children: React.ReactNode;
 }) {
   return (
-    // Wrapping flex rather than a media query: the map sits beside the form
-    // when there is room and above it when there is not, and a narrow window
-    // needs no breakpoint to do the right thing.
-    //
-    // The page's own centering box does the wrapping. Nesting a second flex
-    // container inside it does not work: as a flex item that box resolves to
-    // its max-content width, which for a multi-line container is a fraction of
-    // what its children need, and the two wrap on every window size.
     <div
       style={{
         minHeight: '100vh',
         background: 'var(--paper)',
+        position: 'relative',
+        isolation: 'isolate',
         display: 'flex',
-        flexWrap: 'wrap-reverse',
         alignItems: 'center',
-        alignContent: 'center',
         justifyContent: 'center',
-        gap: 'var(--space-8)',
         padding: 'var(--space-5)',
       }}
     >
+      <TopoBackground seed="sign-in" strength="full" />
       <div style={{ flex: '0 1 36ch', minWidth: 0 }}>
         <div style={{ marginBottom: 'var(--space-6)' }}>
           <Logo size={24} />
@@ -247,8 +240,6 @@ function Frame({
         )}
         <div style={{ marginTop: 'var(--space-6)' }}>{children}</div>
       </div>
-
-      <ContourMap size={320} rings={6} />
     </div>
   );
 }

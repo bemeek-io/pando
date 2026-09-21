@@ -60,7 +60,10 @@ It covers the whole background, so what keeps it from reading as wallpaper is ho
   that fades draws the eye, which is exactly what a background must not do.
 - **Part of the page.** `console/src/ui/TopoBackground.tsx` fills its page root and scrolls with
   the content; pinned to the window it looked like a layer floating over the product. It is behind
-  the admin console and the launcher; the sign-in screen keeps its own figure.
+  the admin console, the launcher and the sign-in screens.
+- **Stronger where nothing competes.** The sign-in and first-run password screens use the `full`
+  strength — 20 levels at 0.8 opacity against the console's 12 at 0.35. They carry a heading and
+  two fields; the console carries tables that must be read over the map.
 - **Seamless at any length.** It is a tile, and the terrain is periodic — hills wrap round the
   tile's edges and the warp uses whole periods — so contours meet across every seam. The tile is
   1600 × 1200, so a repeat is rarely in view at once.
@@ -77,10 +80,7 @@ Where the contour figure itself appears, it is by the system's existing recipe: 
 states. The 404 figure (320px, collared, summit mark absent) is **not**
 used for an app whose record fails to load: that figure means "the thing you came for is not here",
 and such an app is in the list — the screen shows the server's own reason (R-105) and offers to
-delete it instead. The sign-in screen is the one addition, at the docs-header
-recipe (320px, no collar). It is defensible because the supplied logo turned out to be the "pando."
-wordmark rather than the three nested contours the spec described, which removed the logo from the
-contour's list of places; without this the first screen anyone sees has no brand on it at all.
+delete it instead.
 
 ### 1.3 Screens that carry requirement weight
 

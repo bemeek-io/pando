@@ -11,9 +11,11 @@
 // periodic — hills wrap around the tile's edges and the warp uses whole
 // periods — so the lines meet across every seam and there is no edge to see.
 //
-// Extremely quiet by design: one colour, one line width, one opacity across
-// the whole thing, and no index contours. Each page gets its own terrain from a
-// seed (the section, and the app when there is one); the same seed always
+// One colour, one line width, one opacity across the whole thing, and no index
+// contours. Two strengths: `quiet`, behind working screens, where it must never
+// compete with a table; and `full`, on the sign-in screens, which have nothing
+// else on them and can carry the whole map. Each page gets its own terrain from
+// a seed (the section, and the app when there is one); the same seed always
 // gives the same map.
 
 import { useMemo } from 'react';
@@ -22,8 +24,13 @@ import { useMemo } from 'react';
 const COLS = 160;
 const ROWS = 120;
 const CELL = 10;
-const LEVELS = 12;
 const TAU = Math.PI * 2;
+
+const STRENGTH = {
+  quiet: { levels: 12, opacity: 0.35 },
+  full: { levels: 20, opacity: 0.8 },
+} as const;
+type Strength = keyof typeof STRENGTH;
 
 type Pt = [number, number];
 
@@ -54,7 +61,7 @@ function wrap(d: number): number {
   return Math.min(a, 1 - a);
 }
 
-function generate(seed: string): string {
+function generate(seed: string, levels: number): string {
   const r = rng(hash(seed));
   const between = (lo: number, hi: number) => lo + r() * (hi - lo);
 
@@ -81,11 +88,11 @@ function generate(seed: string): string {
     return h + 0.05 * Math.sin(TAU * x + p[4]!) * Math.cos(TAU * y + p[5]!);
   };
 
-  return trace(height);
+  return trace(height, levels);
 }
 
 /** Every contour of the tile, as one path. */
-function trace(height: (x: number, y: number) => number): string {
+function trace(height: (x: number, y: number) => number, levels: number): string {
   const w = COLS + 1;
   const v = new Float64Array(w * (ROWS + 1));
   let min = Infinity;
@@ -104,8 +111,8 @@ function trace(height: (x: number, y: number) => number): string {
   const lo = min + (max - min) * 0.06;
   const hi = max - (max - min) * 0.04;
 
-  for (let l = 0; l < LEVELS; l++) {
-    const t = lo + ((hi - lo) * l) / (LEVELS - 1);
+  for (let l = 0; l < levels; l++) {
+    const t = lo + ((hi - lo) * l) / (levels - 1);
     const pts = new Map<string, Pt>();
     const adj = new Map<string, string[]>();
 
@@ -205,17 +212,26 @@ const cache = new Map<string, string>();
  * `isolation: isolate`. It fills that root — its full scrolling height — and
  * sits above the root's paper and below everything else.
  */
-export function TopoBackground({ seed }: { seed: string }) {
+export function TopoBackground({
+  seed,
+  strength = 'quiet',
+}: {
+  seed: string;
+  strength?: Strength;
+}) {
+  const { levels, opacity } = STRENGTH[strength];
+  const key = `${seed}|${levels}`;
+
   const d = useMemo(() => {
-    let t = cache.get(seed);
+    let t = cache.get(key);
     if (t === undefined) {
-      t = generate(seed);
-      cache.set(seed, t);
+      t = generate(seed, levels);
+      cache.set(key, t);
     }
     return t;
-  }, [seed]);
+  }, [key, seed, levels]);
 
-  const id = `topo-${hash(seed).toString(36)}`;
+  const id = `topo-${hash(key).toString(36)}`;
 
   return (
     <svg
@@ -227,7 +243,7 @@ export function TopoBackground({ seed }: { seed: string }) {
         height: '100%',
         zIndex: -1,
         pointerEvents: 'none',
-        opacity: 0.35,
+        opacity,
       }}
     >
       <defs>
