@@ -13,6 +13,8 @@ export { ContourMap } from './components/brand/ContourMap';
 export type { ContourMapProps } from './components/brand/ContourMap';
 export { Logo } from './components/brand/Logo';
 export type { LogoProps } from './components/brand/Logo';
+export { MapCollar } from './components/brand/MapCollar';
+export type { MapCollarProps } from './components/brand/MapCollar';
 
 export { CodeBlock } from './components/code/CodeBlock';
 export type { CodeBlockProps, CodeLine } from './components/code/CodeBlock';

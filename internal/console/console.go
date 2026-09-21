@@ -55,10 +55,20 @@ func Handler() (http.Handler, bool) {
 
 		// Anything else is a console route, which the client router owns.
 		// Serving index.html for it is what makes a deep link work on a reload.
+		//
+		// index.html carries no-cache however it is reached. It used to get the
+		// header only on the fallback path, so a request for /index.html — the
+		// one URL that names the file directly — was served with no
+		// Cache-Control at all, and an upgraded Pando could serve an old
+		// console from a browser cache indefinitely. The condition is about
+		// what is being served, not about which branch reached it.
 		if _, err := fs.Stat(root, clean); err != nil || clean == "." {
-			w.Header().Set("Cache-Control", "no-cache")
 			r = r.Clone(r.Context())
 			r.URL.Path = "/"
+			clean = "index.html"
+		}
+		if clean == "index.html" {
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		files.ServeHTTP(w, r)
 	}), true

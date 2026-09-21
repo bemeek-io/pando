@@ -23,6 +23,7 @@ import { Button, Dialog, Input, Select, Table, Tag } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 import type { GrantRow } from '@api/types.gen';
+import { MEASURE } from '../ui/layout';
 
 interface GrantsResponse {
   grants: GrantRow[] | null;
@@ -67,7 +68,7 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
   const allowed = grants.data?.anonymous_allowed ?? true;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: 'var(--console-max)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: MEASURE }}>
       <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
         {/* Both planes are in this table, so the heading cannot claim only one
             of them. "Who can open this app" over a row that says `owner` reads
@@ -76,8 +77,8 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
         <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Who has access</h4>
         <Table
           columns={[
-            { key: 'who', header: 'Who', width: 'minmax(0,2fr)', render: who },
-            { key: 'access', header: 'Access', width: 'minmax(0,1fr)', render: access },
+            { key: 'who', header: 'Who', width: 'minmax(0,44ch)', render: who },
+            { key: 'access', header: 'Access', width: 'minmax(0,28ch)', render: access },
             {
               key: 'actions',
               header: '',

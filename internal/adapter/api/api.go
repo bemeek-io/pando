@@ -38,6 +38,14 @@ type RuntimeCapabilities struct {
 	SupportsExec              bool
 	SupportsMultipleWorkloads bool
 
+	// SupportsCarriedFiles is whether the runtime can place a configuration
+	// file inside a workload before it starts (spec.File).
+	//
+	// Data, never a type assertion (R-254): a planner that cannot see the
+	// answer cannot produce a readable plan-time error, and an app whose
+	// Caddyfile silently did not arrive starts and serves the wrong thing.
+	SupportsCarriedFiles bool
+
 	// SupportsPrivateNetwork is required for R-026. An adapter without it is
 	// unusable — it would place workloads somewhere other apps could reach.
 	SupportsPrivateNetwork bool
@@ -318,6 +326,7 @@ type WorkloadPlan struct {
 	Env map[string]secret.Value
 
 	Mounts    []MountPlan
+	Files     []FilePlan
 	Ports     []PortPlan
 	DependsOn []string
 	Health    *HealthPlan
@@ -335,6 +344,19 @@ type MountPlan struct {
 	VolumeID string
 	Path     string
 	ReadOnly bool
+}
+
+// FilePlan is a configuration file to place in the workload before it starts.
+//
+// Carried in the spec and replayed here rather than fetched from anywhere: the
+// spec is the sole record of how an app runs (R-020). A runtime that cannot
+// place a file says so through its capabilities, and the planner refuses before
+// anything is created (R-254) — a workload started without its configuration is
+// the failure that looks like success.
+type FilePlan struct {
+	Path    string
+	Content string
+	Mode    int
 }
 
 // PortPlan is a port to expose within the bundle network.

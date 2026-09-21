@@ -20,8 +20,26 @@ before a re-sync, which must not overwrite them.
 
 ### Local divergence, pending upstream
 
-One fix has been made here and has **not** gone back to the design project. A
-re-sync will revert it, so push it first.
+Two changes have been made here and have **not** gone back to the design project.
+A re-sync will revert them, so push them first.
+
+- `components/brand/MapCollar.jsx` (new, with its `.d.ts` and `.prompt.md`),
+  exported from `index.js`/`index.d.ts`, plus the `ContourMap.jsx` refactor that
+  makes it the one definition of the collar, and the `readme.md` entry under
+  *Intentional additions*.
+
+  This one **is** a change to the visual language, so it is the kind that
+  normally waits. It was made here because the console needed an answer the
+  system did not have: the contour figure is confined to four places, none of
+  them a console screen, so a console built strictly to the rules carried no
+  trace of the brand at all. The collar — the neatline, corner ticks and
+  marginal data the spec describes as part of the hero figure — is the topo
+  language's other half, and it was hard-coded inside `ContourMap`'s hero mode
+  where nothing else could reach it. Pulling it out changes no rendered pixel of
+  the hero: `ContourMap collar` composes `MapCollar` and the markup is the same.
+
+  Push this upstream before a re-sync, and see `docs/design/08-console-and-plan.md`
+  for the reasoning in full.
 
 - `components/feedback/Dialog.jsx` — the scrim was `position: absolute`, which
   sizes to the initial containing block. It covered one viewport-height of the
@@ -30,9 +48,9 @@ re-sync will revert it, so push it first.
   `aria-modal="true"`. Now `position: fixed`, with `overflowY: auto` so a dialog
   taller than the viewport can reach its own footer, and Escape closes it.
 
-This is a correctness bug rather than a change to the visual language, which is
-why it was fixed here rather than waiting — but it is still a divergence, and the
-rule above is the rule.
+The `Dialog` change is a correctness bug rather than a change to the visual
+language, which is why it was fixed here rather than waiting — but both are still
+divergences, and the rule above is the rule.
 
 **Still missing, and not fixed here:** `Dialog` traps no focus. `aria-modal` says
 it does. Tab still walks the page behind it, which for somebody using a keyboard

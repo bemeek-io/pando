@@ -1,0 +1,12 @@
+-- What each part of a multi-service app ran.
+--
+-- image_ref holds one image, which is the whole story for an app built from one
+-- Dockerfile and wrong for a compose app: those build per service. The
+-- reconciler restores a missing workload from the recorded image, so with one
+-- column it restored every workload from the primary's image — and for crewmate
+-- that meant the application container was replaced by a second copy of its
+-- Caddy proxy, which Pando then reported as healthy.
+--
+-- {"app": {"ref": "...", "digest": "sha256:..."}}. Null for a deployment from
+-- before this column, and for one that built nothing.
+ALTER TABLE deployments ADD COLUMN workload_images jsonb;

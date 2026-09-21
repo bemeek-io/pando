@@ -80,6 +80,17 @@ func Classify(want api.BundlePlan, observed api.ObservedBundle, in Inputs) Drift
 		found, exists := byName[w.Name]
 
 		switch {
+		case (!exists || !found.Present) && w.Image == "":
+			// Missing, and Pando cannot name what it ran. This is a workload
+			// built separately by a deployment that recorded nothing per
+			// workload — the old single-image record. Recreating it would mean
+			// choosing an image, and the only one to hand belongs to a
+			// different part of the app.
+			d.ReportOnly = append(d.ReportOnly, Difference{
+				Workload: w.Name, Kind: DriftWorkloadMissing,
+				Detail: "it is not running, and Pando has no record of the image it ran — deploy this app again",
+			})
+
 		case !exists || !found.Present:
 			// Recreate. Nothing is being destroyed: it is already gone.
 			d.Reconcilable = append(d.Reconcilable, Difference{
@@ -93,11 +104,12 @@ func Classify(want api.BundlePlan, observed api.ObservedBundle, in Inputs) Drift
 				Detail: exitDetail(found),
 			})
 
-		case in.ExpectedDigest != "" && found.ImageDigest != "" && found.ImageDigest != in.ExpectedDigest:
+		case in.ExpectedDigests[w.Name] != "" && found.ImageDigest != "" &&
+			found.ImageDigest != in.ExpectedDigests[w.Name]:
 			d.Reconcilable = append(d.Reconcilable, Difference{
 				Workload: w.Name, Kind: DriftWrongImage,
 				Detail: fmt.Sprintf("running %s, expected %s",
-					shortDigest(found.ImageDigest), shortDigest(in.ExpectedDigest)),
+					shortDigest(found.ImageDigest), shortDigest(in.ExpectedDigests[w.Name])),
 			})
 		}
 	}
@@ -172,9 +184,17 @@ func (d *Drift) appendVolumeDrift(want api.BundlePlan, observed api.ObservedBund
 
 // Inputs are the facts Classify needs that are not in the bundle plan.
 type Inputs struct {
-	// ExpectedDigest is the image the last successful deployment ran. Empty
-	// when unknown, which makes image drift undetectable rather than making
-	// every workload look wrong.
+	// ExpectedDigests is what each workload ran, by name. A workload with no
+	// entry is not checked: unknown is not drift.
+	//
+	// Per workload because an app's parts can be built separately. One digest
+	// compared against every workload made every service but one look wrong
+	// forever, and "correcting" that replaced them with the primary's image.
+	ExpectedDigests map[string]string
+
+	// ExpectedDigest is the image the last successful deployment ran, which is
+	// the primary workload's. Kept for the single-image case and for the
+	// report text; the per-workload map decides.
 	ExpectedDigest string
 
 	// AppliedEnvHash and CurrentEnvHash stand in for environment observation
