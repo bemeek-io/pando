@@ -122,12 +122,33 @@ List the apps you can manage
 pando app list
 ```
 
+#### `app restart`
+
+Restart an app's workloads, changing nothing
+
+```
+pando app restart <app>
+```
+
+Restarts the workloads in place.
+
+Nothing is rebuilt and nothing is re-read: this is the same version, started again.
+To ship a change, deploy.
+
 #### `app show`
 
 Show an app
 
 ```
 pando app show <app>
+```
+
+#### `app start`
+
+Start an app that was stopped
+
+```
+pando app start <app>
 ```
 
 #### `app status`
@@ -141,6 +162,21 @@ pando app status <app>
 What each part of an app is doing right now.
 
 An app can be made of several parts, and "degraded" is the app's answer for all of them together. This is the per-part answer: which are running, which are restarting and how many times, and which health check is failing. The names are also what `pando logs --workload` takes.
+
+#### `app stop`
+
+Stop an app without deleting it
+
+```
+pando app stop <app>
+```
+
+Stops an app.
+
+Nothing is removed: its storage, its configuration and its address are kept, and
+`pando app start` brings back the version that was running. A stopped app stays
+stopped — it is the app's desired state, not a one-off act, so it survives Pando
+itself restarting.
 
 ### `backup`
 

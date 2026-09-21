@@ -15,7 +15,7 @@ import { InlineWarning } from '../ui/InlineWarning';
 import { Parts } from './Parts';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
-import { deployLabel, deployStatus } from './Logs';
+import { deployLabel, deployStatus } from '../ui/deploys';
 import { Security } from './Security';
 
 interface SpecRevision {
@@ -147,8 +147,8 @@ export function AppOverview({
             {latest ? (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                 <StatusIndicator
-                  status={deployStatus(latest.status)}
-                  label={`${deployLabel(latest.status)} ${relative(latest.finished_at ?? latest.started_at)}`}
+                  status={deployStatus(latest.status, latest.result_state)}
+                  label={`${deployLabel(latest.status, latest.result_state)} ${relative(latest.finished_at ?? latest.started_at)}`}
                 />
                 <Button variant="ghost" onClick={() => onGo('logs')}>
                   Open logs

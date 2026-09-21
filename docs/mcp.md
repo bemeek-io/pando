@@ -50,5 +50,8 @@ boundary (O-12), and offering a tool policy will refuse wastes the agent's turn.
 | `pando_plan` | Show what a deploy would do, without doing it. Side-effect free, so it is safe to call after any change to check the change is deployable. | `app_id` |
 | `pando_deploy` | Deploy an app. Returns once the deployment has been accepted, not once it is running. | `app_id`, `idempotency_key` (optional) |
 | `pando_get_logs` | Read an app's recent logs. An app can be made of several parts — a web service, a worker, a database it brought with it — and each has its own log. Without `workload` this is the primary part, the one the app's address resolves to; pando_get_status lists the names. | `app_id`, `workload` (optional) |
+| `pando_stop_app` | Stop an app without deleting it. Its storage, configuration and address are kept, and it stays stopped until something starts it again. | `app_id` |
+| `pando_start_app` | Start an app that was stopped, bringing back the version that was running. | `app_id` |
+| `pando_restart_app` | Restart an app's workloads in place. Nothing is rebuilt and nothing is re-read — the same version, started again. | `app_id` |
 | `pando_get_status` | What an app is doing right now: running, degraded, failed, and why — including each part separately, so a single part that is crash-looping is visible rather than averaged into one word for the app. | `app_id` |
 

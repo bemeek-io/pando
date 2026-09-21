@@ -226,6 +226,44 @@ var toolList = []tool{
 		},
 	},
 	{
+		Name: "pando_stop_app",
+		Description: "Stop an app without deleting it. Its storage, configuration and address " +
+			"are kept, and it stays stopped until something starts it again.",
+		Schema: schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "app_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "POST", appPath(id, "/stop"), map[string]any{}, nil
+		},
+	},
+	{
+		Name:        "pando_start_app",
+		Description: "Start an app that was stopped, bringing back the version that was running.",
+		Schema:      schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "app_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "POST", appPath(id, "/start"), map[string]any{}, nil
+		},
+	},
+	{
+		Name: "pando_restart_app",
+		Description: "Restart an app's workloads in place. Nothing is rebuilt and nothing is " +
+			"re-read — the same version, started again.",
+		Schema: schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "app_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "POST", appPath(id, "/restart"), map[string]any{}, nil
+		},
+	},
+	{
 		Name: "pando_get_status",
 		Description: "What an app is doing right now: running, degraded, failed, and why — " +
 			"including each part separately, so a single part that is crash-looping is " +

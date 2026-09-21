@@ -33,6 +33,7 @@ import { AddApp } from './AddApp';
 import { Reference } from './Reference';
 import { DeleteApp } from './DeleteApp';
 import { DeployButton } from './DeployButton';
+import { Lifecycle } from './Lifecycle';
 import type { Route, Section } from '../app/route';
 import { ThemeToggle } from '../ui/ThemeToggle';
 import { MEASURE } from '../ui/layout';
@@ -432,6 +433,11 @@ function AppScreen({
                 }
               />
             )}
+
+            {/* Stopping is the thing somebody reaches for when they would
+                otherwise delete: it keeps the storage, the configuration and
+                the address, and starting brings back what was running. */}
+            <Lifecycle app={app.data} />
 
             {/* In the header rather than on Settings: an app whose source could
                 not be fetched has no pinned spec and therefore no Settings tab,

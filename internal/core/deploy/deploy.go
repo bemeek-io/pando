@@ -365,6 +365,12 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 			return fail("commit", err)
 		}
 	}
+	// What the app was doing when this finished, which is a different question
+	// from whether the deploy worked — and the one somebody reading a list of
+	// deploys is asking.
+	if err := r.deploys.SetResultState(ctx, dep.ID, newState); err != nil {
+		return err
+	}
 	if err := r.deploys.Finish(ctx, dep.ID, state.DeploySucceeded, "", ""); err != nil {
 		return err
 	}

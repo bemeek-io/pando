@@ -897,3 +897,28 @@ that was actually crash-looping had no screen at all. The console has a picker,
 
 All four surfaces move together, because R-261 says they must: the console's
 Parts table, `pando app status`, `pando_get_status`, and the API they all read.
+
+## Stopping an app, and a deploy history that says what happened
+
+**The only way to take an app down was to delete it.** `POST /apps/{id}/start`,
+`/stop` and `/restart` have existed since the lifecycle handlers were written
+and no surface called any of them — so the control somebody reaches for when an
+app is misbehaving was the one that also asks what to do with its data and
+cannot be undone. The console has Stop and Start in the app header beside
+Deploy, the CLI has `pando app stop|start|restart`, and MCP has the three tools.
+Stop is desired state rather than an act, so a stopped app stays stopped across
+a restart of Pando itself (design 05).
+
+The confirmation says the thing that makes it different from Delete: nothing is
+removed, the storage and the address are kept, and starting brings back the
+version that was running.
+
+**And "Deployed" was a true answer to a question nobody asked.** crewmate's
+history read Deployed, Deployed, Deployed for an app that had never once served
+a request. The deploy's status says whether Pando did the work — built, applied,
+routed — and it did; what the reader wants to know is whether the app came up.
+The deploy already knows: it waits for health and pins the app as `degraded`
+when it does not arrive. That state is recorded on the deployment now, and the
+list reads "Deployed, not healthy" with the same symbol a degraded app carries
+everywhere else. A deploy from before the column is unchanged, because repainting
+an app's whole history on an upgrade would be its own lie.

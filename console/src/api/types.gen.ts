@@ -42,6 +42,7 @@ export interface Deployment {
   spec_id: string;
   trigger: string;
   status: string;
+  result_state?: string;
   error_code?: string;
   error_detail?: string;
   started_at: string;

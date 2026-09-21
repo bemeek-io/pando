@@ -264,6 +264,66 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 	})
 
 	cmd.AddCommand(&cobra.Command{
+		Use:   "stop <app>",
+		Short: "Stop an app without deleting it",
+		Long: "Stops an app.\n\n" +
+			"Nothing is removed: its storage, its configuration and its address are kept, and\n" +
+			"`pando app start` brings back the version that was running. A stopped app stays\n" +
+			"stopped — it is the app's desired state, not a one-off act, so it survives Pando\n" +
+			"itself restarting.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("POST", "/apps/"+args[0]+"/stop", map[string]any{}, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Stopping %s. `pando app start %s` brings it back.\n",
+				args[0], args[0])
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "start <app>",
+		Short: "Start an app that was stopped",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("POST", "/apps/"+args[0]+"/start", map[string]any{}, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Starting %s.\n", args[0])
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "restart <app>",
+		Short: "Restart an app's workloads, changing nothing",
+		Long: "Restarts the workloads in place.\n\n" +
+			"Nothing is rebuilt and nothing is re-read: this is the same version, started again.\n" +
+			"To ship a change, deploy.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("POST", "/apps/"+args[0]+"/restart", map[string]any{}, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Restarting %s.\n", args[0])
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
 		Use:   "status <app>",
 		Short: "What each part of an app is doing right now",
 		Long: "What each part of an app is doing right now.\n\n" +

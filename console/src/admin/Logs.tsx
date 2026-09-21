@@ -20,6 +20,7 @@ import type { App, Deployment } from '@api/types.gen';
 import { Quiet, messageOf } from '../install/Accounts';
 import { MEASURE } from '../ui/layout';
 import { Parts, useParts, labelFor } from './Parts';
+import { deployLabel, deployStatus } from '../ui/deploys';
 
 /**
  * A log, at a height that leaves the rest of the page reachable.
@@ -198,7 +199,10 @@ export function Logs({ app, workload }: { app: App; workload?: string }) {
                 header: 'Result',
                 width: '18ch',
                 render: (row: Deployment) => (
-                  <StatusIndicator status={deployStatus(row.status)} label={deployLabel(row.status)} />
+                  <StatusIndicator
+                    status={deployStatus(row.status, row.result_state)}
+                    label={deployLabel(row.status, row.result_state)}
+                  />
                 ),
               },
               { key: 'trigger', header: 'Started by', width: '18ch', muted: true },
@@ -312,31 +316,4 @@ function AppOutput({ app, workload }: { app: App; workload?: string }) {
 }
 
 /** Sentence case, as everything in the console is. */
-export function deployLabel(status: string): string {
-  switch (status) {
-    case 'succeeded':
-      return 'Deployed';
-    case 'failed':
-      return 'Failed';
-    case 'rolled_back':
-      return 'Rolled back';
-    case 'running':
-      return 'Deploying';
-    default:
-      return status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ');
-  }
-}
 
-/** Deploy statuses onto the design system's symbols. */
-export function deployStatus(status: string): 'running' | 'building' | 'failed' | 'stopped' {
-  switch (status) {
-    case 'succeeded':
-      return 'running';
-    case 'failed':
-      return 'failed';
-    case 'rolled_back':
-      return 'stopped';
-    default:
-      return 'building';
-  }
-}

@@ -34,11 +34,22 @@ const (
 // deployment and leaves the app untouched (R-146). Collapsing them would make
 // that distinction impossible to express.
 type Deployment struct {
-	ID          string     `json:"id"`
-	AppID       string     `json:"app_id"`
-	SpecID      string     `json:"spec_id"`
-	Trigger     string     `json:"trigger"`
-	Status      string     `json:"status"`
+	ID      string `json:"id"`
+	AppID   string `json:"app_id"`
+	SpecID  string `json:"spec_id"`
+	Trigger string `json:"trigger"`
+	Status  string `json:"status"`
+
+	// ResultState is what the app was doing when this deploy finished:
+	// "running", or "degraded" when it started and never reported healthy.
+	// Empty for a deploy that failed before it got that far.
+	//
+	// The deploy's own status answers "did Pando do the work"; this answers
+	// "did the app come up", which is what somebody reading a list of deploys
+	// is asking. Three rows reading "Deployed" for an app that had never
+	// served a request is a true answer to the wrong question.
+	ResultState string `json:"result_state,omitempty"`
+
 	ErrorCode   string     `json:"error_code,omitempty"`
 	ErrorDetail string     `json:"error_detail,omitempty"`
 	StartedAt   time.Time  `json:"started_at"`
@@ -81,6 +92,17 @@ func (d *Deployments) SetStatus(ctx context.Context, deploymentID, status string
 }
 
 // Finish closes a deployment out.
+// SetResultState records what the app was doing when the deploy finished.
+func (d *Deployments) SetResultState(ctx context.Context, deploymentID, appState string) error {
+	_, err := d.db.Exec(ctx,
+		`UPDATE deployments SET result_state = NULLIF($2, '') WHERE id = $1`,
+		deploymentID, appState)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not record how the app came up.", err)
+	}
+	return nil
+}
+
 func (d *Deployments) Finish(ctx context.Context, deploymentID, status, errorCode, message string) error {
 	var detail any
 	if message != "" {
@@ -104,9 +126,9 @@ func (d *Deployments) ByID(ctx context.Context, deploymentID string) (Deployment
 	var code *string
 	var detail []byte
 	err := d.db.QueryRow(ctx, `
-		SELECT id, app_id, spec_id, trigger, status, error_code, error_detail, started_at, finished_at, created_by
+		SELECT id, app_id, spec_id, trigger, status, coalesce(result_state, ''), error_code, error_detail, started_at, finished_at, created_by
 		FROM deployments WHERE id = $1`, deploymentID).
-		Scan(&dep.ID, &dep.AppID, &dep.SpecID, &dep.Trigger, &dep.Status, &code, &detail,
+		Scan(&dep.ID, &dep.AppID, &dep.SpecID, &dep.Trigger, &dep.Status, &dep.ResultState, &code, &detail,
 			&dep.StartedAt, &dep.FinishedAt, &dep.CreatedBy)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Deployment{}, false, nil
@@ -129,7 +151,7 @@ func (d *Deployments) ByID(ctx context.Context, deploymentID string) (Deployment
 // ListForApp returns an app's deployments, newest first.
 func (d *Deployments) ListForApp(ctx context.Context, appID string) ([]Deployment, error) {
 	rows, err := d.db.Query(ctx, `
-		SELECT id, app_id, spec_id, trigger, status, error_code, started_at, finished_at, created_by
+		SELECT id, app_id, spec_id, trigger, status, coalesce(result_state, ''), error_code, started_at, finished_at, created_by
 		FROM deployments WHERE app_id = $1 ORDER BY started_at DESC LIMIT 50`, appID)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not list the app's deploys.", err)
@@ -140,7 +162,8 @@ func (d *Deployments) ListForApp(ctx context.Context, appID string) ([]Deploymen
 	for rows.Next() {
 		var dep Deployment
 		var code *string
-		if err := rows.Scan(&dep.ID, &dep.AppID, &dep.SpecID, &dep.Trigger, &dep.Status, &code,
+		if err := rows.Scan(&dep.ID, &dep.AppID, &dep.SpecID, &dep.Trigger, &dep.Status,
+			&dep.ResultState, &code,
 			&dep.StartedAt, &dep.FinishedAt, &dep.CreatedBy); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list the app's deploys.", err)
 		}
