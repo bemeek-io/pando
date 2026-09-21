@@ -30,6 +30,12 @@ const (
 	// Pando translates a scanner's findings into a number and a policy
 	// decision; it does not implement one. See design 09.
 	CategoryScanner Category = "scanner"
+
+	// CategoryAI is the tenth (R-258), and the first that is optional in the
+	// strong sense: an install with none configured is not degraded, because
+	// everything the auction produces is produced either way (R-106).
+	// Design 10 has the argument for why it is a category at all.
+	CategoryAI Category = "ai"
 )
 
 // Adapter is implemented by every adapter in every category.

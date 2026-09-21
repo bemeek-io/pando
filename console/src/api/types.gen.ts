@@ -90,6 +90,8 @@ export interface Proposal {
   blocked?: Error;
   trial_log?: string;
   commit?: string;
+  trial: TrialObservation;
+  screening?: Outcome;
 }
 
 export interface Candidate {
@@ -180,6 +182,7 @@ export interface Document {
   require_backup_before_destroy?: boolean;
   max_token_lifetime_days?: number;
   max_log_disk_bytes?: number;
+  disable_ai_screening?: boolean;
   min_security_score?: number;
   insecure_action?: string;
   insecure_grace_hours?: number;
@@ -205,6 +208,28 @@ export interface Routing {
   hostname?: string;
   path_prefix?: string;
   port?: number;
+}
+
+export interface TrialObservation {
+  ran?: boolean;
+  started?: boolean;
+  crashed?: boolean;
+  observed_ports?: (number[] | null);
+  observed_writes?: (string[] | null);
+}
+
+export interface Outcome {
+  ran: boolean;
+  skipped?: string;
+  skip_code?: string;
+  adapter_ref?: string;
+  model?: string;
+  files_read?: (string[] | null);
+  applied?: (Applied[] | null);
+  refused?: (Refused[] | null);
+  answers?: (Record<string, string> | null);
+  notes?: (string[] | null);
+  duration_ms?: number;
 }
 
 export interface Draft {
@@ -393,6 +418,16 @@ export interface Finding {
   fix?: string;
 }
 
+export interface Applied {
+  amendment: Amendment;
+  summary: string;
+}
+
+export interface Refused {
+  amendment: Amendment;
+  reason: string;
+}
+
 export interface KV {
   key: string;
   value: string;
@@ -476,5 +511,19 @@ export interface Flag {
   shorthand?: string;
   description: string;
   default?: string;
+}
+
+export interface Amendment {
+  kind: string;
+  workload?: string;
+  key?: string;
+  value?: string;
+  command?: (string[] | null);
+  path?: string;
+  port?: number;
+  slot_type?: string;
+  required?: boolean;
+  reason: string;
+  evidence: (string[] | null);
 }
 

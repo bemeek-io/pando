@@ -9,7 +9,9 @@ package detection
 
 import (
 	"context"
+	"time"
 
+	"github.com/bemeek-io/pando/internal/core/screening"
 	"github.com/bemeek-io/pando/internal/core/source"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
@@ -62,6 +64,22 @@ type Runner struct {
 	// PortRange bounds that allocation.
 	PortRangeStart int
 	PortRangeEnd   int
+
+	// Screener reviews the finished proposal against the repository (R-330).
+	// Nil is the ordinary case: an install with no AI adapter configured is not
+	// a degraded install, because everything the auction produced is there
+	// either way (R-106, R-335).
+	Screener     screening.Screener
+	ScreenerRef  string
+	ScreenPolicy ScreenPolicy
+
+	// Auditor records that a repository's contents left the host (R-337).
+	Auditor Auditor
+
+	// Screening budget (R-339). Zero means the package default.
+	ScreenMaxFiles int
+	ScreenMaxBytes int64
+	ScreenTimeout  time.Duration
 
 	// Scanner scores the checkout while it is still on disk (R-312).
 	//
@@ -188,6 +206,22 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 	// commit rather than against a branch that has since moved.
 	proposal.Commit = checkout.Commit
 	proposal.DraftSpec.Source.Commit = checkout.Commit
+
+	// Step 12a — screening (R-330, design 10 §4). After the defaults, because a
+	// screener handed a spec with no routing mode and no limits is reviewing
+	// blanks for the same reason a person would be. Before the proposal is
+	// stored, because what is stored is what gets reviewed.
+	//
+	// The outcome is recorded whatever it is, including "nothing ran and here
+	// is why". Screening never fails a detection (R-335), so there is nothing
+	// to check here and that is the point.
+	outcome := r.screen(ctx, appID, &proposal, checkout.View(src.Subdir))
+	proposal.Screening = &outcome
+	if outcome.Changed() {
+		// An amendment can answer the last outstanding question, which turns
+		// needs_answers into ready — the same recomputation the trial run gets.
+		proposal.Status = detect.StatusFor(proposal.Winner, proposal.Questions)
+	}
 	return proposal, nil
 }
 

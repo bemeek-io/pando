@@ -262,6 +262,13 @@ const (
 	// predating this field came from detection or an import, never from a
 	// person, because there was no way to add one by hand.
 	EnvFromDetection EnvSource = "detected"
+
+	// EnvFromScreening was set by an AI screener (R-334, design 10 §5).
+	//
+	// Deliberately not EnvFromUser. A screener is not a person: its value is
+	// replaced by the next screening rather than carried across a re-detection,
+	// which is what Carry already does for everything that is not user-sourced.
+	EnvFromScreening EnvSource = "screened"
 )
 
 // PortSource records how a port was determined.
@@ -277,6 +284,11 @@ const (
 	PortCompose   PortSource = "compose"
 	PortFramework PortSource = "framework"
 	PortUser      PortSource = "user"
+
+	// PortScreened was supplied by an AI screener, and only where nothing was
+	// observed. R-333: watching the process bind beats reading about it, so a
+	// screener may fill this field and may never overwrite PortObserved.
+	PortScreened PortSource = "screened"
 )
 
 // Port is a port a workload listens on.
@@ -293,6 +305,9 @@ const (
 	VolumeFromCompose VolumeSource = "compose"
 	VolumeFromUser    VolumeSource = "user"
 	VolumeFromWarning VolumeSource = "detected-warning"
+
+	// VolumeFromScreening was added by an AI screener (design 10 §3).
+	VolumeFromScreening VolumeSource = "screened"
 )
 
 // Volume is persistent storage.
@@ -563,6 +578,12 @@ const (
 	// in a browser, so Pando picks the likeliest and says so rather than
 	// producing a spec that cannot deploy.
 	WarnPrimaryWorkloadAssumed = "WARN_PRIMARY_WORKLOAD_ASSUMED"
+
+	// WarnScreeningAdvisory is the one code an AI screener may emit, and it is
+	// not its choice (design 10 §3). The codes above mean specific things that
+	// specific parts of Pando produced; a screener able to pick one could claim
+	// the compose importer rewrote something it never touched.
+	WarnScreeningAdvisory = "WARN_SCREENING_ADVISORY"
 )
 
 // Warning is advisory. It lives in the spec and survives revisions until

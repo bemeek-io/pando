@@ -111,8 +111,8 @@ var routeDocs = []reference.Route{
 	{Method: "GET", Path: "/api/v1/verbs", Group: "Identity", Summary: "Every verb, by scope, for composing a role. There is no implication graph: holding one says nothing about another (R-082).", Verb: string(authz.InstallView)},
 
 	// --- installation -----------------------------------------------------
-	{Method: "GET", Path: "/api/v1/adapters", Group: "Installation", Summary: "The adapters configured here and what they can currently do — live capabilities, not stored configuration.", Verb: string(authz.InstallView)},
-	{Method: "POST", Path: "/api/v1/adapters", Group: "Installation", Summary: "Configure an adapter.", Verb: string(authz.InstallAdaptersManage)},
+	{Method: "GET", Path: "/api/v1/adapters", Group: "Installation", Summary: "The adapters configured here and what they can currently do — live capabilities, not stored configuration. Names which credentials are set, never their values.", Verb: string(authz.InstallView)},
+	{Method: "POST", Path: "/api/v1/adapters", Group: "Installation", Summary: "Configure an adapter. Settings go in config; credentials such as an API key go in credentials, which is write-only and stored encrypted.", Verb: string(authz.InstallAdaptersManage)},
 	{Method: "GET", Path: "/api/v1/capacity", Group: "Installation", Summary: "What the host has, and what is committed to apps (R-242).", Verb: string(authz.InstallView)},
 	{Method: "GET", Path: "/api/v1/policy", Group: "Installation", Summary: "Host policy. Reading the rules you work under is not the same privilege as changing them (R-274).", Verb: string(authz.InstallView)},
 	{Method: "PUT", Path: "/api/v1/policy", Group: "Installation", Summary: "Replace host policy. Policy is a floor, never an override (R-272).", Verb: string(authz.InstallPolicyManage)},

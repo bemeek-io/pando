@@ -53,6 +53,10 @@ type Server struct {
 	Registry *api.Registry
 	Adapters *state.Adapters
 
+	// AdapterCredentials holds adapters' credentials encrypted (O-20). Written
+	// by POST /adapters, never read back by any handler.
+	AdapterCredentials *state.AdapterCredentials
+
 	// Reconciles is the loop's bookkeeping. The lifecycle handlers touch it
 	// for one reason: a person starting an app Pando gave up on is the human
 	// intervention R-151 requires, and the failure count has to be cleared for

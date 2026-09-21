@@ -58,6 +58,22 @@ var answerOrder = []string{
 // with Source "user", which is what the review UI shows beside it (design 01
 // §2.3). Where the value came from is part of the value.
 func (p Proposal) WithAnswers(answers map[string]string) spec.AppSpec {
+	return p.withAnswers(answers, spec.PortUser)
+}
+
+// WithScreenedAnswers folds in answers an AI screener produced (R-338).
+//
+// The same machinery, deliberately: an answer that changes which workload the
+// other answers mean does so whoever supplied it, and two ways to apply an
+// answer is how the two would drift. What differs is provenance — a port a
+// screener supplied is recorded as screened, not as a person's, so the review
+// shows which it was and spec.Carry does not preserve it across a re-detection
+// as though somebody had chosen it.
+func (p Proposal) WithScreenedAnswers(answers map[string]string) spec.AppSpec {
+	return p.withAnswers(answers, spec.PortScreened)
+}
+
+func (p Proposal) withAnswers(answers map[string]string, portSource spec.PortSource) spec.AppSpec {
 	// The tie-break is resolved first, because it chooses which reading of the
 	// repository the rest of the answers apply to.
 	out := p.chosen(answers)
@@ -74,7 +90,7 @@ func (p Proposal) WithAnswers(answers map[string]string) spec.AppSpec {
 		}
 		switch key {
 		case KeyPrimaryPort:
-			out = withPort(out, value)
+			out = withPort(out, value, portSource)
 		case KeyPrimaryService:
 			out = withPrimaryService(out, value)
 		case KeyStartCommand:
@@ -153,7 +169,7 @@ func (p Proposal) chosen(answers map[string]string) spec.AppSpec {
 	return p.DraftSpec
 }
 
-func withPort(s spec.AppSpec, value string) spec.AppSpec {
+func withPort(s spec.AppSpec, value string, source spec.PortSource) spec.AppSpec {
 	number, err := strconv.Atoi(value)
 	if err != nil || number <= 0 || number > 65535 {
 		return s
@@ -163,7 +179,7 @@ func withPort(s spec.AppSpec, value string) spec.AppSpec {
 			continue
 		}
 		s.Workloads[i].Ports = []spec.Port{{
-			Number: number, Protocol: "http", Source: spec.PortUser,
+			Number: number, Protocol: "http", Source: source,
 		}}
 		break
 	}

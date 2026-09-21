@@ -1,10 +1,10 @@
 # Open decisions
 
-Eighteen questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
+Twenty questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
 design; O-15 through O-17 were found while implementing phases 6, 7 and 8; O-18 was found while
-setting up the release build; O-19 was found by turning `gosec` on. **Seventeen are resolved. Two
-remain, and neither is a design decision** — O-4 needs a measurement and O-18 needs somebody to pick
-a host and pay for it.
+setting up the release build; O-19 was found by turning `gosec` on; O-20 was found while building the
+first AI adapter. **Eighteen are resolved. Two remain, and neither is a design decision** — O-4 needs
+a measurement and O-18 needs somebody to pick a host and pay for it.
 
 O-5 was the other long-standing one and is now resolved: "per-adapter" answered it until R-174 made
 Pando run the edge and write its configuration, at which point Pando became the thing choosing.
@@ -51,6 +51,29 @@ key:
 
 The choice matters more than it looks: an unsigned repository, or one added with `[trusted=yes]`,
 tells every user of a product that argues for provenance to skip checking ours.
+
+**O-20 — where an adapter's credential lives. Resolved:** encrypted by the install's secrets adapter,
+in its own table. The Anthropic adapter (design 10 §6) was the first adapter to hold a credential, and
+`adapter_configs.config` is plain JSON, stored unencrypted and exported readably into every DR bundle.
+Keeping a key there is inconsistent with R-190, so it is not allowed.
+
+- `POST /adapters` takes a separate, write-only `credentials` object. Each value is sealed by the
+  install's secrets adapter and stored in `adapter_credentials` as ciphertext, bound to the adapter's
+  ID as authenticated data, exactly as an app secret is stored in `secrets`. There is no plaintext
+  column.
+- The database refuses a `credentials` key in `adapter_configs.config` (a check constraint), and the
+  handler refuses the field names credentials usually go by, with a message saying where to send them.
+- At startup core configures the secrets adapter first, decrypts each adapter's credentials, and hands
+  them to `Configure` in memory under `credentials`. An adapter that finds a key at the top level of
+  its stored configuration refuses to start.
+- `GET /adapters` lists which credentials are set by name. Nothing returns a value, and the audit
+  event names the fields that changed, never their values.
+- A secrets adapter cannot be given credentials, since it is what would encrypt them.
+
+`api_key_env` remains for an operator who keeps credentials in the environment; it stores a variable
+name. The two alternatives considered were encrypting all of `adapter_configs.config`, which ties every
+adapter's non-secret settings to the secrets key, and environment variables only, which the console
+cannot set (R-002).
 
 **O-19 — the session cookie's `Secure` attribute. Resolved:** option 3, an explicit
 `PANDO_SERVER_EXTERNAL_URL`. The operator states the scheme browsers reach the installation on, and
