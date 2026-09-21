@@ -27,7 +27,6 @@ const TAU = Math.PI * 2;
 
 const BACKGROUND_LEVELS = 12;
 const BACKGROUND_OPACITY = 0.35;
-const FEATURE_LEVELS = 20;
 
 type Pt = [number, number];
 
@@ -269,27 +268,33 @@ const smoothstep = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-// How far the land reaches, and where to look for its summit, per direction.
-// The falloff is long and its start wanders, so the lowest contours spread out
-// and follow the hills instead of stacking into a straight wall along the edge.
+// How far the land reaches, how many contours it carries, and where to look
+// for its summit, per direction. The falloff is long and its start wanders, so
+// the lowest contours spread out and follow the hills instead of stacking into
+// a straight wall along the edge.
+//
+// `floor` is how far up the land's height range the first contour sits: high
+// enough that the map ends on the flanks of hills, not on a plain. A desktop
+// window has room beside the form for more of the map, so the land there
+// reaches further toward it and carries more lines.
 const RECEDE = {
   left: {
     envelope: (x: number, y: number) =>
-      smoothstep(0.3 + 0.07 * Math.sin(TAU * 1.3 * y + 1.1) + 0.03 * Math.sin(TAU * 3.1 * y + 0.4), 0.88, x),
+      smoothstep(0.2 + 0.06 * Math.sin(TAU * 1.3 * y + 1.1) + 0.03 * Math.sin(TAU * 3.1 * y + 0.4), 0.72, x),
+    levels: 26,
+    floor: 0.1,
     search: { x: [0.6, 0.88], y: [0.3, 0.7] },
     align: 'xMaxYMid slice',
   },
   down: {
     envelope: (x: number, y: number) =>
       smoothstep(0.5 + 0.06 * Math.sin(TAU * 1.2 * x + 0.7) + 0.03 * Math.sin(TAU * 2.7 * x + 2.2), 0.08, y),
+    levels: 20,
+    floor: 0.16,
     search: { x: [0.3, 0.7], y: [0.04, 0.22] },
     align: 'xMidYMin slice',
   },
 } as const;
-
-// Contours start this far up the land's height range. Higher than the
-// background's, so the map ends on the flanks of the hills, not on a plain.
-const FEATURE_FLOOR = 0.16;
 
 /**
  * The map as a picture rather than a background: the sign-in screen. Here it
@@ -306,7 +311,7 @@ const FEATURE_FLOOR = 0.16;
  */
 export function TopoMap({ seed, recede }: { seed: string; recede: Recede }) {
   const key = `${seed}|${recede}`;
-  const { envelope, search, align } = RECEDE[recede];
+  const { envelope, levels, floor, search, align } = RECEDE[recede];
 
   const f = useMemo(() => {
     let t = features.get(key);
@@ -344,11 +349,11 @@ export function TopoMap({ seed, recede }: { seed: string; recede: Recede }) {
           }
         }
       }
-      t = { levels: trace(height, FEATURE_LEVELS, FEATURE_FLOOR), summit: [bi * CELL, bj * CELL] };
+      t = { levels: trace(height, levels, floor), summit: [bi * CELL, bj * CELL] };
       features.set(key, t);
     }
     return t;
-  }, [key, seed, envelope, search]);
+  }, [key, seed, envelope, levels, floor, search]);
 
   const [sx, sy] = f.summit;
   const s = 7;
