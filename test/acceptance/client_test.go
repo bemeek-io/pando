@@ -25,13 +25,16 @@ import (
 //
 // Bring the stack up first:
 //
-//	PANDO_PORT=8099 docker compose up -d
+//	docker compose up -d
 //	go test -tags=integration ./test/acceptance/
+//
+// 8080 is what Compose gives you. An install somewhere else — a host where 8080
+// was taken, a second stack beside a first — sets PANDO_TEST_URL.
 func baseURL() string {
 	if v := os.Getenv("PANDO_TEST_URL"); v != "" {
 		return v
 	}
-	return "http://localhost:8099/api/v1"
+	return "http://localhost:8080/api/v1"
 }
 
 // requireStack skips when the stack was never up, and FAILS when it was up and

@@ -13,8 +13,16 @@ subsystem: **if all four pass against real Postgres and real Docker, v1 works.**
 These drive a running Compose stack over HTTP, as a client would. Bring it up first:
 
 ```
-docker compose down -v && PANDO_PORT=8099 docker compose up -d
+docker compose down -v && docker compose up -d
 go test -tags=integration ./test/acceptance/
+```
+
+The tests talk to `http://localhost:8080`, which is what Compose gives you. If 8080 is
+taken on your machine, bring the stack up on another port and say so:
+
+```
+PANDO_PORT=8099 docker compose up -d
+PANDO_TEST_URL=http://localhost:8099/api/v1 go test -tags=integration ./test/acceptance/
 ```
 
 A fresh `down -v` matters: the first-run administrator password is shown once (R-046),
@@ -40,7 +48,7 @@ Compress the schedule and it finishes in three:
 ```
 PANDO_RECONCILER_BACKOFF=0s,1s,2s,3s,4s \
 PANDO_RECONCILER_FAILURE_WINDOW=2m \
-PANDO_PORT=8099 docker compose up -d
+docker compose up -d
 
 PANDO_RECONCILER_BACKOFF=0s,1s,2s,3s,4s \
 PANDO_RECONCILER_FAILURE_WINDOW=2m \

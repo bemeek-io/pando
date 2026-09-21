@@ -127,6 +127,7 @@ type Workload struct {
     Env       []EnvEntry `json:"env"`
     Ports     []Port     `json:"ports"`
     Mounts    []Mount    `json:"mounts"`
+    Files     []File     `json:"files,omitempty"`   // configuration carried in the spec, R-099a
     DependsOn []string   `json:"depends_on,omitempty"`  // from compose, R-096
     Healthcheck *Healthcheck `json:"healthcheck,omitempty"`
 
@@ -154,6 +155,32 @@ type Port struct {
 **[D]** `Port.Source` is retained because it feeds the review UI. "We watched your app bind 3000" reads differently from "we guessed 3000 because it's a Next.js app," and the user reviewing the proposal deserves to know which.
 
 **[D]** An `EnvEntry` has exactly one of `Value`, `SlotRef`, `SecretRef`. Validation enforces it.
+
+**[D]** `Files` carries a configuration file the app cannot start without (R-099a):
+
+```go
+type File struct {
+    Path    string `json:"path"`              // absolute, inside the container
+    Content string `json:"content"`           // text, <= 64 KB
+    Mode    int    `json:"mode,omitempty"`    // default 0644
+}
+```
+
+A compose service that bind-mounts `./Caddyfile:/etc/caddy/Caddyfile` produces one. Neither of the
+two mechanisms Pando has for a path fits it: storage is a directory, and Docker refuses to mount a
+directory over a file that exists in the image, while a host bind mount would mean reading the
+repository at deploy time. So the bytes are read once at detection and stored here — the same
+reasoning as `Build.GeneratedFiles`, one layer along, and for the same requirement (R-020). The spec
+stays the sole record of how the app runs, which also means the file is a **snapshot**: editing it in
+the repository changes nothing until the app is detected again, and the import warning says so.
+
+The runtime places it between create and start, which is the only moment available — the container's
+filesystem exists and nothing has read it. Directories above it are created; a runtime that cannot do
+any of this reports `SupportsCarriedFiles: false` and the planner refuses before anything is created
+(R-254).
+
+Not a way to ship an application. Text only, capped at 64 KB, and a larger or binary file is refused
+at import with that as the reason: a file that size is a build input, and builds have their own path.
 
 ### 2.4 Volumes
 

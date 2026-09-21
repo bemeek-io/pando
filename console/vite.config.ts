@@ -4,6 +4,10 @@ import { resolve } from 'node:path';
 
 // Built into internal/console/dist, which embed.FS picks up so that one binary
 // includes the UI (R-253).
+// Where `npm run dev` proxies the API to. 8080 is the Compose default; set
+// PANDO_DEV_API when the local install is somewhere else.
+const devServer = process.env.PANDO_DEV_API || 'http://localhost:8080';
+
 export default defineConfig({
   plugins: [react()],
 
@@ -48,8 +52,10 @@ export default defineConfig({
     // `npm run dev` proxies to a locally running Pando so the console can be
     // developed against a real API rather than fixtures.
     proxy: {
-      '/api': { target: 'http://localhost:8099', changeOrigin: true },
-      '/.well-known': { target: 'http://localhost:8099', changeOrigin: true },
+      // 8080, which is what `docker compose up` gives you. An install on a
+      // different port is a PANDO_PORT away, and so is this: set PANDO_DEV_API.
+      '/api': { target: devServer, changeOrigin: true },
+      '/.well-known': { target: devServer, changeOrigin: true },
     },
   },
 });

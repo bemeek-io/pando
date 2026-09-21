@@ -3,6 +3,7 @@ package deploy
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -160,9 +161,36 @@ func TestThePrimaryDigestComesFromTheRuntime(t *testing.T) {
 			{Name: "worker", Present: true, Running: false, ImageDigest: "sha256:stopped"},
 			{Name: "web", Present: true, Running: true, ImageDigest: "sha256:running"},
 		},
-	}}, "app_01HQ8")
+	}}, digestSpec("web"), "app_01HQ8")
 
 	require.Equal(t, "sha256:running", got, "a stopped workload's image is not what is running")
+}
+
+// TestThePrimaryDigestIsThePrimaryWorkloads asserts that it is that workload's.
+//
+// It used to be whichever running workload the runtime listed first, which for
+// a two-service app is a coin toss — and this digest is what "running the wrong
+// image" is decided by, so taking it from the proxy made the application
+// container permanently wrong, and the correction for that replaced it with a
+// second copy of the proxy.
+func TestThePrimaryDigestIsThePrimaryWorkloads(t *testing.T) {
+	got := primaryDigest(context.Background(), observing{bundle: api.ObservedBundle{
+		Workloads: []api.ObservedWorkload{
+			{Name: "proxy", Present: true, Running: true, ImageDigest: "sha256:caddy"},
+			{Name: "app", Present: true, Running: true, ImageDigest: "sha256:theapp"},
+		},
+	}}, digestSpec("app"), "app_01HQ8")
+
+	require.Equal(t, "sha256:theapp", got)
+}
+
+// A spec whose primary workload is the named one.
+func digestSpec(primary string) *spec.AppSpec {
+	return &spec.AppSpec{Workloads: []spec.Workload{
+		{Name: "proxy"},
+		{Name: "app"},
+		{Name: primary, Primary: true},
+	}}
 }
 
 // Empty on any failure, which makes image drift undetectable rather than making
@@ -170,11 +198,122 @@ func TestThePrimaryDigestComesFromTheRuntime(t *testing.T) {
 func TestAnUnobservableRuntimeYieldsNoDigestRatherThanAWrongOne(t *testing.T) {
 	ctx := context.Background()
 
-	require.Empty(t, primaryDigest(ctx, observing{err: errors.New("daemon is not running")}, "app_01HQ8"))
-	require.Empty(t, primaryDigest(ctx, observing{bundle: api.ObservedBundle{}}, "app_01HQ8"))
+	s := digestSpec("web")
+	require.Empty(t, primaryDigest(ctx, observing{err: errors.New("daemon is not running")}, s, "app_01HQ8"))
+	require.Empty(t, primaryDigest(ctx, observing{bundle: api.ObservedBundle{}}, s, "app_01HQ8"))
 
 	// Running, but the runtime does not report a digest.
 	require.Empty(t, primaryDigest(ctx, observing{bundle: api.ObservedBundle{
 		Workloads: []api.ObservedWorkload{{Name: "web", Present: true, Running: true}},
-	}}, "app_01HQ8"))
+	}}, s, "app_01HQ8"))
+}
+
+// TestR105_AFailedStepSaysWhyInTheLogSomebodyIsWatching asserts R-105.
+//
+// `!! apply failed: Could not create "proxy".` was the whole of what a real
+// deploy said. The reason — a mount the Docker daemon refused — was in the
+// error that message wrapped, and went only to the server's log. The person
+// deploying has the deploy log and nothing else.
+func TestR105_AFailedStepSaysWhyInTheLogSomebodyIsWatching(t *testing.T) {
+	err := errs.Wrap(errs.AdapterFailed, `Could not create "proxy".`,
+		errors.New("Error response from daemon: source /var/lib/docker/x is not directory")).
+		WithRemedy("Remove that mount in the app's storage settings.")
+
+	var log strings.Builder
+	writeFailure(&log, "apply failed: "+messageOf(err), err)
+
+	out := log.String()
+	require.Contains(t, out, `!! apply failed: Could not create "proxy".`)
+	require.Contains(t, out, "is not directory", "why")
+	require.Contains(t, out, "storage settings", "and what to do")
+}
+
+// A cause already contained in the headline is not repeated. Two lines saying
+// the same thing read as two problems.
+func TestAFailureDoesNotSayTheSameThingTwice(t *testing.T) {
+	err := errs.Newf(errs.PlanSlotUnfilled, "This app needs a PostgreSQL database.")
+
+	var log strings.Builder
+	writeFailure(&log, messageOf(err), err)
+
+	require.Equal(t, "\n!! This app needs a PostgreSQL database.\n", log.String())
+}
+
+// TestR130_AVariableNobodyFilledInIsNotSetToNothing asserts that a declared
+// hole stays a hole.
+//
+// Detection reads the names of an app's variables out of `.env.example` and has
+// no values to put in them. Passing those through as empty strings is not the
+// same as leaving them unset, and the difference decides what the app does:
+// `if "APP_BASE_URL" in os.environ` is true for an empty one. An empty value a
+// person typed is an answer and is kept.
+func TestR130_AVariableNobodyFilledInIsNotSetToNothing(t *testing.T) {
+	empty := ""
+	filled := "info"
+
+	w := spec.Workload{
+		Name: "web",
+		Env: []spec.EnvEntry{
+			{Key: "APP_BASE_URL", Value: &empty, Source: spec.EnvFromDetection},
+			{Key: "LOG_LEVEL", Value: &filled, Source: spec.EnvFromDetection},
+			{Key: "EMPTY_ON_PURPOSE", Value: &empty, Source: spec.EnvFromUser},
+		},
+	}
+
+	env, err := resolveEnv(&spec.AppSpec{Workloads: []spec.Workload{w}}, w, nil, provisioned{})
+	require.NoError(t, err)
+
+	_, declared := env["APP_BASE_URL"]
+	require.False(t, declared, "a name with no value never reaches the container")
+	require.Equal(t, "info", env["LOG_LEVEL"].Reveal())
+
+	set, ok := env["EMPTY_ON_PURPOSE"]
+	require.True(t, ok, "somebody chose this")
+	require.Equal(t, "", set.Reveal())
+}
+
+// TestR148_EachPartOfAnAppRecordsItsOwnImage asserts R-148.
+//
+// The reconciler restores a missing workload from the image the deployment
+// recorded. With one image for the whole app that was the primary workload's,
+// so a compose app's application container was restored from its proxy's
+// image — and then, being "wrong", recreated from it on every tick.
+func TestR148_EachPartOfAnAppRecordsItsOwnImage(t *testing.T) {
+	s := &spec.AppSpec{Workloads: []spec.Workload{
+		{Name: "app", Build: &spec.WorkloadBuild{Context: "."}},
+		{Name: "proxy", Image: "caddy:2-alpine", Primary: true},
+	}}
+
+	got := workloadImages(context.Background(), observing{bundle: api.ObservedBundle{
+		Workloads: []api.ObservedWorkload{
+			{Name: "app", ImageDigest: "sha256:theapp"},
+			{Name: "proxy", ImageDigest: "sha256:caddy"},
+		},
+	}}, s, map[string]string{"app": "pando/app:latest"}, "", "app_01HQ8")
+
+	require.Equal(t, "pando/app:latest", got["app"].Ref)
+	require.Equal(t, "sha256:theapp", got["app"].Digest)
+	require.Equal(t, "caddy:2-alpine", got["proxy"].Ref)
+	require.Equal(t, "sha256:caddy", got["proxy"].Digest)
+}
+
+// A workload that builds its own image never takes the app's.
+//
+// The app-level image belongs to the app-level build, and a compose app has
+// none — so for one of its services, "the app's image" is another service's.
+// Empty is the honest answer: nothing starts a workload from an image Pando
+// cannot name.
+func TestAWorkloadThatBuildsItsOwnDoesNotTakeTheApps(t *testing.T) {
+	building := spec.Workload{Name: "app", Build: &spec.WorkloadBuild{Context: "."}}
+	require.Empty(t, workloadImage(building, nil, "caddy:2-alpine"))
+	require.Equal(t, "pando/app:latest",
+		workloadImage(building, map[string]string{"app": "pando/app:latest"}, "caddy:2-alpine"))
+
+	// One that names an image keeps it, and one that does neither is the
+	// single-image app the app-level build produced.
+	named := spec.Workload{Name: "proxy", Image: "caddy:2-alpine"}
+	require.Equal(t, "caddy:2-alpine", workloadImage(named, nil, "pando/app:latest"))
+
+	plain := spec.Workload{Name: "web"}
+	require.Equal(t, "pando/app:latest", workloadImage(plain, nil, "pando/app:latest"))
 }

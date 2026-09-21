@@ -14,12 +14,14 @@ Tags carry the same meaning throughout: **[D]** decided, **[P]** proposed, **[O]
 | 00 | `00-stack-and-conventions.md` | Go/chi/zap/Postgres, repo layout, error taxonomy, logging, acceptance-test convention |
 | 01 | `01-spec-schema.md` | The `AppSpec` — the central object. Read this first. |
 | 02 | `02-data-model.md` | Postgres schema, constraints that enforce requirements |
-| 03 | `03-adapter-interfaces.md` | All seven adapter categories as Go interfaces |
+| 03 | `03-adapter-interfaces.md` | The adapter categories as Go interfaces |
 | 04 | `04-api.md` | REST surface, MCP tool mapping, CLI shape |
 | 05 | `05-reconciler-and-lifecycle.md` | State machine, the loop, drift classification, deployment pipeline |
 | 06 | `06-authorization-and-proxy.md` | Evaluation order, the proxy request path, assertion minting |
 | 07 | `07-sequences.md` | Four end-to-end flows = integration acceptance criteria |
 | 08 | `08-console-and-plan.md` | Console architecture, build order, risk register |
+| 09 | `09-security-scanning.md` | The security score: the scanner adapter, the arithmetic, and the two places policy enforces it |
+| 10 | `10-ai-assistance.md` | The AI category, and screening a deployment plan (R-106, §7.4) |
 
 ## Reading order
 
@@ -27,7 +29,9 @@ Tags carry the same meaning throughout: **[D]** decided, **[P]** proposed, **[O]
 
 **Anyone touching authorization or the proxy:** 06 in full, then Sequence C in 07. Do not skip.
 
-**Anyone writing an adapter:** 03, then the relevant section of 01.
+**Anyone writing an adapter:** 03, then the relevant section of 01. An AI adapter: 10, then 03 §1.
+
+**Anyone touching detection:** 07 Sequence A, then 10 — screening runs at the end of it.
 
 ## Requirements needing structural enforcement
 

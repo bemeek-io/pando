@@ -16,6 +16,7 @@ miss the thing they catch. When you write a migration, these are not optional ex
 | Trigger protecting `roles` where `builtin = true` | R-081 — built-in roles change only by migration |
 | `host_policy.id integer PRIMARY KEY DEFAULT 1 CHECK (id = 1)` | R-015 — one install, one org |
 | `volumes.app_id … ON DELETE RESTRICT` | R-204 — volumes survive app deletion |
+| `CHECK (NOT (config ? 'credentials'))` on `adapter_configs` | R-190 — an adapter credential is never stored in the clear (O-20) |
 
 **Adding a verb to a built-in role is done by migration, and only by migration** (R-081). That is the
 upgrade mechanism the requirement promises; there is no runtime path.

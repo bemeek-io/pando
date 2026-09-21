@@ -82,7 +82,7 @@ lint: ## golangci-lint, including the R-027 adapter import rule
 	$(LINT) run
 
 .PHONY: check
-check: vet lint test ## Everything CI runs on a pull request
+check: vet lint test reference-check ## Everything CI runs on a pull request
 
 # Fuzz targets, and how long each one runs. One list so that adding a target
 # means adding a line here, rather than adding a line here and remembering to
@@ -150,6 +150,27 @@ detection-corpus: ## Run detection against the corpus of real repositories (netw
 # ---------------------------------------------------------------------------
 # Requirement traceability (design 00 §4)
 # ---------------------------------------------------------------------------
+
+.PHONY: reference
+reference: ## Regenerate docs/api.md, docs/cli.md and docs/mcp.md from the code
+	$(GO) run ./cmd/gen-reference docs
+
+.PHONY: reference-check
+reference-check: ## Fail if the generated reference is out of date
+	@# Generated into a temporary directory and compared, rather than written
+	@# over the checked-in files and diffed against the index: the question is
+	@# whether what is on disk matches what the code produces, which is a
+	@# different question from whether it has been committed yet. Comparing
+	@# against the index failed in any tree where the reference had legitimately
+	@# changed and not yet been committed — which is every tree that just added
+	@# a route.
+	@tmp=$$(mktemp -d); \
+	$(GO) run ./cmd/gen-reference $$tmp > /dev/null; \
+	for f in api.md cli.md mcp.md; do \
+		diff -u docs/$$f $$tmp/$$f > /dev/null \
+			|| { echo "docs/$$f is out of date. Run 'make reference' and commit the result."; rm -rf $$tmp; exit 1; }; \
+	done; \
+	rm -rf $$tmp
 
 .PHONY: requirements-index
 requirements-index: ## Regenerate docs/traceability/requirements-index.md

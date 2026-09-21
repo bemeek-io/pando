@@ -26,9 +26,18 @@ export interface InlineWarningProps {
   /** The warning's code, for the dismissal to be recorded against. */
   code?: string;
   onDismiss?: (code: string) => void;
+  /**
+   * The way to the place this is fixed.
+   *
+   * A warning that says "define one here" and sits on a screen where nothing
+   * can be defined is a warning nobody acts on — which is how people learn to
+   * dismiss all of them. Where the console has a screen for the fix, the
+   * warning carries a way to it.
+   */
+  action?: React.ReactNode;
 }
 
-export function InlineWarning({ children, code, onDismiss }: InlineWarningProps) {
+export function InlineWarning({ children, code, onDismiss, action }: InlineWarningProps) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
 
@@ -53,9 +62,10 @@ export function InlineWarning({ children, code, onDismiss }: InlineWarningProps)
       <span style={{ paddingTop: 'var(--space-1)', flex: '0 0 auto' }}>
         <StatusSymbol status="info" />
       </span>
-      <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink)', margin: 0, flex: 1 }}>
-        {children}
-      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', flex: 1 }}>
+        <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink)', margin: 0 }}>{children}</p>
+        {action}
+      </div>
       <IconButton label="Dismiss this warning" onClick={dismiss}>
         <Icon name="x" size={16} />
       </IconButton>

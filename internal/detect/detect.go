@@ -219,6 +219,29 @@ func (a *Auction) Run(ctx context.Context, src api.SourceView) (Result, error) {
 	sort.SliceStable(bids, func(i, j int) bool { return bids[i].Confidence > bids[j].Confidence })
 
 	winner := bids[0]
+
+	// A compose file Pando refused is not outbid.
+	//
+	// A compose file is the author's complete statement of what the app is
+	// (R-096); a Dockerfile is a statement about one image. A repository with
+	// both bids twice, and the Dockerfile bids higher when it declares a port —
+	// so a compose file refused for one construct lost the auction quietly, and
+	// the app was imported as the Dockerfile alone. Everything the compose file
+	// knew went with it: the database beside the app, the variable that reached
+	// it, the second service. What came out built and deployed and then logged
+	// `DATABASE_URL is required` forever.
+	//
+	// Refusing to import it is a thing Pando knows about this repository, and
+	// R-099 says the reason is shown. Reading it a different way instead is the
+	// silent fallback that TestR099_ARejectedComposeFileDoesNotSilentlyBecomeA\
+	// BuildpackGuess exists to prevent; it was only ever prevented for the
+	// repositories where nothing else outbid it.
+	for _, bid := range bids {
+		if bid.Blocked != nil && bid.Strategy == spec.BuildCompose {
+			winner = bid
+			break
+		}
+	}
 	questions := append([]Question(nil), winner.Questions...)
 
 	if len(bids) > 1 && bids[0].Confidence-bids[1].Confidence < closeEnough {
@@ -231,7 +254,7 @@ func (a *Auction) Run(ctx context.Context, src api.SourceView) (Result, error) {
 	// The same rule the job applies after the trial run, from one function, so
 	// the status a caller sees before the trial and the one it sees after
 	// cannot disagree about what "ready" means.
-	status := statusFor(winner, questions)
+	status := StatusFor(winner, questions)
 
 	// A blocked winner overrides everything else. There is no point asking
 	// which service is primary in a compose file that cannot be imported.

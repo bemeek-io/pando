@@ -281,7 +281,7 @@ CREATE TABLE provisioned_services (
 ```sql
 CREATE TABLE adapter_configs (
     id          text PRIMARY KEY,             -- rt_..., rte_..., bld_..., sec_..., ntf_...
-    category    text NOT NULL,                -- runtime|routing|builder|secrets|services|identity|notify
+    category    text NOT NULL,                -- runtime|routing|builder|secrets|services|identity|notify|backup|ai
     kind        text NOT NULL,                -- docker | traefik | buildkit | local | ...
     name        text NOT NULL,
     config      jsonb NOT NULL DEFAULT '{}',
@@ -290,6 +290,20 @@ CREATE TABLE adapter_configs (
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX ON adapter_configs (category) WHERE is_default;
+-- config is never a credential store (O-20).
+ALTER TABLE adapter_configs ADD CHECK (NOT (config ? 'credentials'));
+
+-- An adapter's credentials, sealed by the secrets adapter (R-190, O-20). The same
+-- shape as `secrets`, one scope up: no plaintext column.
+CREATE TABLE adapter_credentials (
+    adapter_id   text NOT NULL REFERENCES adapter_configs(id) ON DELETE CASCADE,
+    field        text NOT NULL,               -- api_key
+    adapter_ref  text NOT NULL,               -- the secrets adapter that sealed it
+    ciphertext   bytea,
+    external_ref text,
+    version      integer NOT NULL DEFAULT 1,
+    PRIMARY KEY (adapter_id, field)
+);
 
 CREATE TABLE host_policy (
     id          integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),  -- singleton, R-015

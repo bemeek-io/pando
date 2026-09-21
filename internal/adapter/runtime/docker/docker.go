@@ -1,11 +1,17 @@
 package docker
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +23,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
@@ -34,6 +41,12 @@ const (
 	labelBundle   = "io.pando.bundle"
 	labelWorkload = "io.pando.workload"
 	labelManaged  = "io.pando.managed"
+
+	// labelFiles digests the configuration files carried into this container
+	// (spec.File). They are copied in after create and leave no trace in the
+	// container's own configuration, so this is what makes a changed file a
+	// container that no longer matches its plan.
+	labelFiles = "io.pando.files"
 
 	// labelTrial marks everything a trial run creates (R-097), so that a trial
 	// interrupted by Pando restarting can be found and removed rather than
@@ -122,6 +135,7 @@ func (a *Adapter) Capabilities(context.Context) (api.RuntimeCapabilities, error)
 		IsolationClass: spec.IsolationContainer,
 
 		SupportsPersistentVolumes: true,
+		SupportsCarriedFiles:      true,
 		SupportsExec:              true,
 		SupportsMultipleWorkloads: true,
 		SupportsPrivateNetwork:    true,
@@ -286,6 +300,13 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 			labelBundle:   p.BundleID,
 			labelWorkload: w.Name,
 			labelManaged:  "true",
+
+			// What the carried files were, so that changing one is a change
+			// this container does not match. They go in after create and
+			// leave no trace in the container's configuration, so without
+			// this a spec whose only edit was a Caddyfile would converge to
+			// "already running" and the edit would never ship.
+			labelFiles: fileDigest(w.Files),
 		},
 	}
 	if w.Health != nil {
@@ -293,8 +314,24 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 	}
 
 	hostCfg := &container.HostConfig{
-		Binds:         mounts,
-		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
+		Binds: mounts,
+
+		// No restart policy. Restarting a workload that stopped is the
+		// reconciler's job, and it is the only thing that can do it to Pando's
+		// rules: back off between attempts (R-149), give up at the threshold
+		// (R-150), and then leave the app alone (R-151).
+		//
+		// `unless-stopped` put Docker in that seat instead, with no backoff and
+		// no end. An app that could not start was restarted every two seconds
+		// forever; Pando gave up on it, said "Pando has stopped trying to start
+		// this app", and the restart count kept climbing underneath the
+		// message. The loop also hid itself — a container restarted that often
+		// reports Running at almost every instant the reconciler looks.
+		//
+		// A container that exits is started again by the next tick, which is
+		// fifteen seconds rather than instant, and that is the trade: a paced
+		// restart Pando knows about beats an instant one it does not.
+		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyDisabled},
 		Resources: container.Resources{
 			NanoCPUs: int64(w.Resources.CPUMillis) * 1_000_000,
 			Memory:   w.Resources.MemoryBytes,
@@ -313,12 +350,142 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 
 	created, err := a.cli.ContainerCreate(ctx, cfg, hostCfg, netCfg, nil, name)
 	if err != nil {
-		return errs.Wrap(errs.AdapterFailed, fmt.Sprintf("Could not create %q.", w.Name), err)
+		return createFailure(w, err)
 	}
+
+	// Configuration files, placed before the workload runs.
+	//
+	// Between create and start, which is the only moment they can go in: the
+	// container's filesystem exists and nothing has read it yet. A volume
+	// cannot do this — Docker will not mount a directory over a file in the
+	// image — and a bind mount from the host would mean reading the repository
+	// at deploy time, which R-020 forbids. The bytes come from the spec.
+	for _, f := range w.Files {
+		if err := a.placeFile(ctx, created.ID, f); err != nil {
+			return errs.Wrap(errs.AdapterFailed,
+				fmt.Sprintf("Could not put %s into %q.", f.Path, w.Name), err)
+		}
+	}
+
 	if err := a.cli.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
 		return errs.Wrap(errs.AdapterFailed, fmt.Sprintf("Could not start %q.", w.Name), err)
 	}
 	return nil
+}
+
+// fileDigest summarizes a workload's carried files.
+//
+// Sorted by path, and covering the mode as well as the content: a file made
+// executable is a different container from the same file that is not.
+func fileDigest(files []api.FilePlan) string {
+	if len(files) == 0 {
+		return ""
+	}
+
+	sorted := append([]api.FilePlan(nil), files...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Path < sorted[j].Path })
+
+	h := sha256.New()
+	for _, f := range sorted {
+		fmt.Fprintf(h, "%s\x00%d\x00%d\x00", f.Path, f.Mode, len(f.Content))
+		h.Write([]byte(f.Content))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// placeFile copies one file into a created container.
+//
+// CopyToContainer extracts a tar stream at a path in the container, so the
+// archive is rooted at / and carries the file at its full path. The directories
+// above it go in as entries of their own: Docker does not create a missing
+// parent, and an image whose /etc/caddy does not exist yet is an ordinary
+// image, not a broken one. An entry for a directory that already exists is a
+// no-op at the mode these are written with.
+func (a *Adapter) placeFile(ctx context.Context, containerID string, f api.FilePlan) error {
+	mode := f.Mode
+	if mode == 0 {
+		mode = 0o644
+	}
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	clean := path.Clean(f.Path)
+	for _, dir := range ancestors(path.Dir(clean)) {
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     strings.TrimPrefix(dir, "/") + "/",
+			Typeflag: tar.TypeDir,
+			Mode:     0o755,
+			ModTime:  time.Now(),
+		}); err != nil {
+			return err
+		}
+	}
+
+	if err := tw.WriteHeader(&tar.Header{
+		Name:    strings.TrimPrefix(clean, "/"),
+		Mode:    int64(mode),
+		Size:    int64(len(f.Content)),
+		ModTime: time.Now(),
+	}); err != nil {
+		return err
+	}
+	if _, err := tw.Write([]byte(f.Content)); err != nil {
+		return err
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+
+	return a.cli.CopyToContainer(ctx, containerID, "/", &buf, container.CopyToContainerOptions{})
+}
+
+// ancestors lists a directory and everything above it, outermost first, so a
+// tar stream creates them in an order extraction can follow.
+func ancestors(dir string) []string {
+	var out []string
+	for d := path.Clean(dir); d != "/" && d != "." && d != ""; d = path.Dir(d) {
+		out = append([]string{d}, out...)
+	}
+	return out
+}
+
+// createFailure says why the daemon refused, in the app's own terms.
+//
+// One refusal is worth naming. Storage Pando manages is a directory, and Docker
+// will not mount a directory over a file that exists in the image, so a mount
+// whose path inside the container is a file fails at create with
+// "source /var/lib/docker/rootfs/overlayfs/a083.../etc/caddy/Caddyfile is not
+// directory" — a path on the host that appears in nothing the person
+// configured. Naming the mount instead gives them the line to remove (R-105).
+//
+// The compose importer now refuses such a mount at discovery, which is where it
+// belongs. This is for the apps that already carry one, and for a mount typed
+// in by hand.
+func createFailure(w api.WorkloadPlan, err error) error {
+	if text := err.Error(); strings.Contains(text, "not directory") ||
+		strings.Contains(text, "not a directory") {
+		// Which mount, read out of the daemon's own path: it is the
+		// container's rootfs with the mount's path on the end, so the mount
+		// that appears in it is the one that failed. Guessing from the path's
+		// shape instead does not work — "Caddyfile" has no extension.
+		var files []string
+		for _, m := range w.Mounts {
+			if strings.Contains(text, m.Path) {
+				files = append(files, m.Path)
+			}
+		}
+		if len(files) > 0 {
+			return errs.Wrap(errs.AdapterFailed, fmt.Sprintf(
+				"Could not create %q: its storage is mounted at %s, which is a file inside the image.",
+				w.Name, strings.Join(files, " and ")), err).
+				WithRemedy("Storage Pando manages is a directory and cannot stand in for a single " +
+					"file. Remove that mount in the app's storage settings, and copy the file into " +
+					"the image in its Dockerfile instead.")
+		}
+	}
+
+	return errs.Wrap(errs.AdapterFailed, fmt.Sprintf("Could not create %q.", w.Name), err)
 }
 
 // Observe reports what exists. It never remediates (design 05 §2.1).
@@ -639,7 +806,41 @@ func (a *Adapter) Logs(ctx context.Context, ref api.WorkloadRef, opts api.LogOpt
 	if err != nil {
 		return nil, errs.Wrap(errs.AdapterFailed, "Could not read the app's logs.", err)
 	}
-	return rc, nil
+
+	// Docker frames the output of a container that has no TTY: an 8-byte header
+	// before every chunk, saying which stream it came from and how long it is.
+	// Pando creates every workload without one (see apply), so this stream
+	// always carries that framing, and a caller copying it to a response body —
+	// which is exactly what the logs endpoint does — puts control bytes through
+	// the middle of the log somebody is reading.
+	//
+	// trial.go has a strip-it-from-a-buffer version of this for crash capture.
+	// This is the streaming one: stdcopy unpicks the frames as they arrive, so
+	// a followed log stays live.
+	pr, pw := io.Pipe()
+	go func() {
+		_, err := stdcopy.StdCopy(pw, pw, rc)
+		_ = rc.Close()
+		// A closed reader ends the copy with an error that is not one: the
+		// caller hung up, which is how following a log always ends.
+		_ = pw.CloseWithError(err)
+	}()
+	return demuxed{PipeReader: pr, source: rc}, nil
+}
+
+// demuxed is the unframed stream, and closes the framed one behind it.
+//
+// Closing only the pipe would leave the connection to the daemon open and the
+// goroutine copying into a reader nobody is holding — on a followed log, for as
+// long as the container keeps printing.
+type demuxed struct {
+	*io.PipeReader
+	source io.Closer
+}
+
+func (d demuxed) Close() error {
+	_ = d.source.Close()
+	return d.PipeReader.Close()
 }
 
 // Exec opens a session. Core has already checked app.exec, consulted policy, and
@@ -879,6 +1080,9 @@ func (a *Adapter) matchesPlan(ctx context.Context, containerID string, w api.Wor
 		return false, nil
 	}
 	if inspect.Config.Image != w.Image {
+		return false, nil
+	}
+	if inspect.Config.Labels[labelFiles] != fileDigest(w.Files) {
 		return false, nil
 	}
 

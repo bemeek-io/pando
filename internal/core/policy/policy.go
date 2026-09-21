@@ -76,6 +76,73 @@ type Document struct {
 	// is recreating containers, which the reconciler may not do on a schedule
 	// because an unrelated app turned chatty.
 	MaxLogDiskBytes int64 `json:"max_log_disk_bytes,omitempty"`
+
+	// DisableAIScreening forbids AI screening of deployment plans install-wide
+	// (R-336). Default false, like everything else here: Pando ships permissive
+	// and configuration narrows (R-270).
+	//
+	// Worth an explicit setting rather than leaving it to whether an adapter is
+	// configured, because the two are different decisions made by different
+	// people. Screening sends repository contents to a provider (R-337), and an
+	// administrator who has to say no to that should not have to do it by
+	// deleting somebody else's adapter.
+	DisableAIScreening bool `json:"disable_ai_screening,omitempty"`
+
+	// The security score (R-314 – R-316, design 09 §5).
+	//
+	// MinSecurityScore is the floor a deploy has to clear, 0 to 100. Zero is
+	// off, which is the shipped posture (R-270) — and so is an installation
+	// with no scanner configured, where this is inert and the console says so
+	// rather than silently blocking every deploy (R-317).
+	MinSecurityScore int `json:"min_security_score,omitempty"`
+
+	// InsecureAction is what happens to an app that is *already running* when
+	// it falls below the floor: "warn" or "stop". Empty means warn.
+	//
+	// A policy change or a newly published CVE is not a reason to take
+	// somebody's working service away without notice, so stopping is opt-in
+	// and grace comes with it (R-315).
+	InsecureAction string `json:"insecure_action,omitempty"`
+
+	// InsecureGraceHours is how long an app has after it is first found below
+	// the floor, before "stop" applies. Zero with InsecureAction "stop" means
+	// the default below, not "immediately" — an accidental zero must not empty
+	// a host.
+	InsecureGraceHours int `json:"insecure_grace_hours,omitempty"`
+
+	// IgnoreUnfixableFindings drops findings with no fix available from both
+	// the score and the list.
+	//
+	// Off by default, so the number means "what is wrong with this app" rather
+	// than "what could this app's owner do about it today" — and an upgrade
+	// does not silently move every score. An installation that has decided it
+	// only acts on what it can fix turns it on, and the two agree again: what
+	// is counted is what is shown.
+	IgnoreUnfixableFindings bool `json:"ignore_unfixable_findings,omitempty"`
+}
+
+// What InsecureAction may say.
+const (
+	InsecureWarn = "warn"
+	InsecureStop = "stop"
+)
+
+// DefaultInsecureGraceHours is the grace an install gets when it turns stopping
+// on without saying how long. A day: long enough for somebody to see the
+// warning in a working week's morning, short enough to mean something.
+const DefaultInsecureGraceHours = 24
+
+// GraceHours is the grace in force, with the default applied.
+func (d Document) GraceHours() int {
+	if d.InsecureGraceHours > 0 {
+		return d.InsecureGraceHours
+	}
+	return DefaultInsecureGraceHours
+}
+
+// StopsInsecureApps reports whether policy says to stop them (R-316).
+func (d Document) StopsInsecureApps() bool {
+	return d.InsecureAction == InsecureStop
 }
 
 // Default is the permissive starting posture (R-270).
@@ -215,6 +282,24 @@ func (e *Evaluator) IsolationFloors(ctx context.Context) (build, runtime spec.Is
 		return 0, 0, err
 	}
 	return doc.MinBuildIsolation, doc.MinRuntimeIsolation, nil
+}
+
+// AllowsScreening is host policy's veto over AI screening (R-336).
+//
+// A reason rather than an error, and empty when it is allowed. This is not a
+// failure — it is a posture, and it is shown in the review as one. An
+// unreadable policy document denies: a screening that cannot be checked against
+// policy is one that has not been checked, and the safe direction is the one
+// that sends nothing anywhere.
+func (e *Evaluator) AllowsScreening(ctx context.Context) string {
+	doc, err := e.load(ctx)
+	if err != nil {
+		return "Pando could not read its host policy, so it did not screen this plan."
+	}
+	if doc.DisableAIScreening {
+		return "An administrator has turned off AI screening on this installation."
+	}
+	return ""
 }
 
 // Document returns the current policy.

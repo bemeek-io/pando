@@ -56,6 +56,24 @@ type App struct {
 	// Filled in by the API layer, which is the only place that knows what host
 	// the caller reached Pando on. See spec.Address.
 	Address string `json:"address,omitempty"`
+
+	// SecurityScore is the newest score of the revision this app is running
+	// (R-310). Nil for an app that has never been scanned, which is not a score
+	// of zero (R-318) — the list shows the difference.
+	//
+	// Which of the two stored numbers this is — every finding, or only the ones
+	// with a fix — is host policy's choice, applied by the API layer.
+	SecurityScore *int `json:"security_score,omitempty"`
+
+	// SecurityScoreFixable is the same scan counting only fixable findings, so
+	// the API layer can answer either question without a second query.
+	SecurityScoreFixable *int `json:"-"`
+
+	// SecurityVerdict is that score placed against host policy: ok, insecure,
+	// unscanned or inert. Filled in by the API layer, because it depends on a
+	// policy document and on whether a scanner is configured, and neither is
+	// the store's to know.
+	SecurityVerdict string `json:"security_verdict,omitempty"`
 }
 
 // Apps stores apps and their spec revisions.
@@ -134,12 +152,22 @@ func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 	var routing []byte
 	err := a.db.QueryRow(ctx, `
 		SELECT a.id, a.name, a.slug, a.owner_user_id, a.state, a.desired_state, a.pinned_spec_id,
-		       a.source, a.created_at, a.updated_at, a.deleted_at, r.body->'routing'
+		       a.source, a.created_at, a.updated_at, a.deleted_at, r.body->'routing',
+		       s.score, s.score_fixable
 		FROM apps a
 		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
+		LEFT JOIN LATERAL (
+		    SELECT sc.score, sc.score_fixable
+		    FROM app_scans sc
+		    WHERE sc.app_id = a.id AND sc.score IS NOT NULL
+		      AND (sc.spec_id = a.pinned_spec_id OR sc.spec_id IS NULL)
+		    ORDER BY (sc.spec_id IS NOT NULL) DESC, sc.ran_at DESC
+		    LIMIT 1
+		) s ON true
 		WHERE a.id = $1 AND a.deleted_at IS NULL`, appID).
 		Scan(&app.ID, &app.Name, &app.Slug, &owner, &app.State, &app.DesiredState, &pinned,
-			&source, &app.CreatedAt, &app.UpdatedAt, &app.DeletedAt, &routing)
+			&source, &app.CreatedAt, &app.UpdatedAt, &app.DeletedAt, &routing,
+			&app.SecurityScore, &app.SecurityScoreFixable)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return App{}, false, nil
 	}
@@ -169,9 +197,22 @@ func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, error) {
 	rows, err := a.db.Query(ctx, `
 		SELECT DISTINCT a.id, a.name, a.slug, a.owner_user_id, a.state, a.desired_state,
-		       a.pinned_spec_id, a.created_at, a.updated_at, r.body->'routing'
+		       a.pinned_spec_id, a.created_at, a.updated_at, r.body->'routing', s.score, s.score_fixable
 		FROM apps a
 		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
+		-- The newest scan of the revision this app is running, and failing that
+		-- the newest that belongs to no revision — which is what detection
+		-- produces, from the source, before a revision exists. Never another
+		-- revision's: a score for a spec the app is not running is not a score
+		-- of what is deployed (design 09 §3).
+		LEFT JOIN LATERAL (
+		    SELECT sc.score, sc.score_fixable
+		    FROM app_scans sc
+		    WHERE sc.app_id = a.id AND sc.score IS NOT NULL
+		      AND (sc.spec_id = a.pinned_spec_id OR sc.spec_id IS NULL)
+		    ORDER BY (sc.spec_id IS NOT NULL) DESC, sc.ran_at DESC
+		    LIMIT 1
+		) s ON true
 		JOIN grants g ON g.app_id = a.id AND g.plane = 'control'
 		WHERE a.deleted_at IS NULL
 		  AND (
@@ -193,7 +234,8 @@ func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, 
 		var owner, pinned *string
 		var routing []byte
 		if err := rows.Scan(&app.ID, &app.Name, &app.Slug, &owner, &app.State, &app.DesiredState,
-			&pinned, &app.CreatedAt, &app.UpdatedAt, &routing); err != nil {
+			&pinned, &app.CreatedAt, &app.UpdatedAt, &routing,
+			&app.SecurityScore, &app.SecurityScoreFixable); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list apps.", err)
 		}
 		if len(routing) > 0 {
@@ -527,6 +569,19 @@ type AppWithStorage struct {
 // Only apps with storage. An app with none has nothing a rolling backup would
 // hold that its spec revisions do not already, and taking one anyway would fill
 // the destination with empty bundles nobody wants to page through.
+//
+// The volumes test is jsonb_typeof and not a coalesce. `AppSpec.Volumes` is
+// tagged without omitempty, so an app that declares no storage stores
+// `"volumes": null` — and `->` on a key holding JSON null answers with that
+// null, not SQL NULL, so the coalesce never fired and jsonb_array_length was
+// handed a scalar. Postgres raises 22023, the reconciler logged "could not list
+// apps for rolling backups", and no app on the installation was backed up
+// (R-210).
+//
+// A typeof guard beside it is not enough on its own: AND does not promise an
+// evaluation order, and the planner is free to reach jsonb_array_length first —
+// it did. So the emptiness test is a comparison, which is defined for every
+// input this column can hold.
 func (a *Apps) WithStorage(ctx context.Context) ([]AppWithStorage, error) {
 	rows, err := a.db.Query(ctx, `
 		SELECT a.id, r.body,
@@ -535,7 +590,8 @@ func (a *Apps) WithStorage(ctx context.Context) ([]AppWithStorage, error) {
 		JOIN spec_revisions r ON r.id = a.pinned_spec_id
 		WHERE a.deleted_at IS NULL
 		  AND a.state IN ('running', 'degraded')
-		  AND jsonb_array_length(coalesce(r.body->'volumes', '[]'::jsonb)) > 0
+		  AND jsonb_typeof(r.body->'volumes') = 'array'
+		  AND r.body->'volumes' <> '[]'::jsonb
 		ORDER BY a.id`)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not list apps with storage.", err)

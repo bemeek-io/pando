@@ -20,6 +20,7 @@ import { Button, Checkbox, Switch } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 import type { AppSpec } from '@api/types.gen';
+import { MEASURE } from '../ui/layout';
 
 export function DeploySettings({ appID, spec }: { appID: string; spec: AppSpec }) {
   const [startThenSwap, setStartThenSwap] = useState(
@@ -42,7 +43,7 @@ export function DeploySettings({ appID, spec }: { appID: string; spec: AppSpec }
   });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: 'var(--console-max)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: MEASURE }}>
       <Setting
         title="Deploy when the branch changes"
         control={
