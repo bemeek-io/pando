@@ -13,7 +13,7 @@ import (
 // and the API, which it had none of: GET /audit was reachable from the console
 // alone (R-261).
 func auditCmd(client func() (*Client, error)) *cobra.Command {
-	var action, actor, actorKind, app, targetKind, target, since, until string
+	var action, actor, actorKind, app, targetKind, target, since, until, before string
 	var limit int
 
 	cmd := &cobra.Command{
@@ -31,7 +31,7 @@ func auditCmd(client func() (*Client, error)) *cobra.Command {
 			q := url.Values{}
 			for key, v := range map[string]string{
 				"action": action, "principal_id": actor, "principal_kind": actorKind, "app_id": app,
-				"target_kind": targetKind, "target_id": target,
+				"target_kind": targetKind, "target_id": target, "before": before,
 			} {
 				if v != "" {
 					q.Set(key, v)
@@ -60,6 +60,7 @@ func auditCmd(client func() (*Client, error)) *cobra.Command {
 					TargetKind string    `json:"target_kind"`
 					TargetID   string    `json:"target_id"`
 				} `json:"events"`
+				NextBefore string `json:"next_before"`
 			}
 			path := "/audit"
 			if len(q) > 0 {
@@ -81,7 +82,15 @@ func auditCmd(client func() (*Client, error)) *cobra.Command {
 				}
 				fmt.Fprintf(t, "%s\t%s\t%s\t%s\n", e.OccurredAt.Local().Format(time.DateTime), e.Action, who, target)
 			}
-			return t.Flush()
+			if err := t.Flush(); err != nil {
+				return err
+			}
+			// The same filters, one page further back: the API pages on a cursor,
+			// and the command that reads the next page is the useful thing to say.
+			if out.NextBefore != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "\nOlder events: add --before %s\n", out.NextBefore)
+			}
+			return nil
 		},
 	}
 
@@ -95,6 +104,7 @@ func auditCmd(client func() (*Client, error)) *cobra.Command {
 	f.StringVar(&since, "since", "", "from this time, or this long ago (24h)")
 	f.StringVar(&until, "until", "", "up to this time, or this long ago")
 	f.IntVar(&limit, "limit", 0, "how many events (default 100, at most 500)")
+	f.StringVar(&before, "before", "", "the page before this cursor, as printed after a full page")
 	return cmd
 }
 
