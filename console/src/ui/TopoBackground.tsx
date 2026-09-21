@@ -1,57 +1,98 @@
 // Topographic terrain behind the console.
 //
-// Generated, not drawn: a height field made of a few irregular hills, with
-// contour lines traced through it by marching squares and smoothed into
-// curves. Lines at different heights can never cross, because they are level
-// sets of one surface — which is what makes it read as a real survey map
-// rather than a pattern.
+// Generated, not drawn: a height field made of irregular hills, with contour
+// lines traced through it by marching squares and smoothed into curves. Lines
+// at different heights can never cross, because they are level sets of one
+// surface — which is what makes it read as a real survey map rather than a
+// pattern.
 //
-// It sits in the bottom-right corner, fixed to the viewport, and fades out
-// toward the content with a mask, so it is behind the console rather than
-// wallpaper across it. Every fifth line is an index contour, as on a printed
-// quadrangle. Colors are the contour tokens, so the night-survey theme follows.
+// Each page gets its own terrain. The hills, the warp and where the map shows
+// through are all drawn from a seed — the section, and the app when there is
+// one — so moving through the console moves across different ground, while the
+// tabs of one app share that app's map. The same seed always gives the same
+// map.
 //
-// Deterministic: the same terrain on every load, computed once per session.
+// It spans the viewport but shows through a few soft patches placed by the
+// same seed, so it is never uniform wallpaper and never parked in one corner.
+// It is kept faint: contour tokens at low opacity, and index contours at the
+// ordinary line width, distinguished by colour alone.
+
+import { useMemo } from 'react';
 
 const COLS = 120;
 const ROWS = 80;
 const CELL = 10;
-const LEVELS = 18;
+const LEVELS = 16;
 
 type Pt = [number, number];
-
-interface Hill {
-  cx: number;
-  cy: number;
-  sx: number;
-  sy: number;
-  a: number;
+type Contour = { d: string; index: boolean };
+interface Terrain {
+  contours: Contour[];
+  mask: string;
 }
 
-// Weighted toward the bottom-right, which is where the layer is anchored.
-const HILLS: Hill[] = [
-  { cx: 0.8, cy: 0.74, sx: 0.2, sy: 0.17, a: 1.0 },
-  { cx: 0.56, cy: 0.93, sx: 0.15, sy: 0.12, a: 0.62 },
-  { cx: 0.97, cy: 0.36, sx: 0.17, sy: 0.2, a: 0.72 },
-  { cx: 0.42, cy: 0.6, sx: 0.19, sy: 0.22, a: 0.34 },
-  { cx: 0.68, cy: 0.45, sx: 0.1, sy: 0.09, a: 0.28 },
-];
-
-function height(x: number, y: number): number {
-  // A gentle warp so hills are irregular rather than elliptical.
-  const wx = x + 0.035 * Math.sin(11 * y + 2.1) + 0.02 * Math.sin(23 * y + 0.4);
-  const wy = y + 0.035 * Math.sin(13 * x + 0.5) + 0.02 * Math.sin(19 * x + 1.7);
-  let h = 0;
-  for (const k of HILLS) {
-    const dx = (wx - k.cx) / k.sx;
-    const dy = (wy - k.cy) / k.sy;
-    h += k.a * Math.exp(-(dx * dx + dy * dy));
+/** FNV-1a, so a route string becomes a stable 32-bit seed. */
+function hash(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
   }
-  return h + 0.05 * Math.sin(7 * x + 1.3) * Math.cos(6 * y + 0.2);
+  return h >>> 0;
+}
+
+/** mulberry32: small, fast, and the same sequence for the same seed. */
+function rng(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function generate(seed: string): Terrain {
+  const r = rng(hash(seed));
+  const between = (lo: number, hi: number) => lo + r() * (hi - lo);
+
+  const hills = Array.from({ length: 6 + Math.floor(r() * 3) }, () => ({
+    cx: between(-0.05, 1.05),
+    cy: between(-0.05, 1.05),
+    sx: between(0.08, 0.22),
+    sy: between(0.08, 0.2),
+    a: between(0.3, 1),
+  }));
+  const p = Array.from({ length: 6 }, () => between(0, Math.PI * 2));
+
+  const height = (x: number, y: number) => {
+    // A warp so hills are irregular rather than elliptical.
+    const wx = x + 0.035 * Math.sin(11 * y + p[0]!) + 0.02 * Math.sin(23 * y + p[1]!);
+    const wy = y + 0.035 * Math.sin(13 * x + p[2]!) + 0.02 * Math.sin(19 * x + p[3]!);
+    let h = 0;
+    for (const k of hills) {
+      const dx = (wx - k.cx) / k.sx;
+      const dy = (wy - k.cy) / k.sy;
+      h += k.a * Math.exp(-(dx * dx + dy * dy));
+    }
+    return h + 0.05 * Math.sin(7 * x + p[4]!) * Math.cos(6 * y + p[5]!);
+  };
+
+  // Where the map shows through: a few soft patches. None is centred on the
+  // top-left, which is where every page's heading and first rows are.
+  const patches = Array.from({ length: 3 }, () => {
+    let x = between(0.1, 1.05);
+    let y = between(0.1, 1.05);
+    if (x < 0.4 && y < 0.35) y += 0.45;
+    const s = between(30, 50);
+    return `radial-gradient(ellipse ${s.toFixed(0)}% ${(s * 1.25).toFixed(0)}% at ${(x * 100).toFixed(0)}% ${(y * 100).toFixed(0)}%, black 15%, transparent 100%)`;
+  });
+
+  return { contours: trace(height), mask: patches.join(', ') };
 }
 
 /** Contour paths, one entry per level, bottom level first. */
-function trace(): { d: string; index: boolean }[] {
+function trace(height: (x: number, y: number) => number): Contour[] {
   const w = COLS + 1;
   const v = new Float64Array(w * (ROWS + 1));
   let min = Infinity;
@@ -66,8 +107,8 @@ function trace(): { d: string; index: boolean }[] {
   }
   const at = (i: number, j: number): number => v[j * w + i] ?? 0;
 
-  const out: { d: string; index: boolean }[] = [];
-  const lo = min + (max - min) * 0.1;
+  const out: Contour[] = [];
+  const lo = min + (max - min) * 0.08;
   const hi = max - (max - min) * 0.03;
 
   for (let l = 0; l < LEVELS; l++) {
@@ -136,11 +177,11 @@ function trace(): { d: string; index: boolean }[] {
         cur = next;
       }
       if (chain.length > 2 && (adj.get(cur) ?? []).includes(start)) chain.push(start);
-      return chain.map((k) => pts.get(k)!);
+      return chain.map((k) => pts.get(k) ?? [0, 0]);
     };
 
     let d = '';
-    const ends = [...adj.keys()].filter((k) => adj.get(k)!.length === 1);
+    const ends = [...adj.keys()].filter((k) => adj.get(k)?.length === 1);
     for (const k of [...ends, ...adj.keys()]) {
       if (used.has(k)) continue;
       const line = walk(k);
@@ -165,39 +206,42 @@ function smooth(p: Pt[]): string {
   return d + `L${f(lx)} ${f(ly)}`;
 }
 
-let cached: { d: string; index: boolean }[] | null = null;
+const cache = new Map<string, Terrain>();
 
-export function TopoBackground() {
-  cached ??= trace();
-
-  // Fades from the bottom-right corner toward the content.
-  const mask = 'radial-gradient(ellipse 100% 100% at 100% 100%, black 30%, transparent 78%)';
+export function TopoBackground({ seed }: { seed: string }) {
+  const terrain = useMemo(() => {
+    let t = cache.get(seed);
+    if (!t) {
+      t = generate(seed);
+      cache.set(seed, t);
+    }
+    return t;
+  }, [seed]);
 
   return (
     <svg
       aria-hidden="true"
       viewBox={`0 0 ${COLS * CELL} ${ROWS * CELL}`}
-      preserveAspectRatio="xMaxYMax slice"
+      preserveAspectRatio="xMidYMid slice"
       style={{
         position: 'fixed',
-        right: 0,
-        bottom: 0,
-        width: '72vw',
-        height: '88vh',
+        inset: 0,
+        width: '100vw',
+        height: '100vh',
         zIndex: -1,
         pointerEvents: 'none',
-        opacity: 0.8,
-        maskImage: mask,
-        WebkitMaskImage: mask,
+        opacity: 0.5,
+        maskImage: terrain.mask,
+        WebkitMaskImage: terrain.mask,
       }}
     >
-      {cached.map(({ d, index }, i) => (
+      {terrain.contours.map(({ d, index }, i) => (
         <path
           key={i}
           d={d}
           fill="none"
           stroke={index ? 'var(--contour)' : 'var(--contour-line)'}
-          strokeWidth={index ? 'var(--contour-index-width)' : 'var(--contour-line-width)'}
+          strokeWidth="var(--contour-line-width)"
           vectorEffect="non-scaling-stroke"
           strokeLinecap="round"
           strokeLinejoin="round"

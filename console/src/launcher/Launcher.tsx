@@ -38,7 +38,7 @@ export function Launcher({
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--paper)', isolation: 'isolate' }}>
-      <TopoBackground />
+      <TopoBackground seed="launcher" />
       <header
         style={{
           display: 'flex',

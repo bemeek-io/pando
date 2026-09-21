@@ -55,15 +55,20 @@ that rule carried no trace of the brand, and the product owner chose to put the 
 
 The departure is bounded, which is what keeps it from being wallpaper:
 
-- **One corner, fading out.** `console/src/ui/TopoBackground.tsx` is fixed to the bottom-right of
-  the viewport and masked so it fades toward the top-left, before it reaches the page heading and
-  the first rows of a table. It is behind the admin console and the launcher; the sign-in screen
-  keeps its own figure.
-- **Real terrain, not a pattern.** A height field of a few irregular hills, contoured by marching
-  squares and smoothed into curves. Lines are level sets of one surface, so they never cross. Every
-  fifth is an index contour. Deterministic, so the map is the same on every load.
-- **Tokens only.** `--contour` and `--contour-line` at their contour widths, so the night-survey
-  theme follows and nothing new enters the palette.
+- **Patches, not a sheet.** `console/src/ui/TopoBackground.tsx` spans the viewport but shows
+  through only a few soft patches, none centred on the top-left where a page's heading and first
+  rows are. It is behind the admin console and the launcher; the sign-in screen keeps its own
+  figure.
+- **Faint.** Half opacity, and index contours at the ordinary line width, set apart by colour
+  alone.
+- **Different ground per page.** Hills, warp and patch positions come from a seed: the section, and
+  the app when there is one. Each screen has its own map, the tabs of one app share that app's map,
+  and the same seed always gives the same map.
+- **Real terrain, not a pattern.** A height field of irregular hills, contoured by marching squares
+  and smoothed into curves. Lines are level sets of one surface, so they never cross. Every fifth
+  is an index contour.
+- **Tokens only.** `--contour` and `--contour-line`, so the night-survey theme follows and nothing
+  new enters the palette.
 - **No frame.** Pages are not bordered or boxed; `ui/Sheet.tsx` is only the shared heading-and-
   content layout, uncapped to match `ui/layout.ts`.
 
