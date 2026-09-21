@@ -1,4 +1,5 @@
 import React from 'react';
+import { MapCollar } from './MapCollar.jsx';
 
 /* Deterministic terrain: one shape function scaled per ring, so rings are
    irregular, roughly concentric, and can never cross. */
@@ -53,15 +54,18 @@ export function ContourMap({
   const summitSize = hero ? 8 : 6;
   const dur = 900;
 
+  // The collar is MapCollar's job, so the corner ticks and the scale bar have
+  // one definition rather than a copy here and a copy in every page that wants
+  // to read as a printed sheet. Uncollared, the figure is the bare terrain and
+  // there is no frame at all.
+  const Frame = collar ? MapCollar : PlainFrame;
+  const frameProps = collar
+    ? { marginalia: coordinates, scale: true, scaleLabels }
+    : {};
+
   return (
     <figure style={{ margin: 0, width: w, maxWidth: '100%', ...style }} {...rest}>
-      <div style={{ position: 'relative', border: collar ? '1px solid var(--rule-strong)' : 'none', padding: collar ? 'var(--space-3)' : 0 }}>
-        {collar && <Ticks />}
-        {collar && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', font: 'var(--type-code-sm)', color: 'var(--ink-secondary)', padding: '0 var(--space-1) var(--space-2)' }}>
-            <span>{coordinates[0]}</span><span>{coordinates[1]}</span>
-          </div>
-        )}
+      <Frame {...frameProps}>
         <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', overflow: 'visible' }} aria-hidden="true">
           {paths.map(({ d, index, i }) => (
             <path
@@ -88,29 +92,12 @@ export function ContourMap({
             </g>
           )}
         </svg>
-        {collar && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', paddingTop: 'var(--space-3)' }}>
-            <div style={{ display: 'flex' }}>
-              {[0, 1, 2, 3].map((i) => (
-                <span key={i} style={{ width: 12, height: 4, background: i % 2 === 0 ? 'var(--ink)' : 'var(--paper-raised)', border: '1px solid var(--ink)', borderLeft: i === 0 ? '1px solid var(--ink)' : 'none' }} />
-              ))}
-            </div>
-            <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>{scaleLabels.join('    ')}</span>
-          </div>
-        )}
-      </div>
+      </Frame>
     </figure>
   );
 }
 
-function Ticks() {
-  const t = { position: 'absolute', width: 8, height: 8, borderColor: 'var(--rule-strong)', borderStyle: 'solid', borderWidth: 0 };
-  return (
-    <React.Fragment>
-      <span style={{ ...t, top: -1, left: -1, borderTopWidth: 1, borderLeftWidth: 1, transform: 'translate(-3px,-3px)' }} />
-      <span style={{ ...t, top: -1, right: -1, borderTopWidth: 1, borderRightWidth: 1, transform: 'translate(3px,-3px)' }} />
-      <span style={{ ...t, bottom: -1, left: -1, borderBottomWidth: 1, borderLeftWidth: 1, transform: 'translate(-3px,3px)' }} />
-      <span style={{ ...t, bottom: -1, right: -1, borderBottomWidth: 1, borderRightWidth: 1, transform: 'translate(3px,3px)' }} />
-    </React.Fragment>
-  );
+/** No collar: the terrain prints straight onto the page. */
+function PlainFrame({ children }) {
+  return <React.Fragment>{children}</React.Fragment>;
 }

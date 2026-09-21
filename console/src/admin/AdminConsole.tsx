@@ -40,6 +40,7 @@ import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { ScoreBadge } from '../ui/ScoreBadge';
 import { Terminal } from './Terminal';
+import { Sheet } from '../ui/Sheet';
 
 export function AdminConsole({
   route,
@@ -195,23 +196,17 @@ function AppsList({
   // The action sits beside the heading rather than opposite it. Pushed to the
   // far end of a measure it is a long way from the word it belongs to, and on
   // a wide window the eye has to cross the whole page to find out what a screen
-  // offers.
+  // offers. Sheet does both, and frames the page as a survey sheet.
   return (
-    <div>
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--space-4)',
-          padding: 'var(--space-6) var(--console-padding) var(--space-4)',
-        }}
+    <>
+      <Sheet
+        heading="Apps"
+        action={
+          <Button variant="primary" onClick={() => setAdding(true)}>
+            Add app
+          </Button>
+        }
       >
-        <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>Apps</h3>
-        <Button variant="primary" onClick={() => setAdding(true)}>
-          Add app
-        </Button>
-      </header>
-      <div style={{ padding: '0 var(--console-padding) var(--space-7)' }}>
         <Table
           onRowClick={onOpen}
           // A fresh install has no apps, and the list was a set of column
@@ -264,7 +259,7 @@ function AppsList({
           ]}
           rows={rows}
         />
-      </div>
+      </Sheet>
 
       {adding && (
         <AddApp
@@ -275,7 +270,7 @@ function AppsList({
           }}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -365,23 +360,29 @@ function AppScreen({
     // nothing else — no name, no reason, no way out but the list they came
     // from. The list's own row carries the name, so the delete still knows what
     // it is about.
+    //
+    // Not the 404 contour figure. That figure means "the thing you came for is
+    // not here", and this app is in the list — its record failed to load, and
+    // the server's own message says why (R-105). A guessed "may have been
+    // deleted" would be wrong about the one app it is shown for.
     return (
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-start',
-          gap: 'var(--space-4)',
-          padding: 'var(--space-6) var(--console-padding)',
-        }}
-      >
-        <Button variant="ghost" onClick={onBack}>
-          Apps
-        </Button>
-        {listed && <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{listed.name}</h3>}
-        <Banner tone="failed">{messageOf(app.error)}</Banner>
-        <DeleteApp appID={appID} appName={listed?.name ?? 'this app'} onDeleted={onBack} />
-      </div>
+      <Sheet>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 'var(--space-4)',
+          }}
+        >
+          <Button variant="ghost" onClick={onBack}>
+            Apps
+          </Button>
+          {listed && <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{listed.name}</h3>}
+          <Banner tone="failed">{messageOf(app.error)}</Banner>
+          <DeleteApp appID={appID} appName={listed?.name ?? 'this app'} onDeleted={onBack} />
+        </div>
+      </Sheet>
     );
   }
 
@@ -402,53 +403,63 @@ function AppScreen({
       [{ value: 'detection', label: 'Configuration' }];
 
   return (
-    <div>
-      <header
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-start',
-          gap: 'var(--space-3)',
-          padding: 'var(--space-6) var(--console-padding) var(--space-4)',
-        }}
-      >
-        <Button variant="ghost" onClick={onBack} style={{ alignSelf: 'flex-start' }}>
-          Apps
-        </Button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-            <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
-            <StatusIndicator status={statusSymbol(app.data.state)} label={statusLabel(app.data.state)} />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
-            {/* Deploy where somebody looking at an app can reach it, from any
-                tab, rather than under everything on the overview. Only for an
-                app that has a configuration to deploy: before that, the thing
-                to do is accept one. */}
-            {app.data.pinned_spec_id && (
-              <DeployButton
-                app={app.data}
-                onRefused={(message, remedy, code) =>
-                  setRefusal(message ? { message, remedy, code } : null)
-                }
+    <Sheet
+      heading={
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 'var(--space-3)',
+          }}
+        >
+          <Button variant="ghost" onClick={onBack} style={{ alignSelf: 'flex-start' }}>
+            Apps
+          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+              <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
+              <StatusIndicator
+                status={statusSymbol(app.data.state)}
+                label={statusLabel(app.data.state)}
               />
-            )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+              {/* Deploy where somebody looking at an app can reach it, from any
+                  tab, rather than under everything on the overview. Only for an
+                  app that has a configuration to deploy: before that, the thing
+                  to do is accept one. */}
+              {app.data.pinned_spec_id && (
+                <DeployButton
+                  app={app.data}
+                  onRefused={(message, remedy, code) =>
+                    setRefusal(message ? { message, remedy, code } : null)
+                  }
+                />
+              )}
 
-            {/* Stopping is the thing somebody reaches for when they would
-                otherwise delete: it keeps the storage, the configuration and
-                the address, and starting brings back what was running. */}
-            <Lifecycle app={app.data} />
+              {/* Stopping is the thing somebody reaches for when they would
+                  otherwise delete: it keeps the storage, the configuration and
+                  the address, and starting brings back what was running. */}
+              <Lifecycle app={app.data} />
 
-            {/* In the header rather than on Settings: an app whose source could
-                not be fetched has no pinned spec and therefore no Settings tab,
-                and that is the app most likely to be deleted. */}
-            <DeleteApp appID={app.data.id} appName={app.data.name} onDeleted={onBack} />
+              {/* In the header rather than on Settings: an app whose source could
+                  not be fetched has no pinned spec and therefore no Settings tab,
+                  and that is the app most likely to be deleted. */}
+              <DeleteApp appID={app.data.id} appName={app.data.name} onDeleted={onBack} />
+            </div>
           </div>
         </div>
-      </header>
-
+      }
+      // The sheet's marginal data. An app's id is what the CLI and the API want
+      // and the console had nowhere to show it, so it was a value you could
+      // only get by reading the address bar.
+      note={app.data.id}
+    >
+      {/* Sheet provides the page inset, so this carries only the measure and
+          the gap above the tabs. */}
       {refusal && (
-        <div style={{ padding: '0 var(--console-padding) var(--space-4)', maxWidth: MEASURE }}>
+        <div style={{ paddingBottom: 'var(--space-4)', maxWidth: MEASURE }}>
           {/* The server's words, which are written to be acted on (R-105) —
               and, where the console has the screen that acts on them, the way
               there. A refusal that names a remedy on a page with no control
@@ -480,11 +491,9 @@ function AppScreen({
         </div>
       )}
 
-      <div style={{ padding: '0 var(--console-padding)' }}>
-        <Tabs value={tab} onChange={setTab} items={tabs} />
-      </div>
+      <Tabs value={tab} onChange={setTab} items={tabs} />
 
-      <div style={{ padding: 'var(--space-5) var(--console-padding) var(--space-7)' }}>
+      <div style={{ paddingTop: 'var(--space-5)' }}>
         {tab === 'detection' && <DetectionReview appID={app.data.id} reviewed={reviewed} />}
         {tab === 'sharing' && <Sharing appID={app.data.id} appName={app.data.name} />}
         {tab === 'overview' && <AppOverview app={app.data} onGo={setTab} />}
@@ -492,7 +501,7 @@ function AppScreen({
         {tab === 'resources' && <Resources appID={app.data.id} focus={focus} />}
         {tab === 'terminal' && <Terminal appID={app.data.id} />}
       </div>
-    </div>
+    </Sheet>
   );
 }
 
