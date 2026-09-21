@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react';
 export type Section =
   | 'apps'
   | 'api'
+  | 'settings'
   | 'accounts'
   | 'identity'
   | 'installation'
@@ -33,6 +34,7 @@ export interface Route {
 const SECTIONS: Section[] = [
   'apps',
   'api',
+  'settings',
   'accounts',
   'identity',
   'installation',

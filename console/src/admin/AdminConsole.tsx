@@ -31,12 +31,11 @@ import { Logs } from './Logs';
 import { Resources } from './Resources';
 import { AddApp } from './AddApp';
 import { Reference } from './Reference';
+import { Settings } from './Settings';
 import { DeleteApp } from './DeleteApp';
 import { DeployButton } from './DeployButton';
 import { Lifecycle } from './Lifecycle';
 import type { Route, Section } from '../app/route';
-import { ThemeToggle } from '../ui/ThemeToggle';
-import { SignOut } from '../ui/SignOut';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { ScoreBadge } from '../ui/ScoreBadge';
@@ -131,6 +130,8 @@ export function AdminConsole({
   // a token are not administration — a developer with one app shared with them
   // needs both.
   items.push({ value: 'api', label: 'API and tools' });
+  // Also for everyone: the person's own preferences and the way out.
+  items.push({ value: 'settings', label: 'Your settings' });
 
   return (
     // isolation makes this the stacking context, so the terrain's negative
@@ -171,15 +172,9 @@ export function AdminConsole({
         }
         items={items}
         footer={
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-2)' }}>
-            <Button variant="ghost" onClick={onLeave}>
-              Back to my apps
-            </Button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <ThemeToggle />
-              <SignOut onSignedOut={onSignedOut} />
-            </div>
-          </div>
+          <Button variant="ghost" onClick={onLeave}>
+            Back to my apps
+          </Button>
         }
       />
 
@@ -191,6 +186,7 @@ export function AdminConsole({
         {section === 'backups' && <Backups />}
         {section === 'audit' && <Audit />}
         {section === 'api' && <Reference />}
+        {section === 'settings' && <Settings onSignedOut={onSignedOut} />}
         {section === 'apps' &&
           (selectedID ? (
             <AppScreen

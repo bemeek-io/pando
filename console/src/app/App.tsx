@@ -60,14 +60,17 @@ export function App() {
   // The API screen is open to anyone signed in, so the console's shell is too
   // — with everything else in it hidden, which is what the sidebar already does
   // per verb. Somebody who lands on /admin with no verbs still goes back to the
-  // launcher; only /admin/api lets them stay.
+  // launcher; only /admin/api and /admin/settings let them stay — both are
+  // about the person, not the installation.
+  const everyone = route.section === 'api' || route.section === 'settings';
+
   // Signing out lands on the sign-in form at the root, not at whatever admin
   // address was open — the next person to sign in on this browser should start
   // on their own launcher. Replace, so Back does not return to a page that
   // would only answer 401.
   const signedOut = () => go({ view: 'launcher', section: 'apps' }, true);
 
-  if (route.view === 'admin' && (isAdmin || route.section === 'api')) {
+  if (route.view === 'admin' && (isAdmin || everyone)) {
     return (
       <AdminConsole
         route={route}
@@ -86,7 +89,7 @@ export function App() {
     <Launcher
       onAdmin={isAdmin ? () => go({ view: 'admin', section: 'apps' }) : undefined}
       onReference={() => go({ view: 'admin', section: 'api' })}
-      onSignedOut={signedOut}
+      onSettings={() => go({ view: 'admin', section: 'settings' })}
     />
   );
 }

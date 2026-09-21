@@ -15,8 +15,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Card, EmptyState, Logo, StatusIndicator } from '@design';
 
-import { ThemeToggle } from '../ui/ThemeToggle';
-import { SignOut } from '../ui/SignOut';
 
 import { api } from '@api/client';
 import type { App } from '@api/types.gen';
@@ -27,12 +25,13 @@ import { TopoBackground } from '../ui/TopoBackground';
 export function Launcher({
   onAdmin,
   onReference,
-  onSignedOut,
+  onSettings,
 }: {
   onAdmin?: () => void;
   /** The API screen, which everyone can reach (R-261, R-262). */
   onReference?: () => void;
-  onSignedOut?: () => void;
+  /** Theme and signing out, which everyone can reach. */
+  onSettings: () => void;
 }) {
   const apps = useQuery({
     queryKey: ['me', 'apps'],
@@ -53,7 +52,6 @@ export function Launcher({
       >
         <Logo size={20} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-        <ThemeToggle />
         {onReference && (
           <button
             onClick={onReference}
@@ -84,7 +82,19 @@ export function Launcher({
             Admin
           </button>
         )}
-        <SignOut onSignedOut={onSignedOut} />
+        <button
+          onClick={onSettings}
+          style={{
+            border: 'none',
+            background: 'transparent',
+            padding: 0,
+            cursor: 'pointer',
+            font: 'var(--type-body-ui)',
+            color: 'var(--ink-secondary)',
+          }}
+        >
+          Settings
+        </button>
         </div>
       </header>
 
