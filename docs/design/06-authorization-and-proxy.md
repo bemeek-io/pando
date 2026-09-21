@@ -312,6 +312,12 @@ and nothing else, because the sidebar is drawn per verb.
 
 **[D]** Built-in roles (R-081) are seeded by migration and trigger-protected. When a new verb is introduced in a later Pando version, a migration adds it to the appropriate built-in roles. That is the upgrade mechanism R-081 promises, and it is the only sanctioned way built-in role contents change.
 
+**[D]** Deleting a custom role deletes every grant of it in the same transaction, and deleting a group
+deletes every grant to it; whoever held them loses that access and keeps anything held another way.
+Both are refused when they would leave no installation-wide grant holding `install.users.manage`
+(R-088) — the same lockout as revoking that grant directly, reached through a different door. The
+console confirms each with its own wording, naming whose access goes and whose stays.
+
 **[D]** Custom roles (R-082) are arbitrary subsets. There is no verb implication graph — holding `app.delete` does not imply `app.view`. Implication graphs are where authorization bugs live; the console can suggest sensible combinations instead.
 
 ---

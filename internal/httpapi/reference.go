@@ -114,10 +114,10 @@ var routeDocs = []reference.Route{
 	{Method: "GET", Path: "/api/v1/groups", Group: "Identity", Summary: "Groups, whether Pando's own or an identity adapter's (R-078).", Verb: string(authz.InstallView)},
 	{Method: "POST", Path: "/api/v1/groups", Group: "Identity", Summary: "Create a group.", Verb: string(authz.InstallUsersManage)},
 	{Method: "PUT", Path: "/api/v1/groups/{groupID}/members", Group: "Identity", Summary: "Set a group's members.", Verb: string(authz.InstallUsersManage)},
-	{Method: "DELETE", Path: "/api/v1/groups/{groupID}", Group: "Identity", Summary: "Delete a group.", Verb: string(authz.InstallUsersManage)},
+	{Method: "DELETE", Path: "/api/v1/groups/{groupID}", Group: "Identity", Summary: "Delete a group. Everything shared with it goes with it: its members lose that access and keep anything given to them another way. Refused if it would leave nobody who can manage accounts (R-088).", Verb: string(authz.InstallUsersManage)},
 	{Method: "GET", Path: "/api/v1/roles", Group: "Identity", Summary: "The roles that can be granted, built in and custom. Built-in roles are immutable (R-081).", Verb: string(authz.InstallView)},
 	{Method: "POST", Path: "/api/v1/roles", Group: "Identity", Summary: "Compose a custom role from verbs (R-082).", Verb: string(authz.InstallUsersManage)},
-	{Method: "DELETE", Path: "/api/v1/roles/{roleID}", Group: "Identity", Summary: "Delete a custom role.", Verb: string(authz.InstallUsersManage)},
+	{Method: "DELETE", Path: "/api/v1/roles/{roleID}", Group: "Identity", Summary: "Delete a custom role, and every grant of it: whoever held it loses what it allowed. Built-in roles cannot be deleted (R-081). Refused if it would leave nobody who can manage accounts (R-088).", Verb: string(authz.InstallUsersManage)},
 	{Method: "GET", Path: "/api/v1/verbs", Group: "Identity", Summary: "Every verb, by scope, for composing a role. There is no implication graph: holding one says nothing about another (R-082).", Verb: string(authz.InstallView)},
 
 	// --- installation -----------------------------------------------------

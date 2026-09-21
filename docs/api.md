@@ -152,10 +152,10 @@ one verb says nothing about another (R-082).
 | `GET /api/v1/groups` | `install.view` | Groups, whether Pando's own or an identity adapter's (R-078). |
 | `POST /api/v1/groups` | `install.users.manage` | Create a group. |
 | `PUT /api/v1/groups/{groupID}/members` | `install.users.manage` | Set a group's members. |
-| `DELETE /api/v1/groups/{groupID}` | `install.users.manage` | Delete a group. |
+| `DELETE /api/v1/groups/{groupID}` | `install.users.manage` | Delete a group. Everything shared with it goes with it: its members lose that access and keep anything given to them another way. Refused if it would leave nobody who can manage accounts (R-088). |
 | `GET /api/v1/roles` | `install.view` | The roles that can be granted, built in and custom. Built-in roles are immutable (R-081). |
 | `POST /api/v1/roles` | `install.users.manage` | Compose a custom role from verbs (R-082). |
-| `DELETE /api/v1/roles/{roleID}` | `install.users.manage` | Delete a custom role. |
+| `DELETE /api/v1/roles/{roleID}` | `install.users.manage` | Delete a custom role, and every grant of it: whoever held it loses what it allowed. Built-in roles cannot be deleted (R-081). Refused if it would leave nobody who can manage accounts (R-088). |
 | `GET /api/v1/verbs` | `install.view` | Every verb, by scope, for composing a role. There is no implication graph: holding one says nothing about another (R-082). |
 
 ### Installation

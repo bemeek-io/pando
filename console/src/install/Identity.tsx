@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge, Banner, Button, Checkbox, Dialog, Input, Select, Table, Tag } from '@design';
 
-import { api } from '@api/client';
+import { api, RequestFailed } from '@api/client';
 import { Quiet, Screen, messageOf } from './Accounts';
 
 interface Group {
@@ -55,6 +55,7 @@ export function Identity({ canEdit }: { canEdit: boolean }) {
 
 function Groups({ canEdit }: { canEdit: boolean }) {
   const [editing, setEditing] = useState<Group | 'new' | null>(null);
+  const [deleting, setDeleting] = useState<Group | null>(null);
 
   const groups = useQuery({
     queryKey: ['groups'],
@@ -108,13 +109,20 @@ function Groups({ canEdit }: { canEdit: boolean }) {
             {
               key: 'edit',
               header: '',
-              width: '14ch',
+              width: '24ch',
               align: 'right',
+              // Not for a synced group: the identity provider would make it
+              // again at the next sign-in (R-078).
               render: (row: Group) =>
                 canEdit && !row.source ? (
-                  <Button variant="ghost" onClick={() => setEditing(row)}>
-                    Change people
-                  </Button>
+                  <span style={{ display: 'inline-flex', gap: 'var(--space-2)' }}>
+                    <Button variant="ghost" onClick={() => setEditing(row)}>
+                      Change people
+                    </Button>
+                    <Button variant="ghost" onClick={() => setDeleting(row)}>
+                      Delete
+                    </Button>
+                  </span>
                 ) : null,
             },
           ]}
@@ -124,6 +132,7 @@ function Groups({ canEdit }: { canEdit: boolean }) {
       </div>
 
       {editing && <EditGroup group={editing} onClose={() => setEditing(null)} />}
+      {deleting && <DeleteGroup group={deleting} onClose={() => setDeleting(null)} />}
     </section>
   );
 }
@@ -207,6 +216,7 @@ function EditGroup({ group, onClose }: { group: Group | 'new'; onClose: () => vo
 
 function Roles({ canEdit }: { canEdit: boolean }) {
   const [adding, setAdding] = useState(false);
+  const [deleting, setDeleting] = useState<Role | null>(null);
 
   const roles = useQuery({
     queryKey: ['roles'],
@@ -228,7 +238,7 @@ function Roles({ canEdit }: { canEdit: boolean }) {
 
       {/* R-081, said where someone would otherwise look for an edit button. */}
       <Quiet>
-        Named sets of permissions. The four Pando ships can&rsquo;t be edited — an install that
+        Named sets of permissions. The five Pando ships can&rsquo;t be edited or deleted — an install that
         quietly redefined what &ldquo;viewer&rdquo; means is an install where nobody can answer what
         a viewer can do.
       </Quiet>
@@ -277,12 +287,26 @@ function Roles({ canEdit }: { canEdit: boolean }) {
                 </div>
               ),
             },
+            {
+              key: 'delete',
+              header: '',
+              width: '10ch',
+              align: 'right',
+              // R-081: built-ins are not deletable, so they are not offered.
+              render: (row: Role) =>
+                canEdit && !row.builtin ? (
+                  <Button variant="ghost" onClick={() => setDeleting(row)}>
+                    Delete
+                  </Button>
+                ) : null,
+            },
           ]}
           rows={rows}
         />
       </div>
 
       {adding && <AddRole onClose={() => setAdding(false)} />}
+      {deleting && <DeleteRole role={deleting} onClose={() => setDeleting(null)} />}
     </section>
   );
 }
@@ -371,6 +395,106 @@ function AddRole({ onClose }: { onClose: () => void }) {
         </div>
 
         {save.isError && <Banner tone="failed">{messageOf(save.error)}</Banner>}
+      </div>
+    </Dialog>
+  );
+}
+
+// --- deleting ----------------------------------------------------------------
+
+/** The server's message and, when it gave one, its remedy (R-105). A refusal
+ *  here is the last-administrator rule, and the remedy is the way through. */
+function refusal(error: unknown): string {
+  const remedy = error instanceof RequestFailed ? error.remedy : undefined;
+  return remedy ? `${messageOf(error)} ${remedy}` : messageOf(error);
+}
+//
+// Both are allowed, and both take access away from people who may not know it
+// is happening, so each says whose access goes and whose stays before anything
+// is deleted. The server refuses the one case that would lock the installation
+// (R-088) and says why; that message is shown as-is.
+
+function DeleteGroup({ group, onClose }: { group: Group; onClose: () => void }) {
+  const queries = useQueryClient();
+  const remove = useMutation({
+    mutationFn: () => api.del<void>(`/groups/${group.id}`),
+    onSuccess: () => {
+      void queries.invalidateQueries();
+      onClose();
+    },
+  });
+  const people = group.members?.length ?? 0;
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Delete the ${group.name} group`}
+      description="Everyone in it loses what was shared with the group."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="destructive" disabled={remove.isPending} onClick={() => remove.mutate()}>
+            {remove.isPending ? 'Deleting' : 'Delete group'}
+          </Button>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <p style={{ font: 'var(--type-body-ui)', margin: 0 }}>
+          {people === 1 ? 'The one person' : `The ${people} people`} in {group.name} lose every app that was
+          shared with the group — both opening it and any role the group had for managing it. Their accounts
+          are kept, and so is anything shared with them directly or through another group.
+        </p>
+        <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
+          This can&rsquo;t be undone. Making a group with the same name later does not bring the access back.
+        </p>
+        {remove.isError && <Banner tone="failed">{refusal(remove.error)}</Banner>}
+      </div>
+    </Dialog>
+  );
+}
+
+function DeleteRole({ role, onClose }: { role: Role; onClose: () => void }) {
+  const queries = useQueryClient();
+  const remove = useMutation({
+    mutationFn: () => api.del<void>(`/roles/${role.id}`),
+    onSuccess: () => {
+      void queries.invalidateQueries();
+      onClose();
+    },
+  });
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Delete the ${role.name} role`}
+      description="Anyone given this role loses what it allowed."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="destructive" disabled={remove.isPending} onClick={() => remove.mutate()}>
+            {remove.isPending ? 'Deleting' : 'Delete role'}
+          </Button>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <p style={{ font: 'var(--type-body-ui)', margin: 0 }}>
+          {role.scope === 'install'
+            ? `Everyone given ${role.name} across the installation loses the permissions it gave them.`
+            : `Everyone given ${role.name} on an app — directly or through a group — loses the access it gave them on that app.`}{' '}
+          They keep anything they hold another way.
+        </p>
+        <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
+          This can&rsquo;t be undone. Making a role with the same name later does not give it back to anyone.
+        </p>
+        {remove.isError && <Banner tone="failed">{refusal(remove.error)}</Banner>}
       </div>
     </Dialog>
   );
