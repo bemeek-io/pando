@@ -26,6 +26,10 @@ interface SpecRevision {
   revision: number;
 }
 
+interface PastDeploy {
+  status: string;
+}
+
 export function DeployButton({
   app,
   onRefused,
@@ -42,6 +46,20 @@ export function DeployButton({
       api.get<{ revisions: SpecRevision[] | null; pinned_spec_id: string }>(`/apps/${app.id}/specs`),
     enabled: Boolean(app.pinned_spec_id),
   });
+
+  // Whether there is a running version this would replace.
+  //
+  // The same query key the overview and the logs tab use, so it costs one
+  // request between them. A deployment that succeeded, rather than the app's
+  // state: a first deploy that failed at the build leaves an app that has
+  // never run, and offering to re-deploy it would be describing something that
+  // never happened.
+  const deployments = useQuery({
+    queryKey: ['apps', app.id, 'deployments'],
+    queryFn: () => api.get<{ deployments: PastDeploy[] | null }>(`/apps/${app.id}/deployments`),
+    enabled: Boolean(app.pinned_spec_id),
+  });
+  const shipped = (deployments.data?.deployments ?? []).some((d) => d.status === 'succeeded');
 
   const revisions = (specs.data?.revisions ?? []).slice().sort((a, b) => b.revision - a.revision);
   const newest = revisions[0];
@@ -87,7 +105,17 @@ export function DeployButton({
       onClick={() => deploy.mutate()}
       disabled={deploy.isPending || app.state === 'deploying'}
     >
-      {app.state === 'deploying' ? 'Deploying' : 'Deploy'}
+      {/* One action, and the label says whether something is already running
+          that it will replace. The word it produces is still "Deployed" — in
+          the log, in the deploy list, and in the app's state — because it is
+          the same act either way. */}
+      {app.state === 'deploying'
+        ? shipped
+          ? 'Re-deploying'
+          : 'Deploying'
+        : shipped
+          ? 'Re-deploy'
+          : 'Deploy'}
     </Button>
   );
 }
