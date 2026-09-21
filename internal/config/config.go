@@ -22,6 +22,15 @@ type Config struct {
 	Database   Database   `mapstructure:"database"`
 	Log        Log        `mapstructure:"log"`
 	Reconciler Reconciler `mapstructure:"reconciler"`
+
+	// File is the config file read at startup, or empty when there was none.
+	File string `mapstructure:"-"`
+
+	// Settings is every non-secret setting with its effective value and where
+	// it came from, for GET /config. Policy is the host policy fields set at
+	// startup, which override the stored policy (see sources.go).
+	Settings []Setting       `mapstructure:"-"`
+	Policy   []PolicySetting `mapstructure:"-"`
 }
 
 // Reconciler tunes R-149's retry backoff and R-150's give-up rule.
@@ -200,36 +209,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("reconciler.gc_interval", time.Duration(0))
 	v.SetDefault("bootstrap.admin_password", "")
 
-	// Every key is bound explicitly, and that is not belt-and-braces.
-	//
-	// AutomaticEnv looks up an environment variable only for keys viper already
-	// knows — from a default, a config file, or a bind. A key with none of
-	// those is invisible to Unmarshal, so `PANDO_SERVER_BASE_DOMAIN=…` sets
-	// nothing and says nothing: the process starts, the setting is empty, and
-	// the failure surfaces much later as an app with no hostname. That happened
-	// to base_domain.
-	//
-	// A key that is only ever set from the environment therefore has to be
-	// listed here. Defaults elsewhere in this function register their keys as a
-	// side effect; these have no sensible default to register them.
-	for key, env := range map[string]string{
-		"database.url":          "PANDO_DATABASE_URL",
-		"server.base_domain":    "PANDO_SERVER_BASE_DOMAIN",
-		"server.proxy_upstream": "PANDO_SERVER_PROXY_UPSTREAM",
-		"server.issuer":         "PANDO_SERVER_ISSUER",
-		"server.external_url":   "PANDO_SERVER_EXTERNAL_URL",
-		"server.addr":           "PANDO_SERVER_ADDR",
-		"server.routing_mode":   "PANDO_SERVER_ROUTING_MODE",
-		"server.work_dir":       "PANDO_SERVER_WORK_DIR",
-		"log.level":             "PANDO_LOG_LEVEL",
-
-		// Not PANDO_BOOTSTRAP_ADMIN_PASSWORD, which is what the replacer would
-		// derive — this is the one setting an operator types from memory at the
-		// worst possible moment. That makes this bind load-bearing rather than
-		// belt-and-braces: AutomaticEnv only finds the derived name, so without
-		// the line below the variable is read by nothing at all.
-		"bootstrap.admin_password": "PANDO_ADMIN_PASSWORD",
-	} {
+	// Every key in boundEnv is bound explicitly — see there for why that is not
+	// belt-and-braces.
+	for key, env := range boundEnv {
 		_ = v.BindEnv(key, env)
 	}
 
@@ -244,7 +226,39 @@ func Load(path string) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("parsing configuration: %w", err)
 	}
+	cfg.File = path
+	cfg.Settings = settingsOf(v, path)
+	cfg.Policy = policyOf(v, path)
 	return &cfg, cfg.validate()
+}
+
+// boundEnv is every key read from an explicitly named variable.
+//
+// AutomaticEnv looks up an environment variable only for keys viper already
+// knows — from a default, a config file, or a bind. A key with none of those is
+// invisible to Unmarshal, so `PANDO_SERVER_BASE_DOMAIN=…` sets nothing and says
+// nothing: the process starts, the setting is empty, and the failure surfaces
+// much later as an app with no hostname. That happened to base_domain. A key
+// that is only ever set from the environment therefore has to be listed here.
+//
+// Also where sources.go learns which variable a key came from.
+var boundEnv = map[string]string{
+	"database.url":          "PANDO_DATABASE_URL",
+	"server.base_domain":    "PANDO_SERVER_BASE_DOMAIN",
+	"server.proxy_upstream": "PANDO_SERVER_PROXY_UPSTREAM",
+	"server.issuer":         "PANDO_SERVER_ISSUER",
+	"server.external_url":   "PANDO_SERVER_EXTERNAL_URL",
+	"server.addr":           "PANDO_SERVER_ADDR",
+	"server.routing_mode":   "PANDO_SERVER_ROUTING_MODE",
+	"server.work_dir":       "PANDO_SERVER_WORK_DIR",
+	"log.level":             "PANDO_LOG_LEVEL",
+
+	// Not PANDO_BOOTSTRAP_ADMIN_PASSWORD, which is what the replacer would
+	// derive — this is the one setting an operator types from memory at the
+	// worst possible moment. That makes this bind load-bearing rather than
+	// belt-and-braces: AutomaticEnv only finds the derived name, so without the
+	// line below the variable is read by nothing at all.
+	"bootstrap.admin_password": "PANDO_ADMIN_PASSWORD",
 }
 
 func (c *Config) validate() error {

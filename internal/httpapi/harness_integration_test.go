@@ -29,6 +29,7 @@ import (
 	identitylocal "github.com/bemeek-io/pando/internal/adapter/identity/local"
 	secretslocal "github.com/bemeek-io/pando/internal/adapter/secrets/local"
 	"github.com/bemeek-io/pando/internal/core/assertion"
+	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/backup"
@@ -113,6 +114,13 @@ type install struct {
 // the planner with an adapter error, which is itself worth asserting.
 func newInstall(t *testing.T) *install {
 	t.Helper()
+	return newInstallWith(t, nil, nil)
+}
+
+// newInstallWith is newInstall started with a startup configuration: host
+// policy fields fixed in it (R-271), and the settings GET /config reports.
+func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.Config) *install {
+	t.Helper()
 	ctx := context.Background()
 
 	dbURL := freshDatabase(t)
@@ -133,7 +141,8 @@ func newInstall(t *testing.T) *install {
 	authzStore := state.NewAuthzStore(db)
 	grants := state.NewGrants(db)
 	policyStore := state.NewPolicy(db)
-	hostPolicy := corepolicy.New(policyStore.Load)
+	effectivePolicy := overlay.Wrap(policyStore)
+	hostPolicy := corepolicy.New(effectivePolicy.Load)
 
 	const adminPassword = "correct-horse-battery-staple"
 	first, err := bootstrap.Run(ctx, users, grants, db, auditor, secret.New(adminPassword))
@@ -215,8 +224,10 @@ func newInstall(t *testing.T) *install {
 		Verbs:      authzStore,
 		Defaults:   detection.NewInstallation(registry, "apps.test"),
 
-		PolicyStore: policyStore,
-		AuditLog:    audit.NewReader(db.Pool),
+		PolicyStore:   effectivePolicy,
+		PolicyOverlay: overlay,
+		Startup:       startup,
+		AuditLog:      audit.NewReader(db.Pool),
 
 		Groups:  state.NewGroups(db),
 		Roles:   state.NewRoles(db),

@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/core/assertion"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
@@ -114,6 +115,15 @@ type Server struct {
 	// other is the decision, and an endpoint that edits the document has no
 	// business asking the evaluator anything.
 	PolicyStore PolicyDocument
+
+	// PolicyOverlay is the host policy fields set in the startup config
+	// (R-271). PolicyStore already reads through it; this is for refusing a
+	// change to one of them and for saying where each was set. Nil means none.
+	PolicyOverlay *corepolicy.Overlay
+
+	// Startup is the configuration Pando started with, for GET /config: every
+	// non-secret setting and where it came from. Nil in tests that do not set it.
+	Startup *config.Config
 
 	// AuditLog reads the append-only log (R-227). Nil on an install where the
 	// endpoint should 500 rather than quietly return nothing — an empty audit
@@ -357,6 +367,7 @@ func (s *Server) Routes() http.Handler {
 		// install.policy.manage. Seeing the rules you work under is not the
 		// same privilege as changing them (R-274).
 		r.Get("/policy", s.handleGetPolicy)
+		r.Get("/config", s.handleGetConfig)
 		r.Put("/policy", s.handlePutPolicy)
 
 		// What this policy would block, before it is saved (design 05 §3).

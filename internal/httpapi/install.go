@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
@@ -309,6 +310,16 @@ func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A field set in the startup config cannot be changed here (R-271). Sending
+	// it back as it is — which is what GET /policy hands out — is fine; the
+	// store saves everything else and leaves that field's stored value alone.
+	if f, changed := s.PolicyOverlay.Changes(doc); changed {
+		Error(w, r, errs.Newf(errs.ValidInvalid,
+			"%s is set in the startup configuration (%s), so it cannot be changed here.", f.Key, where(f.Source)).
+			WithRemedy("Change it there and restart Pando, or remove it there to manage it here."))
+		return
+	}
+
 	// A disabled verb must be a real verb. Policy can only deny (R-272), so a
 	// typo here denies nothing and looks exactly like a rule that works —
 	// the worst failure mode a security control has.
@@ -325,6 +336,8 @@ func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
+	// What now applies, startup fields included.
+	doc = s.PolicyOverlay.Apply(doc)
 
 	s.audit(r, audit.Event{
 		PrincipalKind: audit.PrincipalKind(p.Kind),
@@ -371,6 +384,9 @@ func (s *Server) handlePreviewPolicy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	// Previewed as it would apply: with the startup fields over it.
+	doc = s.PolicyOverlay.Apply(doc)
 
 	violations, err := s.Planner.PreviewPolicy(r.Context(), doc)
 	if err != nil {
@@ -469,4 +485,43 @@ func (s *Server) handleListAudit(w http.ResponseWriter, r *http.Request) {
 		next = strconv.FormatInt(events[len(events)-1].ID, 10)
 	}
 	JSON(w, http.StatusOK, map[string]any{"events": events, "next_before": next})
+}
+
+// handleGetConfig reports the configuration Pando started with (R-271): every
+// non-secret setting with its value and where it came from — an environment
+// variable, the config file, or the default — and the host policy fields set
+// there, which the console shows as fixed. Secrets are never listed (R-194).
+//
+// install.view, like reading policy: it is the installation's own settings,
+// and nothing here is a credential.
+func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireInstall(w, r, authz.InstallView); !ok {
+		return
+	}
+	out := map[string]any{
+		"file":     "",
+		"settings": []config.Setting{},
+		"policy":   s.PolicyOverlay.Fixed(),
+	}
+	if s.Startup != nil {
+		out["file"] = s.Startup.File
+		if s.Startup.Settings != nil {
+			out["settings"] = s.Startup.Settings
+		}
+	}
+	if out["policy"] == nil {
+		out["policy"] = []corepolicy.Fixed{}
+	}
+	JSON(w, http.StatusOK, out)
+}
+
+// where says in words where a startup value was set.
+func where(src corepolicy.Source) string {
+	switch src.Kind {
+	case "env":
+		return "environment variable " + src.Name
+	case "file":
+		return "config file " + src.Name + ", key " + src.Key
+	}
+	return "startup configuration"
 }

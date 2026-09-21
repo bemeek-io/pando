@@ -12,7 +12,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | Requirements | 237 | — |
 | Specified in a design doc | 183 | 77% |
 | Assigned to a phase | 137 | 57% |
-| Covered by a named test | 138 | 58% |
+| Covered by a named test | 139 | 58% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -32,7 +32,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-012** | D | Pando is not a marketplace. | 2. Non-Goals | — | — | — |
 | **R-013** | D | Pando is not a disaster-recovery product. | 2. Non-Goals | — | — | — |
 | **R-014** | D | No multi-AZ or multi-region. | 2. Non-Goals | — | — | — |
-| **R-015** | D | One Pando install serves one organization. | 2. Non-Goals | 02 | — | — |
+| **R-015** | D | One Pando install serves one organization. | 2. Non-Goals | 02, 08 | — | — |
 | **R-016** | D | Pando is not a source host, not an APM product, and not a database-as-a-service. | 2. Non-Goals | — | — | — |
 | **R-020** | D | Nothing lives in the repo. | 3. Core Invariants | 01, 02, 03, 07, 10 | 02, 06, 10 | `TestR020_ACarriedFileIsInTheContainer`, `TestR020_AComposeBuildIsResolvedIntoTheSpec`, `TestR020_APinnedSpecCanBeExported`, `TestR020_AReadCannotLeaveTheCheckout`, `TestR020_ASingleFileBindMountIsCarriedInTheSpec`, `TestR020_AddingAVolumeWritesARevisionRatherThanCreatingStorage`, `TestR020_AnEditedPlanIsTheOneThatRuns`, `TestR020_ScreeningNeedsAReadableRepository`, `TestR020_SpecCarriesNoSecretValues`, `TestR020_TheViewCannotReachOutsideTheSource`, `TestR020_ToolCallsThatLeaveTheCheckoutAreRefused` |
 | **R-021** | D | Pando fills declared slots; it never invents topology. | 3. Core Invariants | 01, 10 | 06 | `TestR021_APathAmendmentMustPointInsideTheRepository`, `TestR021_SlotsComeFromWhatTheRepoDeclares` |
@@ -81,7 +81,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-078** | D | Groups may be Pando-native or pushed from an IdP (R-048). | 6.3 Groups | 03 | 08 | `TestR078_DeletingAGroupTakesWhatWasSharedWithIt`, `TestR078_GroupsAreCreatedAndListedByAnAdministrator` |
 | **R-079** | D | Group membership is evaluated live at request time, not expanded to a member list at grant time. | 6.3 Groups | 02, 06, 07 | 01, 05 | `TestR079_GroupMembershipIsResolvedFromThePrincipal`, `TestR079_GroupMembershipIsResolvedLive`, `TestR079_RemovingAGroupRevokesAccess` |
 | **R-080** | D | Control-plane permissions are individual verbs, in two scopes. | 6.4 Verbs and roles | 02, 06 | 08 | `TestR080_AScopeMismatchIsRefusedRatherThanEvaluated`, `TestR080_AnAppRoleCannotBeGrantedAcrossTheInstallation`, `TestR080_AnOrdinaryUserCannotSuspendTheAdministrator`, `TestR080_AnonymousHoldsNothingInstallWide`, `TestR080_BackupsRequireTheirOwnVerb`, `TestR080_DeniedInstallChecksAreAudited`, `TestR080_GrantScopeIsEnforcedByTheDatabase`, `TestR080_InstallEndpointsRequireInstallVerbs`, `TestR080_InstallGrantsAreNeverReturnedByAnAppLookup`, `TestR080_InstallVerbRequiresAnInstallGrant`, `TestR080_ScopesCannotBeCheckedAgainstEachOther`, `TestR080_UserEndpointsAreSelfOrVerb` |
-| **R-081** | D | Five immutable built-in roles ship out of the box. | 6.4 Verbs and roles | 02, 06 | 01 | `TestR081_ABuiltInRoleCannotBeDeleted`, `TestR081_ACreatorManagesTheAppsTheyMakeAndNothingElse`, `TestR081_AdministratorHoldsNoAppVerb`, `TestR081_AdministratorIsImmutableToo`, `TestR081_AnAdministratorCanHandOver`, `TestR081_BuiltInRoleVerbSets`, `TestR081_BuiltInRolesAreImmutable`, `TestR081_CreatorHoldsOnlyAppCreate`, `TestR081_SeededVerbSetsMatchTheRequirement`, `TestR081_TheLastAdministratorCannotBeRemoved` |
+| **R-081** | D | Five immutable built-in roles ship out of the box. | 6.4 Verbs and roles | 02, 06 | 01 | `TestR081_ABuiltInRoleCannotBeDeleted`, `TestR081_ACreatorManagesTheAppsTheyMakeAndNothingElse`, `TestR081_AdministratorHoldsNoAppVerb`, `TestR081_AdministratorIsImmutableToo`, `TestR081_AnAdministratorCanHandOver`, `TestR081_BuiltInRoleVerbSets`, `TestR081_BuiltInRolesAreImmutable`, `TestR081_CreatorHoldsOnlyAppCreate`, `TestR081_EveryBuiltInRoleIsListed`, `TestR081_SeededVerbSetsMatchTheRequirement`, `TestR081_TheLastAdministratorCannotBeRemoved` |
 | **R-082** | D | Custom roles may be composed from the verb list and assigned to users or groups. | 6.4 Verbs and roles | 02, 04, 06 | 01, 08 | `TestR082_ACustomRoleIsCreatedFromVerbsAndCanBeRemoved`, `TestR082_ACustomRoleSomeoneHoldsCanBeDeleted`, `TestR082_NoVerbImplicationGraph` |
 | **R-083** | D | `app.secrets.write` is deliberately separable from `app.secrets.read` — rotating a credential… | 6.4 Verbs and roles | 04 | 08 | `TestR083_ReadingASecretsValueIsItsOwnVerb` |
 | **R-084** | D | `app.exec` is its own verb, not bundled into app-admin. | 6.4 Verbs and roles | 03 | — | — |
@@ -227,7 +227,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-341** | D V1 | A person may mark apps they can open as favorites, and their launcher shows those first, above… | 19. Surfaces | 04, 08 | — | `TestR341_FavoritesArePerPersonAndGrantNothing`, `TestR341_FavoritesNeedASignedInPerson` |
 | **R-342** | D V1 | A person may make sections in their launcher — named, collapsible groupings — and file apps… | 19. Surfaces | 04, 08 | — | `TestR342_SectionsAreNobodyElses`, `TestR342_SectionsGroupAPersonsOwnLauncher` |
 | **R-270** | D | Pando ships permissive defaults. | 20. Configuration and Policy | 09 | — | `TestR270_AFreshInstallShipsPermissive`, `TestR270_BuildEgressStartsPermissiveAndAppEgressInherits`, `TestR270_TheDefaultDocumentIsPermissive` |
-| **R-271** | D | Configuration may be supplied by: a YAML file loaded at startup, environment variables, the… | 20. Configuration and Policy | 00 | 00 | — |
+| **R-271** | D | Configuration may be supplied by: a YAML file loaded at startup, environment variables, the… | 20. Configuration and Policy | 00, 02, 04 | 00 | `TestR271_AFixedFieldIsNeitherChangedNorStored`, `TestR271_AStartupPolicyThatIsNotOneStopsStartup`, `TestR271_EverySettingSaysWhereItCameFrom`, `TestR271_PolicySetAtStartupIsFixedAndSaysWhere`, `TestR271_StartupPolicyOverridesTheStoredDocument` |
 | **R-272** | D | The general pattern, applied throughout: a setting has a permissive default; host policy can… | 20. Configuration and Policy | 04, 06, 09, 10 | 01, 06 | `TestR272_AVerbNoRuleMentionsIsUntouched`, `TestR272_HostPolicyIsAFloorForAdministratorsToo`, `TestR272_PolicyIsAFloorAndDeniesTheOwnerToo` |
 | **R-273** | D LATER | Premade setting profiles for common postures (hobbyist, hardened, regulated), usable as-is or… | 20. Configuration and Policy | — | — | — |
 | **R-274** | D | Host policy may be applied to an install with running apps. | 20. Configuration and Policy | 01, 02, 03, 04, 05 | 02, 03 | `TestR274_PolicyIsReadableAndWritableBehindItsOwnVerbs`, `TestR274_ReadingPolicyAndChangingItAreDifferentPrivileges`, `TestR274_TheDocumentIsReloadedForEveryEvaluation` |

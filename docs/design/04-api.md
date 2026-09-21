@@ -238,6 +238,7 @@ POST /api/v1/adapters                     install.adapters.manage
 GET  /api/v1/capacity                     aggregated from adapters (R-243); install.view
 GET  /api/v1/policy                       install.view
 PUT  /api/v1/policy                       R-274; see O-10; install.policy.manage
+GET  /api/v1/config                       startup settings and their sources; fixed policy fields (R-271); install.view
 POST /api/v1/policy:preview               what this policy would block, unsaved; install.policy.manage
 GET  /api/v1/audit                        ?action= (prefix) &principal_id= &principal_kind= &app_id= &target_kind= &target_id= &since= &until= (RFC 3339) &before= ; install.audit.read
 GET  /api/v1/roles                        ?scope=install (default) | app | all (R-082); install.view

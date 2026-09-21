@@ -317,6 +317,8 @@ CREATE TABLE host_policy (
 
 **[D]** Policy is a single versioned document, not scattered columns, so R-274's "apply policy to a running install" is one transaction and one audit event.
 
+**[D]** Startup configuration can fix any policy field (R-271): a `policy:` section in the config file or `PANDO_POLICY_<FIELD>`, the environment winning. A fixed field is laid over the stored document by the policy store itself (`policy.Overlay.Wrap`), so every reader — evaluator, handlers, the security pass — sees it; `PUT /policy` refuses to change it and the store never writes it into `body`, so removing it from the config and restarting restores what was stored. An unknown field or a value of the wrong type stops startup, because a policy that silently does not apply is worse than one that refuses to start. `GET /config` reports every non-secret startup setting and each fixed field with its source (env var, or file and key), and the console shows fixed fields disabled with that source on hover.
+
 ### 2.6 Audit
 
 ```sql

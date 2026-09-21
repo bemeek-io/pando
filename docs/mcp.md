@@ -65,5 +65,6 @@ boundary (O-12), and offering a tool policy will refuse wastes the agent's turn.
 | `pando_add_app_to_section` | Move an app you can open into one of your launcher sections, out of any other. | `app_id`, `section_id` |
 | `pando_remove_app_from_section` | Move an app out of one of your launcher sections, back to Your apps. | `app_id`, `section_id` |
 | `pando_list_audit` | Read the audit log, newest first. Every filter is optional and they combine: what was done (an action prefix such as app. or grant.delete), who did it, which app, what it was done to, and when (RFC 3339 times; since inclusive, until exclusive). | `action` (optional), `app_id` (optional), `before` (optional), `principal_id` (optional), `principal_kind` (optional), `since` (optional), `target_id` (optional), `target_kind` (optional), `until` (optional) |
+| `pando_get_config` | The configuration the Pando server started with: every non-secret setting, its value and where it was set (an environment variable, the config file, or the default), and the host policy fields fixed there, which cannot be changed through the API while they are set. | none |
 | `pando_get_status` | What an app is doing right now: running, degraded, failed, and why — including each part separately, so a single part that is crash-looping is visible rather than averaged into one word for the app. | `app_id` |
 

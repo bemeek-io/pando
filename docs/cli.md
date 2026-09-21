@@ -305,6 +305,19 @@ Check a backup is complete, without restoring it
 pando backup verify <backup-id>
 ```
 
+### `config`
+
+Show the server's startup configuration and where each setting came from
+
+```
+pando config
+```
+
+Lists every setting the server started with, its value, and where it was set: an
+environment variable, the config file, or the default. Host policy fields set there are
+listed separately; they cannot be changed with `pando policy set` while they are set.
+Secrets are never shown.
+
 ### `deploy`
 
 Deploy an app, or a directory on this machine

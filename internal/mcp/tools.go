@@ -477,6 +477,17 @@ var toolList = []tool{
 		},
 	},
 	{
+		Name: "pando_get_config",
+		Description: "The configuration the Pando server started with: every non-secret setting, " +
+			"its value and where it was set (an environment variable, the config file, or the " +
+			"default), and the host policy fields fixed there, which cannot be changed through " +
+			"the API while they are set.",
+		Schema: schema(map[string]any{}),
+		request: func(map[string]any) (string, string, any, error) {
+			return "GET", "/config", nil, nil
+		},
+	},
+	{
 		Name: "pando_get_status",
 		Description: "What an app is doing right now: running, degraded, failed, and why — " +
 			"including each part separately, so a single part that is crash-looping is " +
