@@ -251,7 +251,8 @@ Lists what was done on this installation, newest first. The filters combine.
 | Flag | Default | What it does |
 | --- | --- | --- |
 | `--action` |  | actions starting with this, e.g. app. or grant.delete |
-| `--actor` |  | who did it: a user or token ID |
+| `--actor` |  | who did it: a user or token ID, or system, reconciler or detection |
+| `--actor-kind` |  | what kind of actor: user, token, system or anonymous |
 | `--app` |  | events on this app |
 | `--limit` | `0` | how many events (default 100, at most 500) |
 | `--since` |  | from this time, or this long ago (24h) |

@@ -1,11 +1,17 @@
-// The audit log's actor filter: type to find an account, rather than scroll a
-// list of every one.
+// The audit log's actor filter: type to find an actor, rather than scroll a
+// list of every account.
 //
-// Matches username, name, email and ID, and offers the first few. Choosing one
-// filters by its ID and shows its username. A typed ID — usr_… or tok_…, which
-// is also how a token or a service account is found, and all a reader without
-// install.view can do — is used as is on Enter. Clearing the field clears the
-// filter.
+// Offers accounts by username, name, email or ID, and Pando's own actors: the
+// system as a whole, each system process, and anonymous — which has no ID and
+// so can only be found by kind. Empty and focused, it offers those last few as
+// quick picks, since they are not names anyone would think to type.
+//
+// Choosing an account filters by its ID. A typed usr_… or tok_… ID is used as
+// is on Enter, which is how a token is found and all a reader without
+// install.view can do. Clearing the field clears the filter.
+//
+// The value is a principal ID, or `kind:<kind>` for a whole kind of actor;
+// auditQuery turns the second into principal_kind.
 
 import { useEffect, useRef, useState } from 'react';
 import { Input } from '@design';
@@ -19,6 +25,21 @@ export interface Person {
   email?: string;
 }
 
+interface Option {
+  value: string;
+  label: string;
+  note?: string;
+}
+
+// Pando's own actors, as the server records them (principal kind "system" with
+// these IDs, and "anonymous" with none).
+const PANDO: Option[] = [
+  { value: 'kind:system', label: 'system', note: 'Any Pando process' },
+  { value: 'reconciler', label: 'reconciler', note: 'System' },
+  { value: 'detection', label: 'detection', note: 'System' },
+  { value: 'kind:anonymous', label: 'anonymous', note: 'Not signed in' },
+];
+
 const SHOWN = 8;
 
 export function ActorField({
@@ -27,12 +48,17 @@ export function ActorField({
   onChange,
 }: {
   people: Person[];
-  /** The chosen principal ID, or empty. */
+  /** A principal ID, `kind:<kind>`, or empty. */
   value: string;
-  onChange: (principalID: string) => void;
+  onChange: (actor: string) => void;
 }) {
-  const nameOf = (id: string) => people.find((p) => p.id === id)?.external_id ?? id;
-  const [text, setText] = useState(() => (value ? nameOf(value) : ''));
+  const options: Option[] = [
+    ...PANDO,
+    ...people.map((p) => ({ value: p.id, label: p.external_id, note: p.display_name || p.email })),
+  ];
+  const labelOf = (v: string) => options.find((o) => o.value === v)?.label ?? v;
+
+  const [text, setText] = useState(() => (value ? labelOf(value) : ''));
   const [open, setOpen] = useState(false);
   const [at, setAt] = useState(0);
   const root = useRef<HTMLDivElement>(null);
@@ -52,13 +78,17 @@ export function ActorField({
   }, [open]);
 
   const found = text.trim()
-    ? people.filter((p) => matches(text, p.external_id, p.display_name, p.email, p.id)).slice(0, SHOWN)
-    : [];
+    ? options
+        .filter((o) =>
+          matches(text, o.label, o.note, o.value, people.find((p) => p.id === o.value)?.email),
+        )
+        .slice(0, SHOWN)
+    : PANDO;
 
-  const choose = (p: Person) => {
-    setText(p.external_id);
+  const choose = (o: Option) => {
+    setText(o.label);
     setOpen(false);
-    onChange(p.id);
+    onChange(o.value);
   };
 
   return (
@@ -87,7 +117,7 @@ export function ActorField({
           } else if (e.key === 'Enter') {
             e.preventDefault();
             const typed = text.trim();
-            const exact = people.find((p) => p.id === typed || p.external_id === typed);
+            const exact = options.find((o) => o.value === typed || o.label === typed);
             if (open && found[at]) choose(found[at]);
             else if (exact) choose(exact);
             else if (/^(usr|tok)_/.test(typed)) {
@@ -102,7 +132,7 @@ export function ActorField({
       {open && found.length > 0 && (
         <div
           role="listbox"
-          aria-label="Matching accounts"
+          aria-label="Matching actors"
           style={{
             position: 'absolute',
             top: '100%',
@@ -117,15 +147,15 @@ export function ActorField({
             boxShadow: 'var(--shadow-popover)',
           }}
         >
-          {found.map((p, i) => (
+          {found.map((o, i) => (
             <div
-              key={p.id}
+              key={o.value}
               role="option"
               aria-selected={i === at}
               onMouseDown={(e) => {
                 // Before the input blurs, so the choice lands.
                 e.preventDefault();
-                choose(p);
+                choose(o);
               }}
               onMouseEnter={() => setAt(i)}
               style={{
@@ -140,16 +170,11 @@ export function ActorField({
                 color: 'var(--ink)',
               }}
             >
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.external_id}</span>
-              <span
-                style={{
-                  color: 'var(--ink-secondary)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {p.display_name || p.email}
+              <span style={{ font: 'var(--type-code-sm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {o.label}
+              </span>
+              <span style={{ color: 'var(--ink-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {o.note}
               </span>
             </div>
           ))}

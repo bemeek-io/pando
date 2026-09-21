@@ -402,7 +402,9 @@ func (s *Server) handleListAudit(w http.ResponseWriter, r *http.Request) {
 		AppID:       r.URL.Query().Get("app_id"),
 		PrincipalID: r.URL.Query().Get("principal_id"),
 		TargetKind:  r.URL.Query().Get("target_kind"),
-		TargetID:    r.URL.Query().Get("target_id"),
+
+		PrincipalKind: r.URL.Query().Get("principal_kind"),
+		TargetID:      r.URL.Query().Get("target_id"),
 	}
 	// RFC 3339, like every time on the wire. A bound that will not parse is an
 	// error rather than ignored: an investigation that silently searched all

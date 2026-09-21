@@ -611,7 +611,9 @@ const WHEN: { value: string; label: string; hours?: number }[] = [
 function auditQuery(f: AuditFilters, before?: string): string {
   const q = new URLSearchParams();
   if (f.action) q.set('action', f.action);
-  if (f.actor) q.set('principal_id', f.actor);
+  // A whole kind of actor — the system, anonymous — is a kind, not an ID.
+  if (f.actor.startsWith('kind:')) q.set('principal_kind', f.actor.slice('kind:'.length));
+  else if (f.actor) q.set('principal_id', f.actor);
   if (f.targetKind) q.set('target_kind', f.targetKind);
   if (f.targetID) q.set('target_id', f.targetID.trim());
   const preset = WHEN.find((w) => w.value === f.when);

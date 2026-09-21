@@ -52,6 +52,10 @@ func TestTheAuditLogFiltersByTargetAndTime(t *testing.T) {
 	require.Empty(t, get("?target_id="+notes+"&since="+inAnHour).Events)
 	require.Empty(t, get("?target_id="+notes+"&until="+hourAgo).Events)
 
+	// By kind of actor: every event here was a person's, none the system's.
+	require.NotEmpty(t, get("?principal_kind=user&target_id="+notes).Events)
+	require.Empty(t, get("?principal_kind=system&target_id="+notes).Events)
+
 	// A bound that does not parse is refused rather than ignored.
 	bad := i.do(admin, http.MethodGet, "/audit?since=yesterday", nil)
 	require.Equal(t, http.StatusBadRequest, bad.Code, bad.String())

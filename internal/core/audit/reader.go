@@ -51,6 +51,11 @@ type Query struct {
 	AppID       string
 	PrincipalID string
 
+	// PrincipalKind narrows to one kind of actor: user, token, system or
+	// anonymous. The only way to find anonymous events, which have no ID, and
+	// every system process at once rather than one at a time.
+	PrincipalKind string
+
 	// TargetKind and TargetID narrow to what the action was done to — "every
 	// change to this user", "everything done to any role". Exact matches.
 	TargetKind string
@@ -124,6 +129,9 @@ func (r *Reader) List(ctx context.Context, q Query) ([]Record, error) {
 		// (R-229), and "what did this person do" must find both.
 		p := arg(q.PrincipalID)
 		where = append(where, "(principal_id = "+p+" OR on_behalf_of = "+p+")")
+	}
+	if q.PrincipalKind != "" {
+		where = append(where, "principal_kind = "+arg(q.PrincipalKind))
 	}
 	if q.TargetKind != "" {
 		where = append(where, "target_kind = "+arg(q.TargetKind))
