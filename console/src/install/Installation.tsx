@@ -24,7 +24,7 @@ import {
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb } from '../app/principal';
 import { AdapterDialog } from './AdapterDialog';
-import { categoryLabel, categoryNote, orderCategories } from './adapters';
+import { categoryLabel, orderCategories } from './adapters';
 import type { AdapterKind } from './adapters';
 import type { ConfiguredAdapter } from './AdapterDialog';
 import { Quiet, Screen, messageOf } from './Accounts';
@@ -1236,8 +1236,8 @@ const ADAPTER_GRID = 'minmax(0,1fr) minmax(0,22ch) 16ch 12ch';
  *
  * Not the design system's Table, which has no way to mark where a group begins:
  * the same header and row styles, one grid for every row so the columns line
- * up from group to group, and a band above each group naming the category and
- * what it is for. Each adapter's name sits a step in from the band, under it.
+ * up from group to group, and a quiet line above each group naming its
+ * category.
  */
 function GroupedAdapters({
   rows,
@@ -1279,23 +1279,18 @@ function GroupedAdapters({
       {rows.map((row) => (
         <div key={row.id} role="rowgroup">
           {row.first && (
+            // Quiet on purpose: the name, small and secondary, with a little
+            // room above it — enough to see where a group starts, and no more.
             <div
               role="row"
               style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                alignItems: 'baseline',
-                gap: 'var(--space-1) var(--space-3)',
-                padding: 'var(--space-5) var(--space-3) var(--space-2)',
-                borderBottom: 'var(--border-width) solid var(--rule-strong)',
+                padding: 'var(--space-4) var(--space-3) var(--space-1)',
+                font: 'var(--type-caption)',
+                color: 'var(--ink-secondary)',
+                borderBottom: 'var(--border-width) solid var(--rule)',
               }}
             >
-              <span style={{ font: 'var(--type-label)', color: 'var(--ink)' }}>{categoryLabel(row.category)}</span>
-              {categoryNote(row.category) && (
-                <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
-                  {categoryNote(row.category)}
-                </span>
-              )}
+              {categoryLabel(row.category)}
             </div>
           )}
           <div
@@ -1306,11 +1301,7 @@ function GroupedAdapters({
               borderBottom: 'var(--border-width) solid var(--rule)',
             }}
           >
-            {/* Indented, the name alone: the grid stays the header's, so the
-                other columns still line up under it. */}
-            <span style={{ ...cell, font: 'var(--type-body-ui)', paddingLeft: 'var(--space-4)' }}>
-              {row.kindName ?? row.kind}
-            </span>
+            <span style={{ ...cell, font: 'var(--type-body-ui)' }}>{row.kindName ?? row.kind}</span>
             <span style={{ ...cell, font: 'var(--type-code-sm)', color: 'var(--ink-secondary)' }}>{row.id}</span>
             <span style={cell}>
               {/* Live, not stored: an adapter that was reachable at startup and
