@@ -37,11 +37,14 @@ export function AccountPage({
   userID,
   onBack,
   onAudit,
+  onGroups,
 }: {
   userID: string;
   onBack: () => void;
   /** Opens the Audit log with these filters. */
   onAudit: (query: string) => void;
+  /** Opens Groups and roles, where groups are made. */
+  onGroups?: () => void;
 }) {
   const manage = useInstallVerb(InstallVerb.UsersManage);
   const canReadAudit = useInstallVerb(InstallVerb.AuditRead);
@@ -167,7 +170,7 @@ export function AccountPage({
               {groups.isPending ? (
                 <LineSkeleton width="16ch" />
               ) : manage ? (
-                <GroupMembership account={a} groups={groups.data?.groups ?? []} isSelf={isSelf} />
+                <GroupMembership account={a} groups={groups.data?.groups ?? []} isSelf={isSelf} onGroups={onGroups} />
               ) : memberOf.length > 0 ? (
                 memberOf.map((g) => g.name).join(', ')
               ) : (
@@ -385,7 +388,18 @@ function EditDetails({ account, manage, isSelf }: { account: Account; manage: bo
  * provider's to change (R-078), so it is listed without a remove and is not
  * offered to add to.
  */
-function GroupMembership({ account, groups, isSelf }: { account: Account; groups: Group[]; isSelf: boolean }) {
+function GroupMembership({
+  account,
+  groups,
+  isSelf,
+  onGroups,
+}: {
+  account: Account;
+  groups: Group[];
+  isSelf: boolean;
+  /** Groups and roles, where a group is made. */
+  onGroups?: () => void;
+}) {
   const queries = useQueryClient();
   const [error, setError] = useState<string>();
   const memberOf = groups.filter((g) => g.members?.includes(account.id));
@@ -438,7 +452,18 @@ function GroupMembership({ account, groups, isSelf }: { account: Account; groups
           options={[{ value: '', label: 'Add to group' }, ...offered.map((g) => ({ value: g.id, label: g.name }))]}
         />
       ) : (
-        memberOf.length === 0 && <span>None</span>
+        // Said, rather than an empty row: with no groups to offer, a bare
+        // "None" read as a row that could not be edited.
+        <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2) var(--space-3)' }}>
+          <span style={{ color: 'var(--ink-secondary)' }}>
+            {groups.some((g) => !g.source) ? 'In every group there is.' : 'No groups yet.'}
+          </span>
+          {onGroups && (
+            <Button variant="secondary" onClick={onGroups}>
+              {groups.length === 0 ? 'Create a group' : 'Groups and roles'}
+            </Button>
+          )}
+        </span>
       )}
       {error && <span style={{ font: 'var(--type-caption)', color: 'var(--marker-deep)' }}>{error}</span>}
     </div>

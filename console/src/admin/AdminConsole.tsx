@@ -282,6 +282,7 @@ export function AdminConsole({
               userID={route.userID}
               onBack={() => go({ view: 'admin', section: 'accounts' })}
               onAudit={(query) => go({ view: 'admin', section: 'audit', query })}
+              onGroups={() => go({ view: 'admin', section: 'identity' })}
             />
           ) : (
             <Accounts onOpen={(a) => go({ view: 'admin', section: 'accounts', userID: a.id })} />
