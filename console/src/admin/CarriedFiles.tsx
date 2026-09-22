@@ -9,11 +9,12 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, CodeBlock, Dialog, Table } from '@design';
+import { Button, CodeBlock, Dialog } from '@design';
 
 import { api } from '@api/client';
 import type { AppSpec, File as CarriedFile, Workload } from '@api/types.gen';
 import { Quiet, messageOf } from '../install/Accounts';
+import { Table } from '../ui/Table';
 
 interface Revision {
   id: string;

@@ -126,7 +126,12 @@ func (g *Groups) SetMembers(ctx context.Context, groupID string, userIDs []strin
 	return nil
 }
 
-// Delete removes a group. Grants made to it go with it.
+// Delete removes a group. Grants made to it go with it — the people in it lose
+// whatever the group gave them, and keep anything given to them directly.
+//
+// Refused when it would leave nobody who can manage accounts (R-088): a group
+// can hold an administrator role like anyone else, and deleting it is the same
+// lockout as revoking that grant directly.
 func (g *Groups) Delete(ctx context.Context, groupID string) error {
 	// Grants to the group are removed first and explicitly. The schema does not
 	// cascade from groups to grants — grants reference a principal_id that is
@@ -140,12 +145,29 @@ func (g *Groups) Delete(ctx context.Context, groupID string) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	before, err := accountManagers(ctx, tx)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not delete the group.", err)
+	}
 	if _, err := tx.Exec(ctx,
 		`DELETE FROM grants WHERE principal_kind = 'group' AND principal_id = $1`, groupID); err != nil {
 		return errs.Wrap(errs.Internal, "Could not delete the group.", err)
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM groups WHERE id = $1`, groupID); err != nil {
+	tag, err := tx.Exec(ctx, `DELETE FROM groups WHERE id = $1`, groupID)
+	if err != nil {
 		return errs.Wrap(errs.Internal, "Could not delete the group.", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return errs.New(errs.NotFound, "There is no group with that ID.")
+	}
+	after, err := accountManagers(ctx, tx)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not delete the group.", err)
+	}
+	if before > 0 && after == 0 {
+		return errs.New(errs.ValidInvalid,
+			"This group is how the installation's only administrators manage accounts, so Pando cannot delete it.").
+			WithRemedy("Give someone an administrator role directly, or through another group, then delete this one.")
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return errs.Wrap(errs.Internal, "Could not delete the group.", err)
@@ -217,10 +239,13 @@ func scopeWord(scope string) string {
 	return "to a single app"
 }
 
-// List returns every role, of either scope.
+// List returns every role, of either scope: installation roles first, Pando's
+// before the installation's own, and within those the broadest first — so the
+// built-ins read administrator, creator, then owner, operator, viewer.
 func (r *Roles) List(ctx context.Context) ([]RoleRow, error) {
-	rows, err := r.db.Query(ctx,
-		`SELECT id, name, builtin, scope, verbs FROM roles ORDER BY scope, builtin DESC, name`)
+	rows, err := r.db.Query(ctx, `
+		SELECT id, name, builtin, scope, verbs FROM roles
+		ORDER BY scope DESC, builtin DESC, cardinality(verbs) DESC, name`)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not read the roles.", err)
 	}
@@ -246,11 +271,27 @@ type RoleRow struct {
 	Verbs   []string `json:"verbs"`
 }
 
-// DeleteCustom removes a custom role. Built-ins are protected by trigger
+// DeleteCustom removes a custom role, and every grant of it with it: anyone
+// who held it — on an app, or across the installation — loses what it allowed,
+// and keeps anything they hold another way. Built-ins are protected by trigger
 // (R-081), so this reports that rather than surfacing a constraint name.
+//
+// The grants have to go first: they reference the role by foreign key, so a
+// role anyone held could not be deleted at all, and the error said only that
+// something had gone wrong.
+//
+// Refused when it would leave nobody who can manage accounts (R-088) — a
+// custom role holding install.users.manage is as much an administrator as the
+// built-in one.
 func (r *Roles) DeleteCustom(ctx context.Context, roleID string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not delete the role.", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	var builtin bool
-	err := r.db.QueryRow(ctx, `SELECT builtin FROM roles WHERE id = $1`, roleID).Scan(&builtin)
+	err = tx.QueryRow(ctx, `SELECT builtin FROM roles WHERE id = $1`, roleID).Scan(&builtin)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return errs.New(errs.NotFound, "There is no role with that ID.")
 	}
@@ -262,8 +303,42 @@ func (r *Roles) DeleteCustom(ctx context.Context, roleID string) error {
 			WithRemedy("Make a custom role instead, and grant that.")
 	}
 
-	if _, err := r.db.Exec(ctx, `DELETE FROM roles WHERE id = $1`, roleID); err != nil {
+	before, err := accountManagers(ctx, tx)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not delete the role.", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM grants WHERE role_id = $1`, roleID); err != nil {
+		return errs.Wrap(errs.Internal, "Could not delete the role.", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM roles WHERE id = $1`, roleID); err != nil {
+		return errs.Wrap(errs.Internal, "Could not delete the role.", err)
+	}
+	after, err := accountManagers(ctx, tx)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not delete the role.", err)
+	}
+	if before > 0 && after == 0 {
+		return errs.New(errs.ValidInvalid,
+			"This role is how the installation's only administrators manage accounts, so Pando cannot delete it.").
+			WithRemedy("Give someone the built-in administrator role first, then delete this one.")
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return errs.Wrap(errs.Internal, "Could not delete the role.", err)
 	}
 	return nil
+}
+
+// accountManagers counts the installation-wide grants that can manage
+// accounts — the R-088 quantity. Counted inside the caller's transaction so a
+// check and the delete it guards cannot be interleaved with another.
+func accountManagers(ctx context.Context, tx pgx.Tx) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `
+		SELECT count(*)
+		FROM grants g
+		JOIN roles r ON r.id = g.role_id
+		WHERE g.app_id IS NULL
+		  AND g.plane = 'control'
+		  AND $1 = ANY (r.verbs)`, string(authz.InstallUsersManage)).Scan(&n)
+	return n, err
 }

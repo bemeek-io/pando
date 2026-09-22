@@ -45,6 +45,9 @@ func Commands() []*cobra.Command {
 		withServer(logsCmd(client)),
 		withServer(secretCmd(client)),
 		withServer(grantCmd(client)),
+		withServer(sectionCmd(client)),
+		withServer(auditCmd(client)),
+		withServer(configCmd(client)),
 		withServer(rollbackCmd(client)),
 		withServer(exportCmd(client)),
 		withServer(backupCmd(client)),
@@ -137,6 +140,54 @@ func loginCmd(server *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&username, "username", "", "username to sign in as")
+	return cmd
+}
+
+// appIconCmd sets or removes the image on an app's launcher tile (R-340).
+func appIconCmd(client func() (*Client, error)) *cobra.Command {
+	cmd := &cobra.Command{Use: "icon", Short: "Set the image on an app's launcher tile"}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "set <app> <image-file>",
+		Short: "Set an app's image from a PNG, JPEG, WebP or GIF file",
+		Long: "Sets the image shown on the app's tile in everyone's launcher.\n\n" +
+			"PNG, JPEG, WebP or GIF, at most 256 KB. SVG is not accepted. A square image a few\n" +
+			"hundred pixels across is plenty.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			image, err := os.ReadFile(args[1])
+			if err != nil {
+				return err
+			}
+			if err := c.UploadIcon(args[0], image); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Set the image for %s.\n", args[0])
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "clear <app>",
+		Short: "Remove an app's image, so its tile shows the map generated for it",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("DELETE", "/apps/"+args[0]+"/icon", nil, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Removed the image for %s.\n", args[0])
+			return nil
+		},
+	})
+
 	return cmd
 }
 
@@ -285,6 +336,52 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 			return nil
 		},
 	})
+
+	cmd.AddCommand(appIconCmd(client))
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "rename <app> <new-name>",
+		Short: "Change an app's display name",
+		Long: "Changes the name shown for the app in the console and on everyone's launcher.\n\n" +
+			"The app's ID and address do not change.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("PATCH", "/apps/"+args[0], map[string]string{"name": args[1]}, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Renamed %s to %q.\n", args[0], args[1])
+			return nil
+		},
+	})
+
+	// Favorites (R-341): pinned to the top of your own launcher.
+	for _, f := range []struct {
+		use, short, method, done string
+	}{
+		{"favorite <app>", "Pin an app to the top of your launcher", "PUT", "Pinned %s to the top of your launcher.\n"},
+		{"unfavorite <app>", "Unpin an app from your launcher", "DELETE", "Unpinned %s.\n"},
+	} {
+		cmd.AddCommand(&cobra.Command{
+			Use:   f.use,
+			Short: f.short,
+			Args:  cobra.ExactArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				c, err := client()
+				if err != nil {
+					return err
+				}
+				if err := c.Do(f.method, "/me/favorites/"+args[0], nil, nil); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), f.done, args[0])
+				return nil
+			},
+		})
+	}
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "start <app>",

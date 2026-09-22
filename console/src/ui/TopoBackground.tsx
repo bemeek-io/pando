@@ -89,14 +89,14 @@ function surface(seed: string): Height {
 }
 
 /** Every contour of the tile, one path per level, lowest first. */
-function trace(height: Height, levels: number, floor = 0.06): string[] {
-  const w = COLS + 1;
-  const v = new Float64Array(w * (ROWS + 1));
+function trace(height: Height, levels: number, floor = 0.06, cols = COLS, rows = ROWS): string[] {
+  const w = cols + 1;
+  const v = new Float64Array(w * (rows + 1));
   let min = Infinity;
   let max = -Infinity;
-  for (let j = 0; j <= ROWS; j++) {
-    for (let i = 0; i <= COLS; i++) {
-      const h = height(i / COLS, j / ROWS);
+  for (let j = 0; j <= rows; j++) {
+    for (let i = 0; i <= cols; i++) {
+      const h = height(i / cols, j / rows);
       v[j * w + i] = h;
       if (h < min) min = h;
       if (h > max) max = h;
@@ -125,8 +125,8 @@ function trace(height: Height, levels: number, floor = 0.06): string[] {
       (adj.get(b) ?? adj.set(b, []).get(b)!).push(a);
     };
 
-    for (let j = 0; j < ROWS; j++) {
-      for (let i = 0; i < COLS; i++) {
+    for (let j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
         const a = at(i, j);
         const b = at(i + 1, j);
         const c = at(i + 1, j + 1);
@@ -391,6 +391,101 @@ export function TopoMap({ seed, recede }: { seed: string; recede: Recede }) {
         points={`${sx},${sy - s} ${sx + s},${sy + s * 0.8} ${sx - s},${sy + s * 0.8}`}
         fill="var(--marker)"
       />
+    </svg>
+  );
+}
+
+// The survey sheets a tile can be printed on: ground and line, from the
+// palette's own terrain colors. Red is not one of them — the marker is kept
+// rare, and a launcher of red squares would spend all of it at once. Nor is
+// grey: on the launcher a grey tile means an app that will not open. Nor is
+// paper: the picture sits on a paper card, and on the same paper it has no
+// edge.
+const SHEETS = [
+  { ground: 'var(--vegetation)', line: 'var(--vegetation-deep)' },
+  { ground: 'var(--vegetation-deep)', line: 'var(--vegetation)' },
+  { ground: 'var(--status-info-tint)', line: 'var(--water)' },
+  { ground: 'var(--water)', line: 'var(--status-info-tint)' },
+  { ground: 'var(--status-building-tint)', line: 'var(--contour)' },
+] as const;
+
+// A small, square grid: a tile is drawn a few hundred pixels across at most,
+// and there are as many of them as there are apps.
+const TILE = 40;
+
+// How far in a tile looks. The surface is a whole landscape; a tile shows a
+// window a third of its width, so one or two hills fill it and their lines are
+// few and large — a mark, not a map.
+const ZOOM = 3;
+
+const tiles = new Map<string, string[]>();
+
+/** The contours and the sheet for one seed. Pure, and the same every time. */
+export function tileOf(seed: string): { levels: string[]; sheet: (typeof SHEETS)[number] } {
+  let levels = tiles.get(seed);
+  if (!levels) {
+    const ground = surface(seed);
+    // Where the window sits is part of the seed too, so two apps whose
+    // landscapes happen to share a hill do not share a picture of it.
+    const r = rng(hash(`${seed}|window`));
+    const ox = r();
+    const oy = r();
+    const height: Height = (x, y) => ground(ox + x / ZOOM, oy + y / ZOOM);
+    // Four to six lines: enough to read as terrain, few enough to stay quiet.
+    const count = 4 + pick(`${seed}|levels`, 3);
+    levels = trace(height, count, 0.12, TILE, TILE);
+    tiles.set(seed, levels);
+  }
+  return { levels, sheet: SHEETS[pick(`${seed}|sheet`, SHEETS.length)]! };
+}
+
+/**
+ * A choice among n, from a string. Through the generator rather than `hash % n`:
+ * FNV's low bits are poorly mixed — its lowest is the parity of the input's
+ * characters — so IDs that differ in a pair of characters landed on the same
+ * half of the sheets every time.
+ */
+function pick(s: string, n: number): number {
+  return Math.floor(rng(hash(s))() * n);
+}
+
+/**
+ * An app's generated picture (R-340): a patch of terrain of its own.
+ *
+ * The seed is the app's ID, so the same app always gets the same land and no
+ * two apps get the same land — the contours are what make it unique, and the
+ * sheet it is printed on varies it further. The middle line is an index
+ * contour, heavier, as on the sign-in map.
+ *
+ * Fills its parent, which should be square.
+ */
+export function TopoTile({ seed }: { seed: string }) {
+  const { levels, sheet } = useMemo(() => tileOf(seed), [seed]);
+  const middle = Math.floor(levels.length / 2);
+
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox={`0 0 ${TILE * CELL} ${TILE * CELL}`}
+      preserveAspectRatio="xMidYMid slice"
+      style={{ display: 'block', width: '100%', height: '100%', background: sheet.ground }}
+    >
+      {levels.map((d, i) => {
+        const index = i === middle;
+        return (
+          <path
+            key={i}
+            d={d}
+            fill="none"
+            stroke={sheet.line}
+            strokeOpacity={index ? 0.9 : 0.6}
+            strokeWidth={index ? 'var(--contour-index-width)' : 'var(--contour-line-width)'}
+            vectorEffect="non-scaling-stroke"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        );
+      })}
     </svg>
   );
 }

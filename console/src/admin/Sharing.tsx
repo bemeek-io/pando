@@ -19,11 +19,12 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Dialog, Input, Select, Table, Tag } from '@design';
+import { Button, Dialog, Input, Select, Tag } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 import type { GrantRow } from '@api/types.gen';
 import { MEASURE } from '../ui/layout';
+import { Table } from '../ui/Table';
 
 interface GrantsResponse {
   grants: GrantRow[] | null;

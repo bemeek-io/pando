@@ -15,12 +15,16 @@
 // the console back on the launcher, the back button did nothing, and there was
 // no way to send anybody a link to an app.
 
+import { useRef } from 'react';
+
 import { useAdministrative, usePrincipal } from './principal';
 import { useTheme } from '../ui/theme';
 import { useRoute } from './route';
+import type { Route } from './route';
 import { ChangePassword, Login } from '../auth/Login';
 import { Launcher } from '../launcher/Launcher';
 import { AdminConsole } from '../admin/AdminConsole';
+import { Settings } from '../settings/Settings';
 
 export function App() {
   // Before anything decides what to render: the sign-in page and the error
@@ -31,6 +35,10 @@ export function App() {
   const principal = usePrincipal();
   const isAdmin = useAdministrative();
   const [route, go] = useRoute();
+  // Where settings was opened from. A ref, not the history stack: someone who
+  // opened settings by its address has nothing behind them in this console,
+  // and history.back() would take them off Pando altogether.
+  const cameFrom = useRef<Route | null>(null);
 
   if (principal.isPending) {
     return <Centered>Loading.</Centered>;
@@ -52,6 +60,27 @@ export function App() {
     return <ChangePassword username={principal.data.username} />;
   }
 
+  // Signing out lands on the sign-in form at the root, not at whatever admin
+  // address was open — the next person to sign in on this browser should start
+  // on their own launcher. Replace, so Back does not return to a page that
+  // would only answer 401.
+  const signedOut = () => go({ view: 'launcher', section: 'apps' }, true);
+
+  // Settings is a page of its own, reached from either half of the console,
+  // and its back arrow returns to whichever one that was.
+  if (route.view === 'settings') {
+    return (
+      <Settings
+        onBack={() => go(cameFrom.current ?? { view: 'launcher', section: 'apps' })}
+        onSignedOut={signedOut}
+      />
+    );
+  }
+  const openSettings = () => {
+    cameFrom.current = route;
+    go({ view: 'settings', section: 'apps' });
+  };
+
   // Someone who lands on /admin without the verbs for it gets the launcher,
   // and the address bar is corrected to say so — replace, not push, so the
   // back button does not bounce them between a page they cannot see and one
@@ -68,6 +97,7 @@ export function App() {
         go={go}
         administrative={isAdmin}
         onLeave={() => go({ view: 'launcher', section: 'apps' })}
+        onSettings={openSettings}
       />
     );
   }
@@ -78,7 +108,8 @@ export function App() {
   return (
     <Launcher
       onAdmin={isAdmin ? () => go({ view: 'admin', section: 'apps' }) : undefined}
-      onReference={() => go({ view: 'admin', section: 'api' })}
+      onSettings={openSettings}
+      onManage={isAdmin ? (appID) => go({ view: 'admin', section: 'apps', appID }) : undefined}
     />
   );
 }

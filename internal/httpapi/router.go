@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/core/assertion"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
@@ -114,6 +115,15 @@ type Server struct {
 	// other is the decision, and an endpoint that edits the document has no
 	// business asking the evaluator anything.
 	PolicyStore PolicyDocument
+
+	// PolicyOverlay is the host policy fields set in the startup config
+	// (R-271). PolicyStore already reads through it; this is for refusing a
+	// change to one of them and for saying where each was set. Nil means none.
+	PolicyOverlay *corepolicy.Overlay
+
+	// Startup is the configuration Pando started with, for GET /config: every
+	// non-secret setting and where it came from. Nil in tests that do not set it.
+	Startup *config.Config
 
 	// AuditLog reads the append-only log (R-227). Nil on an install where the
 	// endpoint should 500 rather than quietly return nothing — an empty audit
@@ -266,6 +276,18 @@ func (s *Server) Routes() http.Handler {
 		// list from GET /apps.
 		r.Get("/me/apps", s.handleMyApps)
 
+		// Favorites (R-341): the caller's own, pinned to the top of that
+		// list. Self only, like the password.
+		r.Put("/me/favorites/{appID}", s.handleFavoriteApp)
+		r.Delete("/me/favorites/{appID}", s.handleUnfavoriteApp)
+
+		// Sections (R-342): the caller's own groupings in that list.
+		r.Post("/me/sections", s.handleCreateSection)
+		r.Patch("/me/sections/{sectionID}", s.handleRenameSection)
+		r.Delete("/me/sections/{sectionID}", s.handleDeleteSection)
+		r.Put("/me/sections/{sectionID}/apps/{appID}", s.handlePlaceApp)
+		r.Delete("/me/sections/{sectionID}/apps/{appID}", s.handleUnplaceApp)
+
 		// Accounts. Reading or changing your own needs nothing
 		// administrative; doing either to someone else needs an
 		// install-scoped verb (O-17). Before those verbs existed these were
@@ -345,6 +367,7 @@ func (s *Server) Routes() http.Handler {
 		// install.policy.manage. Seeing the rules you work under is not the
 		// same privilege as changing them (R-274).
 		r.Get("/policy", s.handleGetPolicy)
+		r.Get("/config", s.handleGetConfig)
 		r.Put("/policy", s.handlePutPolicy)
 
 		// What this policy would block, before it is saved (design 05 §3).
@@ -376,6 +399,12 @@ func (s *Server) Routes() http.Handler {
 				r.Get("/", s.handleGetApp)
 				r.Patch("/", s.handlePatchApp)
 				r.Delete("/", s.handleDeleteApp)
+
+				// The launcher tile's image (R-340). Reading it is the data
+				// plane, like the tile itself; setting it is app.spec.edit.
+				r.Get("/icon", s.handleGetAppIcon)
+				r.Put("/icon", s.handleSetAppIcon)
+				r.Delete("/icon", s.handleClearAppIcon)
 
 				// Lifecycle. Start and stop set desired state and let the
 				// reconciler converge (design 05), so "stopped" survives a

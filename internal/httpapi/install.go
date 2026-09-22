@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
+	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
 )
 
@@ -118,12 +121,38 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, map[string]any{"users": out})
 }
 
-// handleListRoles returns the roles that can be granted across the installation.
+// handleListRoles returns roles, read from the database rather than the Go
+// catalog so a custom role (R-082) appears the moment it exists.
 //
-// Read from the database rather than from the Go catalog, so a custom
-// install-scoped role (R-082) appears here the moment it exists.
+// By default the ones that can be granted across the installation, which is
+// what giving someone an installation role needs. `scope=app` gives the roles
+// granted on one app, and `scope=all` both — the list of every role there is,
+// which the Groups and roles screen showed as two of Pando's five because it
+// only ever asked for the first kind.
 func (s *Server) handleListRoles(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireInstall(w, r, authz.InstallView); !ok {
+		return
+	}
+
+	switch scope := r.URL.Query().Get("scope"); scope {
+	case "", "install":
+	case "app", "all":
+		rows, err := s.Roles.List(r.Context())
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		out := make([]state.RoleRow, 0, len(rows))
+		for _, row := range rows {
+			if scope == "all" || row.Scope == scope {
+				out = append(out, row)
+			}
+		}
+		JSON(w, http.StatusOK, map[string]any{"roles": out})
+		return
+	default:
+		Error(w, r, errs.Newf(errs.ValidInvalid, "%q is not a role scope.", scope).
+			WithRemedy("Use install, app or all."))
 		return
 	}
 
@@ -281,6 +310,16 @@ func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A field set in the startup config cannot be changed here (R-271). Sending
+	// it back as it is — which is what GET /policy hands out — is fine; the
+	// store saves everything else and leaves that field's stored value alone.
+	if f, changed := s.PolicyOverlay.Changes(doc); changed {
+		Error(w, r, errs.Newf(errs.ValidInvalid,
+			"%s is set in the startup configuration (%s), so it cannot be changed here.", f.Key, where(f.Source)).
+			WithRemedy("Change it there and restart Pando, or remove it there to manage it here."))
+		return
+	}
+
 	// A disabled verb must be a real verb. Policy can only deny (R-272), so a
 	// typo here denies nothing and looks exactly like a rule that works —
 	// the worst failure mode a security control has.
@@ -297,6 +336,8 @@ func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
+	// What now applies, startup fields included.
+	doc = s.PolicyOverlay.Apply(doc)
 
 	s.audit(r, audit.Event{
 		PrincipalKind: audit.PrincipalKind(p.Kind),
@@ -344,6 +385,9 @@ func (s *Server) handlePreviewPolicy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Previewed as it would apply: with the startup fields over it.
+	doc = s.PolicyOverlay.Apply(doc)
+
 	violations, err := s.Planner.PreviewPolicy(r.Context(), doc)
 	if err != nil {
 		Error(w, r, err)
@@ -373,6 +417,28 @@ func (s *Server) handleListAudit(w http.ResponseWriter, r *http.Request) {
 		Action:      r.URL.Query().Get("action"),
 		AppID:       r.URL.Query().Get("app_id"),
 		PrincipalID: r.URL.Query().Get("principal_id"),
+		TargetKind:  r.URL.Query().Get("target_kind"),
+
+		PrincipalKind: r.URL.Query().Get("principal_kind"),
+		TargetID:      r.URL.Query().Get("target_id"),
+	}
+	// RFC 3339, like every time on the wire. A bound that will not parse is an
+	// error rather than ignored: an investigation that silently searched all
+	// of time would answer a different question than the one asked.
+	for _, bound := range []struct {
+		name string
+		into *time.Time
+	}{{"since", &q.Since}, {"until", &q.Until}} {
+		v := r.URL.Query().Get(bound.name)
+		if v == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			Error(w, r, errs.Newf(errs.ValidInvalid, "%s must be a time in RFC 3339 form, such as 2026-09-21T09:00:00Z.", bound.name))
+			return
+		}
+		*bound.into = t
 	}
 	if v := r.URL.Query().Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
@@ -419,4 +485,46 @@ func (s *Server) handleListAudit(w http.ResponseWriter, r *http.Request) {
 		next = strconv.FormatInt(events[len(events)-1].ID, 10)
 	}
 	JSON(w, http.StatusOK, map[string]any{"events": events, "next_before": next})
+}
+
+// handleGetConfig reports the configuration Pando started with (R-271): every
+// non-secret setting with its value and where it came from — an environment
+// variable, the config file, or the default — and the host policy fields set
+// there, which the console shows as fixed. Secrets are never listed (R-194).
+//
+// install.view, like reading policy: it is the installation's own settings,
+// and nothing here is a credential.
+func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireInstall(w, r, authz.InstallView); !ok {
+		return
+	}
+	// Empty lists, never null: a typed nil slice in the map is not == nil, so
+	// the check has to be on the slice before it goes in.
+	fixed := s.PolicyOverlay.Fixed()
+	if fixed == nil {
+		fixed = []corepolicy.Fixed{}
+	}
+	out := map[string]any{
+		"file":     "",
+		"settings": []config.Setting{},
+		"policy":   fixed,
+	}
+	if s.Startup != nil {
+		out["file"] = s.Startup.File
+		if s.Startup.Settings != nil {
+			out["settings"] = s.Startup.Settings
+		}
+	}
+	JSON(w, http.StatusOK, out)
+}
+
+// where says in words where a startup value was set.
+func where(src corepolicy.Source) string {
+	switch src.Kind {
+	case "env":
+		return "environment variable " + src.Name
+	case "file":
+		return "config file " + src.Name + ", key " + src.Key
+	}
+	return "startup configuration"
 }

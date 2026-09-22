@@ -13,7 +13,7 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Banner, Button, EmptyState, Logo, SidebarNav, StatusIndicator, Table, Tabs, Tooltip } from '@design';
+import { Badge, Banner, Button, EmptyState, Icon, IconButton, Logo, SidebarNav, StatusIndicator, Tabs, Tooltip } from '@design';
 import type { SidebarItem } from '@design';
 
 import { api } from '@api/client';
@@ -35,23 +35,29 @@ import { DeleteApp } from './DeleteApp';
 import { DeployButton } from './DeployButton';
 import { Lifecycle } from './Lifecycle';
 import type { Route, Section } from '../app/route';
-import { ThemeToggle } from '../ui/ThemeToggle';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { ScoreBadge } from '../ui/ScoreBadge';
 import { Terminal } from './Terminal';
 import { Sheet } from '../ui/Sheet';
 import { TopoBackground } from '../ui/TopoBackground';
+import { SearchField } from '../ui/SearchField';
+import { matches } from '../ui/search';
+import { useNarrow } from '../ui/narrow';
+import { Table } from '../ui/Table';
 
 export function AdminConsole({
   route,
   go,
   onLeave,
+  onSettings,
   administrative,
 }: {
   route: Route;
   go: (next: Route, replace?: boolean) => void;
   onLeave: () => void;
+  /** The person's own settings — a page of its own, not a section here. */
+  onSettings: () => void;
   /** Whether this person administers anything. False for somebody who came
    *  here for the API screen, which is open to everyone. */
   administrative: boolean;
@@ -64,6 +70,18 @@ export function AdminConsole({
   // changed again — so accepting a proposal left this screen rendering the app
   // as it was before, with no way to deploy.
   const section = route.section;
+
+  // Phone width: the sidebar becomes a menu (see the header below).
+  const narrow = useNarrow();
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
   const selectedID = route.appID ?? null;
   const setSection = (next: Section) => go({ view: 'admin', section: next });
   const setSelectedID = (id: string | null) =>
@@ -118,7 +136,7 @@ export function AdminConsole({
   // screen answering both is how an authorization model turns into a list of
   // people with special powers (R-078).
   if (canView || canManageUsers) items.push({ value: 'identity', label: 'Groups and roles' });
-  if (canView) items.push({ value: 'installation', label: 'Installation' });
+  if (canView) items.push({ value: 'adapters', label: 'Adapters' });
   if (canView || canManagePolicy) items.push({ value: 'policy', label: 'Policy' });
   if (canManageBackups) items.push({ value: 'backups', label: 'Backups' });
   if (canReadAudit) items.push({ value: 'audit', label: 'Audit log' });
@@ -129,12 +147,56 @@ export function AdminConsole({
   // needs both.
   items.push({ value: 'api', label: 'API and tools' });
 
+  const nav = (
+    <SidebarNav
+      value={section}
+      // One navigation, not two. setSection already drops the selected app,
+      // and calling both pushed two history entries — so one Back went to a
+      // URL that looked identical and nothing appeared to happen.
+      onChange={(v) => {
+        setMenuOpen(false);
+        setSection(v as Section);
+      }}
+      // The logo goes home, as it does everywhere else. Home is the launcher
+      // (R-264), the same place "Back to my apps" goes.
+      header={
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <button
+            onClick={onLeave}
+            title="Back to my apps"
+            style={{
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              cursor: 'pointer',
+              display: 'inline-flex',
+            }}
+          >
+            <Logo size={20} />
+          </button>
+          {/* Where the launcher has it: opposite the logo. Settings belong to
+              the person, not to anything this sidebar administers, so they
+              are not one of its items. */}
+          <IconButton label="Settings" onClick={onSettings}>
+            <Icon name="settings" size={16} />
+          </IconButton>
+        </div>
+      }
+      items={items}
+      footer={
+        <Button variant="ghost" onClick={onLeave}>
+          Back to my apps
+        </Button>
+      }
+    />
+  );
+
   return (
     // isolation makes this the stacking context, so the terrain's negative
     // z-index puts it above the paper and below everything else.
     <div
       style={{
-        display: 'flex',
+        display: narrow ? 'block' : 'flex',
         minHeight: '100vh',
         background: 'var(--paper)',
         position: 'relative',
@@ -143,28 +205,63 @@ export function AdminConsole({
     >
       {/* A different map per screen; the tabs of one app share its map. */}
       <TopoBackground seed={`${section}/${selectedID ?? ''}`} />
-      <SidebarNav
-        value={section}
-        // One navigation, not two. setSection already drops the selected app,
-        // and calling both pushed two history entries — so one Back went to a
-        // URL that looked identical and nothing appeared to happen.
-        onChange={(v) => setSection(v as Section)}
-        header={<Logo size={20} />}
-        items={items}
-        footer={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            <Button variant="ghost" onClick={onLeave}>
-              Back to my apps
-            </Button>
-            <ThemeToggle />
-          </div>
-        }
-      />
+      {narrow ? (
+        <>
+          {/* At phone width the sidebar would take most of the screen, so it
+              becomes a menu behind a button, in a bar that keeps the two
+              things the sidebar's header had: the way home and settings. */}
+          <header
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: 'var(--space-3) var(--console-padding)',
+              borderBottom: 'var(--border-width) solid var(--rule)',
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+              <IconButton label="Menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
+                <Icon name="menu" size={16} />
+              </IconButton>
+              <button
+                onClick={onLeave}
+                title="Back to my apps"
+                style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', display: 'inline-flex' }}
+              >
+                <Logo size={20} />
+              </button>
+            </span>
+            <IconButton label="Settings" onClick={onSettings}>
+              <Icon name="settings" size={16} />
+            </IconButton>
+          </header>
+          {menuOpen && (
+            <div role="dialog" aria-modal="true" aria-label="Admin menu" style={{ position: 'fixed', inset: 0, zIndex: 20 }}>
+              <div onClick={() => setMenuOpen(false)} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)' }} />
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  bottom: 0,
+                  left: 0,
+                  display: 'flex',
+                  background: 'var(--paper)',
+                  boxShadow: 'var(--shadow-popover)',
+                }}
+              >
+                {nav}
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        nav
+      )}
 
       <main style={{ flex: 1, minWidth: 0 }}>
         {section === 'accounts' && <Accounts />}
         {section === 'identity' && <Identity canEdit={canManageUsers} />}
-        {section === 'installation' && <Installation />}
+        {section === 'adapters' && <Installation />}
         {section === 'policy' && <Policy canEdit={canManagePolicy} />}
         {section === 'backups' && <Backups />}
         {section === 'audit' && <Audit />}
@@ -200,6 +297,12 @@ function AppsList({
   onAdded: (app: App) => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState('');
+
+  // By name, address slug, ID and status — the ID because it is what the CLI
+  // and a log line give somebody to go looking for. Narrowing by one column is
+  // the column filters' job, in the table's own headers.
+  const shown = rows.filter((a) => matches(query, a.name, a.slug, a.id, statusLabel(a.state)));
 
   // The page is not capped — a table's rows and rules run to the edge of the
   // window, which is what a wide display should look like. Its content is: the
@@ -215,9 +318,12 @@ function AppsList({
       <Sheet
         heading="Apps"
         action={
-          <Button variant="primary" onClick={() => setAdding(true)}>
-            Add app
-          </Button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <Button variant="primary" onClick={() => setAdding(true)}>
+              Add app
+            </Button>
+            {rows.length > 0 && <SearchField value={query} onChange={setQuery} placeholder="Search apps" />}
+          </div>
         }
       >
         <Table
@@ -226,6 +332,9 @@ function AppsList({
           // headers over nothing. R-002 is about the tenth app; the first one
           // is what makes the install anything at all.
           empty={
+            rows.length > 0 ? (
+              <Quiet>No apps match &ldquo;{query.trim()}&rdquo;.</Quiet>
+            ) : (
             <EmptyState
               heading="Add your first app"
               action={
@@ -236,13 +345,16 @@ function AppsList({
             >
               Point Pando at a repository and it works out how to build and run it.
             </EmptyState>
+            )
           }
           columns={[
-            { key: 'name', header: 'Name', width: 'minmax(0,40ch)' },
+            { key: 'name', header: 'Name', width: 'minmax(0,40ch)', filter: 'text' },
             {
               key: 'state',
               header: 'Status',
               width: '16ch',
+              filter: 'values',
+              filterValue: (row: App) => statusLabel(row.state),
               render: (row: App) => (
                 <StatusIndicator
                   status={statusSymbol(row.state)}
@@ -254,6 +366,13 @@ function AppsList({
               key: 'security_score',
               header: 'Security',
               width: '14ch',
+              filter: 'values',
+              filterValue: (row: App) =>
+                row.security_score == null
+                  ? 'Not scanned'
+                  : row.security_verdict === 'insecure'
+                    ? 'Below minimum'
+                    : 'Scanned',
               render: (row: App) => (
                 <ScoreBadge score={row.security_score} verdict={row.security_verdict as never} full />
               ),
@@ -270,7 +389,7 @@ function AppsList({
               ),
             },
           ]}
-          rows={rows}
+          rows={shown}
         />
       </Sheet>
 
@@ -430,7 +549,7 @@ function AppScreen({
             Apps
           </Button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3)' }}>
               <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
               <StatusIndicator
                 status={statusSymbol(app.data.state)}
@@ -518,3 +637,6 @@ function AppScreen({
   );
 }
 
+function Quiet({ children }: { children: React.ReactNode }) {
+  return <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>{children}</p>;
+}

@@ -111,6 +111,43 @@ setting is joined with an underscore: `server.base_domain` is `PANDO_SERVER_BASE
 `PANDO_PORT` is not read by Pando. It is a variable in the shipped `docker-compose.yml`, which uses
 it to choose the host port published in front of the container's fixed `8080`.
 
+A config file is read only when one is named with `pando serve --config <path>`. The environment
+wins over the file.
+
+### Host policy at startup
+
+Any host policy setting can also be fixed at startup, in a `policy:` section of the config file or
+as `PANDO_POLICY_<SETTING>`:
+
+```yaml
+policy:
+  min_security_score: 70
+  disabled_verbs: [app.exec]
+  allow_anonymous_grants: false
+```
+
+```sh
+PANDO_POLICY_MIN_SECURITY_SCORE=70
+PANDO_POLICY_DISABLED_VERBS=app.exec,app.secrets.read   # lists are comma-separated
+PANDO_POLICY_ALLOW_ANONYMOUS_GRANTS=false
+```
+
+A setting fixed this way overrides what is saved in the console, applies everywhere policy is
+checked, and cannot be changed from the console, the API or the CLI while it is set: the console
+shows it disabled, with where it is set, and `PUT /api/v1/policy` refuses a change to it. It is
+never written into the saved policy, so removing it and restarting brings back what was saved. A
+name that is not a policy setting, or a value that does not read as one, stops Pando at startup
+rather than being ignored.
+
+The settings are `source_allowlist`, `disabled_verbs`, `agent_disabled_verbs`,
+`allow_anonymous_grants`, `min_build_isolation`, `min_runtime_isolation`, `egress_allowlist`,
+`require_backup_before_destroy`, `max_token_lifetime_days`, `max_log_disk_bytes`,
+`disable_ai_screening`, `min_security_score`, `insecure_action`, `insecure_grace_hours` and
+`ignore_unfixable_findings`.
+
+`GET /api/v1/config`, `pando config` and the Policy screen list every setting Pando started with,
+its value, and where it came from. Secrets are never shown.
+
 ## Guarantees worth relying on
 
 These are requirements, not implementation details, and they will not be changed without a major

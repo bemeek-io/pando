@@ -15,12 +15,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Dialog, Input, Select, Table } from '@design';
+import { Banner, Button, Dialog, Input, Select } from '@design';
 
 import { api } from '@api/client';
 import type { AppSpec, EnvEntry, Workload } from '@api/types.gen';
 import { Quiet, messageOf } from '../install/Accounts';
 import { looksSensitive } from './sensitive';
+import { Table } from '../ui/Table';
 
 interface Revision {
   id: string;

@@ -222,7 +222,17 @@ func serve(ctx context.Context, configPath string) error {
 	// Host policy is loaded per evaluation, not cached: R-274 says policy
 	// applies to a running install, and a cached document would keep allowing
 	// or keep denying for as long as the cache lived.
-	policyStore := state.NewPolicy(db)
+	//
+	// Any field set in the startup config (a `policy:` section, or
+	// PANDO_POLICY_<FIELD>) is laid over the stored document by the store
+	// itself, so every reader — evaluator, handlers, the security pass — sees
+	// it, and a save cannot write it into the stored one (R-271). A startup
+	// policy that is not a policy, or will not read as one, stops startup.
+	policyOverlay, err := startupPolicy(cfg)
+	if err != nil {
+		return err
+	}
+	policyStore := policyOverlay.Wrap(state.NewPolicy(db))
 	hostPolicy := corepolicy.New(policyStore.Load)
 
 	// R-046: the first run creates one administrative account and shows its
@@ -489,8 +499,10 @@ func serve(ctx context.Context, configPath string) error {
 		// things and both are wired: one endpoint edits the document, every
 		// authorization check consults the evaluator, and the evaluator
 		// reads the document per evaluation rather than caching it (R-274).
-		PolicyStore: policyStore,
-		AuditLog:    audit.NewReader(db.Pool),
+		PolicyStore:   policyStore,
+		PolicyOverlay: policyOverlay,
+		Startup:       cfg,
+		AuditLog:      audit.NewReader(db.Pool),
 
 		Groups:       state.NewGroups(db),
 		Roles:        state.NewRoles(db),
@@ -1116,4 +1128,31 @@ func (s sourceScanner) ScanSource(ctx context.Context, appID, dir string) {
 		s.logger.Info("could not scan an app's source during detection",
 			zap.String("app_id", appID), zap.Error(err))
 	}
+}
+
+// startupPolicy turns the policy fields set in the startup config into the
+// overlay, checking each one — including that a disabled verb is a verb Pando
+// has, the same check PUT /policy makes, since a typo there denies nothing and
+// looks exactly like a rule that works.
+func startupPolicy(cfg *config.Config) (*corepolicy.Overlay, error) {
+	settings := make([]corepolicy.Setting, 0, len(cfg.Policy))
+	for _, p := range cfg.Policy {
+		settings = append(settings, corepolicy.Setting{
+			Key: p.Key, Value: p.Value,
+			Source: corepolicy.Source{Kind: p.Source.Kind, Name: p.Source.Name, Key: p.Source.Key},
+		})
+	}
+	overlay, err := corepolicy.NewOverlay(settings)
+	if err != nil {
+		return nil, err
+	}
+	fixed := overlay.Apply(corepolicy.Document{})
+	for _, verbs := range [][]string{fixed.DisabledVerbs, fixed.AgentDisabledVerbs} {
+		for _, v := range verbs {
+			if !authz.IsVerb(authz.Verb(v)) {
+				return nil, fmt.Errorf("the startup policy disables %q, which is not a permission Pando has", v)
+			}
+		}
+	}
+	return overlay, nil
 }

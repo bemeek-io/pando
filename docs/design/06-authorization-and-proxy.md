@@ -303,7 +303,20 @@ list advisory.
 partition the catalog. An administrator is therefore **not** an owner of every app, which is the same
 line R-087 draws in `CheckData`: the supported path to an app is a grant.
 
+**[D]** Creator holds `app.create` and nothing else. It is the built-in answer to "may make and run
+their own apps, and touch no other setting": creating an app writes the creator an owner grant on it
+(R-073), so what a Creator can manage is exactly what they made, through the ordinary grant path. No
+verb in the role mentions apps they did not make, and none reaches users, policy, adapters, backups or
+the audit log. In the console, a Creator's admin sidebar has Apps and the API screen everyone gets,
+and nothing else, because the sidebar is drawn per verb.
+
 **[D]** Built-in roles (R-081) are seeded by migration and trigger-protected. When a new verb is introduced in a later Pando version, a migration adds it to the appropriate built-in roles. That is the upgrade mechanism R-081 promises, and it is the only sanctioned way built-in role contents change.
+
+**[D]** Deleting a custom role deletes every grant of it in the same transaction, and deleting a group
+deletes every grant to it; whoever held them loses that access and keeps anything held another way.
+Both are refused when they would leave no installation-wide grant holding `install.users.manage`
+(R-088) — the same lockout as revoking that grant directly, reached through a different door. The
+console confirms each with its own wording, naming whose access goes and whose stays.
 
 **[D]** Custom roles (R-082) are arbitrary subsets. There is no verb implication graph — holding `app.delete` does not imply `app.view`. Implication graphs are where authorization bugs live; the console can suggest sensible combinations instead.
 

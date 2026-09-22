@@ -243,6 +243,28 @@ func TestEachToolMapsToItsEndpoint(t *testing.T) {
 		{"pando_stop_app", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/stop"},
 		{"pando_start_app", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/start"},
 		{"pando_restart_app", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/restart"},
+
+		// R-340: the tile image, settable from every surface (R-261).
+		{"pando_set_app_icon", `{"app_id":"app_01HQ8","image_base64":"iVBORw=="}`, "PUT", "/apps/app_01HQ8/icon"},
+		{"pando_clear_app_icon", `{"app_id":"app_01HQ8"}`, "DELETE", "/apps/app_01HQ8/icon"},
+
+		// R-341: favorites, from every surface.
+		{"pando_favorite_app", `{"app_id":"app_01HQ8"}`, "PUT", "/me/favorites/app_01HQ8"},
+		{"pando_unfavorite_app", `{"app_id":"app_01HQ8"}`, "DELETE", "/me/favorites/app_01HQ8"},
+
+		// R-342 and renaming: every surface (R-261).
+		{"pando_rename_app", `{"app_id":"app_01HQ8","name":"Notes"}`, "PATCH", "/apps/app_01HQ8"},
+		{"pando_list_my_apps", `{}`, "GET", "/me/apps"},
+		{"pando_get_config", `{}`, "GET", "/config"},
+		{"pando_list_audit", `{"principal_id":"usr_1","target_kind":"app","since":"2026-09-21T00:00:00Z"}`, "GET",
+			"/audit?principal_id=usr_1&since=2026-09-21T00%3A00%3A00Z&target_kind=app"},
+		{"pando_list_audit", `{"principal_kind":"system","target_id":"app_1","until":"2026-09-22T00:00:00Z","before":"41"}`, "GET",
+			"/audit?before=41&principal_kind=system&target_id=app_1&until=2026-09-22T00%3A00%3A00Z"},
+		{"pando_create_section", `{"name":"Work"}`, "POST", "/me/sections"},
+		{"pando_rename_section", `{"section_id":"sect_01","name":"Office"}`, "PATCH", "/me/sections/sect_01"},
+		{"pando_delete_section", `{"section_id":"sect_01"}`, "DELETE", "/me/sections/sect_01"},
+		{"pando_add_app_to_section", `{"section_id":"sect_01","app_id":"app_01HQ8"}`, "PUT", "/me/sections/sect_01/apps/app_01HQ8"},
+		{"pando_remove_app_from_section", `{"section_id":"sect_01","app_id":"app_01HQ8"}`, "DELETE", "/me/sections/sect_01/apps/app_01HQ8"},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
 			srv, s := newSession()
@@ -411,4 +433,24 @@ func TestRequestsAreAnsweredInOrderOverOneStream(t *testing.T) {
 		require.EqualValues(t, i+1, reply["id"])
 		require.Equal(t, "2.0", reply["jsonrpc"])
 	}
+}
+
+// TestR340_SetAppIconSendsTheDecodedBytes asserts the MCP half of R-340: the
+// agent sends base64, and the API receives the file itself — not JSON.
+func TestR340_SetAppIconSendsTheDecodedBytes(t *testing.T) {
+	srv, s := newSession()
+	s.run(t, srv, call(1, "pando_set_app_icon", `{"app_id":"app_01HQ8","image_base64":"iVBORw=="}`))
+
+	require.Len(t, s.calls, 1)
+	raw, ok := s.calls[0].body.(mcp.Bytes)
+	require.True(t, ok, "the body should be sent as bytes, not encoded as JSON")
+	require.Equal(t, []byte{0x89, 'P', 'N', 'G'}, raw.Data)
+}
+
+func TestSetAppIconRefusesBadBase64WithoutCallingTheAPI(t *testing.T) {
+	srv, s := newSession()
+	replies := s.run(t, srv, call(1, "pando_set_app_icon", `{"app_id":"app_01HQ8","image_base64":"not base64!"}`))
+
+	require.Empty(t, s.calls)
+	require.Equal(t, true, result(t, replies[0])["isError"])
 }

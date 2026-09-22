@@ -12,7 +12,7 @@
 // account on a bright desk and a dark room wants different answers, and neither
 // belongs in the database.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 
 export type Theme = 'light' | 'dark';
 export type Preference = Theme | 'system';
@@ -42,15 +42,29 @@ function apply(theme: Theme) {
   document.documentElement.style.colorScheme = theme;
 }
 
+// One preference for the whole page, not one per caller. Each useTheme() used
+// to hold its own copy in useState, so the settings screen could choose dark
+// while App's copy still said "system" — and the next time the machine
+// changed its appearance, App applied the machine's theme over the choice.
+let current: Preference = stored();
+const listeners = new Set<() => void>();
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
 /**
  * The theme in force, the preference behind it, and a way to change it.
  *
- * Call it once, high up. It writes to the document rather than to a context,
- * because every color in the console already comes from a custom property and
- * the one thing that has to change is which set is in scope.
+ * Every caller shares one preference. It writes to the document rather than to
+ * a context, because every color in the console already comes from a custom
+ * property and the one thing that has to change is which set is in scope.
  */
 export function useTheme(): { theme: Theme; preference: Preference; set: (next: Preference) => void } {
-  const [preference, setPreference] = useState<Preference>(stored);
+  const preference = useSyncExternalStore(subscribe, () => current);
   const [system, setSystem] = useState<Theme>(systemTheme);
 
   useEffect(() => {
@@ -68,13 +82,14 @@ export function useTheme(): { theme: Theme; preference: Preference; set: (next: 
   }, [theme]);
 
   const set = (next: Preference) => {
-    setPreference(next);
+    current = next;
     try {
       if (next === 'system') window.localStorage.removeItem(KEY);
       else window.localStorage.setItem(KEY, next);
     } catch {
       // The choice still holds for this page. It just will not be remembered.
     }
+    listeners.forEach((listener) => listener());
   };
 
   return { theme, preference, set };

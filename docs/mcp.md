@@ -53,5 +53,18 @@ boundary (O-12), and offering a tool policy will refuse wastes the agent's turn.
 | `pando_stop_app` | Stop an app without deleting it. Its storage, configuration and address are kept, and it stays stopped until something starts it again. | `app_id` |
 | `pando_start_app` | Start an app that was stopped, bringing back the version that was running. | `app_id` |
 | `pando_restart_app` | Restart an app's workloads in place. Nothing is rebuilt and nothing is re-read — the same version, started again. | `app_id` |
+| `pando_set_app_icon` | Set the image shown on an app's launcher tile. The image is a PNG, JPEG, WebP or GIF file of at most 256 KB, base64-encoded. SVG is not accepted. | `app_id`, `image_base64` |
+| `pando_clear_app_icon` | Remove the image on an app's launcher tile, so the tile shows the map generated for it. | `app_id` |
+| `pando_favorite_app` | Pin an app to the top of your own launcher. It grants nothing and only you see it; you must be able to open the app. | `app_id` |
+| `pando_unfavorite_app` | Unpin an app from your launcher. | `app_id` |
+| `pando_rename_app` | Change an app's display name. Its ID and address do not change. | `app_id`, `name` |
+| `pando_list_my_apps` | The apps you can open — your launcher — with which are favorites and which of your sections each is filed under, and your sections. A different list from pando_list_apps, which is the apps you can administer. | none |
+| `pando_create_section` | Make a section in your own launcher: a named grouping of apps. Only you see it. | `name` |
+| `pando_rename_section` | Rename one of your launcher sections. | `name`, `section_id` |
+| `pando_delete_section` | Delete one of your launcher sections. Its apps go back to Your apps; nothing else changes. | `section_id` |
+| `pando_add_app_to_section` | Move an app you can open into one of your launcher sections, out of any other. | `app_id`, `section_id` |
+| `pando_remove_app_from_section` | Move an app out of one of your launcher sections, back to Your apps. | `app_id`, `section_id` |
+| `pando_list_audit` | Read the audit log, newest first. Every filter is optional and they combine: what was done (an action prefix such as app. or grant.delete), who did it, which app, what it was done to, and when (RFC 3339 times; since inclusive, until exclusive). | `action` (optional), `app_id` (optional), `before` (optional), `principal_id` (optional), `principal_kind` (optional), `since` (optional), `target_id` (optional), `target_kind` (optional), `until` (optional) |
+| `pando_get_config` | The configuration the Pando server started with: every non-secret setting, its value and where it was set (an environment variable, the config file, or the default), and the host policy fields fixed there, which cannot be changed through the API while they are set. | none |
 | `pando_get_status` | What an app is doing right now: running, degraded, failed, and why — including each part separately, so a single part that is crash-looping is visible rather than averaged into one word for the app. | `app_id` |
 

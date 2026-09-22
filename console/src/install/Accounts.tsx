@@ -12,11 +12,14 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Dialog, Input, Select, StatusIndicator, Table, Tag } from '@design';
+import { Button, Dialog, Input, Select, StatusIndicator, Tag } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
 import { Sheet } from '../ui/Sheet';
+import { SearchField } from '../ui/SearchField';
+import { matches } from '../ui/search';
+import { Table } from '../ui/Table';
 
 interface Account {
   id: string;
@@ -39,6 +42,7 @@ export function Accounts() {
   const manage = useInstallVerb(InstallVerb.UsersManage);
   const me = usePrincipal();
   const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState('');
 
   const accounts = useQuery({
     queryKey: ['users'],
@@ -49,35 +53,55 @@ export function Accounts() {
     queryFn: () => api.get<{ roles: Role[] }>('/roles'),
   });
 
-  const rows = accounts.data?.users ?? [];
+  const all = accounts.data?.users ?? [];
+  // By anything the table shows: username, name, email, status and role.
+  const roleName = (id?: string) => roles.data?.roles.find((r) => r.id === id)?.name;
+  const rows = all.filter((a) =>
+    matches(
+      query,
+      a.external_id,
+      a.display_name,
+      a.email,
+      a.status === 'active' ? 'active' : 'suspended',
+      roleName(a.install_role_id),
+    ),
+  );
 
   return (
     <Screen
       heading="Accounts"
       action={
-        manage ? (
-          <Button variant="primary" onClick={() => setAdding(true)}>
-            Add account
-          </Button>
-        ) : undefined
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3)' }}>
+          {manage && (
+            <Button variant="primary" onClick={() => setAdding(true)}>
+              Add account
+            </Button>
+          )}
+          {all.length > 0 && <SearchField value={query} onChange={setQuery} placeholder="Search accounts" />}
+
+        </div>
       }
     >
       {accounts.isError && <Quiet>{messageOf(accounts.error)}</Quiet>}
 
       <Table
         columns={[
-          { key: 'external_id', header: 'Username', width: 'minmax(0,24ch)' },
+          { key: 'external_id', header: 'Username', width: 'minmax(0,24ch)', filter: 'text' },
           {
             key: 'display_name',
             header: 'Name',
             width: 'minmax(0,22ch)',
             muted: true,
+            filter: 'text',
+            filterValue: (row: Account) => `${row.display_name ?? ''} ${row.email ?? ''}`,
             render: (row: Account) => row.display_name || row.email || '—',
           },
           {
             key: 'status',
             header: 'Status',
             width: '14ch',
+            filter: 'values',
+            filterValue: (row: Account) => (row.status === 'active' ? 'Active' : 'Suspended'),
             render: (row: Account) => (
               <StatusIndicator
                 // Suspended is a stopped account, not a failed one. Marker red
@@ -92,6 +116,11 @@ export function Accounts() {
             key: 'install_role_id',
             header: 'Installation role',
             width: 'minmax(0,24ch)',
+            filter: 'values',
+            filterValue: (row: Account) => {
+              const r = roles.data?.roles.find((x) => x.id === row.install_role_id);
+              return r ? sentence(r.name) : 'None';
+            },
             render: (row: Account) => (
               <div style={{ padding: 'var(--space-2) 0' }}>
                 {manage ? (
@@ -119,6 +148,7 @@ export function Accounts() {
           },
         ]}
         rows={rows}
+        empty={all.length > 0 ? <Quiet>No accounts match &ldquo;{query.trim()}&rdquo;.</Quiet> : undefined}
       />
 
       {adding && <AddAccount onClose={() => setAdding(false)} />}

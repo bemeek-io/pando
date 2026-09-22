@@ -250,7 +250,7 @@ App-scoped:
 | `app.egress.override` | Define an app-level egress allowlist, replacing the install-wide one (R-184) |
 | `app.delete` | Delete the app |
 
-**R-081 [D]** Four **immutable** built-in roles ship out of the box. They cannot be edited; Pando may add newly-introduced verbs to them across versions.
+**R-081 [D]** Five **immutable** built-in roles ship out of the box. They cannot be edited; Pando may add newly-introduced verbs to them across versions.
 
 | Role | Scope | Verbs |
 |---|---|---|
@@ -258,6 +258,7 @@ App-scoped:
 | **Operator** | app | Viewer + `app.deploy`, `app.restart`, `app.spec.edit`, `app.secrets.write` |
 | **Owner** | app | All app-scoped verbs |
 | **Administrator** | install | All install-scoped verbs |
+| **Creator** | install | `app.create` — makes apps, and so owns and manages the ones it makes (R-073), and nothing else |
 
 Owner and Administrator partition the catalog; neither contains a verb from the other's scope. An
 Owner of every app in the installation still administers nothing, and an Administrator is not an
@@ -707,6 +708,12 @@ cannot do one of them says so rather than failing when asked.
 **R-265 [D]** Users holding any administrative verb see an **Admin** entry point from the launcher, exposing the console scoped to whatever privileges they hold.
 
 **R-266 [D]** Sharing an app sends no message. The app appears in the recipient's launcher tiles (R-264), and for v1 that is the notification. A notify-adapter message would be console-only (R-231) and so would arrive beside the tile that already appeared — and would be invisible to a recipient who has never signed in, which a waiting tile is not. Revisit when an adapter can reach someone who is not already looking at Pando (R-232).
+
+**R-340 [D] [V1]** An app may carry an **image**, shown on its launcher tile (R-264). Anyone who may change the app's spec may set or remove it (`app.spec.edit`); anyone who can open the app can see it. It is presentation, not configuration: it is not part of the spec (R-020) and a rollback does not change it. An app with no image shows a contour map generated from its ID, the same every time and different for every app.
+
+**R-341 [D] [V1]** A person may mark apps they can open as **favorites**, and their launcher shows those first, above the rest. Favorites belong to the account, not the browser. They grant nothing, are visible only to the person who set them, and an app they can no longer open is not shown whether it is a favorite or not.
+
+**R-342 [D] [V1]** A person may make **sections** in their launcher — named, collapsible groupings — and file apps they can open into them, one section per app. Anything not filed is under "Your apps", so a person who never makes one sees the launcher as before. Like favorites, sections belong to the account, grant nothing and are visible only to the person who made them; deleting one returns its apps to "Your apps".
 
 ---
 

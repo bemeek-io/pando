@@ -120,7 +120,7 @@ CREATE TABLE roles (
 );
 ```
 
-**[D]** Built-in rows (`viewer`, `operator`, `owner`, `administrator`) are seeded by migration and protected by a trigger against `UPDATE`/`DELETE` (R-081). New verbs added in a later Pando version are added to built-in roles **by migration**, which is the mechanism R-081 promises.
+**[D]** Built-in rows (`viewer`, `operator`, `owner`, `administrator`, `creator`) are seeded by migration and protected by a trigger against `UPDATE`/`DELETE` (R-081). New verbs added in a later Pando version are added to built-in roles **by migration**, which is the mechanism R-081 promises.
 
 **[D]** A role is scoped. A role carrying install verbs granted on a single app is nonsense, and a role carrying app verbs granted install-wide is worse. `administrator` is the only install-scoped built-in; custom roles (R-082) are composed within one scope.
 
@@ -316,6 +316,8 @@ CREATE TABLE host_policy (
 **[D]** Singleton by constraint. One install, one org (R-015) — encode it so nobody accidentally builds multi-tenancy in.
 
 **[D]** Policy is a single versioned document, not scattered columns, so R-274's "apply policy to a running install" is one transaction and one audit event.
+
+**[D]** Startup configuration can fix any policy field (R-271): a `policy:` section in the config file or `PANDO_POLICY_<FIELD>`, the environment winning. A fixed field is laid over the stored document by the policy store itself (`policy.Overlay.Wrap`), so every reader — evaluator, handlers, the security pass — sees it; `PUT /policy` refuses to change it and the store never writes it into `body`, so removing it from the config and restarting restores what was stored. An unknown field or a value of the wrong type stops startup, because a policy that silently does not apply is worse than one that refuses to start. `GET /config` reports every non-secret startup setting and each fixed field with its source (env var, or file and key), and the console shows fixed fields disabled with that source on hover.
 
 ### 2.6 Audit
 

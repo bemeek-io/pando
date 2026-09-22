@@ -9,10 +9,10 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 
 | | Count | Of total |
 |---|---:|---:|
-| Requirements | 234 | — |
-| Specified in a design doc | 179 | 76% |
-| Assigned to a phase | 137 | 58% |
-| Covered by a named test | 135 | 57% |
+| Requirements | 237 | — |
+| Specified in a design doc | 183 | 77% |
+| Assigned to a phase | 137 | 57% |
+| Covered by a named test | 139 | 58% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -32,12 +32,12 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-012** | D | Pando is not a marketplace. | 2. Non-Goals | — | — | — |
 | **R-013** | D | Pando is not a disaster-recovery product. | 2. Non-Goals | — | — | — |
 | **R-014** | D | No multi-AZ or multi-region. | 2. Non-Goals | — | — | — |
-| **R-015** | D | One Pando install serves one organization. | 2. Non-Goals | 02 | — | — |
+| **R-015** | D | One Pando install serves one organization. | 2. Non-Goals | 02, 08 | — | — |
 | **R-016** | D | Pando is not a source host, not an APM product, and not a database-as-a-service. | 2. Non-Goals | — | — | — |
 | **R-020** | D | Nothing lives in the repo. | 3. Core Invariants | 01, 02, 03, 07, 10 | 02, 06, 10 | `TestR020_ACarriedFileIsInTheContainer`, `TestR020_AComposeBuildIsResolvedIntoTheSpec`, `TestR020_APinnedSpecCanBeExported`, `TestR020_AReadCannotLeaveTheCheckout`, `TestR020_ASingleFileBindMountIsCarriedInTheSpec`, `TestR020_AddingAVolumeWritesARevisionRatherThanCreatingStorage`, `TestR020_AnEditedPlanIsTheOneThatRuns`, `TestR020_ScreeningNeedsAReadableRepository`, `TestR020_SpecCarriesNoSecretValues`, `TestR020_TheViewCannotReachOutsideTheSource`, `TestR020_ToolCallsThatLeaveTheCheckoutAreRefused` |
 | **R-021** | D | Pando fills declared slots; it never invents topology. | 3. Core Invariants | 01, 10 | 06 | `TestR021_APathAmendmentMustPointInsideTheRepository`, `TestR021_SlotsComeFromWhatTheRepoDeclares` |
 | **R-022** | D | Detection never re-runs implicitly. | 3. Core Invariants | 01, 04 | — | `TestR022_DetectionEndpointsAnswerForAnAppThatHasNotDetectedYet`, `TestR022_ReDetectingKeepsHowADependencyIsFilled`, `TestR022_ReDetectingKeepsStorageSomebodyAdded`, `TestR022_ReDetectingKeepsWhatAPersonDecided` |
-| **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 05, 06 | 05 | `TestR023_APortListenerIsTheSameEnforcementPoint`, `TestR023_ARouteIsWrittenRemovedAndObserved`, `TestR023_ARouteWithNoUpstreamIsRefused`, `TestR023_EnsureRefusesARouteWithNoProxyUpstream`, `TestR023_EveryRequestIsCountedWhateverItsOutcome`, `TestR023_EverythingUnrecognizedGoesThroughTheProxy`, `TestR023_ProxyRejoinsRunningAppsNetworksAfterItIsReplaced`, `TestR023_RejoiningLeavesTheNetworksOfStoppedAppsAlone`, `TestR023_RoutingPointsAtPandoNotTheWorkload`, `TestR023_TraefikPointsAtPandoNeverAtTheWorkload` |
+| **R-023** | D | Every request to every app passes through Pando's identity-aware proxy. | 3. Core Invariants | 00, 03, 05, 06, 08 | 05 | `TestR023_APortListenerIsTheSameEnforcementPoint`, `TestR023_ARouteIsWrittenRemovedAndObserved`, `TestR023_ARouteWithNoUpstreamIsRefused`, `TestR023_EnsureRefusesARouteWithNoProxyUpstream`, `TestR023_EveryRequestIsCountedWhateverItsOutcome`, `TestR023_EverythingUnrecognizedGoesThroughTheProxy`, `TestR023_ProxyRejoinsRunningAppsNetworksAfterItIsReplaced`, `TestR023_RejoiningLeavesTheNetworksOfStoppedAppsAlone`, `TestR023_RoutingPointsAtPandoNotTheWorkload`, `TestR023_TraefikPointsAtPandoNeverAtTheWorkload` |
 | **R-024** | D | Builds never execute on the host. | 3. Core Invariants | 00, 04, 05, 07 | 03 | `TestR024_NoAdapterMeetsPolicyBlocksDeploy`, `TestR024_SourceThatMustBeBuiltNeedsABuilder` |
 | **R-025** | D | Apps are isolated from each other. | 3. Core Invariants | 06 | — | `TestR025_EachBundleGetsItsOwnNetwork` |
 | **R-026** | D | Non-exposed workloads are unreachable from outside their bundle. | 3. Core Invariants | 01, 03, 05, 06 | 02, 05, 10 | `TestR026_ASingleWorkloadIsThePrimaryOne`, `TestR026_AcceptingWithoutAnsweringStillProducesAnAppThatCanDeploy`, `TestR026_AnAnsweredPrimaryBeatsTheElection`, `TestR026_NoPortsArePublishedToTheHost` |
@@ -73,22 +73,22 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-070** | D | Data plane — permission to use an app. | 6.1 Two planes | 02, 04, 06 | 01 | — |
 | **R-071** | D | Control plane — permission to administer an app: deploy, configure, read logs, exec, share,… | 6.1 Two planes | 02, 04 | — | `TestR071_LogsArriveWithoutDockerFraming` |
 | **R-072** | D | The planes are separate grants, with one implication only: an app's owner has data-plane… | 6.1 Two planes | 06, 07 | 01, 05 | `TestR072_OwnershipGrantsUse` |
-| **R-073** | D | At app creation the creator receives both grants, recorded as two separate records. | 6.1 Two planes | 02, 07 | 01, 02 | `TestR073_AppCreationWritesTwoGrants`, `TestR073_TwoPlanesAreTwoIndependentlyRevocableRows` |
+| **R-073** | D | At app creation the creator receives both grants, recorded as two separate records. | 6.1 Two planes | 02, 06, 07 | 01, 02 | `TestR073_AppCreationWritesTwoGrants`, `TestR073_TwoPlanesAreTwoIndependentlyRevocableRows` |
 | **R-074** | D | Grants may be issued to: a user, a group, or anonymous. | 6.2 Subjects | 02 | — | — |
 | **R-075** | D | Anonymous is a real ACL subject, not a bypass. | 6.2 Subjects | 02, 04, 06, 07 | 05 | `TestR075_AnAnonymousCallerIsRefusedByAuthorizationRatherThanAtTheDoor`, `TestR075_AnonymousGrantAllowsUnauthenticatedUse`, `TestR075_AnonymousGrantIsARowAndCannotBeDuplicated` |
 | **R-076** | D | Any app owner may grant to anonymous by default. | 6.2 Subjects | 00, 04, 08 | 08 | `TestR076_AnonymousGrantsAreAllowedUnlessExplicitlyForbidden`, `TestR076_ForbiddingAnonymousGrantsNamesTheAppsAnyoneCanReach` |
 | **R-077** | P | The console must never present this as the bare word "public" alone. | 6.2 Subjects | 04, 08 | 08 | — |
-| **R-078** | D | Groups may be Pando-native or pushed from an IdP (R-048). | 6.3 Groups | 03 | 08 | `TestR078_GroupsAreCreatedAndListedByAnAdministrator` |
+| **R-078** | D | Groups may be Pando-native or pushed from an IdP (R-048). | 6.3 Groups | 03 | 08 | `TestR078_DeletingAGroupTakesWhatWasSharedWithIt`, `TestR078_GroupsAreCreatedAndListedByAnAdministrator`, `TestR078_ManyGroupsCanBeMadeAndNamesAreUnique` |
 | **R-079** | D | Group membership is evaluated live at request time, not expanded to a member list at grant time. | 6.3 Groups | 02, 06, 07 | 01, 05 | `TestR079_GroupMembershipIsResolvedFromThePrincipal`, `TestR079_GroupMembershipIsResolvedLive`, `TestR079_RemovingAGroupRevokesAccess` |
 | **R-080** | D | Control-plane permissions are individual verbs, in two scopes. | 6.4 Verbs and roles | 02, 06 | 08 | `TestR080_AScopeMismatchIsRefusedRatherThanEvaluated`, `TestR080_AnAppRoleCannotBeGrantedAcrossTheInstallation`, `TestR080_AnOrdinaryUserCannotSuspendTheAdministrator`, `TestR080_AnonymousHoldsNothingInstallWide`, `TestR080_BackupsRequireTheirOwnVerb`, `TestR080_DeniedInstallChecksAreAudited`, `TestR080_GrantScopeIsEnforcedByTheDatabase`, `TestR080_InstallEndpointsRequireInstallVerbs`, `TestR080_InstallGrantsAreNeverReturnedByAnAppLookup`, `TestR080_InstallVerbRequiresAnInstallGrant`, `TestR080_ScopesCannotBeCheckedAgainstEachOther`, `TestR080_UserEndpointsAreSelfOrVerb` |
-| **R-081** | D | Four immutable built-in roles ship out of the box. | 6.4 Verbs and roles | 02, 06 | 01 | `TestR081_ABuiltInRoleCannotBeDeleted`, `TestR081_AdministratorHoldsNoAppVerb`, `TestR081_AdministratorIsImmutableToo`, `TestR081_AnAdministratorCanHandOver`, `TestR081_BuiltInRoleVerbSets`, `TestR081_BuiltInRolesAreImmutable`, `TestR081_SeededVerbSetsMatchTheRequirement`, `TestR081_TheLastAdministratorCannotBeRemoved` |
-| **R-082** | D | Custom roles may be composed from the verb list and assigned to users or groups. | 6.4 Verbs and roles | 02, 04, 06 | 01, 08 | `TestR082_ACustomRoleIsCreatedFromVerbsAndCanBeRemoved`, `TestR082_NoVerbImplicationGraph` |
+| **R-081** | D | Five immutable built-in roles ship out of the box. | 6.4 Verbs and roles | 02, 06 | 01 | `TestR081_ABuiltInRoleCannotBeDeleted`, `TestR081_ACreatorManagesTheAppsTheyMakeAndNothingElse`, `TestR081_AdministratorHoldsNoAppVerb`, `TestR081_AdministratorIsImmutableToo`, `TestR081_AnAdministratorCanHandOver`, `TestR081_BuiltInRoleVerbSets`, `TestR081_BuiltInRolesAreImmutable`, `TestR081_CreatorHoldsOnlyAppCreate`, `TestR081_EveryBuiltInRoleIsListed`, `TestR081_SeededVerbSetsMatchTheRequirement`, `TestR081_TheLastAdministratorCannotBeRemoved` |
+| **R-082** | D | Custom roles may be composed from the verb list and assigned to users or groups. | 6.4 Verbs and roles | 02, 04, 06 | 01, 08 | `TestR082_ACustomRoleIsCreatedFromVerbsAndCanBeRemoved`, `TestR082_ACustomRoleSomeoneHoldsCanBeDeleted`, `TestR082_NoVerbImplicationGraph` |
 | **R-083** | D | `app.secrets.write` is deliberately separable from `app.secrets.read` — rotating a credential… | 6.4 Verbs and roles | 04 | 08 | `TestR083_ReadingASecretsValueIsItsOwnVerb` |
 | **R-084** | D | `app.exec` is its own verb, not bundled into app-admin. | 6.4 Verbs and roles | 03 | — | — |
 | **R-085** | D | Host policy may disable exec install-wide. | 6.4 Verbs and roles | 00, 03, 04, 06 | — | `TestR085_DisablingExecInstallWideDeniesTheAppsOwner`, `TestR085_ExecDisabledInstallWideDeniesEveryone`, `TestR085_HostPolicyCanDisableExecInstallWide` |
 | **R-086** | D | Exec is the highest-privilege action in the system. | 6.4 Verbs and roles | 03, 04 | 08 | `TestR086_AnAbandonedSessionIsStillRecorded`, `TestR086_ExecCarriesTheTerminalBothWays`, `TestR086_ExecIsBehindItsOwnVerb`, `TestR086_ExecOpensATerminalInTheRunningWorkload`, `TestR086_ExecRecordsTheCommandAndNotTheStream` |
 | **R-087** | D | Pando does not claim to defend against its own host operator. | 6.4 Verbs and roles | 04, 06 | 01, 05 | `TestR087_AnOrdinaryUserSeesOnlyTheirOwnApps` |
-| **R-088** | D | An installation cannot be left with nobody who can administer it. | 6.4 Verbs and roles | — | — | `TestR088_TheLastAdministratorCannotBeRemoved`, `TestR088_TheLastAdministratorCannotBeRevoked` |
+| **R-088** | D | An installation cannot be left with nobody who can administer it. | 6.4 Verbs and roles | 06 | — | `TestR088_DeletingTheGroupThatIsTheOnlyAdministratorIsRefused`, `TestR088_DeletingTheRoleThatIsTheOnlyWayToManageAccountsIsRefused`, `TestR088_TheLastAdministratorCannotBeRemoved`, `TestR088_TheLastAdministratorCannotBeRevoked` |
 | **R-090** | D | The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting… | 7.1 Input | — | — | — |
 | **R-091** | D LATER | Private repos are in scope, supporting the credential mechanisms GitHub offers (PAT, GitHub… | 7.1 Input | 01 | — | — |
 | **R-092** | D | Source allowlist. | 7.1 Input | 00, 04, 05, 07, 09, 10 | 06 | `TestR092_ABlockedSourceIsRefusedBeforeAnythingIsCloned`, `TestR092_ASourceOutsideTheAllowlistIsRefusedAtCreation`, `TestR092_BlockedSourceFailsBeforeAnythingElse`, `TestR092_TheSourceAllowlistAcceptsOnlyApprovedHosts` |
@@ -223,8 +223,11 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-264** | D | The console is an Okta-style launcher. | 19. Surfaces | 04, 08 | 08 | `TestR264_LauncherListIsDataPlaneScoped`, `TestR264_TheLauncherIsADifferentListFromTheManagementOne` |
 | **R-265** | D | Users holding any administrative verb see an Admin entry point from the launcher, exposing the… | 19. Surfaces | 04, 08 | 08 | `TestR265_TheServerReportsWhatTheConsoleScopesOn` |
 | **R-266** | D | Sharing an app sends no message. | 19. Surfaces | — | — | — |
+| **R-340** | D V1 | An app may carry an image, shown on its launcher tile (R-264). | 19. Surfaces | 04, 08 | — | `TestR340_AppImageRefusesWhatIsNotARasterImage`, `TestR340_AppImageSetByAppAdminSeenByAppUsers`, `TestR340_ImageEndpointsRefuseWhatIsNotThere`, `TestR340_MCPSendsAnImageAsTheFileItself`, `TestR340_SetAppIconSendsTheDecodedBytes` |
+| **R-341** | D V1 | A person may mark apps they can open as favorites, and their launcher shows those first, above… | 19. Surfaces | 04, 08 | — | `TestR341_FavoritesArePerPersonAndGrantNothing`, `TestR341_FavoritesNeedASignedInPerson` |
+| **R-342** | D V1 | A person may make sections in their launcher — named, collapsible groupings — and file apps… | 19. Surfaces | 04, 08 | — | `TestR342_PersonalEndpointsRefuseWhatIsNotAPersonOrNotThere`, `TestR342_SectionCommandsCallTheirEndpoints`, `TestR342_SectionsAreNobodyElses`, `TestR342_SectionsGroupAPersonsOwnLauncher` |
 | **R-270** | D | Pando ships permissive defaults. | 20. Configuration and Policy | 09 | — | `TestR270_AFreshInstallShipsPermissive`, `TestR270_BuildEgressStartsPermissiveAndAppEgressInherits`, `TestR270_TheDefaultDocumentIsPermissive` |
-| **R-271** | D | Configuration may be supplied by: a YAML file loaded at startup, environment variables, the… | 20. Configuration and Policy | 00 | 00 | — |
+| **R-271** | D | Configuration may be supplied by: a YAML file loaded at startup, environment variables, the… | 20. Configuration and Policy | 00, 02, 04 | 00 | `TestR271_AFixedFieldIsNeitherChangedNorStored`, `TestR271_AStartupPolicyThatIsNotOneStopsStartup`, `TestR271_ConfigShowsSettingsSourcesAndFixedPolicy`, `TestR271_ConfigWithNothingSetIsEmptyNotNull`, `TestR271_EverySettingSaysWhereItCameFrom`, `TestR271_FileValuesMustReadAsTheirField`, `TestR271_PolicySetAtStartupIsFixedAndSaysWhere`, `TestR271_StartupPolicyIsCheckedBeforePandoStarts`, `TestR271_StartupPolicyOverridesTheStoredDocument`, `TestR271_TheWrappedStoreReadsThroughAndSavesAround` |
 | **R-272** | D | The general pattern, applied throughout: a setting has a permissive default; host policy can… | 20. Configuration and Policy | 04, 06, 09, 10 | 01, 06 | `TestR272_AVerbNoRuleMentionsIsUntouched`, `TestR272_HostPolicyIsAFloorForAdministratorsToo`, `TestR272_PolicyIsAFloorAndDeniesTheOwnerToo` |
 | **R-273** | D LATER | Premade setting profiles for common postures (hobbyist, hardened, regulated), usable as-is or… | 20. Configuration and Policy | — | — | — |
 | **R-274** | D | Host policy may be applied to an install with running apps. | 20. Configuration and Policy | 01, 02, 03, 04, 05 | 02, 03 | `TestR274_PolicyIsReadableAndWritableBehindItsOwnVerbs`, `TestR274_ReadingPolicyAndChangingItAreDifferentPrivileges`, `TestR274_TheDocumentIsReloadedForEveryEvaluation` |
@@ -276,7 +279,6 @@ Check each against the categories above before treating it as a gap.
 - **R-043** (5.1 Adapter model) — Additional identity adapters: GitHub OAuth, generic OIDC, SAML.
 - **R-045** (5.1 Adapter model) — Multiple identity adapters may be configured simultaneously.
 - **R-050** (5.3 Sessions and revocation) — For adapters that cannot push revocation, Pando falls back to expiry at next token refresh.
-- **R-088** (6.4 Verbs and roles) — An installation cannot be left with nobody who can administer it.
 - **R-090** (7.1 Input) — The user points Pando at a source — a public GitHub repo in v1 — plus routing and hosting…
 - **R-110** (8. Build) — Builds never run on the host (R-024).
 - **R-113** (8. Build) — Build code has no access to Pando's state store, no access to any other app's secrets, and no…

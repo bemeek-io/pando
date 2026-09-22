@@ -77,6 +77,33 @@ async function requestText(path: string): Promise<string> {
   return await response.text();
 }
 
+/**
+ * A PUT whose body is a file, sent as-is.
+ *
+ * An app's image (R-340) is the image bytes, not JSON. The server decides what
+ * the bytes are, so the content type sent is only the file's own claim.
+ */
+async function requestBytes<T>(path: string, file: Blob): Promise<T> {
+  const response = await fetch(base + path, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+    credentials: 'same-origin',
+  });
+
+  if (!response.ok) {
+    let envelope: ApiError | null = null;
+    try {
+      envelope = (await response.json()) as ApiError;
+    } catch {
+      envelope = null;
+    }
+    throw new RequestFailed(response.status, envelope, `The request failed (${response.status}).`);
+  }
+
+  return (await response.json()) as T;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(base + path, {
     method,
@@ -106,6 +133,7 @@ export const api = {
   text: (path: string) => requestText(path),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
+  putFile: <T>(path: string, file: Blob) => requestBytes<T>(path, file),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),
 };

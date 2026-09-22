@@ -18,7 +18,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, CodeBlock, Dialog, Input, Table, Tabs, Tag } from '@design';
+import { Banner, Button, CodeBlock, Dialog, Input, Tabs, Tag } from '@design';
 
 import { api } from '@api/client';
 import type { Command, Document, Route, Token } from '@api/types.gen';
@@ -26,6 +26,7 @@ import { InstallVerb, useInstallVerb } from '../app/principal';
 import { Quiet, Screen, messageOf } from '../install/Accounts';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
+import { Table } from '../ui/Table';
 
 export function Reference() {
   const [tab, setTab] = useState('connect');

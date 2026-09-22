@@ -33,7 +33,14 @@ one verb says nothing about another (R-082).
 | `DELETE /api/v1/sessions` |  | Sign out, ending this session. |
 | `GET /api/v1/me` |  | Who the caller is, and the install-level verbs they hold. |
 | `POST /api/v1/me/password` |  | Change your own password. Yours only, whatever verbs you hold. |
-| `GET /api/v1/me/apps` |  | The apps you can open, which is a different list from the apps you can administer (R-070, R-071). |
+| `GET /api/v1/me/apps` |  | The apps you can open, which is a different list from the apps you can administer (R-070, R-071). `favorite` marks the ones you have pinned, `section_id` the section you filed each under, and `sections` lists your sections. |
+| `PUT /api/v1/me/favorites/{appID}` |  | Mark an app you can open as a favorite, pinning it to the top of your launcher. Yours only; it grants nothing (R-341). |
+| `DELETE /api/v1/me/favorites/{appID}` |  | Unpin an app from your favorites. |
+| `POST /api/v1/me/sections` |  | Make a section in your launcher: a named, collapsible grouping of apps. Yours only; it grants nothing (R-342). |
+| `PATCH /api/v1/me/sections/{sectionID}` |  | Rename one of your sections. |
+| `DELETE /api/v1/me/sections/{sectionID}` |  | Delete one of your sections. Its apps go back to Your apps. |
+| `PUT /api/v1/me/sections/{sectionID}/apps/{appID}` |  | File an app you can open into one of your sections, moving it out of any other. |
+| `DELETE /api/v1/me/sections/{sectionID}/apps/{appID}` |  | Take an app out of a section, back to Your apps. |
 
 ### Tokens
 
@@ -54,6 +61,9 @@ one verb says nothing about another (R-082).
 | `GET /api/v1/apps/{appID}` | `app.view` | One app: name, source, state and pinned spec. |
 | `PATCH /api/v1/apps/{appID}` | `app.spec.edit` | Rename an app or change its source. |
 | `DELETE /api/v1/apps/{appID}` | `app.delete` | Delete an app. With storage, `backup=true` keeps a final copy and `force=true` discards it; without either, the request is refused so the decision is taken rather than assumed (R-204, R-205). |
+| `GET /api/v1/apps/{appID}/icon` |  | The image on the app's launcher tile. Anyone who can open the app can load it; `icon_updated_at` on the app says whether there is one and when it changed (R-340). |
+| `PUT /api/v1/apps/{appID}/icon` | `app.spec.edit` | Set the app's tile image. The body is the image itself — PNG, JPEG, WebP or GIF, at most 256 KB. SVG is refused (R-340). |
+| `DELETE /api/v1/apps/{appID}/icon` | `app.spec.edit` | Remove the app's tile image, so the tile goes back to the map generated for it. |
 | `GET /api/v1/apps/{appID}/status` | `app.view` | What the app is doing now: its state, and each part separately — running, restarting and how often, health, exit code — so a single crash-looping part is visible rather than averaged into one word. |
 | `POST /api/v1/apps/{appID}/start` | `app.restart` | Set the app's desired state to running. The reconciler converges to it, so it survives a restart. |
 | `POST /api/v1/apps/{appID}/stop` | `app.restart` | Set the app's desired state to stopped. |
@@ -142,10 +152,10 @@ one verb says nothing about another (R-082).
 | `GET /api/v1/groups` | `install.view` | Groups, whether Pando's own or an identity adapter's (R-078). |
 | `POST /api/v1/groups` | `install.users.manage` | Create a group. |
 | `PUT /api/v1/groups/{groupID}/members` | `install.users.manage` | Set a group's members. |
-| `DELETE /api/v1/groups/{groupID}` | `install.users.manage` | Delete a group. |
-| `GET /api/v1/roles` | `install.view` | The roles that can be granted, built in and custom. Built-in roles are immutable (R-081). |
+| `DELETE /api/v1/groups/{groupID}` | `install.users.manage` | Delete a group. Everything shared with it goes with it: its members lose that access and keep anything given to them another way. Refused if it would leave nobody who can manage accounts (R-088). |
+| `GET /api/v1/roles` | `install.view` | Roles, built in and custom. By default the ones granted across the installation; `scope=app` gives the ones granted on an app, and `scope=all` both. Built-in roles are immutable (R-081). |
 | `POST /api/v1/roles` | `install.users.manage` | Compose a custom role from verbs (R-082). |
-| `DELETE /api/v1/roles/{roleID}` | `install.users.manage` | Delete a custom role. |
+| `DELETE /api/v1/roles/{roleID}` | `install.users.manage` | Delete a custom role, and every grant of it: whoever held it loses what it allowed. Built-in roles cannot be deleted (R-081). Refused if it would leave nobody who can manage accounts (R-088). |
 | `GET /api/v1/verbs` | `install.view` | Every verb, by scope, for composing a role. There is no implication graph: holding one says nothing about another (R-082). |
 
 ### Installation
@@ -158,7 +168,8 @@ one verb says nothing about another (R-082).
 | `GET /api/v1/policy` | `install.view` | Host policy. Reading the rules you work under is not the same privilege as changing them (R-274). |
 | `PUT /api/v1/policy` | `install.policy.manage` | Replace host policy. Policy is a floor, never an override (R-272). |
 | `POST /api/v1/policy/preview` | `install.policy.manage` | Which apps a candidate policy would block, before it is saved. |
-| `GET /api/v1/audit` | `install.audit.read` | The audit log. Append-only: no endpoint edits or deletes an event, and the database refuses it too (R-027). |
+| `GET /api/v1/config` | `install.view` | The configuration Pando started with (R-271): every non-secret setting, its value and where it came from — an environment variable, the config file, or the default — and the host policy fields fixed there, which cannot be changed through the API while they are set. Secrets are never listed. |
+| `GET /api/v1/audit` | `install.audit.read` | The audit log, newest first. Filters combine: `action` (a prefix), `principal_id` (who did it, including through a token), `principal_kind` (user, token, system or anonymous), `app_id`, `target_kind` and `target_id` (what it was done to), and `since`/`until` (RFC 3339; since inclusive, until exclusive). Pages with `before`. Append-only: no endpoint edits or deletes an event, and the database refuses it too (R-027). |
 | `GET /api/v1/backups` | `install.backup.manage` | The backups this installation holds. |
 | `POST /api/v1/backups` | `install.backup.manage` | Take a backup now. |
 | `POST /api/v1/backups/{backupID}/verify` | `install.backup.manage` | Check a backup before it is needed, rather than at the moment of disaster (R-216). |

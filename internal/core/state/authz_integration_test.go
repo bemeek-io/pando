@@ -142,6 +142,27 @@ func TestR081_AdministratorIsImmutableToo(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestR081_CreatorHoldsOnlyAppCreate asserts the fifth built-in role: install
+// scope, one verb, and the same protection as the others. What a creator can
+// manage beyond that comes from owning what they made (R-073), not from here.
+func TestR081_CreatorHoldsOnlyAppCreate(t *testing.T) {
+	ctx := context.Background()
+	db := connected(t)
+	store := state.NewAuthzStore(db)
+
+	creator, err := store.Role(ctx, authz.RoleCreator)
+	require.NoError(t, err)
+	require.Equal(t, "creator", creator.Name)
+	require.True(t, creator.Builtin)
+	require.Equal(t, []authz.Verb{authz.AppCreate}, creator.Verbs)
+
+	_, err = db.Exec(ctx,
+		`UPDATE roles SET verbs = verbs || 'install.users.manage' WHERE id = $1`, authz.RoleCreator)
+	require.Error(t, err, "widening the creator role at runtime must be refused")
+	_, err = db.Exec(ctx, `DELETE FROM roles WHERE id = $1`, authz.RoleCreator)
+	require.Error(t, err)
+}
+
 // TestR080_GrantScopeIsEnforcedByTheDatabase asserts the structural half of
 // install-level authorization: the two scopes cannot be mixed, whatever the
 // application does.

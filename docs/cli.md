@@ -114,6 +114,43 @@ is not safe. Pass --discard-data to delete without one.
 | --- | --- | --- |
 | `--discard-data` |  | delete without keeping a backup of the app's storage |
 
+#### `app favorite`
+
+Pin an app to the top of your launcher
+
+```
+pando app favorite <app>
+```
+
+#### `app icon`
+
+Set the image on an app's launcher tile
+
+```
+pando app icon
+```
+
+##### `app icon clear`
+
+Remove an app's image, so its tile shows the map generated for it
+
+```
+pando app icon clear <app>
+```
+
+##### `app icon set`
+
+Set an app's image from a PNG, JPEG, WebP or GIF file
+
+```
+pando app icon set <app> <image-file>
+```
+
+Sets the image shown on the app's tile in everyone's launcher.
+
+PNG, JPEG, WebP or GIF, at most 256 KB. SVG is not accepted. A square image a few
+hundred pixels across is plenty.
+
 #### `app list`
 
 List the apps you can manage
@@ -121,6 +158,18 @@ List the apps you can manage
 ```
 pando app list
 ```
+
+#### `app rename`
+
+Change an app's display name
+
+```
+pando app rename <app> <new-name>
+```
+
+Changes the name shown for the app in the console and on everyone's launcher.
+
+The app's ID and address do not change.
 
 #### `app restart`
 
@@ -178,6 +227,40 @@ Nothing is removed: its storage, its configuration and its address are kept, and
 stopped — it is the app's desired state, not a one-off act, so it survives Pando
 itself restarting.
 
+#### `app unfavorite`
+
+Unpin an app from your launcher
+
+```
+pando app unfavorite <app>
+```
+
+### `audit`
+
+Read the audit log
+
+```
+pando audit
+```
+
+Lists what was done on this installation, newest first. The filters combine.
+
+--since and --until take a time (2026-09-21T09:00:00Z) or a duration back from now
+(24h, 30m), so --since 24h is the last day.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--action` |  | actions starting with this, e.g. app. or grant.delete |
+| `--actor` |  | who did it: a user or token ID, or system, reconciler or detection |
+| `--actor-kind` |  | what kind of actor: user, token, system or anonymous |
+| `--app` |  | events on this app |
+| `--before` |  | the page before this cursor, as printed after a full page |
+| `--limit` | `0` | how many events (default 100, at most 500) |
+| `--since` |  | from this time, or this long ago (24h) |
+| `--target` |  | the ID of the thing it was done to |
+| `--target-kind` |  | what kind of thing it was done to, e.g. user, role, app |
+| `--until` |  | up to this time, or this long ago |
+
 ### `backup`
 
 Back up and restore this installation
@@ -221,6 +304,19 @@ Check a backup is complete, without restoring it
 ```
 pando backup verify <backup-id>
 ```
+
+### `config`
+
+Show the server's startup configuration and where each setting came from
+
+```
+pando config
+```
+
+Lists every setting the server started with, its value, and where it was set: an
+environment variable, the config file, or the default. Host policy fields set there are
+listed separately; they cannot be changed with `pando policy set` while they are set.
+Secrets are never shown.
 
 ### `deploy`
 
@@ -412,6 +508,62 @@ Set a secret value, read from the terminal
 
 ```
 pando secret set <app> <key>
+```
+
+### `section`
+
+Group the apps in your launcher into sections
+
+```
+pando section
+```
+
+#### `section add`
+
+Move an app into a section
+
+```
+pando section add <section-id> <app>
+```
+
+#### `section create`
+
+Make a section
+
+```
+pando section create <name>
+```
+
+#### `section delete`
+
+Delete a section. Its apps go back to Your apps
+
+```
+pando section delete <section-id>
+```
+
+#### `section list`
+
+The apps you can open, by section
+
+```
+pando section list
+```
+
+#### `section remove`
+
+Move an app out of a section, back to Your apps
+
+```
+pando section remove <section-id> <app>
+```
+
+#### `section rename`
+
+Rename a section
+
+```
+pando section rename <section-id> <name>
 ```
 
 ### `slot`

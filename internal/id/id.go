@@ -37,6 +37,10 @@ const (
 	// Scan is a security scan of one spec revision (R-310).
 	Scan Kind = "scan"
 
+	// Section is a grouping in one person's launcher (R-342). Not "sec",
+	// which is a secret.
+	Section Kind = "sect"
+
 	// Adapter configs are prefixed by category, so a log line naming one says
 	// which kind of adapter it is (design 02 §2.5).
 	AdapterRuntime  Kind = "rt"

@@ -18,13 +18,16 @@ export type Section =
   | 'api'
   | 'accounts'
   | 'identity'
-  | 'installation'
+  | 'adapters'
   | 'policy'
   | 'backups'
   | 'audit';
 
 export interface Route {
-  view: 'launcher' | 'admin';
+  /** Settings is its own page, not a section of the admin console: it is
+   *  about the person, and everyone reaches it. It still lives under /admin,
+   *  because that prefix is already reserved against app slugs (R-023). */
+  view: 'launcher' | 'admin' | 'settings';
   section: Section;
   appID?: string;
   tab?: string;
@@ -35,7 +38,7 @@ const SECTIONS: Section[] = [
   'api',
   'accounts',
   'identity',
-  'installation',
+  'adapters',
   'policy',
   'backups',
   'audit',
@@ -46,11 +49,16 @@ export function parse(pathname: string): Route {
   const parts = pathname.split('/').filter(Boolean);
 
   if (parts[0] !== 'admin') return { view: 'launcher', section: 'apps' };
+  if (parts[1] === 'settings') return { view: 'settings', section: 'apps' };
 
   // /admin/apps/{id}[/{tab}]
   if (parts[1] === 'apps' && parts[2]) {
     return { view: 'admin', section: 'apps', appID: parts[2], tab: parts[3] };
   }
+
+  // The adapters screen was called Installation, and a link to it may still
+  // say so.
+  if (parts[1] === 'installation') return { view: 'admin', section: 'adapters' };
 
   const section = SECTIONS.find((s) => s === parts[1]);
   return { view: 'admin', section: section ?? 'apps' };
@@ -59,6 +67,7 @@ export function parse(pathname: string): Route {
 /** The path for a route. The inverse of parse, and tested as such. */
 export function format(route: Route): string {
   if (route.view === 'launcher') return '/';
+  if (route.view === 'settings') return '/admin/settings';
   if (route.section === 'apps' && route.appID) {
     return `/admin/apps/${route.appID}${route.tab ? `/${route.tab}` : ''}`;
   }

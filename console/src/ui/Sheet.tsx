@@ -39,8 +39,10 @@ export function Sheet({
         >
           {/* The action sits beside the heading rather than at the far end of
               an uncapped row, where on a wide display it would be a long way
-              from the thing it acts on. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+              from the thing it acts on. It wraps rather than overflowing: on a
+              phone a heading, a button and a search do not fit on one line,
+              and the page should not scroll sideways. */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3) var(--space-4)' }}>
             {typeof heading === 'string' ? (
               <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{heading}</h3>
             ) : (

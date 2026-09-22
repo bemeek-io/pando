@@ -22,6 +22,82 @@ recipient who has never signed in, a console-only notification is invisible in a
 the tile is waiting for them whenever they arrive. Reconsider when an SMTP adapter exists and a share
 can reach someone who is not already looking at Pando; the interface for it is already there (R-232).
 
+**[D] Tiles.** A tile is a small square card holding the app's picture with its name beneath it,
+inside the card. The picture is the app's image (R-340), or when it has none a patch of terrain
+generated from its ID: the console background's generator on a small grid, zoomed so that four to six
+large contours fill it — a mark, not a map — printed on one of five sheets from the palette's terrain
+colors (vegetation and water, each light-on-dark and dark-on-light; sand). Red is left out so the
+marker stays rare; grey because a grey tile means an app that will not open; paper because the card
+is paper and the picture would have no edge. This puts the contour map in a place the brand spec
+does not list: decided by the product owner, on the reasoning that a tile is content — a picture of
+the app — not decoration.
+
+A tile carries **no status line**: an app that is running or degraded and has an address is a link,
+and anything else is greyed out and is not. This is a deliberate exception to the design system's
+"status is a symbol plus a word" rule, decided by the product owner: the launcher is for opening
+apps, "running" is the normal case, and a word on every tile saying so is noise. The state is still
+in each unreachable tile's accessible name and hover title, so the difference is never carried by
+appearance alone.
+
+**[D] Arranging the launcher.** R-341, R-342. Everything that arranges the page is in one place: a
+three-dot menu on each tile, shown on hover or focus (always, on a device that cannot hover). It
+offers *Launch*, *Open in admin* (only for an app the person also administers — it is on `GET /apps`,
+the control-plane list, not merely on the launcher), *Add to / Remove from favorites*, and *Move to
+section…*, whose second page lists *Your apps*, the person's sections and *New section…*, which makes
+one with the app already in it. A quiet *New section* at the foot of the page makes an empty one.
+There is no screen for managing sections. The
+page shows *Favorites* (when there are any), then the person's sections in the order made, then
+*Your apps* for everything else; a favorite appears once, in *Favorites*. Every group collapses from
+its heading, remembered per browser like the theme. A person's own section has a menu of its own on
+its heading: *Rename* and *Delete section* — no confirmation, because deleting one loses nothing:
+its apps go back to *Your apps*. Favoriting and moving are optimistic and roll back on refusal.
+Someone who never opens a menu sees *Your apps* and nothing else.
+
+Tiles also **drag** between groups — native HTML drag and drop, carrying the app's ID under a type of
+its own (`application/x-pando-app`) so a group ignores anything else dragged over it. Dropping on
+*Favorites* favorites the app; dropping anywhere else files it there and un-favorites it, since a
+favorite only shows in *Favorites* and a drop out of it would otherwise change nothing visible. While a
+tile is being dragged, *Your apps* shows even when empty, at the foot of the page where appearing moves
+nothing. An empty *Favorites* does not appear: at the top, it pushed the page down under the pointer as
+the drag began, so the first favorite comes from the menu. The group under the pointer takes a dashed
+outline. Dragging is a shortcut, not the only way:
+the menu does all of it, which is the path for a keyboard and for touch screens, where HTML drag and
+drop is unreliable.
+
+The design system has no menu component; `ui/Menu.tsx` is one built from its popover rules
+(paper-raised, 1px rule, the one popover shadow, 6px corners), with the arrow keys, Escape and
+focus return. It should move into the design project.
+
+**[D] Search.** The launcher has a search field in its header ("/" focuses it), and the admin
+console has one beside the heading of Apps, Accounts, Groups and roles, and Policy. Each filters the
+list the page already has, in the browser: one installation's lists are small (R-015), the API
+already returns them whole, so nothing here is a capability the API lacks (R-261). Matching is
+case-insensitive and needs every word somewhere in the row (`ui/search.ts`). The launcher hides
+groups with no match and opens collapsed ones while searching. Policy searches the rendered text of
+each section — headings, notes, labels, descriptions, options — rather than a keyword list kept
+beside it that would drift the first time a setting was added. Escape clears any of them.
+
+**[D] Filters.** Tables filter by column, from a button in the column's header (`ui/Table.tsx`): a
+"contains" field for free text, a checklist of the values present, with counts, for a column of a few
+kinds of value. Filters on several columns combine, with the page's search, in the browser. Apps
+filters on name, status and security; Accounts on username, name, status and installation role. The
+audit log filters on the server instead, because it pages and the console never holds all of it:
+action (prefix), actor (typed: username, email or ID, with suggestions — an installation has too many accounts for a dropdown), target type, target ID and time range — all `GET /audit` parameters, which
+combine, and which the CLI (`pando audit`) and MCP (`pando_list_audit`) take too. Its labels use the
+audit vocabulary as is; whoever reads an audit log knows what an actor and a target are.
+
+**[D] Phone width.** At 48em and below (`ui/narrow.css`, `ui/narrow.ts`): the page padding token
+drops to `--space-4`; headings and their actions wrap; the admin sidebar becomes a menu behind a
+button in a top bar that keeps the way home and settings; the launcher's search takes its own line;
+and a table keeps its columns and scrolls sideways inside itself (`ui/Table.tsx` adds the class),
+rather than squeezing every column to an ellipsis.
+
+**[D] Settings.** The signed-in person's own settings — theme and signing out — are a page of their
+own at `/admin/settings`, opened by a gear in the launcher header and in the admin sidebar header,
+with a back arrow to wherever it was opened from. Not a section of the admin console: nothing on it
+is administration. Under `/admin` only because that prefix is already reserved against app slugs
+(R-023). The launcher does not link to *API and tools*; it is in the admin console.
+
 ### 1.2 Stack [P]
 
 | Concern | Choice |

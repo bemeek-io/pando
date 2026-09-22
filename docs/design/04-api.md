@@ -32,10 +32,15 @@ POST   /api/v1/apps                      create — begins onboarding; app.creat
 GET    /api/v1/apps/{id}
 PATCH  /api/v1/apps/{id}                 name, owner
 DELETE /api/v1/apps/{id}                 R-204/205 — see below
+GET    /api/v1/apps/{id}/icon            the launcher tile's image — data plane (R-340)
+PUT    /api/v1/apps/{id}/icon            body is the image; app.spec.edit
+DELETE /api/v1/apps/{id}/icon            app.spec.edit
 POST   /api/v1/apps/{id}:start
 POST   /api/v1/apps/{id}:stop
 POST   /api/v1/apps/{id}:restart
 ```
+
+**Icon** (R-340). The body of `PUT` is the image bytes, not JSON. The type is sniffed from the bytes, never taken from `Content-Type`; PNG, JPEG, WebP and GIF are accepted and SVG is not, because it is a document that can carry script and would be served from Pando's origin. 256 KB at most. `GET` is gated on the data plane (`CheckData`), the same as the tile it is drawn on, and answers not-found to anyone who cannot open the app. It is served with `nosniff`, a `sandbox` CSP and `Cache-Control: private`. Every app representation carries `icon_updated_at`, absent when there is no image, so a client can put it in the image URL and never show a stale picture.
 
 **Create** takes a source and, optionally, routing and runtime choices. It does not deploy. It returns an app in `draft` with a detection job started.
 
@@ -233,9 +238,10 @@ POST /api/v1/adapters                     install.adapters.manage
 GET  /api/v1/capacity                     aggregated from adapters (R-243); install.view
 GET  /api/v1/policy                       install.view
 PUT  /api/v1/policy                       R-274; see O-10; install.policy.manage
+GET  /api/v1/config                       startup settings and their sources; fixed policy fields (R-271); install.view
 POST /api/v1/policy:preview               what this policy would block, unsaved; install.policy.manage
-GET  /api/v1/audit                        filterable; install.audit.read
-GET  /api/v1/roles                        install-scoped roles (R-082); install.view
+GET  /api/v1/audit                        ?action= (prefix) &principal_id= &principal_kind= &app_id= &target_kind= &target_id= &since= &until= (RFC 3339) &before= ; install.audit.read
+GET  /api/v1/roles                        ?scope=install (default) | app | all (R-082); install.view
 GET  /api/v1/backups
 POST /api/v1/backups                      trigger; kind = rolling | dr_bundle
 POST /api/v1/apps/{id}/restore            put one app's data back (R-206); app.deploy
@@ -296,7 +302,27 @@ would make `grant.delete` a result for a search for "delete".
 GET  /api/v1/me                           profile, groups, install-scoped verbs
 GET  /api/v1/me/apps                      the launcher tiles (R-264)
 POST /api/v1/me/password                  change your own password (R-046)
+PUT    /api/v1/me/favorites/{id}          pin an app to the top of your launcher (R-341)
+DELETE /api/v1/me/favorites/{id}          unpin it
+POST   /api/v1/me/sections                make a launcher section (R-342)
+PATCH  /api/v1/me/sections/{id}           rename it
+DELETE /api/v1/me/sections/{id}           delete it; its apps go back to Your apps
+PUT    /api/v1/me/sections/{id}/apps/{app}   file an app into it, out of any other
+DELETE /api/v1/me/sections/{id}/apps/{app}   take it back out
 ```
+
+**[D]** Sections (R-342) follow favorites: self only, no verb, a user required, every store call keyed on
+the caller so someone else's section is not-found. Filing an app needs `CheckData` on it; taking one out
+does not. An app is in at most one of a person's sections (primary key on placements), and the composite
+foreign key from placement to `(section id, user id)` makes filing into someone else's section
+unrepresentable. `GET /me/apps` returns `sections` alongside `apps`, and each app's `section_id`.
+
+**[D]** Favorites (R-341) are self-only and carry no verb. `PUT` needs a user — a service token has no
+launcher and is refused — and answers not-found for an app the caller cannot open (`CheckData`), so a
+favorite cannot be used to probe for apps. `DELETE` checks nothing beyond the caller: removing your own
+row is always allowed, including for an app you have since lost. Both are idempotent and answer `204`.
+`GET /me/apps` carries `favorite` on each app; there is no separate list, because the favorites are a
+subset of that list and a second endpoint could disagree with it.
 
 **[D]** `POST /me/password` takes the current password as well as the new one, even though the caller
 is already authenticated. A session cookie is a bearer credential; without the check, anyone holding
