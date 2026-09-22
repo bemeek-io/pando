@@ -92,6 +92,7 @@ export function Accounts({ onOpen }: { onOpen: (account: Account) => void }) {
       {accounts.isError && <Quiet>{messageOf(accounts.error)}</Quiet>}
 
       <Table
+        loading={accounts.isPending}
         onRowClick={onOpen}
         columns={[
           { key: 'external_id', header: 'Username', width: 'minmax(0,22ch)', mono: true, filter: 'text' },

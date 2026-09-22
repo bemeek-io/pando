@@ -16,6 +16,7 @@ import { Parts } from './Parts';
 import { Usage } from './Usage';
 import { useNarrow } from '../ui/narrow';
 import { MEASURE } from '../ui/layout';
+import { LineSkeleton } from '../ui/Loading';
 import { relative } from '../ui/time';
 import { deployLabel, deployStatus } from '../ui/deploys';
 import { Security } from './Security';
@@ -99,6 +100,11 @@ export function AppOverview({
     (w.env ?? []).filter((e) => !e.secret_ref && !e.slot_ref && (e.value ?? '') === ''),
   );
 
+  // Why an app is degraded, when it is made of several parts. The app's own
+  // state is one word for all of them, and the part that is failing is the
+  // thing somebody needs.
+  const parts = <Parts app={app} onLogs={canReadLogs ? (workload) => onGo('logs', workload) : undefined} />;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
       {app.state === 'failed' && (
@@ -121,11 +127,21 @@ export function AppOverview({
         </Banner>
       )}
 
-      {/* On a wide screen, what the app is using sits beside what it is, in
-          the space the card leaves; on a phone it follows the card, as the
-          other sections do. */}
+      {/* On a wide screen, two columns: what the app is, and its parts, on the
+          left at the card's width; what it is using on the right, running down
+          beside both. On a phone everything follows the card, as the other
+          sections do. */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-6)' }}>
-        <div style={{ maxWidth: MEASURE, flex: narrow ? '1 1 auto' : '1 1 0', minWidth: 0 }}>
+        <div
+          style={{
+            maxWidth: MEASURE,
+            flex: narrow ? '1 1 auto' : '1 1 0',
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-5)',
+          }}
+        >
           <Card padding="md">
             <Row label="Name">
               <AppName app={app} />
@@ -166,7 +182,11 @@ export function AppOverview({
               </Row>
             )}
             <Row label="Last deploy">
-              {latest ? (
+              {/* Not "Not deployed yet" while the list is on its way: that is a
+                  claim about the app, and it would be wrong for most of them. */}
+              {deployments.isPending ? (
+                <LineSkeleton width="20ch" />
+              ) : latest ? (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                   <StatusIndicator
                     status={deployStatus(latest.status, latest.result_state)}
@@ -183,6 +203,7 @@ export function AppOverview({
               )}
             </Row>
           </Card>
+          {!narrow && parts}
         </div>
         {!narrow && (
           <div style={{ flex: '0 1 40ch', minWidth: '28ch' }}>
@@ -191,10 +212,7 @@ export function AppOverview({
         )}
       </div>
 
-      {/* Why an app is degraded, when it is made of several parts. The app's
-          own state is one word for all of them, and the part that is failing
-          is the thing somebody needs. */}
-      <Parts app={app} onLogs={canReadLogs ? (workload) => onGo('logs', workload) : undefined} />
+      {narrow && parts}
 
       {/* What each part is using now, beside its limits (R-245). */}
       {narrow && <Usage app={app} />}

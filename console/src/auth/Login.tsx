@@ -18,10 +18,11 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Input, Logo } from '@design';
+import { Banner, Button, Input, Logo, Skeleton } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 
+import { FieldSkeleton, HeadingSkeleton, LineSkeleton, Loading } from '../ui/Loading';
 import { TopoMap } from '../ui/TopoBackground';
 import { returnTo } from './return-to';
 
@@ -34,9 +35,25 @@ export function Login() {
     queryFn: () => api.get<{ needed: boolean }>('/setup'),
   });
 
-  // Nothing yet: the page does not know which form it is, and showing the
-  // sign-in form for a moment on a new installation invites typing into it.
-  if (setup.isPending) return <Frame heading="">{null}</Frame>;
+  // Not a form yet: the page does not know which form it is, and showing the
+  // sign-in form for a moment on a new installation invites typing into it. So
+  // the outline both forms share — a heading, two labeled fields, a button —
+  // with nothing in it to type into.
+  if (setup.isPending) {
+    return (
+      <Frame heading={<HeadingSkeleton width="14ch" />}>
+        <Loading gap="var(--space-4)">
+          {[0, 1].map((n) => (
+            <div key={n} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <LineSkeleton width="10ch" font="var(--type-label)" />
+              <FieldSkeleton />
+            </div>
+          ))}
+          <Skeleton height="var(--control-console)" />
+        </Loading>
+      </Frame>
+    );
+  }
 
   // A failure to ask falls back to signing in, which is right on every
   // installation but a new one — and on a new one, signing in says why not.
@@ -336,7 +353,9 @@ function Frame({
   lede,
   children,
 }: {
-  heading?: string;
+  /** A string is the page's h1; anything else — a loading outline — stands in
+   *  its place without being announced as a heading. */
+  heading?: React.ReactNode;
   lede?: string;
   children: React.ReactNode;
 }) {
@@ -367,7 +386,11 @@ function Frame({
           <div style={{ marginBottom: 'var(--space-6)' }}>
             <Logo size={24} />
           </div>
-          {heading && <h1 style={{ font: 'var(--type-h3)', color: 'var(--ink)', margin: 0 }}>{heading}</h1>}
+          {typeof heading === 'string' ? (
+            heading && <h1 style={{ font: 'var(--type-h3)', color: 'var(--ink)', margin: 0 }}>{heading}</h1>
+          ) : (
+            heading
+          )}
           {lede && (
             <p
               style={{

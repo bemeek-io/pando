@@ -24,6 +24,7 @@ import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { ScoreBadge } from '../ui/ScoreBadge';
 import { Table } from '../ui/Table';
+import { LineSkeleton, Loading } from '../ui/Loading';
 import { AppVerb, useCan } from './verbs';
 
 export function Security({ appID }: { appID: string }) {
@@ -70,6 +71,14 @@ export function Security({ appID }: { appID: string }) {
       {scan.isError && <Banner tone="failed">{messageOf(scan.error)}</Banner>}
 
       <div style={{ marginTop: 'var(--space-4)' }}>
+        {/* The verdict's two lines — badge and standing, then the counts —
+            while the report loads. */}
+        {report.isPending && (
+          <Loading gap="var(--space-2)">
+            <LineSkeleton width="36ch" />
+            <LineSkeleton width="28ch" />
+          </Loading>
+        )}
         {standing && <Verdict report={report.data as Report} />}
       </div>
 

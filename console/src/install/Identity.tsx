@@ -16,6 +16,7 @@ import { AccountApps } from './AccountApps';
 import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
 import { Table } from '../ui/Table';
+import { LineSkeleton, Loading } from '../ui/Loading';
 
 interface Group {
   id: string;
@@ -123,6 +124,8 @@ function Groups({ canEdit, query }: { canEdit: boolean; query: string }) {
 
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
+          loading={groups.isPending}
+          skeletonRows={3}
           columns={[
             { key: 'name', header: 'Name', width: 'minmax(0,36ch)' },
             {
@@ -281,6 +284,14 @@ function EditGroup({ group, onClose }: { group: Group | 'new'; onClose: () => vo
             gap: 'var(--space-3)',
           }}
         >
+          {/* A checkbox's line each, until the accounts arrive. */}
+          {accounts.isPending && (
+            <Loading>
+              {[0, 1, 2].map((n) => (
+                <LineSkeleton key={n} width={`${24 - n * 4}ch`} />
+              ))}
+            </Loading>
+          )}
           {(accounts.data?.users ?? []).map((a) => (
             <Checkbox
               key={a.id}
@@ -385,6 +396,8 @@ function Roles({ canEdit, query }: { canEdit: boolean; query: string }) {
 
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
+          loading={roles.isPending}
+          skeletonRows={5}
           columns={[
             { key: 'name', header: 'Name', width: 'minmax(0,24ch)' },
             {
@@ -550,6 +563,13 @@ function AddRole({ onClose }: { onClose: () => void }) {
             gap: 'var(--space-3)',
           }}
         >
+          {catalog.isPending && (
+            <Loading>
+              {[0, 1, 2, 3].map((n) => (
+                <LineSkeleton key={n} width={`${22 - (n % 2) * 6}ch`} />
+              ))}
+            </Loading>
+          )}
           {available.map((v) => (
             <Checkbox key={v.verb} checked={verbs.includes(v.verb)} label={v.verb} onChange={() => toggle(v.verb)} />
           ))}

@@ -24,6 +24,7 @@ export { Table } from './components/data/Table.jsx';
 export { Banner } from './components/feedback/Banner.jsx';
 export { Dialog } from './components/feedback/Dialog.jsx';
 export { EmptyState } from './components/feedback/EmptyState.jsx';
+export { Skeleton, SkeletonText } from './components/feedback/Skeleton.jsx';
 export { Toast } from './components/feedback/Toast.jsx';
 export { Tooltip } from './components/feedback/Tooltip.jsx';
 

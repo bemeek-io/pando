@@ -7,7 +7,7 @@
 
 import { createContext, useContext, useLayoutEffect, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, EmptyState, Input, Select, StatusIndicator, Switch, Tag } from '@design';
+import { Banner, Button, EmptyState, Input, Select, Skeleton, StatusIndicator, Switch, Tag } from '@design';
 
 import { api } from '@api/client';
 import { Quiet, Screen, messageOf } from './Accounts';
@@ -15,6 +15,7 @@ import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
 import { Table } from '../ui/Table';
 import { BesideField } from '../ui/BesideField';
+import { FieldSkeleton, LineSkeleton } from '../ui/Loading';
 import { ActorField } from './ActorField';
 import type { Person } from './ActorField';
 import { NO_FILTERS, WHEN, auditQuery } from './audit';
@@ -46,6 +47,7 @@ export function Installation() {
 
       <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>Adapters</h4>
       <Table
+        loading={adapters.isPending}
         columns={[
           { key: 'ref', header: 'Reference', width: 'minmax(0,28ch)', mono: true },
           { key: 'kind', header: 'Kind', width: 'minmax(0,24ch)' },
@@ -73,19 +75,29 @@ export function Installation() {
       {/* Machine output, shown verbatim in mono. Capacity is per runtime
           adapter and its shape is the adapter's, not Pando's, so prettifying it
           here would be Pando inventing a schema it does not own (R-243). */}
-      <pre
-        style={{
-          font: 'var(--type-code-sm)',
-          background: 'var(--paper-sunken)',
-          border: 'var(--border-width) solid var(--rule)',
-          borderRadius: 'var(--radius-sm)',
-          padding: 'var(--space-4)',
-          overflowX: 'auto',
-          margin: 0,
-        }}
-      >
-        {capacity.isPending ? 'Loading.' : JSON.stringify(capacity.data, null, 2)}
-      </pre>
+      {capacity.isPending ? (
+        // The block's shape: the answer is machine output of the adapter's
+        // own shape, so its length cannot be known, only that it is a block.
+        <div role="status" aria-label="Loading">
+          <Skeleton height="10rem" />
+        </div>
+      ) : capacity.isError ? (
+        <Quiet>{messageOf(capacity.error)}</Quiet>
+      ) : (
+        <pre
+          style={{
+            font: 'var(--type-code-sm)',
+            background: 'var(--paper-sunken)',
+            border: 'var(--border-width) solid var(--rule)',
+            borderRadius: 'var(--radius-sm)',
+            padding: 'var(--space-4)',
+            overflowX: 'auto',
+            margin: 0,
+          }}
+        >
+          {JSON.stringify(capacity.data, null, 2)}
+        </pre>
+      )}
     </Screen>
   );
 }
@@ -189,7 +201,34 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
     setDraft({ ...current, ...patch });
   };
 
-  if (policy.isPending) return <Screen heading="Policy"><Quiet>Loading.</Quiet></Screen>;
+  // The page's sections in outline — a heading, its note, a control, under a
+  // rule — where the settings will be.
+  if (policy.isPending) {
+    return (
+      <Screen heading="Policy">
+        <div role="status" aria-label="Loading" style={{ display: 'flex', flexDirection: 'column', maxWidth: '68ch' }}>
+          {[0, 1, 2].map((n) => (
+            <div
+              key={n}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-2)',
+                padding: 'var(--space-6) 0',
+                borderTop: n === 0 ? undefined : 'var(--border-width) solid var(--rule)',
+              }}
+            >
+              <LineSkeleton width="22ch" font="var(--type-h4)" />
+              <LineSkeleton width="52ch" />
+              <div style={{ marginTop: 'var(--space-2)' }}>
+                <FieldSkeleton />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Screen>
+    );
+  }
   if (policy.isError)
     return (
       <Screen heading="Policy">
@@ -954,6 +993,7 @@ export function Audit({
       <AuditTable
         events={events}
         people={people}
+        loading={log.isPending}
         // A filter that matches nothing and a log that holds nothing look
         // identical as an empty table, and on this screen "nothing happened"
         // and "your filter is wrong" are very different answers.
@@ -976,15 +1016,22 @@ export function AuditTable({
   events,
   people,
   empty,
+  loading = false,
 }: {
   events: AuditRecord[];
   people: Person[];
   empty: React.ReactNode;
+  /** The first page has not arrived. A change of filter is a new query, so
+   *  this is also what shows between one filter and its results — rather than
+   *  "No matching events" for a moment before there are some. */
+  loading?: boolean;
 }) {
   const nameOf = (id?: string) => (id ? (people.find((u) => u.id === id)?.external_id ?? id) : '');
   return (
     <Table
       dense
+      loading={loading}
+      skeletonRows={6}
       empty={empty}
       columns={[
         {

@@ -17,6 +17,7 @@ import { Banner, Button, Checkbox, Dialog, EmptyState, Select, Tag } from '@desi
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb } from '../app/principal';
 import { Table } from '../ui/Table';
+import { FieldSkeleton, LineSkeleton, Loading } from '../ui/Loading';
 import type { Role } from './Accounts';
 import { Quiet, messageOf, sentence } from './Accounts';
 
@@ -116,6 +117,8 @@ export function AccountApps({
       {access.isError && <Quiet>{messageOf(access.error)}</Quiet>}
 
       <Table
+        loading={access.isPending}
+        skeletonRows={3}
         columns={[
           {
             key: 'app_name',
@@ -330,7 +333,14 @@ function GiveAccess({
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-        {offered.length === 0 && !apps.isPending ? (
+        {apps.isPending ? (
+          // The field in outline: a picker with only "Choose an app" in it
+          // reads as a list of no apps.
+          <Loading gap="var(--space-2)">
+            <LineSkeleton width="6ch" font="var(--type-label)" />
+            <FieldSkeleton />
+          </Loading>
+        ) : offered.length === 0 ? (
           <Quiet>This {noun} already has access to every app.</Quiet>
         ) : (
           <Select

@@ -11,7 +11,7 @@
 // and the API returns them whole (R-261).
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Button, Checkbox, Icon, Input, Table as DesignTable } from '@design';
+import { Button, Checkbox, Icon, Input, Skeleton, Table as DesignTable } from '@design';
 import type { TableColumn, TableProps as DesignTableProps } from '@design';
 
 export interface Column extends TableColumn {
@@ -23,6 +23,11 @@ export interface Column extends TableColumn {
 
 export interface TableProps extends Omit<DesignTableProps, 'columns'> {
   columns?: Column[];
+  /** The rows are still on their way: the headers, and `skeletonRows` rows of
+   *  placeholders in the real columns, instead of an empty state that would
+   *  say there is nothing. */
+  loading?: boolean;
+  skeletonRows?: number;
 }
 
 interface ColumnFilter {
@@ -30,7 +35,7 @@ interface ColumnFilter {
   values?: string[];
 }
 
-export function Table({ className, columns = [], rows = [], empty, ...props }: TableProps) {
+export function Table({ className, columns = [], rows = [], empty, loading = false, skeletonRows = 4, ...props }: TableProps) {
   const [filters, setFilters] = useState<Record<string, ColumnFilter>>({});
 
   const valueOf = (c: Column, row: any): string =>
@@ -69,6 +74,25 @@ export function Table({ className, columns = [], rows = [], empty, ...props }: T
         }
       : c,
   );
+
+  // Each cell a line of placeholder, a little shorter row to row so the
+  // block reads as rows of text rather than a grey slab. Only while there is
+  // nothing to show yet: a refetch keeps the rows it has.
+  if (loading && rows.length === 0) {
+    return (
+      <DesignTable
+        className={className ? `pando-table ${className}` : 'pando-table'}
+        role="status"
+        aria-label="Loading"
+        columns={columns.map((c) => ({
+          ...c,
+          render: (row: { n: number }) => <Skeleton width={c.align === 'right' ? '40%' : `${80 - (row.n % 3) * 15}%`} />,
+        }))}
+        rows={Array.from({ length: skeletonRows }, (_, n) => ({ id: `skeleton-${n}`, n }))}
+        {...props}
+      />
+    );
+  }
 
   return (
     <DesignTable

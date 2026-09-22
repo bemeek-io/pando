@@ -24,7 +24,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, EmptyState, Icon, IconButton, Input, Logo } from '@design';
+import { Button, EmptyState, Icon, IconButton, Input, Logo, Skeleton } from '@design';
 
 import { api, base } from '@api/client';
 import type { App, Section } from '@api/types.gen';
@@ -249,7 +249,17 @@ export function Launcher({
             open={searching}
             onDropApp={dropInto('unsorted')}
           >
-            {apps.isPending && <Quiet>Loading your apps.</Quiet>}
+            {/* Tiles' shapes, where the tiles will be: the page does not jump
+                when they arrive, and nothing says "loading" in words. */}
+            {apps.isPending && (
+              <div role="status" aria-label="Loading your apps">
+                <Grid>
+                  {Array.from({ length: 4 }, (_, i) => (
+                    <Skeleton key={i} height="auto" radius="md" style={{ aspectRatio: '1 / 1' }} />
+                  ))}
+                </Grid>
+              </div>
+            )}
 
             {apps.isError && <Quiet>Pando couldn&rsquo;t load your apps. Reload the page to try again.</Quiet>}
 

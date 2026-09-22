@@ -9,8 +9,9 @@
 // Read from GET /apps/{id}/usage, the same endpoint `pando app usage` and
 // pando_get_usage use.
 
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Tag } from '@design';
+import { Button, Skeleton, Tag } from '@design';
 
 import { api } from '@api/client';
 import type { App } from '@api/types.gen';
@@ -80,12 +81,42 @@ export function Usage({ app, layout = 'table' }: { app: App; layout?: 'table' | 
         )}
       </div>
       {reading.isError && <Quiet>{messageOf(reading.error)}</Quiet>}
+
+      {/* The first reading takes the runtime about a second to sample, so the
+          section holds the shape of what is coming rather than standing empty.
+          How many parts is not known yet; one is the common case. */}
+      {reading.isPending && layout === 'stack' && (
+        <div role="status" aria-label="Loading" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <Skeleton width="12ch" />
+          {['CPU', 'Memory', 'Disk'].map((label) => (
+            <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+              <span style={{ font: 'var(--type-label)', color: 'var(--ink-secondary)' }}>{label}</span>
+              <Skeleton width="16ch" />
+              {label !== 'Disk' && <Skeleton width="24ch" height="var(--space-1)" radius="xs" />}
+            </div>
+          ))}
+        </div>
+      )}
+      {reading.isPending && layout === 'table' && (
+        <Table
+          loading
+          skeletonRows={1}
+          columns={[
+            { key: 'name', header: 'Part', width: 'minmax(0,18ch)' },
+            { key: 'cpu', header: 'CPU', width: 'minmax(0,1fr)' },
+            { key: 'memory', header: 'Memory', width: 'minmax(0,1fr)' },
+            { key: 'disk', header: 'Disk', width: 'minmax(0,1fr)' },
+          ]}
+          rows={[]}
+        />
+      )}
+
       {data && !data.supported && (
         <Quiet>This app&rsquo;s runtime does not report what its parts are using.</Quiet>
       )}
 
       {data?.supported && layout === 'stack' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <Capped>
           {parts.map((row) => (
             <div
               key={row.name}
@@ -115,7 +146,7 @@ export function Usage({ app, layout = 'table' }: { app: App; layout?: 'table' | 
             </div>
           ))}
           {asOf}
-        </div>
+        </Capped>
       )}
 
       {data?.supported && layout === 'table' && (
@@ -230,6 +261,52 @@ function Meter({
             }}
           />
         </div>
+      )}
+    </div>
+  );
+}
+
+// How tall the stacked readings may stand before "Show more": about two parts'
+// worth. An app with many parts would otherwise push everything under it off
+// the screen for a panel most people glance at.
+const CAP = 'calc(var(--space-8) * 6)';
+
+/** The stacked readings, cut off at CAP with a way to see the rest — offered
+ *  only when there is a rest to see. */
+function Capped({ children }: { children: React.ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+
+  // Measured after every render: a reading can add a part, or a volume line,
+  // and the answer to "is there more" changes with it.
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (el) setOverflows(el.scrollHeight > el.clientHeight + 1);
+  });
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+      <div
+        ref={box}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--space-4)',
+          maxHeight: open ? undefined : CAP,
+          overflow: 'hidden',
+          // The last visible line fades rather than being sliced through, so
+          // it reads as "there is more" rather than as a rendering fault.
+          maskImage: !open && overflows ? 'linear-gradient(to bottom, black 80%, transparent)' : undefined,
+          WebkitMaskImage: !open && overflows ? 'linear-gradient(to bottom, black 80%, transparent)' : undefined,
+        }}
+      >
+        {children}
+      </div>
+      {(overflows || open) && (
+        <Button variant="ghost" onClick={() => setOpen((v) => !v)} style={{ alignSelf: 'flex-start' }}>
+          {open ? 'Show less' : 'Show more'}
+        </Button>
       )}
     </div>
   );

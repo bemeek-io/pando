@@ -170,6 +170,10 @@ export function Environment({ appID, focus }: { appID: string; focus?: boolean }
 
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
+          // Two requests, and the second waits on the first. `full` is not
+          // enabled without a revision, and a disabled query is pending for
+          // good, so it counts only once there is one.
+          loading={specs.isPending || (Boolean(newest) && full.isPending)}
           columns={[
             { key: 'key', header: 'Name', width: 'minmax(0,26ch)', mono: true },
             { key: 'shown', header: 'Value', width: 'minmax(0,28ch)', mono: true, muted: true },

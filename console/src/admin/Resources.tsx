@@ -98,6 +98,8 @@ function Slots({ appID, focus }: { appID: string; focus?: boolean }) {
 
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
+          loading={slots.isPending}
+          skeletonRows={2}
           columns={[
             { key: 'key', header: 'Variable', width: 'minmax(0,26ch)', mono: true },
             {
@@ -334,6 +336,8 @@ function Volumes({ appID, focus }: { appID: string; focus?: boolean }) {
 
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
+          loading={volumes.isPending}
+          skeletonRows={1}
           columns={[
             { key: 'id', header: 'Reference', width: 'minmax(0,28ch)', mono: true },
             { key: 'handle', header: 'Where it is', width: 'minmax(0,38ch)', mono: true, muted: true },

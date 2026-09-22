@@ -16,6 +16,7 @@
 // no way to send anybody a link to an app.
 
 import { useRef } from 'react';
+import { Skeleton } from '@design';
 
 import { useAdministrative, usePrincipal } from './principal';
 import { useTheme } from '../ui/theme';
@@ -25,6 +26,8 @@ import { ChangePassword, Login } from '../auth/Login';
 import { Launcher } from '../launcher/Launcher';
 import { AdminConsole } from '../admin/AdminConsole';
 import { Settings } from '../settings/Settings';
+import { Sheet } from '../ui/Sheet';
+import { HeadingSkeleton, Loading } from '../ui/Loading';
 
 export function App() {
   // Before anything decides what to render: the sign-in page and the error
@@ -40,8 +43,20 @@ export function App() {
   // and history.back() would take them off Pando altogether.
   const cameFrom = useRef<Route | null>(null);
 
+  // Who this is decides which page this is — the launcher, the console or the
+  // sign-in form — so nothing more specific than a page can be drawn yet: the
+  // paper, a heading's place and a block under it, held back like every
+  // skeleton so a quick answer shows nothing at all.
   if (principal.isPending) {
-    return <Centered>Loading.</Centered>;
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--paper)' }}>
+        <Sheet heading={<HeadingSkeleton />}>
+          <Loading>
+            <Skeleton height="12rem" radius="md" />
+          </Loading>
+        </Sheet>
+      </div>
+    );
   }
 
   // Not signed in. The proxy sends an unauthenticated visitor here (R-023), and
@@ -111,23 +126,5 @@ export function App() {
       onSettings={openSettings}
       onManage={isAdmin ? (appID) => go({ view: 'admin', section: 'apps', appID }) : undefined}
     />
-  );
-}
-
-function Centered({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        background: 'var(--paper)',
-        font: 'var(--type-body-ui)',
-        color: 'var(--ink-secondary)',
-      }}
-    >
-      {children}
-    </div>
   );
 }

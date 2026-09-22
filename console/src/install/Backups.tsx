@@ -51,6 +51,7 @@ export function Backups() {
       {backups.isError && <Quiet>{messageOf(backups.error)}</Quiet>}
 
       <Table
+        loading={backups.isPending}
         // An installation that has never been backed up is the state this
         // screen most needs to be clear about, and it was the one it showed as
         // a row of column headers over blank paper.

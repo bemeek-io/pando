@@ -24,7 +24,19 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, CodeBlock, Dialog, Icon, IconButton, Input, Select, StatusIndicator, Tag } from '@design';
+import {
+  Button,
+  Card,
+  CodeBlock,
+  Dialog,
+  Icon,
+  IconButton,
+  Input,
+  Select,
+  SkeletonText,
+  StatusIndicator,
+  Tag,
+} from '@design';
 
 import { api, RequestFailed } from '@api/client';
 import type { Candidate, Proposal, Question } from '@api/types.gen';
@@ -32,6 +44,7 @@ import { InlineWarning } from '../ui/InlineWarning';
 import { rejectedEntries } from './rejections';
 import { Screening } from './Screening';
 import { Table } from '../ui/Table';
+import { LineSkeleton } from '../ui/Loading';
 import { AppVerb, useCan } from './verbs';
 
 interface DetectionResponse {
@@ -89,7 +102,20 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
     onSuccess: () => queries.invalidateQueries({ queryKey: ['apps', appID, 'detection'] }),
   });
 
-  if (detection.isPending) return <Quiet>Reading the repository.</Quiet>;
+  // The winning bid's card, in outline. Not "Reading the repository": that is
+  // what detection says while it runs, and for an app detected last week it
+  // would claim work that is not happening.
+  if (detection.isPending) {
+    // SkeletonText announces itself as loading, so no wrapper says it again.
+    return (
+      <Card padding="md">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <LineSkeleton width="26ch" font="var(--type-h4)" />
+          <SkeletonText lines={3} />
+        </div>
+      </Card>
+    );
+  }
   if (detection.isError) return <Failure error={detection.error} />;
 
   const { status, detection: proposal, answers } = detection.data;

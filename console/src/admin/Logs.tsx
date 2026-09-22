@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, CodeBlock, Select, StatusIndicator } from '@design';
+import { Button, CodeBlock, Select, Skeleton, StatusIndicator } from '@design';
 import { BesideField } from '../ui/BesideField';
 
 import { api, base } from '@api/client';
@@ -188,6 +188,8 @@ export function Logs({ app, workload }: { app: App; workload?: string }) {
 
         <div style={{ marginTop: 'var(--space-4)' }}>
           <Table
+            loading={deployments.isPending}
+            skeletonRows={3}
             onRowClick={(row: Deployment) => setSelected(row.id)}
             columns={[
               {
@@ -307,6 +309,12 @@ function AppOutput({ app, workload }: { app: App; workload?: string }) {
           <Quiet>This app hasn’t been deployed yet, so it hasn’t printed anything.</Quiet>
         ) : output.isError ? (
           <Quiet>{messageOf(output.error)}</Quiet>
+        ) : output.isPending ? (
+          // The box's shape, not an empty box with "hasn't printed anything"
+          // under it: the runtime has not answered yet, which is not the same.
+          <div role="status" aria-label="Loading">
+            <Skeleton height="16rem" radius="md" />
+          </div>
         ) : (
           <LogBox
             title={showing || app.name}

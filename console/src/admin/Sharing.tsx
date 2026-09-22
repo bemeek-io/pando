@@ -24,11 +24,12 @@
 
 import { useContext, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Dialog, Input, Select, Tag } from '@design';
+import { Button, Dialog, Input, Select, Skeleton, Tag } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 import type { GrantRow } from '@api/types.gen';
 import { MEASURE } from '../ui/layout';
+import { LineSkeleton } from '../ui/Loading';
 import { Table } from '../ui/Table';
 import { AppVerb, AppVerbs, changesAnything, useCan } from './verbs';
 
@@ -86,6 +87,8 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
             screen exists to make visible, not to paper over. */}
         <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Who has access</h4>
         <Table
+          loading={grants.isPending}
+          skeletonRows={2}
           columns={[
             { key: 'who', header: 'Who', width: 'minmax(0,44ch)', render: who },
             { key: 'access', header: 'Access', width: 'minmax(0,28ch)', render: access },
@@ -109,9 +112,11 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
         />
       </section>
 
-      {!canManage && (
-        // Whether it is open to everyone is the one fact the sections below
-        // carry that the table does not, so it is said here instead.
+      {/* Whether it is open to everyone is the one fact the sections below
+          carry that the table does not, so it is said here instead — once the
+          grants are in. Before then either sentence would be a guess. */}
+      {!canManage && grants.isPending && <LineSkeleton width="44ch" />}
+      {!canManage && !grants.isPending && (
         <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
           {anonymous
             ? `Anyone on the internet can open ${appName}, without signing in.`
@@ -209,7 +214,12 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
             </p>
           )}
 
-          {anonymous ? (
+          {/* Which of the two buttons depends on the grants, so neither until
+              they arrive: "Make it public" on an app that already is would
+              offer the wrong thing. */}
+          {grants.isPending ? (
+            <Skeleton width="16ch" height="var(--control-console)" />
+          ) : anonymous ? (
             <Button
               variant="destructive"
               onClick={() => revoke.mutate(anonymous.id)}

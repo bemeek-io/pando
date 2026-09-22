@@ -13,7 +13,20 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Banner, Button, EmptyState, Icon, IconButton, Logo, SidebarNav, StatusIndicator, Tabs, Tooltip } from '@design';
+import {
+  Badge,
+  Banner,
+  Button,
+  EmptyState,
+  Icon,
+  IconButton,
+  Logo,
+  SidebarNav,
+  Skeleton,
+  StatusIndicator,
+  Tabs,
+  Tooltip,
+} from '@design';
 import type { SidebarItem } from '@design';
 
 import { api } from '@api/client';
@@ -48,6 +61,7 @@ import { SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
 import { useNarrow } from '../ui/narrow';
 import { Table } from '../ui/Table';
+import { FieldSkeleton, HeadingSkeleton, LineSkeleton, Loading } from '../ui/Loading';
 
 export function AdminConsole({
   route,
@@ -303,7 +317,14 @@ export function AdminConsole({
             // the request returns, and the next thing to do is look at what it
             // found — landing back on a list with a new row saying "draft"
             // leaves the person to work that out.
-            <AppsList rows={rows} onOpen={(app) => setSelectedID(app.id)} onAdded={(app) => setSelectedID(app.id)} />
+            <AppsList
+              rows={rows}
+              // Guarded by `administrative`: a query that is not enabled stays
+              // pending forever, and would leave the list loading for good.
+              loading={administrative && apps.isPending}
+              onOpen={(app) => setSelectedID(app.id)}
+              onAdded={(app) => setSelectedID(app.id)}
+            />
           ))}
       </main>
     </div>
@@ -312,10 +333,13 @@ export function AdminConsole({
 
 function AppsList({
   rows,
+  loading,
   onOpen,
   onAdded,
 }: {
   rows: App[];
+  /** The list has not arrived: placeholder rows, not "Add your first app". */
+  loading: boolean;
   onOpen: (app: App) => void;
   onAdded: (app: App) => void;
 }) {
@@ -350,6 +374,7 @@ function AppsList({
         }
       >
         <Table
+          loading={loading}
           onRowClick={onOpen}
           // A fresh install has no apps, and the list was a set of column
           // headers over nothing. R-002 is about the tenth app; the first one
@@ -511,7 +536,35 @@ function AppScreen({
     if (reviewed && routeTab === 'detection') onTab('overview');
   }, [reviewed]);
 
-  if (app.isPending) return null;
+  // The header's shape while the record loads — the back button is real, since
+  // it needs nothing from the app — rather than a blank page. The list's row
+  // supplies the name when there is one, so the heading does not change as the
+  // record arrives.
+  if (app.isPending) {
+    return (
+      <Sheet
+        heading={
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+            <Button variant="ghost" icon={<Icon name="arrow-left" />} onClick={onBack}>
+              Apps
+            </Button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+              {listed ? <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{listed.name}</h3> : <HeadingSkeleton />}
+              <LineSkeleton width="10ch" />
+            </div>
+          </div>
+        }
+      >
+        {/* The tab row, then a card: what every tab opens with. */}
+        <Loading gap="var(--space-5)">
+          <FieldSkeleton width="40ch" />
+          <div style={{ maxWidth: MEASURE }}>
+            <Skeleton height="12rem" radius="md" />
+          </div>
+        </Loading>
+      </Sheet>
+    );
+  }
   if (app.isError || !app.data) {
     // An app whose record will not load is exactly the app somebody is trying
     // to get rid of, and this screen used to offer them a back button and

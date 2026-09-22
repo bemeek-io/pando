@@ -14,6 +14,7 @@ import { Banner, Button, Dialog, EmptyState, Icon, IconButton, Input, Select, St
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
 import { Sheet } from '../ui/Sheet';
+import { FieldSkeleton, HeadingSkeleton, LineSkeleton } from '../ui/Loading';
 import { BesideField } from '../ui/BesideField';
 import { AccountApps } from './AccountApps';
 import { GeneratedPassword, PasswordToCopy } from './GeneratedPassword';
@@ -66,10 +67,40 @@ export function AccountPage({
     </Button>
   );
 
-  if (!account.data) {
+  if (account.isError) {
     return (
       <Sheet heading={back}>
-        {account.isError ? <Banner tone="failed">{messageOf(account.error)}</Banner> : <Quiet>Loading</Quiet>}
+        <Banner tone="failed">{messageOf(account.error)}</Banner>
+      </Sheet>
+    );
+  }
+
+  // The page's own shape while the account loads: its name and status in the
+  // header, and the details with their labels and no values. The labels are
+  // the same for every account, so they are real text now rather than later.
+  if (!account.data) {
+    return (
+      <Sheet
+        heading={
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+            {back}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3) var(--space-4)' }}>
+              <HeadingSkeleton />
+              <LineSkeleton width="8ch" />
+            </div>
+          </div>
+        }
+      >
+        <section role="status" aria-label="Loading">
+          <Heading>Details</Heading>
+          <Details>
+            {['Username', 'Name', 'Email', 'Identity source', 'Created', 'Groups', 'Installation role'].map((term) => (
+              <Detail key={term} term={term}>
+                <LineSkeleton width={term === 'Created' ? '22ch' : '16ch'} />
+              </Detail>
+            ))}
+          </Details>
+        </section>
       </Sheet>
     );
   }
@@ -116,15 +147,7 @@ export function AccountPage({
                 here takes install.users.manage, and the dialog says which. */}
             {(manage || isSelf) && <EditDetails account={a} manage={manage} isSelf={isSelf} />}
           </div>
-          <dl
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(12ch, max-content) 1fr',
-              gap: 'var(--space-3) var(--space-6)',
-              margin: 0,
-              font: 'var(--type-body-ui)',
-            }}
-          >
+          <Details>
             <Detail term="Username" mono>
               {a.external_id}
             </Detail>
@@ -140,7 +163,10 @@ export function AccountPage({
             )}
             <Detail term="Created">{a.created_at ? new Date(a.created_at).toLocaleString() : '—'}</Detail>
             <Detail term="Groups">
-              {manage ? (
+              {/* Not "None" before the groups have arrived. */}
+              {groups.isPending ? (
+                <LineSkeleton width="16ch" />
+              ) : manage ? (
                 <GroupMembership account={a} groups={groups.data?.groups ?? []} isSelf={isSelf} />
               ) : memberOf.length > 0 ? (
                 memberOf.map((g) => g.name).join(', ')
@@ -150,7 +176,14 @@ export function AccountPage({
             </Detail>
             <Detail term="Installation role">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                {manage ? (
+                {/* A picker with no roles in it yet would show the role's id. */}
+                {roles.isPending ? (
+                  manage ? (
+                    <FieldSkeleton width="32ch" />
+                  ) : (
+                    <LineSkeleton width="12ch" />
+                  )
+                ) : manage ? (
                   <div style={{ maxWidth: '32ch' }}>
                     <RolePicker account={a} roles={roles.data?.roles ?? []} isSelf={isSelf} />
                   </div>
@@ -171,7 +204,7 @@ export function AccountPage({
                   ))}
               </div>
             </Detail>
-          </dl>
+          </Details>
         </section>
 
         <AccountApps principal={{ kind: 'user', id: a.id, name: a.display_name || a.external_id }} />
@@ -232,6 +265,7 @@ function Activity({ userID, onAudit }: { userID: string; onAudit: (query: string
       <AuditTable
         events={events}
         people={people}
+        loading={log.isPending}
         empty={
           <EmptyState heading="No events in this range">
             Choose a longer time range, or open the audit log for more filters.
@@ -553,6 +587,22 @@ function DeleteAccount({ account, onDeleted }: { account: Account; onDeleted: ()
 
 function Heading({ children }: { children: React.ReactNode }) {
   return <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>{children}</h4>;
+}
+
+function Details({ children }: { children: React.ReactNode }) {
+  return (
+    <dl
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(12ch, max-content) 1fr',
+        gap: 'var(--space-3) var(--space-6)',
+        margin: 0,
+        font: 'var(--type-body-ui)',
+      }}
+    >
+      {children}
+    </dl>
+  );
 }
 
 function Detail({ term, mono, children }: { term: string; mono?: boolean; children: React.ReactNode }) {
