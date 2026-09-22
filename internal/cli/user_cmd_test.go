@@ -54,3 +54,23 @@ func TestGroupAndProfileCommandsCallTheAPI(t *testing.T) {
 	got := run(t, api, "", "user", "update", "usr_01")
 	require.Error(t, got.err, "nothing to change")
 }
+
+// R-245: a part's use beside its limits, and a part with no limit said so.
+func TestR245_AppUsageShowsEachPartBesideItsLimits(t *testing.T) {
+	api := newAPI(t).reply("GET /apps/notes/usage", map[string]any{
+		"supported": true,
+		"workloads": []map[string]any{
+			{"name": "web", "primary": true, "running": true, "cpu_millis": 150, "cpu_limit_millis": 500,
+				"memory_bytes": 64 << 20, "memory_limit_bytes": 256 << 20, "disk_bytes": 2 << 20,
+				"volumes": []map[string]any{{"name": "data", "bytes": 3 << 20}}},
+			{"name": "worker", "running": false, "disk_bytes": -1, "volumes": []any{}},
+		},
+	})
+	got := run(t, api, "", "app", "usage", "notes")
+	require.NoError(t, got.err, got.errOut)
+	require.Contains(t, got.out, "0.15 of 0.50")
+	require.Contains(t, got.out, "64.0 MB of 256.0 MB")
+	require.Contains(t, got.out, "data 3.0 MB")
+	require.Contains(t, got.out, "stopped")
+	require.Contains(t, got.out, "unknown")
+}

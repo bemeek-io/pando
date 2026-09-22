@@ -41,6 +41,9 @@ func (stubRuntime) Apply(context.Context, api.BundlePlan) (api.BundleHandle, err
 func (stubRuntime) Observe(context.Context, api.BundleRef) (api.ObservedBundle, error) {
 	return api.ObservedBundle{}, nil
 }
+func (stubRuntime) Usage(context.Context, api.BundleRef) (api.BundleUsage, error) {
+	return api.BundleUsage{}, nil
+}
 func (stubRuntime) Stop(context.Context, api.BundleRef) error                        { return nil }
 func (stubRuntime) Destroy(context.Context, api.BundleRef, api.DestroyOptions) error { return nil }
 func (stubRuntime) CreateVolume(context.Context, api.VolumeRequest) (api.VolumeHandle, error) {

@@ -13,6 +13,7 @@ import type { App, Deployment } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { InlineWarning } from '../ui/InlineWarning';
 import { Parts } from './Parts';
+import { Usage } from './Usage';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { deployLabel, deployStatus } from '../ui/deploys';
@@ -183,6 +184,9 @@ export function AppOverview({
           own state is one word for all of them, and the part that is failing
           is the thing somebody needs. */}
       <Parts app={app} onLogs={canReadLogs ? (workload) => onGo('logs', workload) : undefined} />
+
+      {/* What each part is using now, beside its limits (R-245). */}
+      <Usage app={app} />
 
       {/* The security score, where the deploy log used to be — and across the
           measure rather than in the column that held it. A log is a column of

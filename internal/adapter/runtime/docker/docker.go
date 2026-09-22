@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -63,6 +64,11 @@ const (
 type Adapter struct {
 	cli    *client.Client
 	config Config
+
+	// Volume sizes, reused briefly across usage readings (usage.go).
+	usageMu          sync.Mutex
+	volumeSizesCache map[string]int64
+	volumeSizesAt    time.Time
 }
 
 // Config is the adapter's configuration.
@@ -140,6 +146,10 @@ func (a *Adapter) Capabilities(context.Context) (api.RuntimeCapabilities, error)
 		SupportsMultipleWorkloads: true,
 		SupportsPrivateNetwork:    true,
 		SupportsResourceLimits:    true,
+
+		// CPU and memory from the daemon's stats, disk from the container's
+		// own layer and its volumes (R-245).
+		ReportsUsage: true,
 
 		// Recreate only, for now. Start-then-swap needs the proxy to repoint
 		// between two live bundles, which is phase 5 work — claiming it here

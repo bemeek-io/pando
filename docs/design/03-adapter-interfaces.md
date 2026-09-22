@@ -60,6 +60,7 @@ type RuntimeCapabilities struct {
     SupportsPrivateNetwork  bool   // required for R-026; an adapter without it is unusable
     SupportsResourceLimits  bool
     SupportsStartThenSwap   bool   // R-145
+    ReportsUsage            bool   // R-245
     MaxWorkloadsPerBundle   int    // 0 = unlimited
 }
 
@@ -99,6 +100,10 @@ type RuntimeAdapter interface {
 
     // Observe reports what actually exists. Drives reconciliation (R-148).
     Observe(ctx context.Context, ref BundleRef) (ObservedBundle, error)
+
+    // What each workload is using now — CPU, memory, disk — and each volume's
+    // size (R-245). A reading, never a history (R-016). Only when ReportsUsage.
+    Usage(ctx context.Context, ref BundleRef) (BundleUsage, error)
 
     Stop(ctx context.Context, ref BundleRef) error
     Destroy(ctx context.Context, ref BundleRef, opts DestroyOptions) error

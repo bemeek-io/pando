@@ -516,6 +516,20 @@ var toolList = []tool{
 			return "GET", appPath(id, "/status"), nil, nil
 		},
 	},
+	{
+		Name: "pando_get_usage",
+		Description: "What each part of an app is using right now: CPU (thousandths of a core), " +
+			"memory and disk in bytes, and each mounted volume's size, beside its limits " +
+			"(0 means none). A reading, not a history.",
+		Schema: schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "app_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "GET", appPath(id, "/usage"), nil, nil
+		},
+	},
 }
 
 var toolsByName = func() map[string]tool {

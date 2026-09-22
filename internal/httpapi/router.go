@@ -478,6 +478,7 @@ func (s *Server) Routes() http.Handler {
 				r.Post("/plan", s.handlePlan)
 
 				r.Get("/status", s.handleAppStatus)
+				r.Get("/usage", s.handleAppUsage)
 				r.Get("/logs", s.handleAppLogs)
 
 				// A terminal inside a running workload (design 04 §2.4).

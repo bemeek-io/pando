@@ -483,7 +483,92 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 		},
 	})
 
+	cmd.AddCommand(&cobra.Command{
+		Use:   "usage <app>",
+		Short: "What each part of an app is using right now: CPU, memory and disk",
+		Long: "What each part of an app is using right now, beside its limits (R-245).\n\n" +
+			"CPU is in cores; a part with no limit may use what the host has. A reading, not a history.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var usage struct {
+				Supported bool `json:"supported"`
+				Workloads []struct {
+					Name        string `json:"name"`
+					Primary     bool   `json:"primary"`
+					Running     bool   `json:"running"`
+					CPUMillis   int    `json:"cpu_millis"`
+					CPULimit    int    `json:"cpu_limit_millis"`
+					Memory      int64  `json:"memory_bytes"`
+					MemoryLimit int64  `json:"memory_limit_bytes"`
+					Disk        int64  `json:"disk_bytes"`
+					Volumes     []struct {
+						Name  string `json:"name"`
+						Bytes int64  `json:"bytes"`
+					} `json:"volumes"`
+				} `json:"workloads"`
+			}
+			if err := c.Do("GET", "/apps/"+args[0]+"/usage", nil, &usage); err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			if !usage.Supported {
+				fmt.Fprintln(out, "This app's runtime does not report what its parts are using.")
+				return nil
+			}
+			w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "PART\tCPU\tMEMORY\tDISK\tVOLUMES")
+			for _, p := range usage.Workloads {
+				name := p.Name
+				if p.Primary {
+					name += " *"
+				}
+				cpu, mem := "stopped", "stopped"
+				if p.Running {
+					cpu = fmt.Sprintf("%.2f of %s", float64(p.CPUMillis)/1000, limitOr(p.CPULimit > 0, fmt.Sprintf("%.2f", float64(p.CPULimit)/1000)))
+					mem = fmt.Sprintf("%s of %s", size(p.Memory), limitOr(p.MemoryLimit > 0, size(p.MemoryLimit)))
+				}
+				vols := make([]string, 0, len(p.Volumes))
+				for _, v := range p.Volumes {
+					vols = append(vols, v.Name+" "+size(v.Bytes))
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", name, cpu, mem, size(p.Disk), strings.Join(vols, ", "))
+			}
+			_ = w.Flush()
+			fmt.Fprintln(out, "\n* the part this app's address resolves to.")
+			return nil
+		},
+	})
+
 	return cmd
+}
+
+// limitOr is the limit, or "no limit" for a part that may use what the host has.
+func limitOr(has bool, limit string) string {
+	if has {
+		return limit
+	}
+	return "no limit"
+}
+
+// size is bytes as people read them; "unknown" for -1, which the API sends
+// when the runtime could not say.
+func size(b int64) string {
+	switch {
+	case b < 0:
+		return "unknown"
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(b)/(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(b)/(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.0f KB", float64(b)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
 
 // partState reads the runtime's facts as one word somebody can act on.

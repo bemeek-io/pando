@@ -654,6 +654,8 @@ without touching core (O-6 resolved).
 
 **R-243 [D]** **Capacity is adapter-reported, not host-inspected.** The local Docker adapter reports the machine it runs on; a clustered adapter reports what its cluster has. Core does not read `/proc`.
 
+**R-245 [P]** **An app's parts show what they are using now**: CPU, memory and disk for each workload, and each volume's size, beside the limits it runs under — reported by the runtime adapter (R-243) and read on demand. A reading, not a history: Pando keeps no metrics store, graphs no trends and alerts on nothing (R-016). A runtime that cannot report it says so rather than showing zeros.
+
 **R-244 [P] [LATER]** Per-user quotas (max apps, max disk) as a policy knob. The counting required already exists for R-242.
 
 ---
