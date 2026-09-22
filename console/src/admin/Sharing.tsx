@@ -40,10 +40,13 @@ import { Table } from '../ui/Table';
 import { RecipientField, type Chosen } from './RecipientField';
 import {
   BUILT_IN_APP_ROLES,
+  describeChoice,
   everyone,
+  orderRoles,
   PASSCODE_MIN,
   roleChoice,
   shareRequests,
+  USE_ONLY,
   type Grant,
 } from './share-access';
 import { AppVerb, AppVerbs, changesAnything, useCan } from './verbs';
@@ -106,7 +109,7 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
     enabled: canManage,
     retry: false,
   });
-  const appRoles = roles.data?.roles ?? (roles.isError ? BUILT_IN_APP_ROLES : []);
+  const appRoles = orderRoles(roles.data?.roles ?? (roles.isError ? BUILT_IN_APP_ROLES : []));
 
   const rows = grants.data?.grants ?? [];
 
@@ -286,9 +289,10 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
               <Select
                 label="What they can do"
                 options={[
-                  { value: '', label: 'Open the app' },
+                  { value: '', label: USE_ONLY },
                   ...appRoles.map((r) => ({ value: r.id, label: roleChoice(r) })),
                 ]}
+                helper={describeChoice(appRoles.find((r) => r.id === role))}
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
                 style={{ flex: '1 1 28ch' }}

@@ -23,8 +23,9 @@ export type GrantRequest =
  * on the app.
  *
  * Opening the app is the data plane; a role is the control plane (R-070,
- * R-071). Every choice on the form includes opening the app — "Open it and
- * deploy it" — so a role is always accompanied by a data grant. What is
+ * R-071). Every choice on the form includes opening the app — each role's
+ * description starts "They can open the app" — so a role is always
+ * accompanied by a data grant. What is
  * already there is not asked for again: a second data grant would be refused,
  * and a person who already manages the app with one role is moved to the new
  * one rather than given two.
@@ -76,17 +77,46 @@ export const BUILT_IN_APP_ROLES = [
   { id: 'role_owner', name: 'owner' },
 ];
 
-/** How the form describes each role, as what the person can do rather than the
- *  role's name. A custom role has no description here, so it is named. */
-export function roleChoice(role: { id: string; name: string }): string {
+/** The least access: using the app — its tile on their launcher — and no role
+ *  on it, so nothing in its settings (R-070, R-071). */
+export const USE_ONLY = 'Use only (no role)';
+
+type RoleLike = { id: string; name: string; builtin?: boolean; verbs?: string[] };
+
+// The built-ins in order of what they allow, so the list reads as a ladder.
+const LADDER = ['role_viewer', 'role_operator', 'role_owner'];
+
+/** The dropdown's label for a role: its name, as the Groups and roles screen
+ *  shows it. The same name for a built-in as for one somebody made, so a custom
+ *  role reads as a role rather than as a sentence about one. */
+export function roleChoice(role: RoleLike): string {
+  return role.name.charAt(0).toUpperCase() + role.name.slice(1);
+}
+
+/** The roles in the order the dropdown shows them: the built-ins by what they
+ *  allow, then custom roles by name. */
+export function orderRoles<T extends RoleLike>(roles: T[]): T[] {
+  const rank = (r: T) => {
+    const i = LADDER.indexOf(r.id);
+    return i >= 0 ? i : LADDER.length;
+  };
+  return [...roles].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+}
+
+/** What the chosen access means, under the dropdown. For a custom role Pando
+ *  has no sentence, so it says what the role holds. */
+export function describeChoice(role: RoleLike | undefined): string {
+  if (!role) return 'They can open the app from their launcher. Nothing in its settings.';
   switch (role.id) {
     case 'role_viewer':
-      return 'Open it and see its settings';
+      return 'They can open the app, and see its settings and logs.';
     case 'role_operator':
-      return 'Open it and deploy it';
+      return 'They can open the app, deploy it, restart it and change its settings.';
     case 'role_owner':
-      return 'Everything, including sharing';
-    default:
-      return `Open it, with the ${role.name} role`;
+      return 'Everything, including sharing it and deleting it.';
   }
+  const verbs = (role.verbs ?? []).map((v) => v.replace(/^app\./, ''));
+  return verbs.length > 0
+    ? `They can open the app, and: ${verbs.join(', ')}.`
+    : `They can open the app, with the ${roleChoice(role)} role.`;
 }

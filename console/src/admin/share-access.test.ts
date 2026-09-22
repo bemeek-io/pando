@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { everyone, roleChoice, shareRequests, type Grant } from './share-access';
+import { describeChoice, everyone, orderRoles, roleChoice, shareRequests, type Grant } from './share-access';
 
 const ada = { kind: 'user' as const, id: 'usr_ada' };
 
@@ -65,6 +65,28 @@ describe('everyone', () => {
 
 describe('roleChoice', () => {
   it('names a custom role, since there is no description to give', () => {
-    expect(roleChoice({ id: 'role_01H', name: 'support' })).toBe('Open it, with the support role');
+    expect(roleChoice({ id: 'role_01H', name: 'support' })).toBe('Support');
+    expect(roleChoice({ id: 'role_viewer', name: 'viewer' })).toBe('Viewer');
+  });
+});
+
+describe('the access dropdown', () => {
+  it('lists the built-ins by what they allow, then custom roles by name', () => {
+    const ordered = orderRoles([
+      { id: 'role_owner', name: 'owner' },
+      { id: 'role_02', name: 'support' },
+      { id: 'role_viewer', name: 'viewer' },
+      { id: 'role_01', name: 'auditor' },
+      { id: 'role_operator', name: 'operator' },
+    ]);
+    expect(ordered.map((r) => r.name)).toEqual(['viewer', 'operator', 'owner', 'auditor', 'support']);
+  });
+
+  it('describes a custom role by what it holds', () => {
+    expect(describeChoice(undefined)).toContain('Nothing in its settings');
+    expect(describeChoice({ id: 'role_02', name: 'support', verbs: ['app.view', 'app.logs.read'] })).toBe(
+      'They can open the app, and: view, logs.read.',
+    );
+    expect(describeChoice({ id: 'role_03', name: 'empty' })).toBe('They can open the app, with the Empty role.');
   });
 });
