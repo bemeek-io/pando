@@ -24,7 +24,7 @@ import {
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb } from '../app/principal';
 import { AdapterDialog } from './AdapterDialog';
-import { categoryLabel, categoryNote, orderCategories } from './adapters';
+import { categoryLabel, orderCategories } from './adapters';
 import type { AdapterKind } from './adapters';
 import type { ConfiguredAdapter } from './AdapterDialog';
 import { Quiet, Screen, messageOf } from './Accounts';
@@ -65,12 +65,29 @@ export function Installation() {
   });
 
   const rows = normalize(adapters.data).map((r) => ({ ...r, id: r.id ?? r.ref ?? '' }));
-  // Every kind this build can run, so a category nothing is configured in
-  // still has its section. Shared with the dialog's query.
+  // Every kind this build can run: the adapters' proper names, and which
+  // categories could be set up and are not. Shared with the dialog's query.
   const kinds = useQuery({
     queryKey: ['adapter-kinds'],
     queryFn: () => api.get<{ kinds: AdapterKind[] | null }>('/adapters/kinds'),
   });
+
+  // In category order, then by name, each row told whether it starts its
+  // category and what its kind is called — "BuildKit", not "buildkit".
+  const catalog = kinds.data?.kinds ?? [];
+  const order = orderCategories([...rows.map((r) => r.category), ...catalog.map((k) => k.category)]);
+  const grouped = order.flatMap((category) =>
+    rows
+      .filter((r) => r.category === category)
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((r, i) => ({
+        ...r,
+        first: i === 0,
+        kindName: catalog.find((k) => k.category === r.category && k.kind === r.kind)?.name ?? r.kind,
+      })),
+  );
+  // Categories this build can run that nothing here is set up for.
+  const missing = order.filter((c) => catalog.some((k) => k.category === c) && !rows.some((r) => r.category === c));
 
   return (
     <Screen
@@ -101,51 +118,30 @@ export function Installation() {
         </div>
       )}
 
-      {/* A section per category, in the order an installation is built up,
-          with every category this build can run — so a category with nothing
-          configured, AI most often, is visible as one that could be. */}
-      {adapters.isPending ? (
-        <Table loading columns={adapterColumns(canManage, setEditing)} rows={[]} />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-          {orderCategories([...rows.map((r) => r.category), ...(kinds.data?.kinds ?? []).map((k) => k.category)]).map(
-            (category) => {
-              const inCategory = rows.filter((r) => r.category === category);
-              return (
-                <section key={category}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      alignItems: 'baseline',
-                      justifyContent: 'space-between',
-                      gap: 'var(--space-2) var(--space-4)',
-                      marginBottom: 'var(--space-3)',
-                    }}
-                  >
-                    <div>
-                      <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>{categoryLabel(category)}</h4>
-                      {categoryNote(category) && (
-                        <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
-                          {categoryNote(category)}
-                        </p>
-                      )}
-                    </div>
-                    {canManage && inCategory.length === 0 && (
-                      <Button variant="secondary" onClick={() => setEditing({ category })}>
-                        Add {categoryLabel(category) === 'AI' ? 'an AI' : `a ${category}`} adapter
-                      </Button>
-                    )}
-                  </div>
-                  {inCategory.length === 0 ? (
-                    <Quiet>None configured.</Quiet>
-                  ) : (
-                    <Table columns={adapterColumns(canManage, setEditing)} rows={inCategory} />
-                  )}
-                </section>
-              );
-            },
-          )}
+      {/* One table, grouped by category: the category named on its first row
+          only, so each group reads as one without a heading, a header row and
+          a differently sized set of columns per section. Categories with
+          nothing set up are one line under it rather than empty sections. */}
+      <Table loading={adapters.isPending} columns={adapterColumns(canManage, setEditing)} rows={grouped} />
+      {!adapters.isPending && missing.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 'var(--space-2) var(--space-3)',
+            marginTop: 'var(--space-4)',
+          }}
+        >
+          <span style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)' }}>
+            Not set up: {missing.map(categoryLabel).join(', ')}.
+          </span>
+          {canManage &&
+            missing.map((category) => (
+              <Button key={category} variant="secondary" onClick={() => setEditing({ category })}>
+                Add {categoryLabel(category) === 'AI' ? 'an AI' : `a ${category}`} adapter
+              </Button>
+            ))}
         </div>
       )}
 
@@ -1227,19 +1223,33 @@ export function Field({ children }: { children: React.ReactNode }) {
   return <div style={{ flex: '1 1 18ch', minWidth: '18ch', maxWidth: '28ch' }}>{children}</div>;
 }
 
-/** An adapter table's columns. No category: the section says it. */
+/** The adapters table's columns: the category on the first row of each group,
+ *  then the adapter by name, its ID, whether it is reachable, and Change. */
 function adapterColumns(
   canManage: boolean,
   setEditing: (e: { existing?: AdapterRow; category?: string }) => void,
 ) {
+  type Row = AdapterRow & { first?: boolean; kindName?: string };
   return [
-    { key: 'id', header: 'ID', width: 'minmax(0,28ch)', mono: true },
-    { key: 'kind', header: 'Kind', width: 'minmax(0,24ch)' },
+    {
+      key: 'category',
+      header: 'Category',
+      width: '14ch',
+      render: (row: Row) =>
+        row.first ? <span style={{ font: 'var(--type-label)' }}>{categoryLabel(row.category)}</span> : null,
+    },
+    {
+      key: 'kind',
+      header: 'Adapter',
+      width: 'minmax(0,1fr)',
+      render: (row: Row) => row.kindName ?? row.kind,
+    },
+    { key: 'id', header: 'ID', width: 'minmax(0,22ch)', mono: true, muted: true },
     {
       key: 'healthy',
       header: 'Status',
       width: '16ch',
-      render: (row: AdapterRow) => (
+      render: (row: Row) => (
         // Live, not stored: an adapter that was reachable at startup and
         // is not now is exactly what this column exists to show.
         <StatusIndicator
@@ -1255,7 +1265,7 @@ function adapterColumns(
             header: '',
             width: '12ch',
             align: 'right' as const,
-            render: (row: AdapterRow) => (
+            render: (row: Row) => (
               <Button variant="secondary" onClick={() => setEditing({ existing: row })}>
                 Change
               </Button>
