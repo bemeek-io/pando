@@ -43,7 +43,7 @@ const (
 type AICapabilities struct {
 	Functions []AIFunction
 
-	// Model is shown in the review. "Anthropic (claude-opus-5) read 7 files and
+	// Model is shown in the review. "Anthropic (claude-opus-5-5) read 7 files and
 	// changed 3 things" is the honest account of what happened, and it is not
 	// available if the model is a config value core never sees.
 	Model string

@@ -33,8 +33,9 @@ const Kind = "anthropic"
 // [P] Screening runs once per detection, on a repository somebody is about to
 // deploy, and what is being bought is whether the app comes up on the first
 // try. This is not a high-volume path where a cheaper model pays for itself,
-// and the cost of a wrong amendment is a person's afternoon.
-const DefaultModel = "claude-opus-5"
+// and the cost of a wrong amendment is a person's afternoon. Opus 5.5 rather
+// than Opus 5: newer, and cheaper per token besides.
+const DefaultModel = "claude-opus-5-5"
 
 // Budget ceilings this adapter will not exceed regardless of what it is asked
 // for. Core lowers them further; neither side raises the other's.

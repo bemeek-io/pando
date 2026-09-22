@@ -94,8 +94,8 @@ describe('adapter categories', () => {
 describe('an empty field', () => {
   it('shows the default, which is what leaving it empty gets', () => {
     expect(
-      fieldPlaceholder({ key: 'model', label: 'Model', type: 'string', default: 'claude-opus-5', placeholder: 'claude-x' }),
-    ).toBe('claude-opus-5');
+      fieldPlaceholder({ key: 'model', label: 'Model', type: 'string', default: 'claude-opus-5-5', placeholder: 'claude-x' }),
+    ).toBe('claude-opus-5-5');
   });
 
   it('shows an example when there is no default', () => {
