@@ -98,13 +98,14 @@ export function Installation() {
       action={
         canManage && (
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            {/* Always here, not only while a change waits on it: a restart
-                is also how an adapter that failed at startup is retried. */}
-            <RestartButton onRestarted={() => setSaved(null)} />
             {/* Primary: adding an adapter is the one thing this screen does. */}
             <Button variant="primary" onClick={() => setEditing({})}>
               Add adapter
             </Button>
+            {/* Always here, not only while a change waits on it: a restart
+                is also how an adapter that failed at startup is retried.
+                Last, at the edge, apart from the everyday action. */}
+            <RestartButton onRestarted={() => setSaved(null)} />
           </div>
         )
       }

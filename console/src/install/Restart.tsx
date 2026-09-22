@@ -47,7 +47,10 @@ export function RestartButton({ onRestarted }: { onRestarted?: () => void }) {
   const restarting = stage === 'restarting';
   return (
     <>
-      <Button variant="secondary" onClick={() => setStage('confirm')}>
+      {/* Destructive: it takes every app offline for a moment and cuts off a
+          build under way. Outlined red rather than filled, since it asks
+          before it does anything. */}
+      <Button variant="destructive" onClick={() => setStage('confirm')}>
         Restart Pando
       </Button>
       <Dialog
