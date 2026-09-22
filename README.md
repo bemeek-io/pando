@@ -17,7 +17,7 @@
 
 </div>
 
-<img src="docs/assets/console.png" alt="An app in the Pando console, showing its address, repository, deploy log and two warnings about its compose file" width="100%">
+<img src="docs/assets/hero.png" alt="Deploy and share any app. Pando runs on your own server and hosts the apps your team builds, including the ones written with AI. Beside the text, a topographic contour map with a red summit marker." width="100%">
 
 ---
 
