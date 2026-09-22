@@ -14,6 +14,7 @@ import { Quiet, Screen, messageOf } from './Accounts';
 import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
 import { Table } from '../ui/Table';
+import { BesideField } from '../ui/BesideField';
 import { ActorField } from './ActorField';
 import type { Person } from './ActorField';
 import { NO_FILTERS, WHEN, auditQuery } from './audit';
@@ -1045,9 +1046,11 @@ export function FilterRow({ children }: { children: React.ReactNode }) {
 
 function ClearFilters({ onClear }: { onClear: () => void }) {
   return (
-    <Button variant="ghost" onClick={onClear}>
-      Clear filters
-    </Button>
+    <BesideField>
+      <Button variant="ghost" onClick={onClear}>
+        Clear filters
+      </Button>
+    </BesideField>
   );
 }
 

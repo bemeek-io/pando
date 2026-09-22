@@ -14,6 +14,7 @@ import { Banner, Button, Dialog, EmptyState, Icon, IconButton, Input, Select, St
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
 import { Sheet } from '../ui/Sheet';
+import { BesideField } from '../ui/BesideField';
 import { AccountApps } from './AccountApps';
 import { GeneratedPassword, PasswordToCopy } from './GeneratedPassword';
 import type { Account, Role } from './Accounts';
@@ -218,9 +219,11 @@ function Activity({ userID, onAudit }: { userID: string; onAudit: (query: string
               onChange={(e) => setWhen(e.target.value)}
             />
           </div>
-          <Button variant="secondary" onClick={() => onAudit(linkQuery(filters))}>
-            Open in audit log
-          </Button>
+          <BesideField>
+            <Button variant="secondary" onClick={() => onAudit(linkQuery(filters))}>
+              Open in audit log
+            </Button>
+          </BesideField>
         </div>
       </div>
 

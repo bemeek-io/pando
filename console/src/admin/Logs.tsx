@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button, CodeBlock, Select, StatusIndicator } from '@design';
+import { BesideField } from '../ui/BesideField';
 
 import { api, base } from '@api/client';
 import type { App, Deployment } from '@api/types.gen';
@@ -281,7 +282,7 @@ function AppOutput({ app, workload }: { app: App; workload?: string }) {
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
         <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Output</h4>
 
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 'var(--space-3)' }}>
           {parts.length > 1 && (
             <Select
               label="Part"
@@ -293,9 +294,11 @@ function AppOutput({ app, workload }: { app: App; workload?: string }) {
               onChange={(e) => setChosen(e.target.value)}
             />
           )}
-          <Button variant="secondary" disabled={!enabled} onClick={() => void output.refetch()}>
-            Refresh
-          </Button>
+          <BesideField>
+            <Button variant="secondary" disabled={!enabled} onClick={() => void output.refetch()}>
+              Refresh
+            </Button>
+          </BesideField>
         </span>
       </div>
 
