@@ -5,9 +5,9 @@
  * one ends with "restart Pando". This is the button for that, rather than a
  * command for someone with a shell on the host.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Dialog } from '@design';
+import { Banner, Button, Dialog, Toast } from '@design';
 import { api } from '@api/client';
 import { messageOf } from './Accounts';
 import { WAIT_SECONDS, waitForRestart } from './restartWait';
@@ -21,9 +21,18 @@ export function RestartButton({ onRestarted }: { onRestarted?: () => void }) {
   const queries = useQueryClient();
   const [stage, setStage] = useState<'idle' | 'confirm' | 'restarting'>('idle');
   const [error, setError] = useState<string | null>(null);
+  // "Pando restarted.", once it is back: the dialog closes on its own, and
+  // without this nothing on screen would say the restart happened.
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return undefined;
+    const timer = setTimeout(() => setDone(false), 6000);
+    return () => clearTimeout(timer);
+  }, [done]);
 
   const restart = async () => {
     setError(null);
+    setDone(false);
     setStage('restarting');
     try {
       const before = await startedAt();
@@ -32,6 +41,7 @@ export function RestartButton({ onRestarted }: { onRestarted?: () => void }) {
         // Everything on screen came from the process that just stopped.
         await queries.invalidateQueries();
         setStage('idle');
+        setDone(true);
         onRestarted?.();
         return;
       }
@@ -71,6 +81,15 @@ export function RestartButton({ onRestarted }: { onRestarted?: () => void }) {
       >
         {error && <Banner tone="failed">{error}</Banner>}
       </Dialog>
+      {done && (
+        <Toast
+          status="running"
+          onDismiss={() => setDone(false)}
+          style={{ position: 'fixed', right: 'var(--space-5)', bottom: 'var(--space-5)', zIndex: 70 }}
+        >
+          Pando restarted.
+        </Toast>
+      )}
     </>
   );
 }
