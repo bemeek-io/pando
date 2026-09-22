@@ -209,7 +209,7 @@ export function StatusToggle({ account }: { account: Account }) {
   // is worth saying before it happens rather than after.
   return (
     <Button
-      variant={suspended ? 'secondary' : 'ghost'}
+      variant="secondary"
       disabled={set.isPending}
       onClick={() => set.mutate(suspended ? 'active' : 'suspended')}
     >

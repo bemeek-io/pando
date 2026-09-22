@@ -831,7 +831,7 @@ function NewSection({ arrange }: { arrange: Arrange }) {
   return (
     <div style={{ padding: '0 var(--console-padding) var(--space-8)' }}>
       {name === null ? (
-        <Button variant="ghost" onClick={() => setName('')}>
+        <Button variant="secondary" onClick={() => setName('')}>
           New section
         </Button>
       ) : (

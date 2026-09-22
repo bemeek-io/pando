@@ -34,7 +34,7 @@ export function AppName({ app }: { app: App }) {
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
         {app.name}
         {canRename && (
-          <Button variant="ghost" onClick={() => setDraft(app.name)}>
+          <Button variant="secondary" onClick={() => setDraft(app.name)}>
             Rename
           </Button>
         )}

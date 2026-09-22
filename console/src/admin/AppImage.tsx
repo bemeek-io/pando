@@ -94,7 +94,7 @@ export function AppImage({ app }: { app: App }) {
               {upload.isPending ? 'Uploading' : src ? 'Replace' : 'Upload'}
             </Button>
             {src && (
-              <Button variant="ghost" disabled={busy} onClick={() => remove.mutate()}>
+              <Button variant="secondary" disabled={busy} onClick={() => remove.mutate()}>
                 {remove.isPending ? 'Removing' : 'Remove'}
               </Button>
             )}

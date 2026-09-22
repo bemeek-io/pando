@@ -533,7 +533,7 @@ function AppScreen({
             gap: 'var(--space-4)',
           }}
         >
-          <Button variant="ghost" onClick={onBack}>
+          <Button variant="ghost" icon={<Icon name="arrow-left" />} onClick={onBack}>
             Apps
           </Button>
           {listed && <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{listed.name}</h3>}
@@ -584,7 +584,7 @@ function AppScreen({
               gap: 'var(--space-3)',
             }}
           >
-            <Button variant="ghost" onClick={onBack} style={{ alignSelf: 'flex-start' }}>
+            <Button variant="ghost" icon={<Icon name="arrow-left" />} onClick={onBack} style={{ alignSelf: 'flex-start' }}>
               Apps
             </Button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>

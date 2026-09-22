@@ -56,7 +56,7 @@ export function Lifecycle({ app }: { app: App }) {
       {/* Restart is an act rather than a state, and a short one: no dialog,
           because the app is coming straight back. */}
       {!stopped && (
-        <Button variant="ghost" disabled={act.isPending} onClick={() => act.mutate('restart')}>
+        <Button variant="secondary" disabled={act.isPending} onClick={() => act.mutate('restart')}>
           {act.isPending ? 'Restarting' : 'Restart'}
         </Button>
       )}

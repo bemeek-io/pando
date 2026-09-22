@@ -166,7 +166,7 @@ export function AppOverview({
                   label={`${deployLabel(latest.status, latest.result_state)} ${relative(latest.finished_at ?? latest.started_at)}`}
                 />
                 {canReadLogs && (
-                  <Button variant="ghost" onClick={() => onGo('logs')}>
+                  <Button variant="secondary" onClick={() => onGo('logs')}>
                     Open logs
                   </Button>
                 )}

@@ -120,7 +120,7 @@ function Slots({ appID, focus }: { appID: string; focus?: boolean }) {
                     width: '12ch',
                     align: 'right' as const,
                     render: (row: Slot) => (
-                      <Button variant="ghost" onClick={() => setEditing(row)}>
+                      <Button variant="secondary" onClick={() => setEditing(row)}>
                         Change
                       </Button>
                     ),
@@ -318,7 +318,7 @@ function Volumes({ appID, focus }: { appID: string; focus?: boolean }) {
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Storage</h4>
         {canEdit && (
-          <Button variant="ghost" onClick={() => setAdding(true)}>
+          <Button variant="secondary" onClick={() => setAdding(true)}>
             Add storage
           </Button>
         )}

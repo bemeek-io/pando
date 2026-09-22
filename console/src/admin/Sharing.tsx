@@ -97,7 +97,7 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
                     width: '12ch',
                     align: 'right' as const,
                     render: (row: Access) => (
-                      <Button variant="ghost" onClick={() => row.grantIDs.forEach((id) => revoke.mutate(id))}>
+                      <Button variant="secondary" onClick={() => row.grantIDs.forEach((id) => revoke.mutate(id))}>
                         Remove
                       </Button>
                     ),

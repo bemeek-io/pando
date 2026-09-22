@@ -73,7 +73,7 @@ export function BuildPlan({ appID }: { appID: string }) {
         <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>How this app is built</h4>
         {draft === null ? (
           canEdit && (
-            <Button variant="ghost" onClick={() => setDraft(current)}>
+            <Button variant="secondary" onClick={() => setDraft(current)}>
               Edit
             </Button>
           )

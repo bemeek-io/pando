@@ -141,7 +141,7 @@ export function Environment({ appID, focus }: { appID: string; focus?: boolean }
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Environment</h4>
         {latest && canEdit && (
-          <Button variant="ghost" onClick={() => setAdding(true)}>
+          <Button variant="secondary" onClick={() => setAdding(true)}>
             Add variable
           </Button>
         )}
@@ -191,11 +191,11 @@ export function Environment({ appID, focus }: { appID: string; focus?: boolean }
                               it: a list of everything the app reads, and no way to
                               say what it reads. */}
                           {(row.kind !== 'secret' || canWriteSecrets) && (
-                            <Button variant="ghost" onClick={() => setEditing(row)}>
+                            <Button variant="secondary" onClick={() => setEditing(row)}>
                               {row.unset ? 'Set value' : 'Change'}
                             </Button>
                           )}
-                          <Button variant="ghost" onClick={() => remove.mutate(row)}>
+                          <Button variant="secondary" onClick={() => remove.mutate(row)}>
                             Remove
                           </Button>
                         </span>

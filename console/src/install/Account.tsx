@@ -287,7 +287,7 @@ function EditDetails({ account, manage, isSelf }: { account: Account; manage: bo
 
   return (
     <>
-      <Button variant="ghost" onClick={start}>
+      <Button variant="secondary" onClick={start}>
         Edit
       </Button>
       {open && (
@@ -440,7 +440,7 @@ function ResetPassword({ account }: { account: Account }) {
 
   return (
     <>
-      <Button variant="ghost" onClick={() => setOpen(true)}>
+      <Button variant="secondary" onClick={() => setOpen(true)}>
         Reset password
       </Button>
       {open &&
@@ -519,7 +519,7 @@ function DeleteAccount({ account, onDeleted }: { account: Account; onDeleted: ()
 
   return (
     <>
-      <Button variant="ghost" onClick={() => setOpen(true)}>
+      <Button variant="destructive" onClick={() => setOpen(true)}>
         Delete
       </Button>
       {open && (

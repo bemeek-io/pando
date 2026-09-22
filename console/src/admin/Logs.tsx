@@ -293,7 +293,7 @@ function AppOutput({ app, workload }: { app: App; workload?: string }) {
               onChange={(e) => setChosen(e.target.value)}
             />
           )}
-          <Button variant="ghost" disabled={!enabled} onClick={() => void output.refetch()}>
+          <Button variant="secondary" disabled={!enabled} onClick={() => void output.refetch()}>
             Refresh
           </Button>
         </span>

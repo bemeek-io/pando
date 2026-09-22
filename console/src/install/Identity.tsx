@@ -132,7 +132,7 @@ function Groups({ canEdit, query }: { canEdit: boolean; query: string }) {
           Groups
         </h4>
         {canEdit && (
-          <Button variant="ghost" onClick={() => setEditing("new")}>
+          <Button variant="secondary" onClick={() => setEditing("new")}>
             Add group
           </Button>
         )}
@@ -199,7 +199,7 @@ function Groups({ canEdit, query }: { canEdit: boolean; query: string }) {
               render: (row: Group) => (
                 <span style={{ display: "inline-flex", gap: "var(--space-2)" }}>
                   <Button
-                    variant="ghost"
+                    variant="secondary"
                     onClick={() =>
                       setShowing(showing === row.id ? null : row.id)
                     }
@@ -210,10 +210,10 @@ function Groups({ canEdit, query }: { canEdit: boolean; query: string }) {
                       it again at the next sign-in (R-078). */}
                   {canEdit && !row.source && (
                     <>
-                      <Button variant="ghost" onClick={() => setEditing(row)}>
+                      <Button variant="secondary" onClick={() => setEditing(row)}>
                         Change people
                       </Button>
-                      <Button variant="ghost" onClick={() => setDeleting(row)}>
+                      <Button variant="secondary" onClick={() => setDeleting(row)}>
                         Delete
                       </Button>
                     </>
@@ -436,7 +436,7 @@ function Roles({ canEdit, query }: { canEdit: boolean; query: string }) {
           Roles
         </h4>
         {canEdit && (
-          <Button variant="ghost" onClick={() => setAdding(true)}>
+          <Button variant="secondary" onClick={() => setAdding(true)}>
             Add role
           </Button>
         )}
@@ -502,7 +502,7 @@ function Roles({ canEdit, query }: { canEdit: boolean; query: string }) {
               // R-081: built-ins are not deletable, so they are not offered.
               render: (row: Role) =>
                 canEdit && !row.builtin ? (
-                  <Button variant="ghost" onClick={() => setDeleting(row)}>
+                  <Button variant="secondary" onClick={() => setDeleting(row)}>
                     Delete
                   </Button>
                 ) : null,

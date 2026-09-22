@@ -113,7 +113,7 @@ export function Parts({ app, onLogs }: { app: App; onLogs?: (workload: string) =
               align: 'right',
               render: (row: Part) =>
                 onLogs && (
-                  <Button variant="ghost" onClick={() => onLogs(row.name)}>
+                  <Button variant="secondary" onClick={() => onLogs(row.name)}>
                     Logs
                   </Button>
                 ),

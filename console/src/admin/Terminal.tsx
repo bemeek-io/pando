@@ -265,7 +265,7 @@ function Session({
           <WorkloadPicker names={names} chosen={workload ?? ''} onChoose={onChoose} />
           <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>{status}</span>
         </div>
-        <Button variant="ghost" onClick={onClose}>
+        <Button variant="secondary" onClick={onClose}>
           Close terminal
         </Button>
       </div>

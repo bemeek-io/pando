@@ -61,7 +61,7 @@ export function GeneratedPassword({
         error={generate.isError ? messageOf(generate.error) : undefined}
         extra={
           <Button
-            variant="ghost"
+            variant="secondary"
             disabled={generate.isPending}
             onClick={() => generate.mutate()}
           >

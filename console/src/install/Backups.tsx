@@ -107,10 +107,10 @@ export function Backups() {
               <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
                 {/* Check a backup before it is needed, rather than at the
                     moment of disaster (R-216). */}
-                <Button variant="ghost" onClick={() => setActing({ row, mode: 'verify' })}>
+                <Button variant="secondary" onClick={() => setActing({ row, mode: 'verify' })}>
                   Check
                 </Button>
-                <Button variant="ghost" onClick={() => setActing({ row, mode: 'restore' })}>
+                <Button variant="secondary" onClick={() => setActing({ row, mode: 'restore' })}>
                   Restore
                 </Button>
               </div>
