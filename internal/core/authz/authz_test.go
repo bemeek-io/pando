@@ -18,6 +18,7 @@ type store struct {
 	control    map[string][]authz.Grant
 	data       map[string][]string // appID -> principal IDs with a data grant
 	anonymous  map[string]bool
+	passcode   map[string]string // app → the one live unlock token
 	roles      map[string]authz.Role
 
 	// install is a flat list, not keyed by app: an install grant has no app.
@@ -33,6 +34,7 @@ func newStore() *store {
 		control:    map[string][]authz.Grant{},
 		data:       map[string][]string{},
 		anonymous:  map[string]bool{},
+		passcode:   map[string]string{},
 		roles: map[string]authz.Role{
 			authz.RoleViewer:        {ID: authz.RoleViewer, Name: "viewer", Builtin: true, Verbs: []authz.Verb{authz.AppView, authz.AppLogsRead}},
 			authz.RoleOperator:      {ID: authz.RoleOperator, Name: "operator", Builtin: true, Verbs: []authz.Verb{authz.AppView, authz.AppLogsRead, authz.AppDeploy, authz.AppRestart, authz.AppSpecEdit, authz.AppSecretsWrite}},
@@ -109,8 +111,11 @@ func (s *store) HasDataGrant(_ context.Context, appID string, p authz.Principal)
 	return false, nil
 }
 
-func (s *store) HasAnonymousGrant(_ context.Context, appID string) (bool, error) {
-	return s.anonymous[appID], nil
+func (s *store) AnonymousAccess(_ context.Context, appID string) (bool, bool, error) {
+	return s.anonymous[appID], s.passcode[appID] != "", nil
+}
+func (s *store) PasscodeUnlocked(_ context.Context, appID, token string) (bool, error) {
+	return token != "" && s.passcode[appID] == token, nil
 }
 
 func (s *store) Role(_ context.Context, roleID string) (authz.Role, error) {
@@ -405,11 +410,11 @@ func TestSystemPrincipalBypassesGrantsButIsStillAPrincipal(t *testing.T) {
 }
 
 func TestVerbCatalogIsClosed(t *testing.T) {
-	// 13 app verbs plus the nine install-scoped ones (O-17, R-217, R-080's
-	// install.apps.*). The count is here deliberately: R-080 says the catalog
-	// is fixed, so adding a verb should require editing a test rather than only
-	// a constant.
-	require.Len(t, authz.Verbs, 22)
+	// 13 app verbs plus the ten install-scoped ones (O-17, R-217, R-080's
+	// install.apps.* and install.tokens.manage). The count is here
+	// deliberately: R-080 says the catalog is fixed, so adding a verb should
+	// require editing a test rather than only a constant.
+	require.Len(t, authz.Verbs, 23)
 	require.True(t, authz.IsVerb(authz.AppEgressOverride), "R-184's verb must exist")
 	require.False(t, authz.IsVerb(authz.Verb("app.do.anything")))
 
@@ -421,7 +426,7 @@ func TestVerbCatalogIsClosed(t *testing.T) {
 			app++
 		}
 	}
-	require.Equal(t, 9, install)
+	require.Equal(t, 10, install)
 	require.Equal(t, 13, app)
 }
 
@@ -662,4 +667,39 @@ func TestO12_AgentExclusionsAreHostPolicyNotAnMCPList(t *testing.T) {
 
 	// And it does not leak into verbs the rule does not name.
 	require.NoError(t, a.CheckControl(ctx, agent, app, authz.AppDeploy))
+}
+
+// TestR075a_APasscodeGateIsOnlyOnTheGrantToEveryone asserts CheckData's
+// passcode rule: sharing with everyone behind a passcode lets in whoever shows
+// a live unlock for that app, and nobody else — while the owner and anyone
+// with their own grant never see the passcode at all.
+func TestR075a_APasscodeGateIsOnlyOnTheGrantToEveryone(t *testing.T) {
+	ctx := context.Background()
+	s := newStore()
+	s.anonymous[app] = true
+	s.passcode[app] = "live-token"
+	a := authz.New(s, nil, nil)
+
+	stranger := authz.Anonymous()
+	err := a.CheckData(ctx, stranger, app)
+	require.Equal(t, errs.PermPasscodeRequired, errs.CodeOf(err))
+
+	stranger.Passcodes = map[string]string{app: "old-token"}
+	require.Equal(t, errs.PermPasscodeRequired, errs.CodeOf(a.CheckData(ctx, stranger, app)))
+
+	// An unlock for another app is not one for this.
+	stranger.Passcodes = map[string]string{"app_other": "live-token"}
+	require.Equal(t, errs.PermPasscodeRequired, errs.CodeOf(a.CheckData(ctx, stranger, app)))
+
+	stranger.Passcodes = map[string]string{app: "live-token"}
+	require.NoError(t, a.CheckData(ctx, stranger, app))
+
+	// The owner, and a person with a grant of their own, are let in as ever.
+	s.userStatus[bob] = "active"
+	s.owner[app] = bob
+	require.NoError(t, a.CheckData(ctx, authz.Principal{Kind: authz.KindUser, ID: bob, UserID: bob, Status: "active"}, app))
+
+	// Plain public stays plain public.
+	s.passcode[app] = ""
+	require.NoError(t, a.CheckData(ctx, authz.Anonymous(), app))
 }

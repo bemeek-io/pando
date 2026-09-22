@@ -218,7 +218,9 @@ function packageLines(doc: Document): string[] {
 // --- tokens ----------------------------------------------------------------
 
 function Tokens() {
-  const canManageUsers = useInstallVerb(InstallVerb.UsersManage);
+  // Service tokens have their own verb (R-080): issuing a credential for an
+  // automation is not the same trust as managing people.
+  const canManageTokens = useInstallVerb(InstallVerb.TokensManage);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-7)', maxWidth: MEASURE }}>
@@ -230,7 +232,7 @@ function Tokens() {
         queryKey={['tokens']}
       />
 
-      {canManageUsers && (
+      {canManageTokens && (
         <TokenList
           heading="Service tokens"
           // R-060: the difference that matters, in the place where the choice

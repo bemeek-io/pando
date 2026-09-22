@@ -40,6 +40,13 @@ const (
 	InstallAppsView   Verb = "install.apps.view"
 	InstallAppsManage Verb = "install.apps.manage"
 
+	// InstallTokensManage covers service tokens (R-060): listing, creating and
+	// revoking them. Its own verb rather than install.users.manage's, because a
+	// service token is a principal an automation acts as — issuing one is a
+	// different trust from managing people, and an installation may want
+	// somebody who runs its CI to hold one without the other.
+	InstallTokensManage Verb = "install.tokens.manage"
+
 	// AppCreate is install-scoped despite its name: there is no app yet when it
 	// is checked. Sequence A step 1 has always called it install-level.
 	AppCreate Verb = "app.create"
@@ -75,6 +82,7 @@ var Verbs = []Verb{
 	InstallBackupManage,
 	InstallAppsView,
 	InstallAppsManage,
+	InstallTokensManage,
 	AppCreate,
 
 	AppView,
@@ -164,7 +172,7 @@ func InstallScoped(v Verb) bool {
 	switch v {
 	case InstallView, InstallUsersManage, InstallPolicyManage,
 		InstallAdaptersManage, InstallAuditRead, InstallBackupManage,
-		InstallAppsView, InstallAppsManage, AppCreate:
+		InstallAppsView, InstallAppsManage, InstallTokensManage, AppCreate:
 		return true
 	default:
 		return false
