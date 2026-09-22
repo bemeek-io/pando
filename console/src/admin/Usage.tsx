@@ -10,7 +10,7 @@
 // pando_get_usage use.
 
 import { useQuery } from '@tanstack/react-query';
-import { Tag } from '@design';
+import { Button, Tag } from '@design';
 
 import { api } from '@api/client';
 import type { App } from '@api/types.gen';
@@ -46,7 +46,7 @@ interface Reading {
   host_memory_bytes?: number;
 }
 
-export function Usage({ app }: { app: App }) {
+export function Usage({ app, layout = 'table' }: { app: App; layout?: 'table' | 'stack' }) {
   const reading = useQuery({
     queryKey: ['apps', app.id, 'usage'],
     queryFn: () => api.get<Reading>(`/apps/${app.id}/usage`),
@@ -60,15 +60,65 @@ export function Usage({ app }: { app: App }) {
   const data = reading.data;
   const parts = data?.workloads ?? [];
 
+  const asOf = data?.reported_at && (
+    <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 'var(--space-2) 0 0' }}>
+      As of {new Date(data.reported_at).toLocaleTimeString()}. Refreshes every ten seconds. Disk is what a part wrote
+      outside its storage.
+    </p>
+  );
+
   return (
     <section style={{ maxWidth: MEASURE }}>
-      <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>In use</h4>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' }}>
+        <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>In use</h4>
+        {/* Now, rather than at the next ten-second tick: after a deploy, or
+            while watching a part climb. */}
+        {data?.supported && (
+          <Button variant="secondary" disabled={reading.isFetching} onClick={() => void reading.refetch()}>
+            {reading.isFetching ? 'Refreshing' : 'Refresh'}
+          </Button>
+        )}
+      </div>
       {reading.isError && <Quiet>{messageOf(reading.error)}</Quiet>}
       {data && !data.supported && (
         <Quiet>This app&rsquo;s runtime does not report what its parts are using.</Quiet>
       )}
 
-      {data?.supported && (
+      {data?.supported && layout === 'stack' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {parts.map((row) => (
+            <div
+              key={row.name}
+              style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', paddingBottom: 'var(--space-3)', borderBottom: 'var(--border-width) solid var(--rule)' }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)', font: 'var(--type-code)' }}>
+                {row.name}
+                {row.primary && parts.length > 1 && <Tag>address</Tag>}
+              </span>
+              <Labeled label="CPU">
+                {row.running ? (
+                  <Meter used={row.cpu_millis} limit={row.cpu_limit_millis} host={data.host_cpu_millis} format={cores} />
+                ) : (
+                  <Stopped />
+                )}
+              </Labeled>
+              <Labeled label="Memory">
+                {row.running ? (
+                  <Meter used={row.memory_bytes} limit={row.memory_limit_bytes} host={data.host_memory_bytes} format={bytes} />
+                ) : (
+                  <Stopped />
+                )}
+              </Labeled>
+              <Labeled label="Disk">
+                <Disk row={row} />
+              </Labeled>
+            </div>
+          ))}
+          {asOf}
+        </div>
+      )}
+
+      {data?.supported && layout === 'table' && (
         <div style={{ marginTop: 'var(--space-3)' }}>
           <Table
             columns={[
@@ -122,26 +172,12 @@ export function Usage({ app }: { app: App }) {
                 width: 'minmax(0,1fr)',
                 // The part's own layer, then each volume it mounts: the second
                 // is where an app's data is, and usually the number that grows.
-                render: (row: PartUsage) => (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', padding: 'var(--space-2) 0' }}>
-                    <span>{row.disk_bytes < 0 ? '—' : bytes(row.disk_bytes)}</span>
-                    {row.volumes.map((v) => (
-                      <span key={v.id} style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
-                        {v.name || v.id} at {v.path}: {v.bytes < 0 ? 'size unknown' : bytes(v.bytes)}
-                      </span>
-                    ))}
-                  </div>
-                ),
+                render: (row: PartUsage) => <Disk row={row} />,
               },
             ]}
             rows={parts.map((p) => ({ ...p, id: p.name }))}
           />
-          {data.reported_at && (
-            <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 'var(--space-2) 0 0' }}>
-              As of {new Date(data.reported_at).toLocaleTimeString()}. Refreshes every ten seconds. Disk is what a part
-              wrote outside its storage.
-            </p>
-          )}
+          {asOf}
         </div>
       )}
     </section>
@@ -195,6 +231,32 @@ function Meter({
           />
         </div>
       )}
+    </div>
+  );
+}
+
+/** The part's own layer, then each volume it mounts: the second is where an
+ *  app's data is, and usually the number that grows. */
+function Disk({ row }: { row: PartUsage }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', padding: 'var(--space-2) 0' }}>
+      <span>{row.disk_bytes < 0 ? '—' : bytes(row.disk_bytes)}</span>
+      {row.volumes.map((v) => (
+        <span key={v.id} style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
+          {v.name || v.id} at {v.path}: {v.bytes < 0 ? 'size unknown' : bytes(v.bytes)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** One reading in the stacked layout: its name above it, as the table's
+ *  header would be. */
+function Labeled({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <span style={{ font: 'var(--type-label)', color: 'var(--ink-secondary)' }}>{label}</span>
+      {children}
     </div>
   );
 }

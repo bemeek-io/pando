@@ -14,6 +14,7 @@ import { statusLabel, statusSymbol } from '../ui/status';
 import { InlineWarning } from '../ui/InlineWarning';
 import { Parts } from './Parts';
 import { Usage } from './Usage';
+import { useNarrow } from '../ui/narrow';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { deployLabel, deployStatus } from '../ui/deploys';
@@ -44,6 +45,7 @@ export function AppOverview({
   // Every fix on this screen is a spec edit.
   const canEdit = useCan(AppVerb.SpecEdit);
   const canReadLogs = useCan(AppVerb.LogsRead);
+  const narrow = useNarrow();
 
   const deployments = useQuery({
     queryKey: ['apps', app.id, 'deployments'],
@@ -119,65 +121,74 @@ export function AppOverview({
         </Banner>
       )}
 
-      <div style={{ maxWidth: MEASURE }}>
-        <Card padding="md">
-          <Row label="Name">
-            <AppName app={app} />
-          </Row>
-          <Row label="Status">
-            <StatusIndicator status={statusSymbol(app.state)} label={statusLabel(app.state)} />
-          </Row>
-          <Row label="Address">
-            {/* From the server, not assembled here: where an app is reached
-                follows its routing mode, and the console does not decide
-                routing (R-261). The old "/" + slug was the path-mode answer
-                shown for every app in every mode. */}
-            {app.address ? (
-              // Its own tab: an app is a different place from the console, and
-              // opening it over the top leaves the browser's back button as
-              // the only way back to what you were doing.
-              <a href={app.address} target="_blank" rel="noopener noreferrer">
-                {app.address.replace(/^\/\//, '')}
-              </a>
-            ) : (
-              <span style={{ color: 'var(--ink-secondary)' }}>
-                This app gets an address when it is first deployed.
-              </span>
-            )}
-          </Row>
-          <Row label="Launcher image">
-            <AppImage app={app} />
-          </Row>
-          {app.source?.url && (
-            <Row label="Repository">
-              {app.source.url}
-              {app.source.ref ? <> · <Tag mono>{app.source.ref}</Tag></> : null}
+      {/* On a wide screen, what the app is using sits beside what it is, in
+          the space the card leaves; on a phone it follows the card, as the
+          other sections do. */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-6)' }}>
+        <div style={{ maxWidth: MEASURE, flex: narrow ? '1 1 auto' : '1 1 0', minWidth: 0 }}>
+          <Card padding="md">
+            <Row label="Name">
+              <AppName app={app} />
             </Row>
-          )}
-          {app.source?.commit && (
-            <Row label="Commit">
-              <span style={{ font: 'var(--type-code-sm)' }}>{app.source.commit.slice(0, 12)}</span>
+            <Row label="Status">
+              <StatusIndicator status={statusSymbol(app.state)} label={statusLabel(app.state)} />
             </Row>
-          )}
-          <Row label="Last deploy">
-            {latest ? (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                <StatusIndicator
-                  status={deployStatus(latest.status, latest.result_state)}
-                  label={`${deployLabel(latest.status, latest.result_state)} ${relative(latest.finished_at ?? latest.started_at)}`}
-                />
-                {canReadLogs && (
-                  <Button variant="secondary" onClick={() => onGo('logs')}>
-                    Open logs
-                  </Button>
-                )}
-              </span>
-            ) : (
-              <span style={{ color: 'var(--ink-secondary)' }}>Not deployed yet.</span>
+            <Row label="Address">
+              {/* From the server, not assembled here: where an app is reached
+                  follows its routing mode, and the console does not decide
+                  routing (R-261). The old "/" + slug was the path-mode answer
+                  shown for every app in every mode. */}
+              {app.address ? (
+                // Its own tab: an app is a different place from the console, and
+                // opening it over the top leaves the browser's back button as
+                // the only way back to what you were doing.
+                <a href={app.address} target="_blank" rel="noopener noreferrer">
+                  {app.address.replace(/^\/\//, '')}
+                </a>
+              ) : (
+                <span style={{ color: 'var(--ink-secondary)' }}>
+                  This app gets an address when it is first deployed.
+                </span>
+              )}
+            </Row>
+            <Row label="Launcher image">
+              <AppImage app={app} />
+            </Row>
+            {app.source?.url && (
+              <Row label="Repository">
+                {app.source.url}
+                {app.source.ref ? <> · <Tag mono>{app.source.ref}</Tag></> : null}
+              </Row>
             )}
-          </Row>
-        </Card>
-
+            {app.source?.commit && (
+              <Row label="Commit">
+                <span style={{ font: 'var(--type-code-sm)' }}>{app.source.commit.slice(0, 12)}</span>
+              </Row>
+            )}
+            <Row label="Last deploy">
+              {latest ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                  <StatusIndicator
+                    status={deployStatus(latest.status, latest.result_state)}
+                    label={`${deployLabel(latest.status, latest.result_state)} ${relative(latest.finished_at ?? latest.started_at)}`}
+                  />
+                  {canReadLogs && (
+                    <Button variant="secondary" onClick={() => onGo('logs')}>
+                      Open logs
+                    </Button>
+                  )}
+                </span>
+              ) : (
+                <span style={{ color: 'var(--ink-secondary)' }}>Not deployed yet.</span>
+              )}
+            </Row>
+          </Card>
+        </div>
+        {!narrow && (
+          <div style={{ flex: '0 1 40ch', minWidth: '28ch' }}>
+            <Usage app={app} layout="stack" />
+          </div>
+        )}
       </div>
 
       {/* Why an app is degraded, when it is made of several parts. The app's
@@ -186,7 +197,7 @@ export function AppOverview({
       <Parts app={app} onLogs={canReadLogs ? (workload) => onGo('logs', workload) : undefined} />
 
       {/* What each part is using now, beside its limits (R-245). */}
-      <Usage app={app} />
+      {narrow && <Usage app={app} />}
 
       {/* The security score, where the deploy log used to be — and across the
           measure rather than in the column that held it. A log is a column of
