@@ -51,6 +51,12 @@ func newAPI(t *testing.T) *fakeAPI {
 			w.WriteHeader(code)
 		}
 		body, ok := f.responses[key]
+		// A reply that differs from one call to the next: what a restart looks
+		// like from outside, where the same request answers differently once
+		// the process is back.
+		if fn, dynamic := body.(func() any); dynamic {
+			body = fn()
+		}
 		if !ok {
 			body = map[string]any{}
 		}
@@ -66,6 +72,13 @@ func newAPI(t *testing.T) *fakeAPI {
 }
 
 func (f *fakeAPI) reply(key string, body any) *fakeAPI { f.responses[key] = body; return f }
+
+// handle answers a key from a function, for a reply that changes between
+// calls.
+func (f *fakeAPI) handle(key string, body func() any) *fakeAPI {
+	f.responses[key] = body
+	return f
+}
 func (f *fakeAPI) fail(key string, code int, body any) *fakeAPI {
 	f.status[key] = code
 	f.responses[key] = body
