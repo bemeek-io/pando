@@ -631,7 +631,7 @@ pando token revoke <token-id>
 
 ### `user`
 
-Look at accounts
+Work with accounts
 
 ```
 pando user
@@ -644,4 +644,36 @@ Show the apps an account has access to, and its role on each
 ```
 pando user apps <user-id>
 ```
+
+#### `user create`
+
+Create a local account with a generated password
+
+```
+pando user create <username>
+```
+
+Creates a local account and prints the password Pando generated for it, once.
+Give it to the account holder yourself; by default they choose their own at first sign-in.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--email` |  | the account's email address |
+| `--name` |  | the name shown in the console and the audit log |
+| `--no-change-required` |  | do not require a new password at first sign-in |
+
+#### `user reset-password`
+
+Give an account a new generated password
+
+```
+pando user reset-password <user-id>
+```
+
+Sets a new generated password on a local account, ends every session it holds, and prints
+the password once. By default its holder chooses their own at the next sign-in.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--no-change-required` |  | do not require a new password at the next sign-in |
 

@@ -267,6 +267,14 @@ func (s *Server) Routes() http.Handler {
 
 		r.Post("/sessions", s.handleLogin)
 		r.Delete("/sessions", s.handleLogout)
+
+		// First-run setup (R-046): public, and refused once any account
+		// exists.
+		r.Get("/setup", s.handleGetSetup)
+		r.Post("/setup", s.handlePostSetup)
+
+		// A strong random password, for creating or resetting an account.
+		r.Post("/passwords/generate", s.handleGeneratePassword)
 		r.Get("/me", s.handleMe)
 
 		// Changing your own password. Self only, no verb — see the handler.
@@ -305,6 +313,9 @@ func (s *Server) Routes() http.Handler {
 			// quietly becomes a promotion.
 			r.Put("/{userID}/role", s.handlePutUserRole)
 			r.Delete("/{userID}/role", s.handleDeleteUserRole)
+
+			// An administrator's reset of someone else's password (R-046).
+			r.Post("/{userID}/password", s.handleResetPassword)
 
 			// The apps an account has something on, and what (R-081).
 			r.Get("/{userID}/apps", s.handleUserApps)

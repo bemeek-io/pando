@@ -31,6 +31,8 @@ one verb says nothing about another (R-082).
 | --- | --- | --- |
 | `POST /api/v1/sessions` |  | Sign in with a username and password. Sets the session cookie. |
 | `DELETE /api/v1/sessions` |  | Sign out, ending this session. |
+| `GET /api/v1/setup` |  | Whether this installation is waiting for its first administrator (`needed`). Public. |
+| `POST /api/v1/setup` |  | Set up a new installation: the first account (`username`, `display_name`, `password`), made an administrator, and signed in. Public, and refused once any account exists (R-046). |
 | `GET /api/v1/me` |  | Who the caller is, and the install-level verbs they hold. |
 | `POST /api/v1/me/password` |  | Change your own password. Yours only, whatever verbs you hold. |
 | `GET /api/v1/me/apps` |  | The apps you can open, which is a different list from the apps you can administer (R-070, R-071). `favorite` marks the ones you have pinned, `section_id` the section you filed each under, and `sections` lists your sections. |
@@ -150,6 +152,8 @@ one verb says nothing about another (R-082).
 | `DELETE /api/v1/users/{userID}` | `install.users.manage` | Delete an account, with the destruction rules that follow from it (R-282). |
 | `PUT /api/v1/users/{userID}/role` | `install.users.manage` | Give an account an installation role. Deliberately not a field on PATCH: changing someone's status and changing their power are different acts. |
 | `DELETE /api/v1/users/{userID}/role` | `install.users.manage` | Take an installation role away. The last administrator cannot be demoted. |
+| `POST /api/v1/users/{userID}/password` | `install.users.manage` | Reset another local account's password (`password`), ending every session it holds. `must_change_password` defaults to true: whoever set it hands it over, and its holder chooses their own at the next sign-in. Your own is `POST /me/password`. |
+| `POST /api/v1/passwords/generate` | `install.users.manage` | A strong random password, 18 to 22 characters with upper and lower case, digits and symbols, for creating or resetting an account. Stores nothing. |
 | `GET /api/v1/users/{userID}/apps` | `install.view` | The apps an account has something on: its role for managing each, directly or through a group, whether it can use each, and whether you can change that (`can_manage`). Only apps you can see are listed. Your own needs nothing. |
 | `GET /api/v1/groups` | `install.view` | Groups, whether Pando's own or an identity adapter's (R-078). |
 | `POST /api/v1/groups` | `install.users.manage` | Create a group. |

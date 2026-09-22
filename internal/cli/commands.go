@@ -993,7 +993,80 @@ func grantCmd(client func() (*Client, error)) *cobra.Command {
 }
 
 func userCmd(client func() (*Client, error)) *cobra.Command {
-	cmd := &cobra.Command{Use: "user", Short: "Look at accounts"}
+	cmd := &cobra.Command{Use: "user", Short: "Work with accounts"}
+
+	// generated asks the server for a password, so the CLI's are the same
+	// strength and alphabet as the console's (R-046).
+	generated := func(c *Client) (string, error) {
+		var out struct {
+			Password string `json:"password"`
+		}
+		if err := c.Do("POST", "/passwords/generate", nil, &out); err != nil {
+			return "", err
+		}
+		return out.Password, nil
+	}
+
+	var name, email string
+	var keep bool
+	create := &cobra.Command{
+		Use:   "create <username>",
+		Short: "Create a local account with a generated password",
+		Long: "Creates a local account and prints the password Pando generated for it, once.\n" +
+			"Give it to the account holder yourself; by default they choose their own at first sign-in.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			password, err := generated(c)
+			if err != nil {
+				return err
+			}
+			body := map[string]any{
+				"username": args[0], "display_name": name, "email": email,
+				"password": password, "must_change_password": !keep,
+			}
+			if err := c.Do("POST", "/users", body, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Created %s. Password: %s\n", args[0], password)
+			return nil
+		},
+	}
+	create.Flags().StringVar(&name, "name", "", "the name shown in the console and the audit log")
+	create.Flags().StringVar(&email, "email", "", "the account's email address")
+	create.Flags().BoolVar(&keep, "no-change-required", false, "do not require a new password at first sign-in")
+	cmd.AddCommand(create)
+
+	var keepReset bool
+	reset := &cobra.Command{
+		Use:   "reset-password <user-id>",
+		Short: "Give an account a new generated password",
+		Long: "Sets a new generated password on a local account, ends every session it holds, and prints\n" +
+			"the password once. By default its holder chooses their own at the next sign-in.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			password, err := generated(c)
+			if err != nil {
+				return err
+			}
+			body := map[string]any{"password": password, "must_change_password": !keepReset}
+			if err := c.Do("POST", "/users/"+args[0]+"/password", body, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Password reset. New password: %s\n", password)
+			return nil
+		},
+	}
+	reset.Flags().BoolVar(&keepReset, "no-change-required", false, "do not require a new password at the next sign-in")
+	cmd.AddCommand(reset)
+
 	cmd.AddCommand(&cobra.Command{
 		Use:   "apps <user-id>",
 		Short: "Show the apps an account has access to, and its role on each",

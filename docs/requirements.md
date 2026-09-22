@@ -131,7 +131,7 @@ exactly this.
 
 ### 5.2 Bootstrap
 
-**R-046 [P]** First run creates a single administrative local user. The initial credential is generated and displayed once on the console/CLI, and must be changed on first login. The account is administrative because it holds an install-scoped **Administrator** grant (R-080, R-081) — there is no admin flag on a user — so the power is revocable and grantable like any other.
+**R-046 [P]** A new installation has no account until it is set up: the first person to reach the console chooses the administrator's username and password there, and nothing is printed to a log. The setup endpoint is public and is refused once any account exists; whoever reaches it first becomes the administrator, which the install documentation says plainly. An operator may instead supply the first password at startup (`PANDO_ADMIN_PASSWORD`), which must be changed on first login. Passwords an administrator sets for someone else — creating an account or resetting one — are generated (18–22 characters, upper and lower case, digits and symbols), handed over out of band, and by default must be changed at the next sign-in. The account is administrative because it holds an install-scoped **Administrator** grant (R-080, R-081) — there is no admin flag on a user — so the power is revocable and grantable like any other.
 
 ### 5.3 Sessions and revocation
 

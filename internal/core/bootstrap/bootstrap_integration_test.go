@@ -4,6 +4,7 @@ package bootstrap_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -45,38 +46,78 @@ func newInstall(t *testing.T) (*state.DB, *state.Users, *state.Grants, *audit.Wr
 	return db, state.NewUsers(db), state.NewGrants(db), audit.New(db.Pool)
 }
 
-// TestR046_FirstRunGeneratesAPasswordAndShowsItOnce asserts R-046's default.
-func TestR046_FirstRunGeneratesAPasswordAndShowsItOnce(t *testing.T) {
+// TestR046_AFreshInstallWaitsToBeSetUp asserts R-046's default: with no
+// password supplied, first run creates nothing and prints nothing, and the
+// installation waits for its first administrator.
+func TestR046_AFreshInstallWaitsToBeSetUp(t *testing.T) {
 	ctx := context.Background()
 	db, users, grants, auditor := newInstall(t)
 
 	first, err := bootstrap.Run(ctx, users, grants, db, auditor, secret.Value{})
 	require.NoError(t, err)
-	require.True(t, first.Created)
-	require.False(t, first.Supplied)
-	require.NotEmpty(t, first.Password.Reveal(), "there is nothing to show otherwise")
+	require.False(t, first.Created)
+	require.True(t, first.Unclaimed)
 
-	// It signs in, and it is the only account.
-	rec, found, err := users.ByUsername(ctx, bootstrap.AdminUsername)
+	needed, err := users.NeedsSetup(ctx)
+	require.NoError(t, err)
+	require.True(t, needed)
+
+	// Claimed with the person's own choice, which need not be changed, and made
+	// an administrator.
+	chosen := secret.New("a-password-i-chose")
+	user, err := bootstrap.Claim(ctx, users, auditor, "ada", "Ada", chosen)
+	require.NoError(t, err)
+	rec, found, err := users.ByUsername(ctx, "ada")
 	require.NoError(t, err)
 	require.True(t, found)
-
-	ok, err := hash.Verify(first.Password, rec.PasswordHash)
+	ok, err := hash.Verify(chosen, rec.PasswordHash)
 	require.NoError(t, err)
-	require.True(t, ok, "the password shown is the password stored")
+	require.True(t, ok)
+	var mustChange bool
+	require.NoError(t, db.QueryRow(ctx,
+		`SELECT must_change_password FROM users WHERE id = $1`, user.ID).Scan(&mustChange))
+	require.False(t, mustChange, "a password its holder chose need not be changed")
 
-	// Running again creates nothing. A second administrator on every restart
-	// would be a new way in on every restart.
+	var role string
+	require.NoError(t, db.QueryRow(ctx,
+		`SELECT role_id FROM grants WHERE app_id IS NULL AND principal_id = $1`, user.ID).Scan(&role))
+	require.Equal(t, "role_administrator", role)
+
+	// Once. The door exists only until it is used.
+	_, err = bootstrap.Claim(ctx, users, auditor, "mallory", "", secret.New("another-long-password"))
+	require.ErrorIs(t, err, state.ErrAlreadySetUp)
 	again, err := bootstrap.Run(ctx, users, grants, db, auditor, secret.Value{})
 	require.NoError(t, err)
-	require.False(t, again.Created)
+	require.False(t, again.Unclaimed)
 }
 
-// TestR046_AnOperatorCanSupplyTheFirstPassword asserts the [P] override.
-//
-// The generated one is shown once, in a log line. An install whose server
-// container is recreated before anybody reads it has an administrator nobody
-// can sign in as — which is what `docker compose down && up` does.
+// Two people submitting the setup form at once: exactly one becomes the
+// administrator.
+func TestR046_OnlyOneClaimWins(t *testing.T) {
+	ctx := context.Background()
+	_, users, _, auditor := newInstall(t)
+
+	const n = 8
+	errsCh := make(chan error, n)
+	for i := range n {
+		go func() {
+			_, err := bootstrap.Claim(ctx, users, auditor, fmt.Sprintf("claimant%d", i), "", secret.New("a-long-enough-password"))
+			errsCh <- err
+		}()
+	}
+	won := 0
+	for range n {
+		if err := <-errsCh; err == nil {
+			won++
+		} else {
+			require.ErrorIs(t, err, state.ErrAlreadySetUp)
+		}
+	}
+	require.Equal(t, 1, won)
+}
+
+// TestR046_AnOperatorCanSupplyTheFirstPassword asserts the [P] override: for
+// an unattended install, PANDO_ADMIN_PASSWORD makes the account at startup.
 func TestR046_AnOperatorCanSupplyTheFirstPassword(t *testing.T) {
 	ctx := context.Background()
 	db, users, grants, auditor := newInstall(t)
@@ -85,11 +126,7 @@ func TestR046_AnOperatorCanSupplyTheFirstPassword(t *testing.T) {
 	first, err := bootstrap.Run(ctx, users, grants, db, auditor, chosen)
 	require.NoError(t, err)
 	require.True(t, first.Created)
-	require.True(t, first.Supplied)
-
-	// Nothing to display. Handing it back invites the caller to print a
-	// credential the operator already has, into a log (R-194).
-	require.Empty(t, first.Password.Reveal())
+	require.False(t, first.Unclaimed)
 
 	rec, found, err := users.ByUsername(ctx, bootstrap.AdminUsername)
 	require.NoError(t, err)

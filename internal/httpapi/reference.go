@@ -25,6 +25,8 @@ var routeDocs = []reference.Route{
 	// --- session and account ---------------------------------------------
 	{Method: "POST", Path: "/api/v1/sessions", Group: "Session", Summary: "Sign in with a username and password. Sets the session cookie."},
 	{Method: "DELETE", Path: "/api/v1/sessions", Group: "Session", Summary: "Sign out, ending this session."},
+	{Method: "GET", Path: "/api/v1/setup", Group: "Session", Summary: "Whether this installation is waiting for its first administrator (`needed`). Public."},
+	{Method: "POST", Path: "/api/v1/setup", Group: "Session", Summary: "Set up a new installation: the first account (`username`, `display_name`, `password`), made an administrator, and signed in. Public, and refused once any account exists (R-046)."},
 	{Method: "GET", Path: "/api/v1/me", Group: "Session", Summary: "Who the caller is, and the install-level verbs they hold."},
 	{Method: "POST", Path: "/api/v1/me/password", Group: "Session", Summary: "Change your own password. Yours only, whatever verbs you hold."},
 	{Method: "GET", Path: "/api/v1/me/apps", Group: "Session", Summary: "The apps you can open, which is a different list from the apps you can administer (R-070, R-071). `favorite` marks the ones you have pinned, `section_id` the section you filed each under, and `sections` lists your sections."},
@@ -112,6 +114,8 @@ var routeDocs = []reference.Route{
 	{Method: "DELETE", Path: "/api/v1/users/{userID}", Group: "Identity", Summary: "Delete an account, with the destruction rules that follow from it (R-282).", Verb: string(authz.InstallUsersManage)},
 	{Method: "PUT", Path: "/api/v1/users/{userID}/role", Group: "Identity", Summary: "Give an account an installation role. Deliberately not a field on PATCH: changing someone's status and changing their power are different acts.", Verb: string(authz.InstallUsersManage)},
 	{Method: "DELETE", Path: "/api/v1/users/{userID}/role", Group: "Identity", Summary: "Take an installation role away. The last administrator cannot be demoted.", Verb: string(authz.InstallUsersManage)},
+	{Method: "POST", Path: "/api/v1/users/{userID}/password", Group: "Identity", Summary: "Reset another local account's password (`password`), ending every session it holds. `must_change_password` defaults to true: whoever set it hands it over, and its holder chooses their own at the next sign-in. Your own is `POST /me/password`.", Verb: string(authz.InstallUsersManage)},
+	{Method: "POST", Path: "/api/v1/passwords/generate", Group: "Identity", Summary: "A strong random password, 18 to 22 characters with upper and lower case, digits and symbols, for creating or resetting an account. Stores nothing.", Verb: string(authz.InstallUsersManage)},
 	{Method: "GET", Path: "/api/v1/users/{userID}/apps", Group: "Identity", Summary: "The apps an account has something on: its role for managing each, directly or through a group, whether it can use each, and whether you can change that (`can_manage`). Only apps you can see are listed. Your own needs nothing.", Verb: string(authz.InstallView)},
 	{Method: "GET", Path: "/api/v1/groups", Group: "Identity", Summary: "Groups, whether Pando's own or an identity adapter's (R-078).", Verb: string(authz.InstallView)},
 	{Method: "POST", Path: "/api/v1/groups", Group: "Identity", Summary: "Create a group.", Verb: string(authz.InstallUsersManage)},

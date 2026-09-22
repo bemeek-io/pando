@@ -210,7 +210,14 @@ type createUserRequest struct {
 	Password    string `json:"password"`
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
+
+	// MustChangePassword defaults to true: whoever set this password is not
+	// the person who will use it, and handed it over some other way (R-046).
+	MustChangePassword *bool `json:"must_change_password"`
 }
+
+// orTrue reads an optional flag whose absence means yes.
+func orTrue(b *bool) bool { return b == nil || *b }
 
 // handleCreateUser adds a local account.
 //
@@ -239,7 +246,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, err := s.Users.Create(r.Context(), state.LocalAdapterID, req.Username, req.Email,
-		req.DisplayName, digest, false)
+		req.DisplayName, digest, orTrue(req.MustChangePassword))
 	if err != nil {
 		Error(w, r, err)
 		return
@@ -254,6 +261,87 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		TargetID:      user.ID,
 	})
 	JSON(w, http.StatusCreated, user)
+}
+
+// handleGeneratePassword returns a strong random password (R-046): what the
+// console offers when an administrator creates an account or resets one, with
+// a way to draw another. Nothing is stored — it becomes a password only when it
+// is sent back in one of those requests.
+//
+// Behind install.users.manage because those are its only uses, not because a
+// random string is a secret.
+func (s *Server) handleGeneratePassword(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireInstall(w, r, authz.InstallUsersManage); !ok {
+		return
+	}
+	password, err := hash.Generate()
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	JSON(w, http.StatusOK, map[string]string{"password": password.Reveal()})
+}
+
+// handleResetPassword sets another account's password (R-046). The
+// administrator hands it over out of band, so by default its holder must
+// change it at the next sign-in; either way every session the account holds
+// ends now, because a reset that leaves a stolen session alive has reset
+// nothing.
+//
+// Not for your own password: that is POST /me/password, which asks for the
+// current one. An administrator resetting their own here would skip that.
+func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireInstall(w, r, authz.InstallUsersManage)
+	if !ok {
+		return
+	}
+	userID := chi.URLParam(r, "userID")
+	if userID == p.UserID {
+		Error(w, r, errs.New(errs.ValidInvalid, "Change your own password from your settings, with your current one.").
+			WithRemedy("Use POST /api/v1/me/password, or Settings in the console."))
+		return
+	}
+
+	var req struct {
+		Password           string `json:"password"`
+		MustChangePassword *bool  `json:"must_change_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read."))
+		return
+	}
+	if len(req.Password) < hash.MinPasswordLength {
+		Error(w, r, errs.Newf(errs.ValidInvalid, "A password needs at least %d characters.", hash.MinPasswordLength))
+		return
+	}
+	digest, err := hash.New(secret.New(req.Password))
+	if err != nil {
+		Error(w, r, errs.Wrap(errs.Internal, "Could not secure the password.", err))
+		return
+	}
+
+	must := orTrue(req.MustChangePassword)
+	found, err := s.Users.SetPasswordFor(r.Context(), userID, digest, must)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	if !found {
+		Error(w, r, errs.New(errs.NotFound, "There is no local account with that ID.").
+			WithRemedy("An account from an external identity provider changes its password where it lives."))
+		return
+	}
+	if err := s.Sessions.RevokeAllForUser(r.Context(), userID); err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	s.audit(r, audit.Event{
+		PrincipalKind: audit.PrincipalKind(p.Kind), PrincipalID: p.ID, OnBehalfOf: p.UserID,
+		Action: "user.password.reset", TargetKind: "user", TargetID: userID,
+		Detail: map[string]any{"must_change_password": must},
+	})
+	JSON(w, http.StatusNoContent, nil)
 }
 
 // handleGetUser returns one account.

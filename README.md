@@ -125,21 +125,22 @@ Or skip installing it and use the copy already inside the container, via
 
 ### First sign-in
 
-The first run creates an `admin` account and prints its password to the log once:
+A new installation has no accounts. Open the console and Pando asks you to set up the
+administrator: choose a username and password there, and you are signed in.
+
+Whoever reaches the console first sets up the administrator, so do this before anyone else can
+reach Pando. To create the account at startup instead, for an unattended install, supply its
+password; you are asked to change it when you first sign in:
 
 ```bash
-docker compose logs pando | grep '"first run"'
+# Read only on first run, when there is no account yet.
+PANDO_ADMIN_PASSWORD=... docker compose up -d
 ```
 
-You will be asked to change it when you sign in.
-
-If you miss that log line — a `down`/`up` or a `--force-recreate` discards it — you have two options:
+If the administrator's password is lost, reset it from the host. This ends every session for that
+account:
 
 ```bash
-# Set the initial password yourself. Read only on first run.
-PANDO_ADMIN_PASSWORD=... docker compose up -d
-
-# Or reset it later from the host. This ends every session for that account.
 docker compose exec pando pando admin reset-password
 ```
 

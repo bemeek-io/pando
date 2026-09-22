@@ -328,18 +328,31 @@ subset of that list and a second endpoint could disagree with it.
 is already authenticated. A session cookie is a bearer credential; without the check, anyone holding
 a borrowed one could lock the owner out of their own account. It is self-only and carries no verb:
 changing your own password is not administration, and changing somebody else's is a *reset* — a
-different action with different consequences, which does not exist yet and must not arrive by
+different action with different consequences, `POST /users/{id}/password`, which did not arrive by
 relaxing this route.
 
-**[P] The first password can be supplied, as `PANDO_ADMIN_PASSWORD`.** R-046 says the initial
-credential is *generated*, and that is still the default — but it is shown once, in a log line, and a
-server container recreated before anybody reads it leaves an administrator nobody can sign in as. The
-digest is argon2id, so there is no recovering it; before `pando admin reset-password` existed there
-was no way back at all. Supplying one changes nothing else: the account must still change it at first
-sign-in, because an environment variable is not a safer place than a log line — it is in the Compose
-file, in `docker inspect`, and inherited by every child process. It buys a way in, not a credential.
-Set on an install that already has accounts it is ignored, and says so: an operator who set it and
-cannot sign in with it should not have to guess why.
+**[D] A new installation is set up in the console, not from a log line (R-046).** Without
+`PANDO_ADMIN_PASSWORD`, first run creates no account and prints nothing. `GET /setup` says whether
+the installation is waiting; `POST /setup` creates the first account with the username and password
+the person chose, grants it Administrator, and signs it in. Both are public, because nobody can sign
+in yet, and `POST /setup` is refused once any account exists — a transaction under an advisory lock,
+so two people submitting at once cannot both win. The account is not flagged must-change: its holder
+chose the password. The exposure is the window before setup, when whoever reaches the console first
+becomes the administrator; the README says to set up before exposing Pando, and startup logs a warning
+until it is done. A generated password printed to the log had its own exposure — anyone who could
+read logs — and was lost when a container was recreated before anyone read it.
+
+**[P] The first password can still be supplied, as `PANDO_ADMIN_PASSWORD`**, for an unattended
+install. It must be changed at first sign-in, because an environment variable is not a safe place for
+one — it is in the Compose file, in `docker inspect`, and inherited by every child process. Set on an
+install that already has accounts it is ignored, and says so.
+
+**[D] Passwords an administrator sets are generated.** `POST /passwords/generate` returns one, 18 to
+22 characters of upper and lower case, digits and symbols with at least one of each, from the same
+generator `pando admin reset-password` uses. The console shows it with a way to draw another and to
+copy it; the administrator hands it over out of band. `POST /users` and `POST /users/{id}/password`
+take it with `must_change_password`, true by default. A reset ends every session the account holds,
+and is not for your own account — that is `POST /me/password`, which asks for the current one.
 
 **[P] Ten characters, and that is the only rule.** No composition classes: a class requirement pushes
 people toward `Passw0rd!`, which has less real entropy than three words and is the password the rule

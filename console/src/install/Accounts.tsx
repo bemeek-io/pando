@@ -11,13 +11,17 @@
 // Suspending an account stops it signing in (R-049); changing its role changes
 // what it may do. The API keeps them on different routes and different verbs,
 // and the console does not merge them back together.
+//
+// Nobody types a password for somebody else. Adding an account shows one Pando
+// generated (GeneratedPassword.tsx), for the administrator to pass on.
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Dialog, Input, Select, StatusIndicator, Tag } from '@design';
+import { Banner, Button, Dialog, Input, Select, StatusIndicator, Tag } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 import { InstallVerb, useInstallVerb } from '../app/principal';
+import { GeneratedPassword } from './GeneratedPassword';
 import { Sheet } from '../ui/Sheet';
 import { SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
@@ -218,6 +222,7 @@ function AddAccount({ onClose }: { onClose: () => void }) {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  const [mustChange, setMustChange] = useState(true);
   const queries = useQueryClient();
 
   const create = useMutation({
@@ -226,6 +231,7 @@ function AddAccount({ onClose }: { onClose: () => void }) {
         username,
         password,
         display_name: displayName,
+        must_change_password: mustChange,
       }),
     onSuccess: () => {
       void queries.invalidateQueries({ queryKey: ['users'] });
@@ -237,7 +243,9 @@ function AddAccount({ onClose }: { onClose: () => void }) {
     <Dialog
       open
       title="Add account"
-      description="A local account. Give the person the password you set here; they choose their own after signing in."
+      // The password is only ever on this screen: Pando cannot show it again
+      // and sends it nowhere, so handing it over is the administrator's job.
+      description="A local account with a password Pando generates. Copy the password and give it to the person separately; Pando does not send it to them."
       onClose={onClose}
       footer={
         <>
@@ -255,20 +263,29 @@ function AddAccount({ onClose }: { onClose: () => void }) {
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-        <Input label="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
+        <Input
+          label="Username"
+          value={username}
+          onChange={(e) => {
+            // A refusal ("that username is taken") belongs to the value that
+            // caused it.
+            if (create.isError) create.reset();
+            setUsername(e.target.value);
+          }}
+        />
         <Input
           label="Name"
           value={displayName}
           helper="Shown in the console and in the audit log."
           onChange={(e) => setDisplayName(e.target.value)}
         />
-        <Input
-          label="Password"
-          type="password"
+        <GeneratedPassword
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          error={create.isError ? messageOf(create.error) : undefined}
+          onChange={setPassword}
+          mustChange={mustChange}
+          onMustChange={setMustChange}
         />
+        {create.isError && <Banner tone="failed">{messageOf(create.error)}</Banner>}
       </div>
     </Dialog>
   );

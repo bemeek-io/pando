@@ -5,6 +5,7 @@
 // The actions are the ones Accounts used to put on every row. They are here
 // now so that the list reads as a list, and changing someone's role or
 // suspending them is something done on purpose, looking at who they are.
+// Resetting a local account's password is here for the same reason.
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,6 +15,7 @@ import { api } from '@api/client';
 import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
 import { Sheet } from '../ui/Sheet';
 import { AccountApps } from './AccountApps';
+import { GeneratedPassword, PasswordToCopy } from './GeneratedPassword';
 import type { Account, Role } from './Accounts';
 import { Quiet, RoleLabel, RolePicker, StatusToggle, messageOf } from './Accounts';
 import { NO_FILTERS, WHEN, linkQuery } from './audit';
@@ -87,6 +89,9 @@ export function AccountPage({
             {manage && !isSelf && (
               <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                 <StatusToggle account={a} />
+                {/* An external provider holds its accounts' passwords; Pando has
+                    nothing to reset. */}
+                {a.adapter_id === LOCAL && <ResetPassword account={a} />}
                 <DeleteAccount account={a} onDeleted={onBack} />
               </div>
             )}
@@ -200,6 +205,103 @@ function Activity({ userID, onAudit }: { userID: string; onAudit: (query: string
       />
       <LoadOlder log={log} />
     </section>
+  );
+}
+
+/**
+ * A new password for somebody else's local account, generated rather than typed
+ * (see GeneratedPassword). Not offered on your own page: the API refuses it
+ * there, because changing your own password takes your current one
+ * (POST /me/password).
+ */
+function ResetPassword({ account }: { account: Account }) {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [mustChange, setMustChange] = useState(true);
+  const queries = useQueryClient();
+
+  const reset = useMutation({
+    mutationFn: () =>
+      api.post<void>(`/users/${account.id}/password`, { password, must_change_password: mustChange }),
+    onSuccess: () => {
+      void queries.invalidateQueries({ queryKey: ['users', account.id] });
+      void queries.invalidateQueries({ queryKey: ['users'] });
+      void queries.invalidateQueries({ queryKey: ['audit'] });
+    },
+  });
+
+  const close = () => {
+    setOpen(false);
+    // The next reset starts from a fresh password, not this one.
+    setPassword('');
+    setMustChange(true);
+    reset.reset();
+  };
+
+  return (
+    <>
+      <Button variant="ghost" onClick={() => setOpen(true)}>
+        Reset password
+      </Button>
+      {open &&
+        (reset.isSuccess ? (
+          <Dialog
+            open
+            title={`Password reset for ${account.external_id}`}
+            // Last sight of it: Pando cannot show it again once this closes.
+            description="Copy the password and give it to them separately. It is not shown again after you close this."
+            onClose={close}
+            footer={
+              <Button variant="primary" onClick={close}>
+                Done
+              </Button>
+            }
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              <PasswordToCopy value={password} />
+              <Quiet>
+                Every session {account.external_id} had has ended.
+                {mustChange ? ' They choose a new password the next time they sign in.' : ''}
+              </Quiet>
+            </div>
+          </Dialog>
+        ) : (
+          <Dialog
+            open
+            title={`Reset password for ${account.external_id}`}
+            // What happens to the sessions is said before, not after (R-282).
+            description="Pando replaces the password with the one below and signs the account out everywhere. Copy it and give it to them separately."
+            onClose={close}
+            footer={
+              <>
+                <Button variant="ghost" onClick={close}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  disabled={reset.isPending || password === ''}
+                  onClick={() => reset.mutate()}
+                >
+                  {reset.isPending ? 'Resetting' : 'Reset password'}
+                </Button>
+              </>
+            }
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              <GeneratedPassword
+                value={password}
+                onChange={(p) => {
+                  if (reset.isError) reset.reset();
+                  setPassword(p);
+                }}
+                mustChange={mustChange}
+                onMustChange={setMustChange}
+              />
+              {reset.isError && <Banner tone="failed">{messageOf(reset.error)}</Banner>}
+            </div>
+          </Dialog>
+        ))}
+    </>
   );
 }
 

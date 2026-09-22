@@ -3,11 +3,13 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/bootstrap"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
 	"github.com/bemeek-io/pando/internal/hash"
@@ -53,6 +55,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.startSession(w, r, user, http.StatusOK)
+}
+
+// startSession signs a user in: a session, its cookie, and the audit event.
+// Shared by sign-in and first-run setup, which signs the new administrator in
+// so the next thing they see is the console rather than the same form again.
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user state.User, status int) {
 	policy := s.Identity.SessionPolicy()
 	sess, err := s.Sessions.Create(r.Context(), user.ID, user.AdapterID, policy.MaxLifetime,
 		r.UserAgent(), clientIP(r))
@@ -80,7 +89,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		TargetID:      sess.ID,
 	})
 
-	JSON(w, http.StatusOK, map[string]any{
+	JSON(w, status, map[string]any{
 		"user_id":              user.ID,
 		"must_change_password": user.MustChangePassword,
 		"expires_at":           sess.ExpiresAt.Format(time.RFC3339),
@@ -89,6 +98,42 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// Implying revocation is instant is the failure mode here.
 		"revocation_window_seconds": 120,
 	})
+}
+
+// handleGetSetup says whether the installation is waiting for its first
+// administrator (R-046). Public: the sign-in page asks before anyone can sign
+// in, and the answer says nothing about who has an account.
+func (s *Server) handleGetSetup(w http.ResponseWriter, r *http.Request) {
+	needed, err := s.Users.NeedsSetup(r.Context())
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	JSON(w, http.StatusOK, map[string]any{"needed": needed})
+}
+
+// handlePostSetup claims an unclaimed installation: the first account, made an
+// administrator, with the username and password its holder chose, and signs
+// them in (R-046). Public, because nobody can sign in yet — and refused the
+// moment any account exists, so it is a door that exists only until it is
+// used once.
+func (s *Server) handlePostSetup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username    string `json:"username"`
+		DisplayName string `json:"display_name"`
+		Password    string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read."))
+		return
+	}
+	user, err := bootstrap.Claim(r.Context(), s.Users, s.Auditor, strings.TrimSpace(req.Username),
+		strings.TrimSpace(req.DisplayName), secret.New(req.Password))
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	s.startSession(w, r, user, http.StatusCreated)
 }
 
 // secureCookie decides whether the session cookie is marked Secure (O-19).

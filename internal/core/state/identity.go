@@ -321,6 +321,87 @@ func (u *Users) ResetPassword(ctx context.Context, username, passwordHash string
 	return userID, nil
 }
 
+// SetPasswordFor sets a local account's password on an administrator's behalf,
+// and whether its holder must change it at the next sign-in.
+//
+// Returns false when there is no such local account: an external identity
+// provider owns its own credentials (R-044).
+func (u *Users) SetPasswordFor(ctx context.Context, userID, passwordHash string, mustChange bool) (bool, error) {
+	tag, err := u.db.Exec(ctx, `
+		UPDATE users
+		SET password_hash = $2, must_change_password = $3, updated_at = now()
+		WHERE id = $1 AND adapter_id = $4 AND deleted_at IS NULL`,
+		userID, passwordHash, mustChange, LocalAdapterID)
+	if err != nil {
+		return false, errs.Wrap(errs.Internal, "Could not reset the password.", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// ErrAlreadySetUp is ClaimFirst's refusal once an installation has an account.
+var ErrAlreadySetUp = errs.New(errs.ValidInvalid, "This installation is already set up.").
+	WithRemedy("Sign in with an existing account. An administrator can create one for you.")
+
+// ClaimFirst creates the installation's first account and makes it an
+// administrator, if and only if there is no account yet (R-046).
+//
+// One transaction, serialized by an advisory lock, so two people submitting the
+// setup form at the same moment cannot both become the first administrator:
+// the second waits, then finds an account and is refused.
+func (u *Users) ClaimFirst(ctx context.Context, username, displayName, passwordHash, roleID string) (User, string, error) {
+	tx, err := u.db.Begin(ctx)
+	if err != nil {
+		return User{}, "", errs.Wrap(errs.Internal, "Could not set up the installation.", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Any fixed key; it only has to be the same key for every claimant.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(46046)`); err != nil {
+		return User{}, "", errs.Wrap(errs.Internal, "Could not set up the installation.", err)
+	}
+	var count int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM users WHERE deleted_at IS NULL`).Scan(&count); err != nil {
+		return User{}, "", errs.Wrap(errs.Internal, "Could not set up the installation.", err)
+	}
+	if count > 0 {
+		return User{}, "", ErrAlreadySetUp
+	}
+
+	user := User{
+		ID: id.New(id.User), AdapterID: LocalAdapterID, ExternalID: username,
+		DisplayName: displayName, Status: "active",
+	}
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO users (id, adapter_id, external_id, display_name, password_hash, must_change_password, status)
+		VALUES ($1, $2, $3, $4, $5, false, 'active')
+		RETURNING created_at`,
+		user.ID, LocalAdapterID, username, nullable(displayName), passwordHash).Scan(&user.CreatedAt); err != nil {
+		return User{}, "", errs.Wrap(errs.Internal, "Could not create the account.", err)
+	}
+
+	grantID := id.New(id.Grant)
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO grants (id, app_id, plane, role_scope, principal_kind, principal_id, role_id, created_by)
+		VALUES ($1, NULL, 'control', 'install', 'user', $2, $3, 'system')`,
+		grantID, user.ID, roleID); err != nil {
+		return User{}, "", errs.Wrap(errs.Internal, "Could not make the account an administrator.", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return User{}, "", errs.Wrap(errs.Internal, "Could not set up the installation.", err)
+	}
+	return user, grantID, nil
+}
+
+// NeedsSetup reports whether the installation has no account yet.
+func (u *Users) NeedsSetup(ctx context.Context) (bool, error) {
+	var any bool
+	if err := u.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE deleted_at IS NULL)`).Scan(&any); err != nil {
+		return false, errs.Wrap(errs.Internal, "Could not check for existing accounts.", err)
+	}
+	return !any, nil
+}
+
 // Delete soft-deletes a user, which is what fires R-282's destruction rules.
 //
 // Soft, because the audit log references this ID and R-054 makes users.id the

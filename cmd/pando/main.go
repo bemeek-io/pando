@@ -235,16 +235,17 @@ func serve(ctx context.Context, configPath string) error {
 	policyStore := policyOverlay.Wrap(state.NewPolicy(db))
 	hostPolicy := corepolicy.New(policyStore.Load)
 
-	// R-046: the first run creates one administrative account and shows its
-	// password once. It is never stored in the clear, so an operator who misses
-	// it resets rather than retrieves.
+	// R-046: a fresh installation waits for the first person to open the
+	// console and set up the administrator there — unless the operator supplied
+	// PANDO_ADMIN_PASSWORD, in which case the account is made now. No password
+	// is ever printed.
 	first, err := bootstrap.Run(ctx, users, grants, db, auditor,
 		secret.New(cfg.Bootstrap.AdminPassword))
 	if err != nil {
 		return err
 	}
 	switch {
-	case first.Created && first.Supplied:
+	case first.Created:
 		// No password field. The operator supplied it and already has it;
 		// printing it would copy a credential into a log for nobody's benefit
 		// (R-194).
@@ -252,11 +253,12 @@ func serve(ctx context.Context, configPath string) error {
 			zap.String("username", bootstrap.AdminUsername),
 			zap.String("note", "using the password from PANDO_ADMIN_PASSWORD; it must still be changed on first login"))
 
-	case first.Created:
-		logger.Warn("first run: created an administrator account",
-			zap.String("username", bootstrap.AdminUsername),
-			zap.String("password", first.Password.Reveal()),
-			zap.String("note", "this is shown once and must be changed on first login"))
+	case first.Unclaimed:
+		// Said loudly: until somebody does this, whoever reaches the console
+		// first becomes the administrator.
+		logger.Warn("this installation is not set up yet",
+			zap.String("next", "open the console and set up the administrator account"),
+			zap.String("note", "the first person to reach the sign-in page sets it up; do this before exposing Pando to anyone else"))
 
 	case cfg.Bootstrap.AdminPassword != "":
 		// Said out loud, because the alternative is an operator who set it,
