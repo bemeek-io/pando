@@ -5,42 +5,45 @@
 // run: the verbs existed, the role existed, and nothing could write a second
 // grant. An install had exactly one administrator forever.
 //
-// Two separate actions on every row, because they are two separate powers.
+// The list is read-only: who each account is, whether it can sign in, and its
+// installation role. A row opens the account's own page (Account.tsx), which
+// holds the actions — two separate ones, because they are two separate powers.
 // Suspending an account stops it signing in (R-049); changing its role changes
 // what it may do. The API keeps them on different routes and different verbs,
-// and this screen does not merge them back together.
+// and the console does not merge them back together.
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Dialog, Input, Select, StatusIndicator, Tag } from '@design';
 
 import { api, RequestFailed } from '@api/client';
-import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
+import { InstallVerb, useInstallVerb } from '../app/principal';
 import { Sheet } from '../ui/Sheet';
 import { SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
 import { Table } from '../ui/Table';
 
-interface Account {
+export interface Account {
   id: string;
+  adapter_id: string;
   external_id: string;
   email?: string;
   display_name?: string;
   status: string;
   must_change_password: boolean;
   install_role_id: string;
+  created_at?: string;
 }
 
-interface Role {
+export interface Role {
   id: string;
   name: string;
   builtin: boolean;
   verbs: string[];
 }
 
-export function Accounts() {
+export function Accounts({ onOpen }: { onOpen: (account: Account) => void }) {
   const manage = useInstallVerb(InstallVerb.UsersManage);
-  const me = usePrincipal();
   const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -85,16 +88,23 @@ export function Accounts() {
       {accounts.isError && <Quiet>{messageOf(accounts.error)}</Quiet>}
 
       <Table
+        onRowClick={onOpen}
         columns={[
-          { key: 'external_id', header: 'Username', width: 'minmax(0,24ch)', filter: 'text' },
+          { key: 'external_id', header: 'Username', width: 'minmax(0,22ch)', mono: true, filter: 'text' },
           {
             key: 'display_name',
             header: 'Name',
             width: 'minmax(0,22ch)',
+            filter: 'text',
+            render: (row: Account) => row.display_name || '—',
+          },
+          {
+            key: 'email',
+            header: 'Email',
+            width: 'minmax(0,28ch)',
             muted: true,
             filter: 'text',
-            filterValue: (row: Account) => `${row.display_name ?? ''} ${row.email ?? ''}`,
-            render: (row: Account) => row.display_name || row.email || '—',
+            render: (row: Account) => row.email || '—',
           },
           {
             key: 'status',
@@ -114,37 +124,15 @@ export function Accounts() {
           },
           {
             key: 'install_role_id',
-            header: 'Installation role',
-            width: 'minmax(0,24ch)',
+            header: 'Role',
+            width: 'minmax(0,20ch)',
             filter: 'values',
             filterValue: (row: Account) => {
               const r = roles.data?.roles.find((x) => x.id === row.install_role_id);
               return r ? sentence(r.name) : 'None';
             },
-            render: (row: Account) => (
-              <div style={{ padding: 'var(--space-2) 0' }}>
-                {manage ? (
-                  <RolePicker
-                    account={row}
-                    roles={roles.data?.roles ?? []}
-                    // You can demote yourself when somebody else can still
-                    // administer — the server refuses the last one. What the
-                    // console will not do is make that look like a normal edit.
-                    isSelf={row.id === me.data?.user_id}
-                  />
-                ) : (
-                  <RoleLabel roleID={row.install_role_id} roles={roles.data?.roles ?? []} />
-                )}
-              </div>
-            ),
-          },
-          {
-            key: 'actions',
-            header: '',
-            width: '16ch',
-            align: 'right',
-            render: (row: Account) =>
-              manage && row.id !== me.data?.user_id ? <StatusToggle account={row} /> : null,
+            // Read-only here; it changes on the account's page.
+            render: (row: Account) => <RoleLabel roleID={row.install_role_id} roles={roles.data?.roles ?? []} />,
           },
         ]}
         rows={rows}
@@ -156,13 +144,13 @@ export function Accounts() {
   );
 }
 
-function RoleLabel({ roleID, roles }: { roleID: string; roles: Role[] }) {
+export function RoleLabel({ roleID, roles }: { roleID: string; roles: Role[] }) {
   if (!roleID) return <span style={{ color: 'var(--ink-tertiary)' }}>None</span>;
   const role = roles.find((r) => r.id === roleID);
   return <Tag>{role ? sentence(role.name) : roleID}</Tag>;
 }
 
-function RolePicker({
+export function RolePicker({
   account,
   roles,
   isSelf,
@@ -204,7 +192,7 @@ function RolePicker({
   );
 }
 
-function StatusToggle({ account }: { account: Account }) {
+export function StatusToggle({ account }: { account: Account }) {
   const queries = useQueryClient();
   const suspended = account.status !== 'active';
 
@@ -317,6 +305,6 @@ export function messageOf(error: unknown): string {
 
 /** Role names are stored lowercase; the design system sets everything in
  *  sentence case. */
-function sentence(s: string): string {
+export function sentence(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

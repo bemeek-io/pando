@@ -13,7 +13,7 @@ import (
 // and the API, which it had none of: GET /audit was reachable from the console
 // alone (R-261).
 func auditCmd(client func() (*Client, error)) *cobra.Command {
-	var action, actor, actorKind, app, targetKind, target, since, until, before string
+	var action, actor, actorKind, app, targetKind, target, involving, since, until, before string
 	var limit int
 
 	cmd := &cobra.Command{
@@ -31,7 +31,7 @@ func auditCmd(client func() (*Client, error)) *cobra.Command {
 			q := url.Values{}
 			for key, v := range map[string]string{
 				"action": action, "principal_id": actor, "principal_kind": actorKind, "app_id": app,
-				"target_kind": targetKind, "target_id": target, "before": before,
+				"target_kind": targetKind, "target_id": target, "involving": involving, "before": before,
 			} {
 				if v != "" {
 					q.Set(key, v)
@@ -101,6 +101,7 @@ func auditCmd(client func() (*Client, error)) *cobra.Command {
 	f.StringVar(&app, "app", "", "events on this app")
 	f.StringVar(&targetKind, "target-kind", "", "what kind of thing it was done to, e.g. user, role, app")
 	f.StringVar(&target, "target", "", "the ID of the thing it was done to")
+	f.StringVar(&involving, "involving", "", "events where this ID is the actor or the target, e.g. a user ID")
 	f.StringVar(&since, "since", "", "from this time, or this long ago (24h)")
 	f.StringVar(&until, "until", "", "up to this time, or this long ago")
 	f.IntVar(&limit, "limit", 0, "how many events (default 100, at most 500)")

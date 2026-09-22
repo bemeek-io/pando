@@ -61,6 +61,8 @@ type User struct {
 	Status      string `json:"status"`
 
 	MustChangePassword bool `json:"must_change_password"`
+
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Create inserts a user and returns it.
@@ -74,10 +76,12 @@ func (u *Users) Create(ctx context.Context, adapterID, externalID, email, displa
 		Status:             "active",
 		MustChangePassword: mustChange,
 	}
-	_, err := u.db.Exec(ctx, `
+	err := u.db.QueryRow(ctx, `
 		INSERT INTO users (id, adapter_id, external_id, email, display_name, password_hash, must_change_password, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')`,
-		user.ID, adapterID, externalID, nullable(email), nullable(displayName), nullable(passwordHash), mustChange)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+		RETURNING created_at`,
+		user.ID, adapterID, externalID, nullable(email), nullable(displayName), nullable(passwordHash), mustChange).
+		Scan(&user.CreatedAt)
 	if err != nil {
 		return User{}, errs.Wrap(errs.Internal, "Could not create the account.", err)
 	}
@@ -89,11 +93,11 @@ func (u *Users) ByExternalID(ctx context.Context, adapterID, externalID string) 
 	var user User
 	var email, display *string
 	err := u.db.QueryRow(ctx, `
-		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password
+		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at
 		FROM users
 		WHERE adapter_id = $1 AND external_id = $2 AND deleted_at IS NULL`,
 		adapterID, externalID).
-		Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display, &user.Status, &user.MustChangePassword)
+		Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display, &user.Status, &user.MustChangePassword, &user.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, false, nil
 	}
@@ -114,9 +118,9 @@ func (u *Users) ByID(ctx context.Context, userID string) (User, bool, error) {
 	var user User
 	var email, display *string
 	err := u.db.QueryRow(ctx, `
-		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password
+		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at
 		FROM users WHERE id = $1`, userID).
-		Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display, &user.Status, &user.MustChangePassword)
+		Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display, &user.Status, &user.MustChangePassword, &user.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, false, nil
 	}
@@ -143,7 +147,7 @@ func (u *Users) ByID(ctx context.Context, userID string) (User, bool, error) {
 // every other list, and the shape of the response already allows it.
 func (u *Users) List(ctx context.Context) ([]User, error) {
 	rows, err := u.db.Query(ctx, `
-		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password
+		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at
 		FROM users WHERE deleted_at IS NULL ORDER BY id DESC`)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not read the accounts.", err)
@@ -155,7 +159,7 @@ func (u *Users) List(ctx context.Context) ([]User, error) {
 		var user User
 		var email, display *string
 		if err := rows.Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display,
-			&user.Status, &user.MustChangePassword); err != nil {
+			&user.Status, &user.MustChangePassword, &user.CreatedAt); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read the accounts.", err)
 		}
 		if email != nil {

@@ -454,13 +454,14 @@ var toolList = []tool{
 			"app_id":         str("Events on this app."),
 			"target_kind":    str("What kind of thing it was done to, e.g. user, role, app."),
 			"target_id":      str("The ID of the thing it was done to."),
+			"involving":      str("Events where this ID is the actor or the target: everything to do with one account."),
 			"since":          str("From this time, RFC 3339."),
 			"until":          str("Up to this time, RFC 3339."),
 			"before":         str("The next_before from a previous page, to read further back."),
 		}),
 		request: func(args map[string]any) (string, string, any, error) {
 			q := url.Values{}
-			for _, key := range []string{"action", "principal_id", "principal_kind", "app_id", "target_kind", "target_id", "since", "until", "before"} {
+			for _, key := range []string{"action", "principal_id", "principal_kind", "app_id", "target_kind", "target_id", "involving", "since", "until", "before"} {
 				v, err := stringArg(args, key, false)
 				if err != nil {
 					return "", "", nil, err

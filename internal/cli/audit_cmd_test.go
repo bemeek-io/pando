@@ -21,7 +21,7 @@ func TestAuditPassesEveryFilterAndPages(t *testing.T) {
 
 	got := run(t, api, "", "audit",
 		"--action", "app.", "--actor", "usr_1", "--actor-kind", "user", "--app", "app_1",
-		"--target-kind", "app", "--target", "app_1",
+		"--target-kind", "app", "--target", "app_1", "--involving", "usr_2",
 		"--since", "2026-09-20T00:00:00Z", "--until", "2026-09-22T00:00:00Z",
 		"--limit", "50", "--before", "99")
 	require.NoError(t, got.err, got.errOut)
@@ -32,7 +32,7 @@ func TestAuditPassesEveryFilterAndPages(t *testing.T) {
 	q := u.Query()
 	for key, want := range map[string]string{
 		"action": "app.", "principal_id": "usr_1", "principal_kind": "user", "app_id": "app_1",
-		"target_kind": "app", "target_id": "app_1",
+		"target_kind": "app", "target_id": "app_1", "involving": "usr_2",
 		"since": "2026-09-20T00:00:00Z", "until": "2026-09-22T00:00:00Z",
 		"limit": "50", "before": "99",
 	} {

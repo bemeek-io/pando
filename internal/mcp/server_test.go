@@ -260,6 +260,7 @@ func TestEachToolMapsToItsEndpoint(t *testing.T) {
 			"/audit?principal_id=usr_1&since=2026-09-21T00%3A00%3A00Z&target_kind=app"},
 		{"pando_list_audit", `{"principal_kind":"system","target_id":"app_1","until":"2026-09-22T00:00:00Z","before":"41"}`, "GET",
 			"/audit?before=41&principal_kind=system&target_id=app_1&until=2026-09-22T00%3A00%3A00Z"},
+		{"pando_list_audit", `{"involving":"usr_1"}`, "GET", "/audit?involving=usr_1"},
 		{"pando_create_section", `{"name":"Work"}`, "POST", "/me/sections"},
 		{"pando_rename_section", `{"section_id":"sect_01","name":"Office"}`, "PATCH", "/me/sections/sect_01"},
 		{"pando_delete_section", `{"section_id":"sect_01"}`, "DELETE", "/me/sections/sect_01"},

@@ -16,6 +16,8 @@ import { matches } from '../ui/search';
 import { Table } from '../ui/Table';
 import { ActorField } from './ActorField';
 import type { Person } from './ActorField';
+import { NO_FILTERS, WHEN, auditQuery } from './audit';
+import type { AuditFilters } from './audit';
 
 interface AdapterRow {
   ref: string;
@@ -768,7 +770,7 @@ function clamp(n: number): number {
   return Math.round(n);
 }
 
-interface AuditRecord {
+export interface AuditRecord {
   id: number;
   occurred_at: string;
   principal_kind: string;
@@ -779,20 +781,6 @@ interface AuditRecord {
   target_kind?: string;
   target_id?: string;
 }
-
-// What the audit log can be narrowed by. Each maps to a GET /audit parameter,
-// and they combine — "Dana's changes to roles in the last day" is one query.
-interface AuditFilters {
-  action: string;
-  actor: string;
-  targetKind: string;
-  targetID: string;
-  when: string;
-  since: string;
-  until: string;
-}
-
-const NO_FILTERS: AuditFilters = { action: '', actor: '', targetKind: '', targetID: '', when: '', since: '', until: '' };
 
 // The kinds of thing the server records events against.
 const TARGET_KINDS = [
@@ -815,44 +803,11 @@ const TARGET_KINDS = [
   'launcher_section',
 ];
 
-const WHEN: { value: string; label: string; hours?: number }[] = [
-  { value: '', label: 'All time' },
-  { value: '1h', label: 'Last hour', hours: 1 },
-  { value: '24h', label: 'Last 24 hours', hours: 24 },
-  { value: '7d', label: 'Last 7 days', hours: 24 * 7 },
-  { value: '30d', label: 'Last 30 days', hours: 24 * 30 },
-  { value: 'custom', label: 'Custom range' },
-];
-
-/** The query string for a set of filters, times resolved now. */
-function auditQuery(f: AuditFilters, before?: string): string {
-  const q = new URLSearchParams();
-  if (f.action) q.set('action', f.action);
-  // A whole kind of actor — the system, anonymous — is a kind, not an ID.
-  if (f.actor.startsWith('kind:')) q.set('principal_kind', f.actor.slice('kind:'.length));
-  else if (f.actor) q.set('principal_id', f.actor);
-  if (f.targetKind) q.set('target_kind', f.targetKind);
-  if (f.targetID) q.set('target_id', f.targetID.trim());
-  const preset = WHEN.find((w) => w.value === f.when);
-  if (preset?.hours) q.set('since', new Date(Date.now() - preset.hours * 3_600_000).toISOString());
-  if (f.when === 'custom') {
-    // datetime-local is the viewer's own clock; the wire is UTC (RFC 3339).
-    if (f.since) q.set('since', new Date(f.since).toISOString());
-    if (f.until) q.set('until', new Date(f.until).toISOString());
-  }
-  if (before) q.set('before', before);
-  const s = q.toString();
-  return s ? `?${s}` : '';
-}
-
-export function Audit() {
-  const [filters, setFilters] = useState<AuditFilters>(NO_FILTERS);
-  const set = (patch: Partial<AuditFilters>) => setFilters((f) => ({ ...f, ...patch }));
-  const filtered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS);
-
-  // Pages on the server's cursor (design 04 §2.8): "Show older" asks for the
-  // page before the last one shown, so events arriving meanwhile never shift
-  // what has already been read.
+/** The audit log, paged on the server's cursor, for one set of filters. */
+export function useAuditLog(filters: AuditFilters) {
+  // Pages on the server's cursor (design 04 §2.8): "Load older events" asks
+  // for the page before the last one shown, so events arriving meanwhile never
+  // shift what has already been read.
   const log = useInfiniteQuery({
     queryKey: ['audit', filters],
     initialPageParam: '',
@@ -860,20 +815,43 @@ export function Audit() {
       api.get<{ events: AuditRecord[] | null; next_before: string }>('/audit' + auditQuery(filters, pageParam || undefined)),
     getNextPageParam: (last) => last.next_before || undefined,
   });
+  const events = log.data?.pages.flatMap((p) => p.events ?? []) ?? [];
+  return { log, events };
+}
 
-  // Names for the "who" column and the actor picker. install.audit.read does
-  // not imply install.view — an account can hold only the first — so when the
-  // list is refused, the picker becomes a field for an ID and the column shows
-  // IDs, which is what it did before.
+/** Names for the "who" column and the actor pickers. install.audit.read does
+ *  not imply install.view — an account can hold only the first — so when the
+ *  list is refused, the pickers take an ID and the columns show IDs. */
+export function usePeople() {
   const users = useQuery({
     queryKey: ['users'],
     queryFn: () => api.get<{ users: Person[] }>('/users'),
     retry: false,
   });
-  const people = users.data?.users ?? [];
-  const nameOf = (id?: string) => (id ? (people.find((u) => u.id === id)?.external_id ?? id) : '');
+  return users.data?.users ?? [];
+}
 
-  const events = log.data?.pages.flatMap((p) => p.events ?? []) ?? [];
+export function Audit({
+  initial = NO_FILTERS,
+  onFilters,
+}: {
+  /** Filters carried in from a link, such as an account's page. */
+  initial?: AuditFilters;
+  /** Told of every change, so the address bar can hold the filters and a
+   *  reload or a copied link shows the same events. */
+  onFilters?: (f: AuditFilters) => void;
+}) {
+  const [filters, setFilters] = useState<AuditFilters>(initial);
+  const change = (next: AuditFilters) => {
+    setFilters(next);
+    onFilters?.(next);
+  };
+  const set = (patch: Partial<AuditFilters>) => change({ ...filters, ...patch });
+  const clear = () => change(NO_FILTERS);
+  const filtered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS);
+
+  const { log, events } = useAuditLog(filters);
+  const people = usePeople();
 
   const custom = filters.when === 'custom';
   const range = (
@@ -927,9 +905,21 @@ export function Audit() {
             />
           </Field>
 
+          {/* The one filter that is an OR: this account as the actor, or as
+              the target. What an account's page links here with. */}
+          <Field>
+            <ActorField
+              label="Actor or target"
+              pando={false}
+              people={people}
+              value={filters.involving}
+              onChange={(involving) => set({ involving })}
+            />
+          </Field>
+
           {!custom && range}
 
-          {filtered && !custom && <ClearFilters onClear={() => setFilters(NO_FILTERS)} />}
+          {filtered && !custom && <ClearFilters onClear={clear} />}
         </FilterRow>
 
         {/* A custom range is three fields that belong together, so they take
@@ -953,15 +943,16 @@ export function Audit() {
                 onChange={(e) => set({ until: e.target.value })}
               />
             </Field>
-            <ClearFilters onClear={() => setFilters(NO_FILTERS)} />
+            <ClearFilters onClear={clear} />
           </FilterRow>
         )}
       </div>
 
       {log.isError && <Quiet>{messageOf(log.error)}</Quiet>}
 
-      <Table
-        dense
+      <AuditTable
+        events={events}
+        people={people}
         // A filter that matches nothing and a log that holds nothing look
         // identical as an empty table, and on this screen "nothing happened"
         // and "your filter is wrong" are very different answers.
@@ -972,53 +963,79 @@ export function Audit() {
               : 'The audit log is append-only; recorded events cannot be modified or deleted.'}
           </EmptyState>
         }
-        columns={[
-          {
-            key: 'occurred_at',
-            header: 'Time',
-            width: '20ch',
-            muted: true,
-            render: (row: AuditRecord) => new Date(row.occurred_at).toLocaleString(),
-          },
-          { key: 'action', header: 'Action', width: 'minmax(0,26ch)', mono: true },
-          {
-            key: 'principal_id',
-            header: 'Actor',
-            width: 'minmax(0,20ch)',
-            mono: true,
-            // A delegated token records both itself and the person it acted
-            // for (R-229). Showing only one of them is how "who did this"
-            // stops being answerable.
-            render: (row: AuditRecord) =>
-              row.on_behalf_of && row.on_behalf_of !== row.principal_id
-                ? `${nameOf(row.principal_id)} for ${nameOf(row.on_behalf_of)}`
-                : nameOf(row.principal_id) || row.principal_kind,
-          },
-          {
-            key: 'target_id',
-            header: 'Target',
-            width: 'minmax(0,24ch)',
-            mono: true,
-            muted: true,
-            render: (row: AuditRecord) =>
-              row.target_id ? `${row.target_kind ? row.target_kind + ' ' : ''}${row.target_kind === 'user' ? nameOf(row.target_id) : row.target_id}` : row.app_id || '—',
-          },
-        ]}
-        rows={events}
       />
 
-      {log.hasNextPage && (
-        <div style={{ marginTop: 'var(--space-4)' }}>
-          <Button variant="secondary" disabled={log.isFetchingNextPage} onClick={() => void log.fetchNextPage()}>
-            {log.isFetchingNextPage ? 'Loading' : 'Load older events'}
-          </Button>
-        </div>
-      )}
+      <LoadOlder log={log} />
     </Screen>
   );
 }
 
-function FilterRow({ children }: { children: React.ReactNode }) {
+/** The log's rows: time, action, actor, target. */
+export function AuditTable({
+  events,
+  people,
+  empty,
+}: {
+  events: AuditRecord[];
+  people: Person[];
+  empty: React.ReactNode;
+}) {
+  const nameOf = (id?: string) => (id ? (people.find((u) => u.id === id)?.external_id ?? id) : '');
+  return (
+    <Table
+      dense
+      empty={empty}
+      columns={[
+        {
+          key: 'occurred_at',
+          header: 'Time',
+          width: '20ch',
+          muted: true,
+          render: (row: AuditRecord) => new Date(row.occurred_at).toLocaleString(),
+        },
+        { key: 'action', header: 'Action', width: 'minmax(0,26ch)', mono: true },
+        {
+          key: 'principal_id',
+          header: 'Actor',
+          width: 'minmax(0,20ch)',
+          mono: true,
+          // A delegated token records both itself and the person it acted
+          // for (R-229). Showing only one of them is how "who did this"
+          // stops being answerable.
+          render: (row: AuditRecord) =>
+            row.on_behalf_of && row.on_behalf_of !== row.principal_id
+              ? `${nameOf(row.principal_id)} for ${nameOf(row.on_behalf_of)}`
+              : nameOf(row.principal_id) || row.principal_kind,
+        },
+        {
+          key: 'target_id',
+          header: 'Target',
+          width: 'minmax(0,24ch)',
+          mono: true,
+          muted: true,
+          render: (row: AuditRecord) =>
+            row.target_id
+              ? `${row.target_kind ? row.target_kind + ' ' : ''}${row.target_kind === 'user' ? nameOf(row.target_id) : row.target_id}`
+              : row.app_id || '—',
+        },
+      ]}
+      rows={events}
+    />
+  );
+}
+
+export function LoadOlder({ log }: { log: ReturnType<typeof useAuditLog>['log'] }) {
+  if (!log.hasNextPage) return null;
+  return (
+    <div style={{ marginTop: 'var(--space-4)' }}>
+      <Button variant="secondary" disabled={log.isFetchingNextPage} onClick={() => void log.fetchNextPage()}>
+        {log.isFetchingNextPage ? 'Loading' : 'Load older events'}
+      </Button>
+    </div>
+  );
+}
+
+export function FilterRow({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 'var(--space-3) var(--space-4)' }}>
       {children}
@@ -1034,7 +1051,7 @@ function ClearFilters({ onClear }: { onClear: () => void }) {
   );
 }
 
-function Field({ children }: { children: React.ReactNode }) {
+export function Field({ children }: { children: React.ReactNode }) {
   return <div style={{ flex: '1 1 18ch', minWidth: '18ch', maxWidth: '28ch' }}>{children}</div>;
 }
 

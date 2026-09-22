@@ -19,7 +19,9 @@ import type { SidebarItem } from '@design';
 import { api } from '@api/client';
 import type { App } from '@api/types.gen';
 import { InstallVerb, useInstallVerb } from '../app/principal';
+import { AccountPage } from '../install/Account';
 import { Accounts, messageOf } from '../install/Accounts';
+import { filtersFrom, linkQuery } from '../install/audit';
 import { Identity } from '../install/Identity';
 import { Backups } from '../install/Backups';
 import { Audit, Installation, Policy } from '../install/Installation';
@@ -259,12 +261,32 @@ export function AdminConsole({
       )}
 
       <main style={{ flex: 1, minWidth: 0 }}>
-        {section === 'accounts' && <Accounts />}
+        {section === 'accounts' &&
+          (route.userID ? (
+            <AccountPage
+              userID={route.userID}
+              onBack={() => go({ view: 'admin', section: 'accounts' })}
+              onAudit={(query) => go({ view: 'admin', section: 'audit', query })}
+            />
+          ) : (
+            <Accounts onOpen={(a) => go({ view: 'admin', section: 'accounts', userID: a.id })} />
+          ))}
         {section === 'identity' && <Identity canEdit={canManageUsers} />}
         {section === 'adapters' && <Installation />}
         {section === 'policy' && <Policy canEdit={canManagePolicy} />}
         {section === 'backups' && <Backups />}
-        {section === 'audit' && <Audit />}
+        {section === 'audit' && (
+          <Audit
+            // Filters carried in from a link, such as an account's page. Each
+            // change writes the address back, so a reload or a copied link
+            // shows the same events.
+            initial={filtersFrom(route.query)}
+            onFilters={(f) => {
+              const query = linkQuery(f);
+              go(query ? { view: 'admin', section: 'audit', query } : { view: 'admin', section: 'audit' }, true);
+            }}
+          />
+        )}
         {section === 'api' && <Reference />}
         {section === 'apps' &&
           (selectedID ? (

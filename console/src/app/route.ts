@@ -31,6 +31,11 @@ export interface Route {
   section: Section;
   appID?: string;
   tab?: string;
+  /** An account's own page, under Accounts. */
+  userID?: string;
+  /** The Audit log's filters, as a query string without `?` — how an
+   *  account's page links to the whole log already narrowed to it. */
+  query?: string;
 }
 
 const SECTIONS: Section[] = [
@@ -45,7 +50,7 @@ const SECTIONS: Section[] = [
 ];
 
 /** Reads a route out of a path. Anything unrecognized is the launcher. */
-export function parse(pathname: string): Route {
+export function parse(pathname: string, search = ''): Route {
   const parts = pathname.split('/').filter(Boolean);
 
   if (parts[0] !== 'admin') return { view: 'launcher', section: 'apps' };
@@ -55,6 +60,15 @@ export function parse(pathname: string): Route {
   if (parts[1] === 'apps' && parts[2]) {
     return { view: 'admin', section: 'apps', appID: parts[2], tab: parts[3] };
   }
+
+  // /admin/accounts/{id}
+  if (parts[1] === 'accounts' && parts[2]) {
+    return { view: 'admin', section: 'accounts', userID: parts[2] };
+  }
+
+  // /admin/audit?… — filters carried in from a link.
+  const query = search.replace(/^\?/, '');
+  if (parts[1] === 'audit' && query) return { view: 'admin', section: 'audit', query };
 
   // The adapters screen was called Installation, and a link to it may still
   // say so.
@@ -71,6 +85,8 @@ export function format(route: Route): string {
   if (route.section === 'apps' && route.appID) {
     return `/admin/apps/${route.appID}${route.tab ? `/${route.tab}` : ''}`;
   }
+  if (route.section === 'accounts' && route.userID) return `/admin/accounts/${route.userID}`;
+  if (route.section === 'audit' && route.query) return `/admin/audit?${route.query}`;
   return route.section === 'apps' ? '/admin' : `/admin/${route.section}`;
 }
 
@@ -82,17 +98,17 @@ export function format(route: Route): string {
  * changes and the page does not, which is worse than having no routing at all.
  */
 export function useRoute(): [Route, (next: Route, replace?: boolean) => void] {
-  const [route, setRoute] = useState<Route>(() => parse(window.location.pathname));
+  const [route, setRoute] = useState<Route>(() => parse(window.location.pathname, window.location.search));
 
   useEffect(() => {
-    const onPop = () => setRoute(parse(window.location.pathname));
+    const onPop = () => setRoute(parse(window.location.pathname, window.location.search));
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
   const go = (next: Route, replace = false) => {
     const path = format(next);
-    if (path !== window.location.pathname) {
+    if (path !== window.location.pathname + window.location.search) {
       window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
     }
     setRoute(next);

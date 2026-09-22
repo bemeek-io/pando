@@ -255,6 +255,7 @@ Lists what was done on this installation, newest first. The filters combine.
 | `--actor-kind` |  | what kind of actor: user, token, system or anonymous |
 | `--app` |  | events on this app |
 | `--before` |  | the page before this cursor, as printed after a full page |
+| `--involving` |  | events where this ID is the actor or the target, e.g. a user ID |
 | `--limit` | `0` | how many events (default 100, at most 500) |
 | `--since` |  | from this time, or this long ago (24h) |
 | `--target` |  | the ID of the thing it was done to |
