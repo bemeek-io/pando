@@ -160,7 +160,14 @@ func (p Proposal) chosen(answers map[string]string) spec.AppSpec {
 		if c.Spec != nil {
 			return *c.Spec
 		}
-		return Assemble(p.DraftSpec.AppID, p.DraftSpec.Source, c.Draft)
+
+		// No completed spec — a proposal from a build that filled in the
+		// winner's only. Its routing still belongs to the app rather than to
+		// the reading: the host port was allocated to this app, so it is the
+		// same port whichever candidate is adopted.
+		adopted := Assemble(p.DraftSpec.AppID, p.DraftSpec.Source, c.Draft)
+		adopted.Routing = p.DraftSpec.Routing
+		return adopted
 	}
 
 	// An answer naming something that did not bid is not a choice between

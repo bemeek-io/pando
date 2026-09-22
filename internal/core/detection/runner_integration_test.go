@@ -4,6 +4,7 @@ package detection_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -247,4 +248,52 @@ func TestR104_TheProposalCarriesTheInstallsOwnAnswers(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, got.Body,
 		"the review is where someone sees how their app will run, so the blanks are filled first")
+}
+
+// portModeInstall is an install whose routing adapter is port-mode, the way a
+// loopback install is. Its defaults are otherwise the standard ones.
+type portModeInstall struct{}
+
+func (portModeInstall) Defaults(context.Context) spec.Defaults {
+	d := spec.StandardDefaults()
+	d.RoutingMode = spec.RoutingPort
+	d.RoutingAdapter = "rte_loopback"
+	return d
+}
+
+// TestO15_AFullPortRangeBlocksTheProposalRatherThanLeavingNoPort asserts that
+// running out of ports is reported as running out of ports.
+//
+// It used to be swallowed: the spec was stored with port 0, accepted without
+// complaint, and refused at deploy with "0 is not a usable port number" —
+// which says nothing about the range being full or about deleting an app.
+func TestO15_AFullPortRangeBlocksTheProposalRatherThanLeavingNoPort(t *testing.T) {
+	db := connected(t)
+	ctx := context.Background()
+
+	repo := repoWith(t, map[string]string{"Dockerfile": "FROM nginx:alpine\nEXPOSE 8080\n"})
+	appID := appFrom(t, db, spec.Source{Type: spec.SourceGit, URL: repo})
+
+	runner := runnerOver(t, db, corepolicy.Static(corepolicy.Default()))
+	runner.Install = portModeInstall{}
+	// A range of one port, already held by another app. The same owner: a
+	// second seeded account collides on the identity adapter's external ID.
+	var ownerID string
+	require.NoError(t, db.QueryRow(ctx, `SELECT owner_user_id FROM apps WHERE id = $1`, appID).Scan(&ownerID))
+	taken, err := state.NewApps(db).Create(ctx, "taken", "taken", ownerID, ownerID,
+		spec.Source{Type: spec.SourceGit, URL: repo})
+	require.NoError(t, err)
+	_, err = state.NewPorts(db).Allocate(ctx, "rte_loopback", taken.ID, 9900, 9900)
+	require.NoError(t, err)
+	runner.PortRangeStart, runner.PortRangeEnd = 9900, 9900
+
+	got, err := runner.Detect(ctx, appID)
+	require.NoError(t, err, "detection itself ran; the app just cannot be given a port")
+
+	var proposal detect.Proposal
+	require.NoError(t, json.Unmarshal(got.Body, &proposal))
+	require.NotNil(t, proposal.Blocked, "the reason reaches the review")
+	require.Equal(t, errs.CapacityNoFreePort, proposal.Blocked.Code)
+	require.Contains(t, proposal.Blocked.Remedy, "Delete an app")
+	require.Zero(t, proposal.DraftSpec.Routing.Port)
 }

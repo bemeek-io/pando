@@ -196,7 +196,14 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 	// and a draft that says nothing about routing or limits is not something
 	// they can review — they would be approving blanks and finding out at
 	// deploy time (R-102: the user sees the reasoning, not a verdict).
-	r.applyDefaults(ctx, &proposal.DraftSpec, slug)
+	if blocked := r.applyDefaults(ctx, &proposal.DraftSpec, slug); blocked != nil {
+		// No port, no app: port-mode routing is how it is reached at all.
+		// Carried as the proposal's blocking reason so that the review says
+		// every port is taken and what to do about it, and accepting is
+		// refused with the same words — rather than the spec being saved
+		// portless and the deploy failing on "0 is not a usable port number".
+		proposal.Blocked = blocked
+	}
 
 	// And to every other reading of the repository, because answering the
 	// tie-break adopts one of them. A candidate completed only at accept time
@@ -207,7 +214,7 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 		}
 		candidate := detect.Assemble(appID, src, proposal.RunnersUp[i].Draft)
 		candidate.Source.Commit = checkout.Commit
-		r.applyDefaults(ctx, &candidate, slug)
+		_ = r.applyDefaults(ctx, &candidate, slug)
 		proposal.RunnersUp[i].Spec = &candidate
 	}
 
@@ -244,9 +251,11 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 // because policy is a floor and not a preference (R-272): an install that
 // requires VM-class isolation must have every new app inherit that, not a
 // value someone configured elsewhere.
-func (r *Runner) applyDefaults(ctx context.Context, s *spec.AppSpec, slug string) {
+// A returned error is a reason this reading of the repository cannot be
+// accepted as it stands; nil is the ordinary case.
+func (r *Runner) applyDefaults(ctx context.Context, s *spec.AppSpec, slug string) *errs.Error {
 	if r.Install == nil {
-		return
+		return nil
 	}
 	defaults := r.Install.Defaults(ctx)
 
@@ -266,14 +275,18 @@ func (r *Runner) applyDefaults(ctx context.Context, s *spec.AppSpec, slug string
 	if s.Routing.Mode == spec.RoutingPort && s.Routing.Port == 0 && r.Ports != nil {
 		port, err := r.Ports.Allocate(ctx, s.Routing.AdapterRef, s.AppID, r.PortRangeStart, r.PortRangeEnd)
 		if err != nil {
-			// Left at zero. Validation refuses the spec with a message about
-			// the port, and the proposal still reaches the user carrying
-			// everything else detection worked out — which is more use than
-			// failing the whole run over one field.
-			return
+			// Reported rather than left at zero. A zero port reached the user
+			// as "0 is not a usable port number" at deploy time, which says
+			// nothing about the range being full or about deleting an app;
+			// Allocate's own error says both.
+			if e := errs.As(err); e != nil {
+				return e
+			}
+			return errs.Wrap(errs.Internal, "Could not assign this app a port.", err)
 		}
 		s.Routing.Port = port
 	}
+	return nil
 }
 
 // progressBody is what a running detection stores: the stage, and the

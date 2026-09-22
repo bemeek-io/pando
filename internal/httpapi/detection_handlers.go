@@ -327,6 +327,15 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 		spec.SetEnv(&draft, v.Workload, v.Key, entry)
 	}
 
+	// Refused here rather than pinned and found at deploy. A spec that cannot
+	// deploy was being stored and reported much later, in the deploy's words:
+	// an app with port-mode routing and no port arrived as "0 is not a usable
+	// port number" with nothing saying which step went wrong.
+	if err := spec.Validate(&draft); err != nil {
+		Error(w, r, err)
+		return
+	}
+
 	p := PrincipalFrom(r.Context())
 	rev, err := s.Apps.CreateRevision(r.Context(), app.ID, &draft, spec.OriginDetected, p.UserID)
 	if err != nil {

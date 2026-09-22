@@ -125,3 +125,68 @@ func TestO15_DeletingAnAppReleasesItsPort(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, port, reused, "a deleted app's port comes back rather than the range filling up")
 }
+
+// TestO15_ArchivingAnAppReleasesItsPort asserts the same through the path the
+// product actually takes.
+//
+// The test above deletes the row, which nothing outside a test does: deleting
+// an app archives it, leaving the row with deleted_at set, so the table's ON
+// DELETE CASCADE never fired. An install reached twenty apps, deleted most of
+// them, and was told every port was assigned to an app — by which the ports
+// were held by apps that no longer existed.
+func TestO15_ArchivingAnAppReleasesItsPort(t *testing.T) {
+	db := connected(t)
+	owner := seedUser(t, db, "port-owner")
+	apps := state.NewApps(db)
+	ports := state.NewPorts(db)
+	ctx := context.Background()
+
+	app, err := apps.Create(ctx, "port-archive", id.New(id.App), owner.ID, owner.ID,
+		spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
+	require.NoError(t, err)
+
+	port, err := ports.Allocate(ctx, "rte_archive", app.ID, 9700, 9701)
+	require.NoError(t, err)
+
+	require.NoError(t, apps.Archive(ctx, app.ID))
+
+	next, err := apps.Create(ctx, "port-archive-2", id.New(id.App), owner.ID, owner.ID,
+		spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
+	require.NoError(t, err)
+
+	reused, err := ports.Allocate(ctx, "rte_archive", next.ID, 9700, 9701)
+	require.NoError(t, err)
+	require.Equal(t, port, reused, "a deleted app's port comes back")
+}
+
+// TestO15_AllocationReclaimsPortsLeftByDeletedApps asserts the recovery of an
+// install that already filled its range this way, without a migration: the
+// rows are stale the moment the app is gone, and the next allocation clears
+// them. InUse has always ignored them, so nothing was listening on those
+// ports either.
+func TestO15_AllocationReclaimsPortsLeftByDeletedApps(t *testing.T) {
+	db := connected(t)
+	owner := seedUser(t, db, "port-owner")
+	apps := state.NewApps(db)
+	ports := state.NewPorts(db)
+	ctx := context.Background()
+
+	gone, err := apps.Create(ctx, "port-stale", id.New(id.App), owner.ID, owner.ID,
+		spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
+	require.NoError(t, err)
+	port, err := ports.Allocate(ctx, "rte_stale", gone.ID, 9800, 9800)
+	require.NoError(t, err)
+
+	// Archived the way an older build left it: the app is deleted, the
+	// allocation stayed behind.
+	_, err = db.Exec(ctx, `UPDATE apps SET state = 'archived', deleted_at = now() WHERE id = $1`, gone.ID)
+	require.NoError(t, err)
+
+	next, err := apps.Create(ctx, "port-stale-2", id.New(id.App), owner.ID, owner.ID,
+		spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
+	require.NoError(t, err)
+
+	reused, err := ports.Allocate(ctx, "rte_stale", next.ID, 9800, 9800)
+	require.NoError(t, err, "the one port in the range is held by an app that no longer exists")
+	require.Equal(t, port, reused)
+}

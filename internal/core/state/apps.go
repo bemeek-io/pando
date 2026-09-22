@@ -422,6 +422,13 @@ func (a *Apps) Archive(ctx context.Context, appID string) error {
 	if err != nil {
 		return errs.Wrap(errs.Internal, "Could not delete the app.", err)
 	}
+
+	// Its host port goes back in the pool (O-15). The row is kept, so the
+	// table's ON DELETE CASCADE never fires and the port would be held by an
+	// app that no longer exists.
+	if _, err := a.db.Exec(ctx, `DELETE FROM port_allocations WHERE app_id = $1`, appID); err != nil {
+		return errs.Wrap(errs.Internal, "Could not release the app's port.", err)
+	}
 	return nil
 }
 
