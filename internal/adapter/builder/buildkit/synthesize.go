@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -304,26 +305,53 @@ func (a *Adapter) Plan(_ context.Context, src api.SourceView) (map[string]string
 		return nil, "", nil, err
 	}
 
-	// Everything the generator wrote, read back as content. The spec carries
-	// the plan itself rather than a pointer to a directory that will not exist
-	// next time.
-	files := map[string]string{}
-	planDir := filepath.Join(root, ".nixpacks")
-	entries, err := os.ReadDir(planDir)
+	files, err := collectPlan(root)
 	if err != nil {
-		return nil, "", nil, errs.Wrap(errs.BuildFailed, "Could not read the build plan.", err)
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		body, readErr := os.ReadFile(filepath.Join(planDir, e.Name()))
-		if readErr != nil {
-			return nil, "", nil, errs.Wrap(errs.BuildFailed, "Could not read the build plan.", readErr)
-		}
-		files[path.Join(".nixpacks", e.Name())] = string(body)
+		return nil, "", nil, err
 	}
 	return files, name, readDeclaredBuild(root).asPlanDeclaration(), nil
+}
+
+// collectPlan reads back everything the generator wrote, as content.
+//
+// The spec carries the plan itself rather than a pointer to a directory that
+// will not exist next time — so what this misses, the build does not have.
+// Subdirectories included: a plan that serves static files puts its web
+// server's configuration in .nixpacks/assets, and the Dockerfile it writes
+// alongside says COPY .nixpacks/assets /assets/. Reading only the top level
+// dropped that directory, and the build failed on the COPY with
+// "/.nixpacks/assets: not found" — a plan Pando generated, refusing itself.
+func collectPlan(root string) (map[string]string, error) {
+	files := map[string]string{}
+
+	// Rooted at the checkout: the walk reads paths a generator wrote, and a
+	// symlink among them must not be followed out of the build context.
+	// os.Root refuses that at the open rather than trusting the name.
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, errs.Wrap(errs.BuildFailed, "Could not read the build plan.", err)
+	}
+	defer func() { _ = dir.Close() }()
+
+	err = fs.WalkDir(dir.FS(), ".nixpacks", func(name string, e fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		// Regular files only: a build input is content either way.
+		if !e.Type().IsRegular() {
+			return nil
+		}
+		body, readErr := fs.ReadFile(dir.FS(), name)
+		if readErr != nil {
+			return readErr
+		}
+		files[name] = string(body)
+		return nil
+	})
+	if err != nil {
+		return nil, errs.Wrap(errs.BuildFailed, "Could not read the build plan.", err)
+	}
+	return files, nil
 }
 
 // trim bounds a subprocess's output so one runaway generator cannot put a

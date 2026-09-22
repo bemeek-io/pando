@@ -193,3 +193,32 @@ func TestAGeneratedFileCannotEscapeTheCheckout(t *testing.T) {
 	require.Error(t, err)
 	require.NoFileExists(t, filepath.Join(filepath.Dir(root), "pwned"))
 }
+
+// TestR020_APlansAssetsSurviveIntoTheBuild asserts that a plan is stored whole.
+//
+// A nixpacks plan that serves static files writes its web server's
+// configuration into .nixpacks/assets and a Dockerfile that says
+// COPY .nixpacks/assets /assets/. Reading back only the top level of the plan
+// directory dropped it, and the build failed on that COPY with
+// "/.nixpacks/assets: not found" — Pando's own plan, refused by Pando.
+func TestR020_APlansAssetsSurviveIntoTheBuild(t *testing.T) {
+	root := t.TempDir()
+	plan := filepath.Join(root, ".nixpacks")
+	require.NoError(t, os.MkdirAll(filepath.Join(plan, "assets"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(plan, "Dockerfile"),
+		[]byte("FROM alpine:3.21\nCOPY .nixpacks/assets /assets/\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(plan, "assets", "Caddyfile"),
+		[]byte(":80\nroot * /app/dist\n"), 0o644))
+
+	files, err := collectPlan(root)
+	require.NoError(t, err)
+	require.Equal(t, ":80\nroot * /app/dist\n", files[".nixpacks/assets/Caddyfile"],
+		"every path the generated Dockerfile copies is carried, whatever directory it sits in")
+	require.Contains(t, files, ".nixpacks/Dockerfile")
+
+	// And back out again, into the checkout the build reads.
+	built := t.TempDir()
+	require.NoError(t, writeInto(built, files))
+	_, err = os.Stat(filepath.Join(built, ".nixpacks", "assets", "Caddyfile"))
+	require.NoError(t, err)
+}
