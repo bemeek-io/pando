@@ -336,3 +336,16 @@ func randomPassword() (string, error) {
 	}
 	return string(b), nil
 }
+
+// Info describes this kind of adapter for the forms that configure one
+// (api.KindInfo, R-261).
+func Info() api.KindInfo {
+	return api.KindInfo{
+		Category:    api.CategoryServices,
+		Kind:        Kind,
+		Name:        "Docker",
+		Description: "Provisions the databases and caches apps declare, as containers.",
+		IDPrefix:    "svcs_",
+		Fields:      []api.Field{},
+	}
+}

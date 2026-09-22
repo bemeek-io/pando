@@ -203,3 +203,21 @@ func (a *Adapter) screensPlans() bool {
 }
 
 var _ api.AIAdapter = (*Adapter)(nil)
+
+// Info describes this kind of adapter for the forms that configure one
+// (api.KindInfo, R-261).
+func Info() api.KindInfo {
+	return api.KindInfo{
+		Category:    api.CategoryAI,
+		Kind:        Kind,
+		Name:        "Anthropic",
+		Description: "Reads a repository and checks the plan detection made, suggesting fixes it can show evidence for (R-330). Needs an Anthropic API key.",
+		IDPrefix:    "ai_",
+		Fields: []api.Field{
+			{Key: "api_key", Label: "API key", Type: "string", Help: "An Anthropic API key. Stored encrypted and never shown again. Leave empty to use ANTHROPIC_API_KEY from Pando’s environment.", Credential: true, Placeholder: "sk-ant-…"},
+			{Key: "model", Label: "Model", Type: "string", Help: "Which Claude model reads the repository. Empty uses Pando’s default.", Placeholder: "claude-sonnet-5"},
+			{Key: "base_url", Label: "Base URL", Type: "string", Help: "A gateway or proxy in front of the Anthropic API. Empty is the API itself."},
+			{Key: "api_key_env", Label: "API key variable", Type: "string", Help: "The environment variable to read the key from, instead of a stored one.", Placeholder: "ANTHROPIC_API_KEY"},
+		},
+	}
+}

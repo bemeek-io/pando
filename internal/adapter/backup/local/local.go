@@ -219,3 +219,18 @@ func (a *Adapter) path(name string) (string, error) {
 }
 
 var _ api.BackupAdapter = (*Adapter)(nil)
+
+// Info describes this kind of adapter for the forms that configure one
+// (api.KindInfo, R-261).
+func Info() api.KindInfo {
+	return api.KindInfo{
+		Category:    api.CategoryBackup,
+		Kind:        Kind,
+		Name:        "Local disk",
+		Description: "Writes backups to a directory on the host.",
+		IDPrefix:    "bkp_",
+		Fields: []api.Field{
+			{Key: "path", Label: "Directory", Type: "string", Help: "Where backups are written.", Required: true, Placeholder: "/var/lib/pando/backups"},
+		},
+	}
+}

@@ -7,9 +7,24 @@
 
 import { createContext, useContext, useLayoutEffect, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, EmptyState, Input, Radio, Select, Skeleton, StatusIndicator, Switch, Tag } from '@design';
+import {
+  Banner,
+  Button,
+  EmptyState,
+  InlineCode,
+  Input,
+  Radio,
+  Select,
+  Skeleton,
+  StatusIndicator,
+  Switch,
+  Tag,
+} from '@design';
 
 import { api } from '@api/client';
+import { InstallVerb, useInstallVerb } from '../app/principal';
+import { AdapterDialog } from './AdapterDialog';
+import type { ConfiguredAdapter } from './AdapterDialog';
 import { Quiet, Screen, messageOf } from './Accounts';
 import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
@@ -21,15 +36,23 @@ import type { Person } from './ActorField';
 import { NO_FILTERS, WHEN, auditQuery } from './audit';
 import type { AuditFilters } from './audit';
 
-interface AdapterRow {
-  ref: string;
-  kind: string;
-  category: string;
-  healthy?: boolean;
+interface AdapterRow extends ConfiguredAdapter {
+  /** An older name for id, from before GET /adapters settled its shape. */
+  ref?: string;
   [key: string]: unknown;
 }
 
 export function Installation() {
+  const queries = useQueryClient();
+  // Only on the verb (R-082): install.view shows the list, and holding it says
+  // nothing about being allowed to change what is in it.
+  const canManage = useInstallVerb(InstallVerb.AdaptersManage);
+  const [editing, setEditing] = useState<{ existing?: AdapterRow } | null>(null);
+  // Kept until dismissed: a saved adapter does nothing until Pando restarts
+  // (R-253), and a notice that vanished on its own would leave someone waiting
+  // for a change that is not coming.
+  const [saved, setSaved] = useState<string | null>(null);
+
   const adapters = useQuery({
     queryKey: ['adapters'],
     queryFn: () => api.get<{ adapters: AdapterRow[] } | AdapterRow[]>('/adapters'),
@@ -39,17 +62,42 @@ export function Installation() {
     queryFn: () => api.get<unknown>('/capacity'),
   });
 
-  const rows = normalize(adapters.data);
+  const rows = normalize(adapters.data).map((r) => ({ ...r, id: r.id ?? r.ref ?? '' }));
 
   return (
-    <Screen heading="Adapters">
+    <Screen
+      heading="Adapters"
+      action={
+        canManage && (
+          // Primary: adding an adapter is the one thing this screen does.
+          <Button variant="primary" onClick={() => setEditing({})}>
+            Add adapter
+          </Button>
+        )
+      }
+    >
       {adapters.isError && <Quiet>{messageOf(adapters.error)}</Quiet>}
+
+      {saved && (
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <Banner
+            tone="info"
+            action={
+              <Button variant="ghost" onClick={() => setSaved(null)}>
+                Dismiss
+              </Button>
+            }
+          >
+            {saved} is saved. Restart Pando to start using it: <InlineCode>docker compose restart pando</InlineCode>
+          </Banner>
+        </div>
+      )}
 
       <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>Adapters</h4>
       <Table
         loading={adapters.isPending}
         columns={[
-          { key: 'ref', header: 'Reference', width: 'minmax(0,28ch)', mono: true },
+          { key: 'id', header: 'ID', width: 'minmax(0,28ch)', mono: true },
           { key: 'kind', header: 'Kind', width: 'minmax(0,24ch)' },
           { key: 'category', header: 'Category', width: '16ch', muted: true },
           {
@@ -65,9 +113,37 @@ export function Installation() {
               />
             ),
           },
+          ...(canManage
+            ? [
+                {
+                  key: 'actions',
+                  header: '',
+                  width: '12ch',
+                  align: 'right' as const,
+                  render: (row: AdapterRow) => (
+                    <Button variant="secondary" onClick={() => setEditing({ existing: row })}>
+                      Change
+                    </Button>
+                  ),
+                },
+              ]
+            : []),
         ]}
         rows={rows}
       />
+
+      {editing && (
+        <AdapterDialog
+          existing={editing.existing}
+          adapters={rows}
+          onClose={() => setEditing(null)}
+          onSaved={(name) => {
+            setEditing(null);
+            setSaved(name);
+            void queries.invalidateQueries({ queryKey: ['adapters'] });
+          }}
+        />
+      )}
 
       <h4 style={{ font: 'var(--type-h4)', margin: 'var(--space-6) 0 var(--space-3)' }}>
         Capacity

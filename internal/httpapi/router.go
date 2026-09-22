@@ -54,6 +54,10 @@ type Server struct {
 	Registry *api.Registry
 	Adapters *state.Adapters
 
+	// AdapterKinds are the kinds of adapter this build can run, with the
+	// settings each takes (api.KindInfo), for GET /adapters/kinds.
+	AdapterKinds []api.KindInfo
+
 	// AdapterCredentials holds adapters' credentials encrypted (O-20). Written
 	// by POST /adapters, never read back by any handler.
 	AdapterCredentials *state.AdapterCredentials
@@ -384,6 +388,7 @@ func (s *Server) Routes() http.Handler {
 		// out choices that would fail at plan time.
 		r.Get("/adapters", s.handleListAdapters)
 		r.Post("/adapters", s.handleCreateAdapter)
+		r.Get("/adapters/kinds", s.handleAdapterKinds)
 		r.Get("/capacity", s.handleCapacity)
 
 		// Host policy: read with install.view, written with

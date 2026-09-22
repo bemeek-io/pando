@@ -463,8 +463,9 @@ func serve(ctx context.Context, configPath string) error {
 		Auditor:  auditor,
 		Policy:   hostPolicy,
 
-		Registry: registry,
-		Adapters: adapters,
+		Registry:     registry,
+		Adapters:     adapters,
+		AdapterKinds: adapterKinds(),
 
 		AdapterCredentials: adapterCredentials,
 
@@ -1157,4 +1158,23 @@ func startupPolicy(cfg *config.Config) (*corepolicy.Overlay, error) {
 		}
 	}
 	return overlay, nil
+}
+
+// adapterKinds is every kind of adapter this build can run, for the console's
+// and the CLI's "add an adapter" forms. Kept beside the switch that constructs
+// them, which is the other list of the same kinds: a kind added there and not
+// here would be runnable but not configurable from anywhere but the API.
+func adapterKinds() []adapterapi.KindInfo {
+	return []adapterapi.KindInfo{
+		aianthropic.Info(),
+		dockerruntime.Info(),
+		loopback.Info(),
+		traefik.Info(),
+		buildkitadapter.Info(),
+		trivyscanner.Info(),
+		secretslocal.Info(),
+		backuplocal.Info(),
+		servicesdocker.Info(),
+		notifyconsole.Info(),
+	}
 }

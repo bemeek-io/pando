@@ -137,6 +137,7 @@ var routeDocs = []reference.Route{
 
 	// --- installation -----------------------------------------------------
 	{Method: "GET", Path: "/api/v1/adapters", Group: "Installation", Summary: "The adapters configured here and what they can currently do — live capabilities, not stored configuration. Names which credentials are set, never their values.", Verb: string(authz.InstallView)},
+	{Method: "GET", Path: "/api/v1/adapters/kinds", Group: "Installation", Summary: "The kinds of adapter this build of Pando can run, and the settings each takes — which are credentials (write-only, stored encrypted), which are required, and an example of each.", Verb: string(authz.InstallView)},
 	{Method: "POST", Path: "/api/v1/adapters", Group: "Installation", Summary: "Configure an adapter. Settings go in config; credentials such as an API key go in credentials, which is write-only and stored encrypted.", Verb: string(authz.InstallAdaptersManage)},
 	{Method: "GET", Path: "/api/v1/capacity", Group: "Installation", Summary: "What the host has, and what is committed to apps (R-242).", Verb: string(authz.InstallView)},
 	{Method: "GET", Path: "/api/v1/policy", Group: "Installation", Summary: "Host policy. Reading the rules you work under is not the same privilege as changing them (R-274).", Verb: string(authz.InstallView)},

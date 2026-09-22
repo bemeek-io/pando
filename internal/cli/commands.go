@@ -47,6 +47,7 @@ func Commands() []*cobra.Command {
 		withServer(grantCmd(client)),
 		withServer(userCmd(client)),
 		withServer(groupCmd(client)),
+		withServer(adapterCmd(client)),
 		withServer(sectionCmd(client)),
 		withServer(auditCmd(client)),
 		withServer(configCmd(client)),

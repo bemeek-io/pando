@@ -313,3 +313,18 @@ func cachePath(namespace string) string {
 	}
 	return filepath.Join(root, namespace)
 }
+
+// Info describes this kind of adapter for the forms that configure one
+// (api.KindInfo, R-261).
+func Info() api.KindInfo {
+	return api.KindInfo{
+		Category:    api.CategoryBuilder,
+		Kind:        Kind,
+		Name:        "BuildKit",
+		Description: "Builds images from source in an isolated BuildKit daemon.",
+		IDPrefix:    "bld_",
+		Fields: []api.Field{
+			{Key: "address", Label: "BuildKit address", Type: "string", Help: "Where the BuildKit daemon listens.", Placeholder: "tcp://buildkitd:1234"},
+		},
+	}
+}

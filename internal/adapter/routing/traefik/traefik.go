@@ -312,3 +312,21 @@ func addressIn(body string) string {
 }
 
 var _ api.RoutingAdapter = (*Adapter)(nil)
+
+// Info describes this kind of adapter for the forms that configure one
+// (api.KindInfo, R-261).
+func Info() api.KindInfo {
+	return api.KindInfo{
+		Category:    api.CategoryRouting,
+		Kind:        Kind,
+		Name:        "Traefik",
+		Description: "Gives apps their own hostnames through a Traefik edge Pando runs, with certificates.",
+		IDPrefix:    "rte_",
+		Fields: []api.Field{
+			{Key: "dir", Label: "Configuration directory", Type: "string", Help: "Where Pando writes Traefik’s dynamic configuration.", Required: true, Placeholder: "/var/lib/pando/traefik"},
+			{Key: "base_domain", Label: "Base domain", Type: "string", Help: "Apps are served at <app>.<base domain>.", Placeholder: "apps.example.com"},
+			{Key: "entrypoint", Label: "Entry point", Type: "string", Help: "The Traefik entry point apps are served on.", Placeholder: "websecure"},
+			{Key: "cert_resolver", Label: "Certificate resolver", Type: "string", Help: "The Traefik certificate resolver to use.", Placeholder: "letsencrypt"},
+		},
+	}
+}

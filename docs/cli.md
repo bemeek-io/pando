@@ -76,6 +76,52 @@ The environment beats the stored file; `--server` beats both.
 
 ## Commands
 
+### `adapter`
+
+See and configure this installation's adapters
+
+```
+pando adapter
+```
+
+#### `adapter add`
+
+Add an adapter, or change one, by kind
+
+```
+pando adapter add <category>/<kind>
+```
+
+Adds an adapter of a kind from `pando adapter kinds`. Ordinary settings go in --set KEY=VALUE;
+a secret setting such as an API key is asked for without echoing it, so it never lands in
+your shell history (piped in when stdin is not a terminal). Adding with an existing --id
+changes that adapter. Pando loads adapters at startup: restart it afterwards.
+
+  pando adapter add ai/anthropic --set model=claude-sonnet-5
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--default` | `true` | make it the default adapter of its category |
+| `--id` |  | the adapter's ID (default: the kind's usual prefix and name, e.g. ai_anthropic) |
+| `--name` |  | what the console calls it (default: the kind's name) |
+| `--set` | `[]` | a setting, KEY=VALUE; repeat for more |
+
+#### `adapter kinds`
+
+Show the kinds of adapter this build can run, and their settings
+
+```
+pando adapter kinds
+```
+
+#### `adapter list`
+
+Show the adapters configured here
+
+```
+pando adapter list
+```
+
 ### `app`
 
 Work with apps

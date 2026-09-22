@@ -24,12 +24,13 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 	"go.uber.org/zap"
 
+	aianthropic "github.com/bemeek-io/pando/internal/adapter/ai/anthropic"
 	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
 	backuplocal "github.com/bemeek-io/pando/internal/adapter/backup/local"
 	identitylocal "github.com/bemeek-io/pando/internal/adapter/identity/local"
 	secretslocal "github.com/bemeek-io/pando/internal/adapter/secrets/local"
-	"github.com/bemeek-io/pando/internal/core/assertion"
 	"github.com/bemeek-io/pando/internal/config"
+	"github.com/bemeek-io/pando/internal/core/assertion"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/backup"
@@ -202,18 +203,19 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 		Auditor:  auditor,
 		Policy:   hostPolicy,
 
-		Registry:    registry,
-		Adapters:    adapters,
-		Allocations: allocations,
+		Registry:     registry,
+		Adapters:     adapters,
+		AdapterKinds: []adapterapi.KindInfo{aianthropic.Info(), secretslocal.Info()},
+		Allocations:  allocations,
 
 		AdapterCredentials: state.NewAdapterCredentials(db, secretsAdapter, "sec_local"),
-		Planner:     appPlanner,
-		Deployments: deployments,
-		Reconciles:  state.NewReconciles(db),
-		Deployer:    deployer,
-		Logs:        logStore,
-		Secrets:     secrets,
-		Detections:  state.NewDetections(db),
+		Planner:            appPlanner,
+		Deployments:        deployments,
+		Reconciles:         state.NewReconciles(db),
+		Deployer:           deployer,
+		Logs:               logStore,
+		Secrets:            secrets,
+		Detections:         state.NewDetections(db),
 
 		Authz:   authorizer,
 		Authent: authenticator,

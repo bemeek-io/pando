@@ -178,6 +178,7 @@ one verb says nothing about another (R-082).
 | Endpoint | Verb | What it does |
 | --- | --- | --- |
 | `GET /api/v1/adapters` | `install.view` | The adapters configured here and what they can currently do — live capabilities, not stored configuration. Names which credentials are set, never their values. |
+| `GET /api/v1/adapters/kinds` | `install.view` | The kinds of adapter this build of Pando can run, and the settings each takes — which are credentials (write-only, stored encrypted), which are required, and an example of each. |
 | `POST /api/v1/adapters` | `install.adapters.manage` | Configure an adapter. Settings go in config; credentials such as an API key go in credentials, which is write-only and stored encrypted. |
 | `GET /api/v1/capacity` | `install.view` | What the host has, and what is committed to apps (R-242). |
 | `GET /api/v1/policy` | `install.view` | Host policy. Reading the rules you work under is not the same privilege as changing them (R-274). |

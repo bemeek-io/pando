@@ -1186,3 +1186,21 @@ func volumeName(bundleID, volumeID string) string {
 func containerName(bundleID, workload string) string {
 	return "pando-" + bundleID + "-" + workload
 }
+
+// Info describes this kind of adapter for the forms that configure one
+// (api.KindInfo, R-261).
+func Info() api.KindInfo {
+	return api.KindInfo{
+		Category:    api.CategoryRuntime,
+		Kind:        Kind,
+		Name:        "Docker",
+		Description: "Runs apps as containers on a Docker host.",
+		IDPrefix:    "rt_",
+		Fields: []api.Field{
+			{Key: "host", Label: "Docker host", Type: "string", Help: "The Docker endpoint. Empty uses the environment, which the bundled Compose file relies on.", Placeholder: "unix:///var/run/docker.sock"},
+			{Key: "total_cpu_millis", Label: "CPU available", Type: "int", Help: "Thousandths of a core Pando may allocate. Empty is the whole machine.", Placeholder: "4000"},
+			{Key: "total_memory_bytes", Label: "Memory available", Type: "int", Help: "Bytes Pando may allocate. Empty is the whole machine."},
+			{Key: "total_disk_bytes", Label: "Disk available", Type: "int", Help: "Bytes of disk Pando may allocate."},
+		},
+	}
+}
