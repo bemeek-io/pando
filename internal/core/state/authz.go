@@ -569,6 +569,33 @@ type UserAppGrant struct {
 	GroupName string `json:"group_name,omitempty"`
 }
 
+// ForGroup returns a group's own app grants: what everyone in it gets.
+func (g *Grants) ForGroup(ctx context.Context, groupID string) ([]UserAppGrant, error) {
+	rows, err := g.db.Query(ctx, `
+		SELECT a.id, a.name, coalesce(a.owner_user_id, ''), g.id, g.plane,
+		       coalesce(g.role_id, ''), coalesce(r.name, '')
+		FROM grants g
+		JOIN apps a ON a.id = g.app_id AND a.deleted_at IS NULL
+		LEFT JOIN roles r ON r.id = g.role_id
+		WHERE g.principal_kind = 'group' AND g.principal_id = $1
+		ORDER BY a.name, a.id, g.plane`, groupID)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the group's apps.", err)
+	}
+	defer rows.Close()
+
+	out := []UserAppGrant{}
+	for rows.Next() {
+		u := UserAppGrant{Via: "group", GroupID: groupID}
+		if err := rows.Scan(&u.AppID, &u.AppName, &u.AppOwner, &u.GrantID, &u.Plane,
+			&u.RoleID, &u.RoleName); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the group's apps.", err)
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 // ForUser returns every app grant that reaches a person: their own, and their
 // groups' (resolved live, R-079). Install grants are not app grants and are
 // not here.

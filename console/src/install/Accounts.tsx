@@ -320,6 +320,14 @@ export function messageOf(error: unknown): string {
   return 'Pando could not reach the server. Reload the page to try again.';
 }
 
+/** The server's message and, when it gave one, its remedy (R-105). Most
+ *  refusals on these screens are the last-administrator rule (R-088), and the
+ *  remedy is the way through it. */
+export function refusal(error: unknown): string {
+  const remedy = error instanceof RequestFailed ? error.remedy : undefined;
+  return remedy ? `${messageOf(error)} ${remedy}` : messageOf(error);
+}
+
 /** Role names are stored lowercase; the design system sets everything in
  *  sentence case. */
 export function sentence(s: string): string {

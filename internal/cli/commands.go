@@ -46,6 +46,7 @@ func Commands() []*cobra.Command {
 		withServer(secretCmd(client)),
 		withServer(grantCmd(client)),
 		withServer(userCmd(client)),
+		withServer(groupCmd(client)),
 		withServer(sectionCmd(client)),
 		withServer(auditCmd(client)),
 		withServer(configCmd(client)),
@@ -1067,6 +1068,38 @@ func userCmd(client func() (*Client, error)) *cobra.Command {
 	reset.Flags().BoolVar(&keepReset, "no-change-required", false, "do not require a new password at the next sign-in")
 	cmd.AddCommand(reset)
 
+	update := &cobra.Command{
+		Use:   "update <user-id>",
+		Short: "Change an account's username, name or email",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			// Only the flags given: an unset flag leaves that field alone.
+			body := map[string]any{}
+			for flag, field := range map[string]string{"username": "username", "name": "display_name", "email": "email"} {
+				if cmd.Flags().Changed(flag) {
+					v, _ := cmd.Flags().GetString(flag)
+					body[field] = v
+				}
+			}
+			if len(body) == 0 {
+				return fmt.Errorf("say what to change: --username, --name or --email")
+			}
+			if err := c.Do("PATCH", "/users/"+args[0], body, nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Updated.")
+			return nil
+		},
+	}
+	update.Flags().String("username", "", "the name the account signs in with")
+	update.Flags().String("name", "", "the name shown in the console and the audit log")
+	update.Flags().String("email", "", "the account's email address")
+	cmd.AddCommand(update)
+
 	cmd.AddCommand(&cobra.Command{
 		Use:   "apps <user-id>",
 		Short: "Show the apps an account has access to, and its role on each",
@@ -1078,6 +1111,91 @@ func userCmd(client func() (*Client, error)) *cobra.Command {
 			}
 			var out map[string]any
 			if err := c.Do("GET", "/users/"+args[0]+"/apps", nil, &out); err != nil {
+				return err
+			}
+			return printJSON(cmd.OutOrStdout(), out)
+		},
+	})
+	return cmd
+}
+
+func groupCmd(client func() (*Client, error)) *cobra.Command {
+	cmd := &cobra.Command{Use: "group", Short: "Work with groups and what they hold"}
+
+	do := func(method, path string, body any, done string) func(*cobra.Command, []string) error {
+		return func(cmd *cobra.Command, _ []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do(method, path, body, nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), done)
+			return nil
+		}
+	}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "Show every group, its members and its installation role",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var out map[string]any
+			if err := c.Do("GET", "/groups", nil, &out); err != nil {
+				return err
+			}
+			return printJSON(cmd.OutOrStdout(), out)
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "add-member <group-id> <user-id>",
+		Short: "Add an account to a group; it then holds what the group holds",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return do("PUT", "/groups/"+args[0]+"/members/"+args[1], nil, "Added.")(cmd, args)
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "remove-member <group-id> <user-id>",
+		Short: "Remove an account from a group",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return do("DELETE", "/groups/"+args[0]+"/members/"+args[1], nil, "Removed.")(cmd, args)
+		},
+	})
+	var clear bool
+	role := &cobra.Command{
+		Use:   "role <group-id> [role-id]",
+		Short: "Give a group an installation role, or take it away with --clear",
+		Args:  cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if clear {
+				return do("DELETE", "/groups/"+args[0]+"/role", nil, "Role removed.")(cmd, args)
+			}
+			if len(args) < 2 {
+				return fmt.Errorf("say which role, or pass --clear to take the group's role away")
+			}
+			return do("PUT", "/groups/"+args[0]+"/role", map[string]any{"role_id": args[1]}, "Role set.")(cmd, args)
+		},
+	}
+	role.Flags().BoolVar(&clear, "clear", false, "take the group's installation role away")
+	cmd.AddCommand(role)
+	cmd.AddCommand(&cobra.Command{
+		Use:   "apps <group-id>",
+		Short: "Show the apps a group has access to, and its role on each",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var out map[string]any
+			if err := c.Do("GET", "/groups/"+args[0]+"/apps", nil, &out); err != nil {
 				return err
 			}
 			return printJSON(cmd.OutOrStdout(), out)

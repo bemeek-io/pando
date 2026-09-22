@@ -210,7 +210,7 @@ by itself. The consequence is always stated with it: *anyone on the internet, wi
 
 ### 6.3 Groups
 
-**R-078 [D]** Groups may be Pando-native or pushed from an IdP (R-048). **Permissions attached to a group are defined in Pando**, never inherited from the IdP. The IdP says who is in a group; Pando says what the group can do.
+**R-078 [D]** Groups may be Pando-native or pushed from an IdP (R-048). **Permissions attached to a group are defined in Pando**, never inherited from the IdP. The IdP says who is in a group; Pando says what the group can do. A group may hold an installation role and roles on apps, exactly as an account can, and everyone in it holds them for as long as they are in it (R-079) — so adding someone to a team's group is how they get the team's access.
 
 **R-079 [D]** Group membership is evaluated **live** at request time, not expanded to a member list at grant time. Otherwise upstream removals do not take effect.
 
@@ -271,7 +271,7 @@ managing an app is not using it: opening an app through the proxy still needs a 
 ownership (R-072, R-087). A custom role may hold `install.apps.view` alone, to see every app and
 change none.
 
-**R-082 [D]** Custom roles may be composed from the verb list and assigned to users or groups.
+**R-082 [D]** Custom roles may be composed from the verb list and assigned to users or groups. A role's name is unique ignoring case and surrounding spaces, and no custom role may take the name of a built-in one.
 
 **R-083 [D]** `app.secrets.write` is deliberately separable from `app.secrets.read` — rotating a credential and reading it are different levels of trust. Secrets are write-only after creation for anyone below owner.
 
@@ -283,7 +283,7 @@ change none.
 
 **R-087 [D]** Pando does not claim to defend against its own host operator. A host admin has root and can reach any container outside Pando entirely. What Pando guarantees is that the **supported path** requires a grant — so unauthorized access requires deliberately leaving the tool, which is a materially different thing to detect and audit.
 
-**R-088 [D]** **An installation cannot be left with nobody who can administer it.** Removing the last install-wide grant holding `install.users.manage` is refused, and the message names the way out: make someone else an administrator first. The rule is stated in terms of the verb rather than the built-in role, because a custom role (R-082) holding it is just as much an administrator. Recovery from the state this prevents requires shell access to the host and `pando admin`, which is a different and much higher bar than the one click that would otherwise reach it.
+**R-088 [D]** **An installation cannot be left with nobody who can administer it.** Removing the last install-wide grant holding `install.users.manage` is refused, and so is removing the last person who holds it through a group — a group with the role and nobody in it administers nothing, and the message names the way out: make someone else an administrator first. The rule is stated in terms of the verb rather than the built-in role, because a custom role (R-082) holding it is just as much an administrator. Recovery from the state this prevents requires shell access to the host and `pando admin`, which is a different and much higher bar than the one click that would otherwise reach it.
 
 ---
 

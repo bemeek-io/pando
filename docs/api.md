@@ -148,7 +148,7 @@ one verb says nothing about another (R-082).
 | `GET /api/v1/users` | `install.view` | The accounts on this installation. |
 | `POST /api/v1/users` | `install.users.manage` | Create an account. |
 | `GET /api/v1/users/{userID}` | `install.view` | One account. Your own needs no verb. |
-| `PATCH /api/v1/users/{userID}` | `install.users.manage` | Change an account: display name, email, or suspension. Suspension is not deletion (R-049). |
+| `PATCH /api/v1/users/{userID}` | `install.users.manage` | Change an account: any of `username`, `display_name`, `email` and `status`. Username and email only on a local account; a username only with this verb, even your own. Suspension is not deletion (R-049). Your own name and email need no verb. |
 | `DELETE /api/v1/users/{userID}` | `install.users.manage` | Delete an account, with the destruction rules that follow from it (R-282). |
 | `PUT /api/v1/users/{userID}/role` | `install.users.manage` | Give an account an installation role. Deliberately not a field on PATCH: changing someone's status and changing their power are different acts. |
 | `DELETE /api/v1/users/{userID}/role` | `install.users.manage` | Take an installation role away. The last administrator cannot be demoted. |
@@ -158,6 +158,11 @@ one verb says nothing about another (R-082).
 | `GET /api/v1/groups` | `install.view` | Groups, whether Pando's own or an identity adapter's (R-078). |
 | `POST /api/v1/groups` | `install.users.manage` | Create a group. |
 | `PUT /api/v1/groups/{groupID}/members` | `install.users.manage` | Set a group's members. |
+| `PUT /api/v1/groups/{groupID}/members/{userID}` | `install.users.manage` | Add one account to a group. It then holds everything the group holds. |
+| `DELETE /api/v1/groups/{groupID}/members/{userID}` | `install.users.manage` | Remove one account from a group. Refused when it would leave nobody who can manage accounts (R-088). |
+| `PUT /api/v1/groups/{groupID}/role` | `install.users.manage` | Give a group an installation role (`role_id`), which everyone in it holds. |
+| `DELETE /api/v1/groups/{groupID}/role` | `install.users.manage` | Take a group's installation role away. Refused when it would leave nobody who can manage accounts (R-088). |
+| `GET /api/v1/groups/{groupID}/apps` | `install.view` | A group's app grants: the role everyone in it has on each app, whether they can open it, and whether you can change that (`can_manage`). Only apps you can see. Share an app with a group through `POST /apps/{appID}/grants` with `principal_kind: group`. |
 | `DELETE /api/v1/groups/{groupID}` | `install.users.manage` | Delete a group. Everything shared with it goes with it: its members lose that access and keep anything given to them another way. Refused if it would leave nobody who can manage accounts (R-088). |
 | `GET /api/v1/roles` | `install.view` | Roles, built in and custom. By default the ones granted across the installation; `scope=app` gives the ones granted on an app, and `scope=all` both. Built-in roles are immutable (R-081). |
 | `POST /api/v1/roles` | `install.users.manage` | Compose a custom role from verbs (R-082). |

@@ -332,6 +332,14 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/", s.handleListGroups)
 			r.Post("/", s.handleCreateGroup)
 			r.Put("/{groupID}/members", s.handleSetGroupMembers)
+			r.Put("/{groupID}/members/{userID}", s.handleAddGroupMember)
+			r.Delete("/{groupID}/members/{userID}", s.handleRemoveGroupMember)
+
+			// A group's installation role and its app grants: what everyone
+			// in it holds (R-078).
+			r.Put("/{groupID}/role", s.handlePutGroupRole)
+			r.Delete("/{groupID}/role", s.handleDeleteGroupRole)
+			r.Get("/{groupID}/apps", s.handleGroupApps)
 			r.Delete("/{groupID}", s.handleDeleteGroup)
 		})
 

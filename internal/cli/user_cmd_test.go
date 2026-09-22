@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -24,4 +25,32 @@ func TestR046_UserCreateAndResetUseAGeneratedPassword(t *testing.T) {
 	require.Contains(t, got.out, "Zq7!generated-pass")
 	require.JSONEq(t, `{"password":"Zq7!generated-pass","must_change_password":false}`,
 		api.bodyFor("POST /users/usr_01/password"))
+}
+
+// R-078: groups and what they hold, from the CLI as from the API (R-261).
+func TestGroupAndProfileCommandsCallTheAPI(t *testing.T) {
+	api := newAPI(t)
+
+	for _, tc := range []struct {
+		args []string
+		call string
+		body string
+	}{
+		{[]string{"user", "update", "usr_01", "--name", "Dana K"}, "PATCH /users/usr_01", `{"display_name":"Dana K"}`},
+		{[]string{"group", "add-member", "grp_01", "usr_01"}, "PUT /groups/grp_01/members/usr_01", ""},
+		{[]string{"group", "remove-member", "grp_01", "usr_01"}, "DELETE /groups/grp_01/members/usr_01", ""},
+		{[]string{"group", "role", "grp_01", "role_administrator"}, "PUT /groups/grp_01/role", `{"role_id":"role_administrator"}`},
+		{[]string{"group", "role", "grp_01", "--clear"}, "DELETE /groups/grp_01/role", ""},
+	} {
+		got := run(t, api, "", tc.args[0], tc.args[1:]...)
+		require.NoError(t, got.err, got.errOut)
+		if tc.body != "" {
+			require.JSONEq(t, tc.body, api.bodyFor(tc.call), tc.call)
+		}
+		_, path, _ := strings.Cut(tc.call, " ")
+		require.True(t, api.sawPath(path), tc.call)
+	}
+
+	got := run(t, api, "", "user", "update", "usr_01")
+	require.Error(t, got.err, "nothing to change")
 }

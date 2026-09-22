@@ -1,13 +1,14 @@
-// The apps an account has something on, on its page: its role for managing
-// each, whether it can use each, and — where the viewer may change that — the
-// controls to change it.
+// The apps an account or a group has something on: its role for managing each,
+// whether it can open each, and — where the viewer may change that — the
+// controls to change it. One component for both, because a grant to a group is
+// the same grant as one to a person (R-078); only who holds it differs.
 //
 // Editable only where the server says so. `can_manage` on each row is the
 // authorizer's own answer for app.grants.manage on that app (GET
-// /users/{id}/apps), so a row the viewer cannot change is shown as text rather
-// than as a control that would be refused. Access through a group is always
-// text here: it belongs to the group, and changing it would change it for
-// everyone in it.
+// /users/{id}/apps, GET /groups/{id}/apps), so a row the viewer cannot change
+// is shown as text rather than as a control that would be refused. On an
+// account's page, access through a group is always text: it belongs to the
+// group, and changing it would change it for everyone in it.
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -16,8 +17,16 @@ import { Banner, Button, Checkbox, Dialog, EmptyState, Select, Tag } from '@desi
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb } from '../app/principal';
 import { Table } from '../ui/Table';
-import type { Account, Role } from './Accounts';
+import type { Role } from './Accounts';
 import { Quiet, messageOf, sentence } from './Accounts';
+
+/** Who the grants are for. */
+export interface Principal {
+  kind: 'user' | 'group';
+  id: string;
+  /** How the principal is named in sentences. */
+  name: string;
+}
 
 interface Grant {
   grant_id: string;
@@ -38,11 +47,26 @@ interface AppAccess {
   data: Grant[];
 }
 
-export function AccountApps({ account }: { account: Account }) {
-  const key = ['users', account.id, 'apps'];
+const listKey = (p: Principal) => [p.kind === 'user' ? 'users' : 'groups', p.id, 'apps'];
+
+/** The principal's own grant, as opposed to one an account holds through a
+ *  group. Every grant in a group's list is the group's own. */
+const isOwn = (p: Principal) => (g: Grant) => p.kind === 'group' || g.via === 'user';
+
+export function AccountApps({
+  principal,
+  heading = 'Apps',
+  action,
+}: {
+  principal: Principal;
+  heading?: string;
+  /** Beside "Give access to an app", for the surface the list sits in. */
+  action?: React.ReactNode;
+}) {
+  const noun = principal.kind === 'user' ? 'account' : 'group';
   const access = useQuery({
-    queryKey: key,
-    queryFn: () => api.get<{ apps: AppAccess[] }>(`/users/${account.id}/apps`),
+    queryKey: listKey(principal),
+    queryFn: () => api.get<{ apps: AppAccess[] }>(`/${principal.kind === 'user' ? 'users' : 'groups'}/${principal.id}/apps`),
   });
   // The roles an app can be granted with: the three built-ins and any custom
   // app role.
@@ -51,9 +75,9 @@ export function AccountApps({ account }: { account: Account }) {
     queryFn: () => api.get<{ roles: Role[] }>('/roles?scope=app'),
   });
   // Every app is manageable by someone holding install.apps.manage, so for
-  // them — and only them — the page offers access to an app the account does
-  // not have yet. Anyone else manages the apps they were granted, from each
-  // app's Sharing tab.
+  // them — and only them — the list offers access to an app the principal
+  // does not have yet. Anyone else manages the apps they were granted, from
+  // each app's Sharing tab.
   const everyApp = useInstallVerb(InstallVerb.AppsManage);
   const [adding, setAdding] = useState(false);
 
@@ -72,16 +96,21 @@ export function AccountApps({ account }: { account: Account }) {
         }}
       >
         <div>
-          <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>Apps</h4>
+          <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>{heading}</h4>
           <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
-            The role this account manages each app with, and whether it can open it.
+            {principal.kind === 'user'
+              ? 'The role this account manages each app with, and whether it can open it.'
+              : 'The role everyone in this group manages each app with, and whether they can open it.'}
           </p>
         </div>
-        {everyApp && (
-          <Button variant="secondary" onClick={() => setAdding(true)}>
-            Give access to an app
-          </Button>
-        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+          {everyApp && (
+            <Button variant="secondary" onClick={() => setAdding(true)}>
+              Give access to an app
+            </Button>
+          )}
+          {action}
+        </div>
       </div>
 
       {access.isError && <Quiet>{messageOf(access.error)}</Quiet>}
@@ -106,7 +135,7 @@ export function AccountApps({ account }: { account: Account }) {
             width: 'minmax(0,26ch)',
             render: (row: AppAccess) => (
               <div style={{ padding: 'var(--space-2) 0' }}>
-                <RoleCell account={account} row={row} roles={roles.data?.roles ?? []} />
+                <RoleCell principal={principal} row={row} roles={roles.data?.roles ?? []} />
               </div>
             ),
           },
@@ -114,22 +143,22 @@ export function AccountApps({ account }: { account: Account }) {
             key: 'use',
             header: 'Can open',
             width: '16ch',
-            render: (row: AppAccess) => <UseCell account={account} row={row} />,
+            render: (row: AppAccess) => <UseCell principal={principal} row={row} />,
           },
         ]}
         rows={rows.map((r) => ({ ...r, id: r.app_id }))}
         empty={
           <EmptyState heading="No apps">
             {everyApp
-              ? 'This account has no access to any app. Give it access to one above.'
-              : 'This account has no access to any app you can see.'}
+              ? `This ${noun} has no access to any app. Give it access to one above.`
+              : `This ${noun} has no access to any app you can see.`}
           </EmptyState>
         }
       />
 
       {adding && (
         <GiveAccess
-          account={account}
+          principal={principal}
           has={new Set(rows.map((r) => r.app_id))}
           roles={roles.data?.roles ?? []}
           onClose={() => setAdding(false)}
@@ -139,12 +168,12 @@ export function AccountApps({ account }: { account: Account }) {
   );
 }
 
-/** The account's own grant for managing the app, editable if the viewer may;
- *  and any role it holds through a group, as text. */
-function RoleCell({ account, row, roles }: { account: Account; row: AppAccess; roles: Role[] }) {
-  const own = row.control.find((g) => g.via === 'user');
-  const viaGroups = row.control.filter((g) => g.via === 'group');
-  const change = useGrantChange(account, row.app_id);
+/** The principal's own grant for managing the app, editable if the viewer may;
+ *  and, for an account, any role it holds through a group, as text. */
+function RoleCell({ principal, row, roles }: { principal: Principal; row: AppAccess; roles: Role[] }) {
+  const own = row.control.find(isOwn(principal));
+  const viaGroups = principal.kind === 'user' ? row.control.filter((g) => g.via === 'group') : [];
+  const change = useGrantChange(principal, row.app_id);
   const nameOf = (g: Grant) => sentence(g.role_name || roles.find((r) => r.id === g.role_id)?.name || g.role_id || '');
 
   return (
@@ -175,11 +204,12 @@ function RoleCell({ account, row, roles }: { account: Account; row: AppAccess; r
   );
 }
 
-function UseCell({ account, row }: { account: Account; row: AppAccess }) {
-  const own = row.data.find((g) => g.via === 'user');
-  const viaGroup = row.data.find((g) => g.via === 'group');
-  const change = useGrantChange(account, row.app_id);
-  // An owner opens the app by owning it (R-072), grant or no grant.
+function UseCell({ principal, row }: { principal: Principal; row: AppAccess }) {
+  const own = row.data.find(isOwn(principal));
+  const viaGroup = principal.kind === 'user' ? row.data.find((g) => g.via === 'group') : undefined;
+  const change = useGrantChange(principal, row.app_id);
+  // An owner opens the app by owning it (R-072), grant or no grant. A group is
+  // never an owner.
   const opens = Boolean(own || viaGroup || row.owner);
 
   if (!row.can_manage || row.owner) {
@@ -208,38 +238,46 @@ type Change =
   | { method: 'patch'; grant: string; role: string }
   | { method: 'delete'; grant: string };
 
-function useGrantChange(account: Account, appID: string) {
-  const queries = useQueryClient();
+function useGrantChange(principal: Principal, appID: string) {
+  const invalidate = useInvalidate(principal, appID);
   return useMutation({
     mutationFn: (c: Change) => {
       const base = `/apps/${appID}/grants`;
       if (c.method === 'post') {
         return api.post<unknown>(base, {
           plane: c.plane,
-          principal_kind: 'user',
-          principal_id: account.id,
+          principal_kind: principal.kind,
+          principal_id: principal.id,
           ...(c.role ? { role_id: c.role } : {}),
         });
       }
       if (c.method === 'patch') return api.patch<unknown>(`${base}/${c.grant}`, { role_id: c.role });
       return api.del<unknown>(`${base}/${c.grant}`);
     },
-    onSettled: () => {
-      void queries.invalidateQueries({ queryKey: ['users', account.id, 'apps'] });
-      void queries.invalidateQueries({ queryKey: ['apps', appID] });
-    },
+    onSettled: invalidate,
   });
 }
 
-/** Access to an app the account has nothing on yet — for someone who manages
+function useInvalidate(principal: Principal, appID?: string) {
+  const queries = useQueryClient();
+  return () => {
+    void queries.invalidateQueries({ queryKey: listKey(principal) });
+    // A group's grant is every member's access, so each member's own list of
+    // apps is stale too.
+    if (principal.kind === 'group') void queries.invalidateQueries({ queryKey: ['users'] });
+    if (appID) void queries.invalidateQueries({ queryKey: ['apps', appID] });
+  };
+}
+
+/** Access to an app the principal has nothing on yet — for someone who manages
  *  every app, so every app offered is one they can grant. */
 function GiveAccess({
-  account,
+  principal,
   has,
   roles,
   onClose,
 }: {
-  account: Account;
+  principal: Principal;
   has: Set<string>;
   roles: Role[];
   onClose: () => void;
@@ -252,16 +290,17 @@ function GiveAccess({
   const [appID, setAppID] = useState('');
   const [role, setRole] = useState('');
   const [opens, setOpens] = useState(true);
-  const queries = useQueryClient();
+  const invalidate = useInvalidate(principal);
+  const noun = principal.kind === 'user' ? 'account' : 'group';
 
   const give = useMutation({
     mutationFn: async () => {
       const base = `/apps/${appID}/grants`;
-      const who = { principal_kind: 'user', principal_id: account.id };
+      const who = { principal_kind: principal.kind, principal_id: principal.id };
       if (role) await api.post<unknown>(base, { plane: 'control', role_id: role, ...who });
       if (opens) await api.post<unknown>(base, { plane: 'data', ...who });
     },
-    onSettled: () => void queries.invalidateQueries({ queryKey: ['users', account.id, 'apps'] }),
+    onSettled: invalidate,
     onSuccess: onClose,
   });
 
@@ -269,7 +308,11 @@ function GiveAccess({
     <Dialog
       open
       title="Give access to an app"
-      description={`What ${account.display_name || account.external_id} can do on one more app.`}
+      description={
+        principal.kind === 'user'
+          ? `What ${principal.name} can do on one more app.`
+          : `What everyone in ${principal.name} can do on one more app.`
+      }
       onClose={onClose}
       footer={
         <>
@@ -288,7 +331,7 @@ function GiveAccess({
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
         {offered.length === 0 && !apps.isPending ? (
-          <Quiet>This account already has access to every app.</Quiet>
+          <Quiet>This {noun} already has access to every app.</Quiet>
         ) : (
           <Select
             label="App"
@@ -301,7 +344,7 @@ function GiveAccess({
           label="Role"
           value={role}
           onChange={(e) => setRole(e.target.value)}
-          helper="What the account can change on the app. None to only let it open the app."
+          helper={`What the ${noun} can change on the app. None to only let it open the app.`}
           options={[{ value: '', label: 'None' }, ...roles.map((r) => ({ value: r.id, label: sentence(r.name) }))]}
         />
         <Checkbox label="Can open the app" checked={opens} onChange={(e) => setOpens(e.target.checked)} />

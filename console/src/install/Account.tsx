@@ -9,7 +9,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Dialog, EmptyState, Icon, Select, StatusIndicator } from '@design';
+import { Banner, Button, Dialog, EmptyState, Icon, IconButton, Input, Select, StatusIndicator, Tag } from '@design';
 
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
@@ -17,7 +17,7 @@ import { Sheet } from '../ui/Sheet';
 import { AccountApps } from './AccountApps';
 import { GeneratedPassword, PasswordToCopy } from './GeneratedPassword';
 import type { Account, Role } from './Accounts';
-import { Quiet, RoleLabel, RolePicker, StatusToggle, messageOf } from './Accounts';
+import { Quiet, RoleLabel, RolePicker, StatusToggle, messageOf, refusal, sentence } from './Accounts';
 import { NO_FILTERS, WHEN, linkQuery } from './audit';
 import type { AuditFilters } from './audit';
 import { AuditTable, LoadOlder, useAuditLog, usePeople } from './Installation';
@@ -25,7 +25,10 @@ import { AuditTable, LoadOlder, useAuditLog, usePeople } from './Installation';
 interface Group {
   id: string;
   name: string;
+  /** Set when an identity provider owns the membership (R-078). */
+  source?: string;
   members?: string[];
+  install_role_id?: string;
 }
 
 export function AccountPage({
@@ -73,6 +76,10 @@ export function AccountPage({
   const a = account.data;
   const active = a.status === 'active';
   const memberOf = (groups.data?.groups ?? []).filter((g) => g.members?.includes(a.id));
+  const roleName = (id: string) => {
+    const r = roles.data?.roles.find((x) => x.id === id);
+    return r ? sentence(r.name) : id;
+  };
 
   return (
     <Sheet
@@ -102,7 +109,12 @@ export function AccountPage({
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-7)' }}>
         <section>
-          <Heading>Details</Heading>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)' }}>
+            <Heading>Details</Heading>
+            {/* Your own name and email need no permission; everything else
+                here takes install.users.manage, and the dialog says which. */}
+            {(manage || isSelf) && <EditDetails account={a} manage={manage} isSelf={isSelf} />}
+          </div>
           <dl
             style={{
               display: 'grid',
@@ -127,21 +139,41 @@ export function AccountPage({
             )}
             <Detail term="Created">{a.created_at ? new Date(a.created_at).toLocaleString() : '—'}</Detail>
             <Detail term="Groups">
-              {memberOf.length > 0 ? memberOf.map((g) => g.name).join(', ') : 'None'}
+              {manage ? (
+                <GroupMembership account={a} groups={groups.data?.groups ?? []} isSelf={isSelf} />
+              ) : memberOf.length > 0 ? (
+                memberOf.map((g) => g.name).join(', ')
+              ) : (
+                'None'
+              )}
             </Detail>
             <Detail term="Installation role">
-              {manage ? (
-                <div style={{ maxWidth: '32ch' }}>
-                  <RolePicker account={a} roles={roles.data?.roles ?? []} isSelf={isSelf} />
-                </div>
-              ) : (
-                <RoleLabel roleID={a.install_role_id} roles={roles.data?.roles ?? []} />
-              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                {manage ? (
+                  <div style={{ maxWidth: '32ch' }}>
+                    <RolePicker account={a} roles={roles.data?.roles ?? []} isSelf={isSelf} />
+                  </div>
+                ) : (
+                  <span>
+                    <RoleLabel roleID={a.install_role_id} roles={roles.data?.roles ?? []} />
+                  </span>
+                )}
+                {/* A group's installation role is held by everyone in it. It is
+                    changed on the group, not here, so it is said rather than
+                    offered. */}
+                {memberOf
+                  .filter((g) => g.install_role_id)
+                  .map((g) => (
+                    <span key={g.id} style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
+                      {roleName(g.install_role_id!)} through {g.name}
+                    </span>
+                  ))}
+              </div>
             </Detail>
           </dl>
         </section>
 
-        <AccountApps account={a} />
+        <AccountApps principal={{ kind: 'user', id: a.id, name: a.display_name || a.external_id }} />
 
         {canReadAudit && <Activity userID={a.id} onAudit={onAudit} />}
       </div>
@@ -205,6 +237,174 @@ function Activity({ userID, onAudit }: { userID: string; onAudit: (query: string
       />
       <LoadOlder log={log} />
     </section>
+  );
+}
+
+/**
+ * Username, name and email. An identity provider's account takes its username
+ * and email from the provider, which would put them back at the next sign-in,
+ * so those two are shown but not editable. A username is how someone signs in,
+ * so changing one — even your own — takes install.users.manage.
+ */
+function EditDetails({ account, manage, isSelf }: { account: Account; manage: boolean; isSelf: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [username, setUsername] = useState(account.external_id);
+  const [name, setName] = useState(account.display_name ?? '');
+  const [email, setEmail] = useState(account.email ?? '');
+  const queries = useQueryClient();
+  const local = account.adapter_id === LOCAL;
+
+  // Only what changed: a PATCH naming the username of an IdP account is
+  // refused even when the value is the same.
+  const changes: Record<string, string> = {};
+  if (username !== account.external_id) changes.username = username;
+  if (name !== (account.display_name ?? '')) changes.display_name = name;
+  if (email !== (account.email ?? '')) changes.email = email;
+
+  const save = useMutation({
+    mutationFn: () => api.patch<unknown>(`/users/${account.id}`, changes),
+    onSuccess: () => {
+      void queries.invalidateQueries({ queryKey: ['users'] });
+      void queries.invalidateQueries({ queryKey: ['users', account.id] });
+      if (isSelf) void queries.invalidateQueries({ queryKey: ['me'] });
+      setOpen(false);
+    },
+  });
+
+  const start = () => {
+    setUsername(account.external_id);
+    setName(account.display_name ?? '');
+    setEmail(account.email ?? '');
+    save.reset();
+    setOpen(true);
+  };
+  // A refusal belongs to the value that caused it.
+  const edit = (set: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (save.isError) save.reset();
+    set(e.target.value);
+  };
+  const atProvider = `Set by ${account.adapter_id}, the identity provider this account signs in with.`;
+
+  return (
+    <>
+      <Button variant="ghost" onClick={start}>
+        Edit
+      </Button>
+      {open && (
+        <Dialog
+          open
+          title={`Edit ${account.external_id}`}
+          onClose={() => setOpen(false)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={save.isPending || Object.keys(changes).length === 0}
+                onClick={() => save.mutate()}
+              >
+                {save.isPending ? 'Saving' : 'Save'}
+              </Button>
+            </>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            <Input
+              label="Username"
+              mono
+              value={username}
+              disabled={!local || !manage}
+              helper={
+                !local
+                  ? atProvider
+                  : !manage
+                    ? 'Changing a username takes permission to manage accounts.'
+                    : 'What the account signs in with.'
+              }
+              onChange={edit(setUsername)}
+            />
+            <Input label="Name" value={name} onChange={edit(setName)} />
+            <Input
+              label="Email"
+              type="email"
+              value={email}
+              disabled={!local}
+              helper={local ? undefined : atProvider}
+              onChange={edit(setEmail)}
+            />
+            {save.isError && <Banner tone="failed">{refusal(save.error)}</Banner>}
+          </div>
+        </Dialog>
+      )}
+    </>
+  );
+}
+
+/**
+ * The groups an account is in, for someone who manages accounts: remove it from
+ * one, or add it to another. A group an identity provider syncs is the
+ * provider's to change (R-078), so it is listed without a remove and is not
+ * offered to add to.
+ */
+function GroupMembership({ account, groups, isSelf }: { account: Account; groups: Group[]; isSelf: boolean }) {
+  const queries = useQueryClient();
+  const [error, setError] = useState<string>();
+  const memberOf = groups.filter((g) => g.members?.includes(account.id));
+  const offered = groups.filter((g) => !g.source && !g.members?.includes(account.id));
+
+  const change = useMutation({
+    mutationFn: ({ group, add }: { group: string; add: boolean }) => {
+      const path = `/groups/${group}/members/${account.id}`;
+      return add ? api.put<unknown>(path) : api.del<unknown>(path);
+    },
+    onSuccess: () => setError(undefined),
+    // Shown as written: removing the last person who can manage accounts is
+    // refused (R-088), and the remedy says what to do instead.
+    onError: (e) => setError(refusal(e)),
+    onSettled: () => {
+      void queries.invalidateQueries({ queryKey: ['groups'] });
+      // A group carries app access and possibly an installation role.
+      void queries.invalidateQueries({ queryKey: ['users', account.id, 'apps'] });
+      if (isSelf) void queries.invalidateQueries({ queryKey: ['me'] });
+    },
+  });
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxWidth: '48ch' }}>
+      {memberOf.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2) var(--space-3)' }}>
+          {memberOf.map((g) => (
+            <span key={g.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+              <Tag>{g.name}</Tag>
+              {!g.source && (
+                <IconButton
+                  label={`Remove from ${g.name}`}
+                  size={24}
+                  disabled={change.isPending}
+                  onClick={() => change.mutate({ group: g.id, add: false })}
+                >
+                  <Icon name="x" size={14} />
+                </IconButton>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      {offered.length > 0 ? (
+        <Select
+          aria-label="Add to group"
+          value=""
+          disabled={change.isPending}
+          onChange={(e) => e.target.value && change.mutate({ group: e.target.value, add: true })}
+          options={[{ value: '', label: 'Add to group' }, ...offered.map((g) => ({ value: g.id, label: g.name }))]}
+        />
+      ) : (
+        memberOf.length === 0 && <span>None</span>
+      )}
+      {error && <span style={{ font: 'var(--type-caption)', color: 'var(--marker-deep)' }}>{error}</span>}
+    </div>
   );
 }
 

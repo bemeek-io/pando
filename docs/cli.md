@@ -409,6 +409,58 @@ Change the role a grant for managing an app carries
 pando grant role <app> <grant-id> <role-id>
 ```
 
+### `group`
+
+Work with groups and what they hold
+
+```
+pando group
+```
+
+#### `group add-member`
+
+Add an account to a group; it then holds what the group holds
+
+```
+pando group add-member <group-id> <user-id>
+```
+
+#### `group apps`
+
+Show the apps a group has access to, and its role on each
+
+```
+pando group apps <group-id>
+```
+
+#### `group list`
+
+Show every group, its members and its installation role
+
+```
+pando group list
+```
+
+#### `group remove-member`
+
+Remove an account from a group
+
+```
+pando group remove-member <group-id> <user-id>
+```
+
+#### `group role`
+
+Give a group an installation role, or take it away with --clear
+
+```
+pando group role <group-id> [role-id]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--clear` |  | take the group's installation role away |
+
 ### `login`
 
 Sign in and store a token for this machine
@@ -676,4 +728,18 @@ the password once. By default its holder chooses their own at the next sign-in.
 | Flag | Default | What it does |
 | --- | --- | --- |
 | `--no-change-required` |  | do not require a new password at the next sign-in |
+
+#### `user update`
+
+Change an account's username, name or email
+
+```
+pando user update <user-id>
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--email` |  | the account's email address |
+| `--name` |  | the name shown in the console and the audit log |
+| `--username` |  | the name the account signs in with |
 

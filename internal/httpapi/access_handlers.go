@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -142,25 +143,40 @@ func (s *Server) handleUserApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type access struct {
-		AppID     string               `json:"app_id"`
-		AppName   string               `json:"app_name"`
-		Owner     bool                 `json:"owner"`
-		CanManage bool                 `json:"can_manage"`
-		Control   []state.UserAppGrant `json:"control"`
-		Data      []state.UserAppGrant `json:"data"`
+	out, err := s.appAccess(r, p, grants, userID, userID == p.UserID)
+	if err != nil {
+		Error(w, r, err)
+		return
 	}
+	JSON(w, http.StatusOK, map[string]any{"apps": out})
+}
+
+// appAccess is an account's or a group's app grants, one row per app, with
+// whether the caller may change them. Only apps the caller could see are
+// included, unless `all` — somebody looking at their own.
+type appAccessRow struct {
+	AppID     string               `json:"app_id"`
+	AppName   string               `json:"app_name"`
+	Owner     bool                 `json:"owner"`
+	CanManage bool                 `json:"can_manage"`
+	Control   []state.UserAppGrant `json:"control"`
+	Data      []state.UserAppGrant `json:"data"`
+}
+
+func (s *Server) appAccess(r *http.Request, p authz.Principal, grants []state.UserAppGrant, ownerID string, all bool) ([]*appAccessRow, error) {
+	type access = appAccessRow
 	out := []*access{}
 	byApp := map[string]*access{}
-	self := userID == p.UserID
+	self := all
+	userID := ownerID
+	var err error
 	for _, g := range grants {
 		a, seen := byApp[g.AppID]
 		if !seen {
 			visible := self
 			if !visible {
 				if visible, err = s.Authz.Allows(r.Context(), p, g.AppID, authz.AppView); err != nil {
-					Error(w, r, err)
-					return
+					return nil, err
 				}
 			}
 			if !visible {
@@ -169,10 +185,9 @@ func (s *Server) handleUserApps(w http.ResponseWriter, r *http.Request) {
 			}
 			manage, err := s.Authz.Allows(r.Context(), p, g.AppID, authz.AppGrantsManage)
 			if err != nil {
-				Error(w, r, err)
-				return
+				return nil, err
 			}
-			a = &access{AppID: g.AppID, AppName: g.AppName, Owner: g.AppOwner == userID,
+			a = &access{AppID: g.AppID, AppName: g.AppName, Owner: userID != "" && g.AppOwner == userID,
 				CanManage: manage, Control: []state.UserAppGrant{}, Data: []state.UserAppGrant{}}
 			byApp[g.AppID] = a
 			out = append(out, a)
@@ -186,7 +201,7 @@ func (s *Server) handleUserApps(w http.ResponseWriter, r *http.Request) {
 			a.Data = append(a.Data, g)
 		}
 	}
-	JSON(w, http.StatusOK, map[string]any{"apps": out})
+	return out, nil
 }
 
 func (s *Server) handleDeleteGrant(w http.ResponseWriter, r *http.Request) {
@@ -384,27 +399,69 @@ func (s *Server) handlePatchUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Every field optional: a status change, a profile change, or both.
 	var req struct {
-		Status string `json:"status"`
+		Status      *string `json:"status"`
+		Username    *string `json:"username"`
+		DisplayName *string `json:"display_name"`
+		Email       *string `json:"email"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read."))
 		return
 	}
-
-	if err := s.Users.SetStatus(r.Context(), userID, req.Status); err != nil {
-		Error(w, r, err)
+	if req.Status == nil && req.Username == nil && req.DisplayName == nil && req.Email == nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "Nothing to change.").
+			WithRemedy("Send one or more of status, username, display_name and email."))
 		return
 	}
 
-	// A suspended account's sessions end now rather than at their own expiry —
-	// otherwise suspension would take up to a session lifetime to mean
-	// anything (R-048).
-	if req.Status == "suspended" {
-		if err := s.Sessions.RevokeAllForUser(r.Context(), userID); err != nil {
+	// A username is how an account signs in, so changing one is an
+	// administrator's act even on your own account: yours is not a name you
+	// can rename out from under the people who know you by it.
+	if req.Username != nil && s.Authz != nil {
+		if err := s.Authz.CheckInstall(r.Context(), p, authz.InstallUsersManage); err != nil {
 			Error(w, r, err)
 			return
 		}
+	}
+
+	detail := map[string]any{}
+	if req.Username != nil || req.DisplayName != nil || req.Email != nil {
+		if req.Username != nil {
+			trimmed := strings.TrimSpace(*req.Username)
+			req.Username = &trimmed
+			detail["username"] = trimmed
+		}
+		if req.DisplayName != nil {
+			detail["display_name"] = *req.DisplayName
+		}
+		if req.Email != nil {
+			detail["email"] = *req.Email
+		}
+		if err := s.Users.UpdateProfile(r.Context(), userID, state.Profile{
+			Username: req.Username, DisplayName: req.DisplayName, Email: req.Email,
+		}); err != nil {
+			Error(w, r, err)
+			return
+		}
+	}
+
+	if req.Status != nil {
+		if err := s.Users.SetStatus(r.Context(), userID, *req.Status); err != nil {
+			Error(w, r, err)
+			return
+		}
+		// A suspended account's sessions end now rather than at their own
+		// expiry — otherwise suspension would take up to a session lifetime
+		// to mean anything (R-048).
+		if *req.Status == "suspended" {
+			if err := s.Sessions.RevokeAllForUser(r.Context(), userID); err != nil {
+				Error(w, r, err)
+				return
+			}
+		}
+		detail["status"] = *req.Status
 	}
 
 	s.audit(r, audit.Event{
@@ -414,7 +471,7 @@ func (s *Server) handlePatchUser(w http.ResponseWriter, r *http.Request) {
 		Action:        "user.update",
 		TargetKind:    "user",
 		TargetID:      userID,
-		Detail:        map[string]any{"status": req.Status},
+		Detail:        detail,
 	})
 	JSON(w, http.StatusNoContent, nil)
 }
