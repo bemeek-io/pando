@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { adapterRequest, blankForm, categoryLabel, formProblems, sortKinds } from './adapters';
+import { adapterRequest, blankForm, categoryLabel, formProblems, orderCategories, sortKinds } from './adapters';
 import type { AdapterKind } from './adapters';
 
 const anthropic: AdapterKind = {
@@ -82,5 +82,11 @@ describe('adding an adapter', () => {
     expect(sortKinds([trivy, anthropic]).map((k) => k.kind)).toEqual(['anthropic', 'trivy']);
     expect(categoryLabel('ai')).toBe('AI');
     expect(categoryLabel('routing')).toBe('Routing');
+  });
+});
+
+describe('adapter categories', () => {
+  it('orders categories as an installation is built up, unknown ones last', () => {
+    expect(orderCategories(['ai', 'runtime', 'zeta', 'routing', 'ai'])).toEqual(['runtime', 'routing', 'ai', 'zeta']);
   });
 });

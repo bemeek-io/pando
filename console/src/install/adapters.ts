@@ -61,6 +61,38 @@ export function categoryLabel(category: string): string {
   return category.charAt(0).toUpperCase() + category.slice(1);
 }
 
+// The categories in the order an installation is built up: where apps run and
+// how they are reached first, then what they are built with and what they
+// lean on, then the extras. One not listed here sorts after these, by name.
+const CATEGORY_ORDER = ['runtime', 'routing', 'builder', 'services', 'secrets', 'backup', 'scanner', 'ai', 'notify', 'identity'];
+
+const CATEGORY_NOTES: Record<string, string> = {
+  runtime: 'Where apps run.',
+  routing: 'How apps are reached: their addresses and the edge in front of them.',
+  builder: 'What turns source into an image.',
+  services: 'The databases and caches apps declare, provisioned for them.',
+  secrets: 'Where secret values are kept.',
+  backup: 'Where backups are written.',
+  scanner: 'What checks apps for known vulnerabilities.',
+  ai: 'An AI model that reads a new app and checks the plan Pando made for it.',
+  notify: 'Where notifications go.',
+  identity: 'Where accounts come from.',
+};
+
+/** One line on what a category of adapter is for. */
+export function categoryNote(category: string): string {
+  return CATEGORY_NOTES[category] ?? '';
+}
+
+/** Categories in the order the screen shows them. */
+export function orderCategories(categories: Iterable<string>): string[] {
+  const rank = (c: string) => {
+    const i = CATEGORY_ORDER.indexOf(c);
+    return i >= 0 ? i : CATEGORY_ORDER.length;
+  };
+  return [...new Set(categories)].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+}
+
 /** The kinds in the order the select offers them: by category, then by name. */
 export function sortKinds(kinds: AdapterKind[]): AdapterKind[] {
   return [...kinds].sort(

@@ -24,6 +24,8 @@ import {
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb } from '../app/principal';
 import { AdapterDialog } from './AdapterDialog';
+import { categoryLabel, categoryNote, orderCategories } from './adapters';
+import type { AdapterKind } from './adapters';
 import type { ConfiguredAdapter } from './AdapterDialog';
 import { Quiet, Screen, messageOf } from './Accounts';
 import { NoMatches, SearchField } from '../ui/SearchField';
@@ -47,7 +49,7 @@ export function Installation() {
   // Only on the verb (R-082): install.view shows the list, and holding it says
   // nothing about being allowed to change what is in it.
   const canManage = useInstallVerb(InstallVerb.AdaptersManage);
-  const [editing, setEditing] = useState<{ existing?: AdapterRow } | null>(null);
+  const [editing, setEditing] = useState<{ existing?: AdapterRow; category?: string } | null>(null);
   // Kept until dismissed: a saved adapter does nothing until Pando restarts
   // (R-253), and a notice that vanished on its own would leave someone waiting
   // for a change that is not coming.
@@ -63,6 +65,12 @@ export function Installation() {
   });
 
   const rows = normalize(adapters.data).map((r) => ({ ...r, id: r.id ?? r.ref ?? '' }));
+  // Every kind this build can run, so a category nothing is configured in
+  // still has its section. Shared with the dialog's query.
+  const kinds = useQuery({
+    queryKey: ['adapter-kinds'],
+    queryFn: () => api.get<{ kinds: AdapterKind[] | null }>('/adapters/kinds'),
+  });
 
   return (
     <Screen
@@ -93,48 +101,58 @@ export function Installation() {
         </div>
       )}
 
-      <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>Adapters</h4>
-      <Table
-        loading={adapters.isPending}
-        columns={[
-          { key: 'id', header: 'ID', width: 'minmax(0,28ch)', mono: true },
-          { key: 'kind', header: 'Kind', width: 'minmax(0,24ch)' },
-          { key: 'category', header: 'Category', width: '16ch', muted: true },
-          {
-            key: 'healthy',
-            header: 'Status',
-            width: '16ch',
-            render: (row: AdapterRow) => (
-              // Live, not stored: an adapter that was reachable at startup and
-              // is not now is exactly what this column exists to show.
-              <StatusIndicator
-                status={row.healthy === false ? 'failed' : 'running'}
-                label={row.healthy === false ? 'Unreachable' : 'Reachable'}
-              />
-            ),
-          },
-          ...(canManage
-            ? [
-                {
-                  key: 'actions',
-                  header: '',
-                  width: '12ch',
-                  align: 'right' as const,
-                  render: (row: AdapterRow) => (
-                    <Button variant="secondary" onClick={() => setEditing({ existing: row })}>
-                      Change
-                    </Button>
-                  ),
-                },
-              ]
-            : []),
-        ]}
-        rows={rows}
-      />
+      {/* A section per category, in the order an installation is built up,
+          with every category this build can run — so a category with nothing
+          configured, AI most often, is visible as one that could be. */}
+      {adapters.isPending ? (
+        <Table loading columns={adapterColumns(canManage, setEditing)} rows={[]} />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+          {orderCategories([...rows.map((r) => r.category), ...(kinds.data?.kinds ?? []).map((k) => k.category)]).map(
+            (category) => {
+              const inCategory = rows.filter((r) => r.category === category);
+              return (
+                <section key={category}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'baseline',
+                      justifyContent: 'space-between',
+                      gap: 'var(--space-2) var(--space-4)',
+                      marginBottom: 'var(--space-3)',
+                    }}
+                  >
+                    <div>
+                      <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>{categoryLabel(category)}</h4>
+                      {categoryNote(category) && (
+                        <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+                          {categoryNote(category)}
+                        </p>
+                      )}
+                    </div>
+                    {canManage && inCategory.length === 0 && (
+                      <Button variant="secondary" onClick={() => setEditing({ category })}>
+                        Add {categoryLabel(category) === 'AI' ? 'an AI' : `a ${category}`} adapter
+                      </Button>
+                    )}
+                  </div>
+                  {inCategory.length === 0 ? (
+                    <Quiet>None configured.</Quiet>
+                  ) : (
+                    <Table columns={adapterColumns(canManage, setEditing)} rows={inCategory} />
+                  )}
+                </section>
+              );
+            },
+          )}
+        </div>
+      )}
 
       {editing && (
         <AdapterDialog
           existing={editing.existing}
+          category={editing.category}
           adapters={rows}
           onClose={() => setEditing(null)}
           onSaved={(name) => {
@@ -1207,6 +1225,45 @@ function ClearFilters({ onClear }: { onClear: () => void }) {
 
 export function Field({ children }: { children: React.ReactNode }) {
   return <div style={{ flex: '1 1 18ch', minWidth: '18ch', maxWidth: '28ch' }}>{children}</div>;
+}
+
+/** An adapter table's columns. No category: the section says it. */
+function adapterColumns(
+  canManage: boolean,
+  setEditing: (e: { existing?: AdapterRow; category?: string }) => void,
+) {
+  return [
+    { key: 'id', header: 'ID', width: 'minmax(0,28ch)', mono: true },
+    { key: 'kind', header: 'Kind', width: 'minmax(0,24ch)' },
+    {
+      key: 'healthy',
+      header: 'Status',
+      width: '16ch',
+      render: (row: AdapterRow) => (
+        // Live, not stored: an adapter that was reachable at startup and
+        // is not now is exactly what this column exists to show.
+        <StatusIndicator
+          status={row.healthy === false ? 'failed' : 'running'}
+          label={row.healthy === false ? 'Unreachable' : 'Reachable'}
+        />
+      ),
+    },
+    ...(canManage
+      ? [
+          {
+            key: 'actions',
+            header: '',
+            width: '12ch',
+            align: 'right' as const,
+            render: (row: AdapterRow) => (
+              <Button variant="secondary" onClick={() => setEditing({ existing: row })}>
+                Change
+              </Button>
+            ),
+          },
+        ]
+      : []),
+  ];
 }
 
 /** GET /adapters has returned both shapes during this phase; accept either

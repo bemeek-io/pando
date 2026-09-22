@@ -13,7 +13,7 @@ import { Banner, Button, Checkbox, Dialog, Input, Select } from '@design';
 import { api } from '@api/client';
 import { Quiet, refusal } from './Accounts';
 import { FieldSkeleton, Loading } from '../ui/Loading';
-import { adapterRequest, blankForm, categoryLabel, formProblems, kindKey, sortKinds } from './adapters';
+import { adapterRequest, blankForm, categoryLabel, categoryNote, formProblems, kindKey, orderCategories, sortKinds } from './adapters';
 import type { AdapterForm, AdapterKind, KindField } from './adapters';
 
 /** A configured adapter, as GET /adapters returns it. */
@@ -45,12 +45,15 @@ function storedValues(config: Record<string, unknown> | undefined): Record<strin
 
 export function AdapterDialog({
   existing,
+  category: startCategory,
   adapters,
   onClose,
   onSaved,
 }: {
   /** The adapter being changed, or none to add one. */
   existing?: ConfiguredAdapter;
+  /** The category to start in, when adding from a category's section. */
+  category?: string;
   /** Every configured adapter, to know whether a category has one yet. */
   adapters: ConfiguredAdapter[];
   onClose: () => void;
@@ -63,7 +66,13 @@ export function AdapterDialog({
   });
   const catalog = sortKinds(kinds.data?.kinds ?? []);
 
-  const [chosen, setChosen] = useState(existing ? kindKey(existing) : '');
+  const [category, setCategory] = useState(existing?.category ?? startCategory ?? '');
+  const [picked, setPicked] = useState(existing ? kindKey(existing) : '');
+  const categories = orderCategories(catalog.map((k) => k.category));
+  const inCategory = catalog.filter((k) => k.category === category);
+  // A category with one kind has nothing to choose between.
+  const only = inCategory.length === 1 ? inCategory[0] : undefined;
+  const chosen = picked || (only ? kindKey(only) : '');
   const [draft, setDraft] = useState<AdapterForm | null>(null);
   const [tried, setTried] = useState(false);
 
@@ -139,29 +148,55 @@ export function AdapterDialog({
           </Quiet>
         ) : (
           <>
+            {/* Category first, then the adapter within it: the question someone
+                arrives with is "I need a builder", not a list of every kind. Both
+                fixed when changing: a different kind under the same ID would be
+                a different adapter, and is added as one. */}
             <div>
               <Select
-                label="Kind"
-                // Fixed when changing: a different kind under the same ID would
-                // be a different adapter, and is added as one.
+                label="Category"
                 disabled={Boolean(existing)}
-                value={chosen}
+                value={category}
                 options={[
-                  ...(chosen ? [] : [{ value: '', label: 'Choose a kind' }]),
-                  ...catalog.map((k) => ({ value: kindKey(k), label: `${categoryLabel(k.category)} · ${k.name}` })),
+                  ...(category ? [] : [{ value: '', label: 'Choose a category' }]),
+                  ...categories.map((c) => ({ value: c, label: categoryLabel(c) })),
                 ]}
                 onChange={(e) => {
-                  setChosen(e.target.value);
+                  setCategory(e.target.value);
+                  setPicked('');
                   setDraft(null);
                   setTried(false);
                 }}
               />
-              {kind && (
+              {category && categoryNote(category) && (
                 <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 'var(--space-1) 0 0' }}>
-                  {kind.description}
+                  {categoryNote(category)}
                 </p>
               )}
             </div>
+            {category && (
+              <div>
+                <Select
+                  label="Adapter"
+                  disabled={Boolean(existing)}
+                  value={chosen}
+                  options={[
+                    ...(chosen ? [] : [{ value: '', label: 'Choose an adapter' }]),
+                    ...inCategory.map((k) => ({ value: kindKey(k), label: k.name })),
+                  ]}
+                  onChange={(e) => {
+                    setPicked(e.target.value);
+                    setDraft(null);
+                    setTried(false);
+                  }}
+                />
+                {kind && (
+                  <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 'var(--space-1) 0 0' }}>
+                    {kind.description}
+                  </p>
+                )}
+              </div>
+            )}
 
             {kind && form && (
               <>
