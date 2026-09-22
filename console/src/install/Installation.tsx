@@ -24,7 +24,7 @@ import {
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb } from '../app/principal';
 import { AdapterDialog } from './AdapterDialog';
-import { categoryLabel, orderCategories } from './adapters';
+import { categoryLabel, categoryNote, orderCategories } from './adapters';
 import type { AdapterKind } from './adapters';
 import type { ConfiguredAdapter } from './AdapterDialog';
 import { Quiet, Screen, messageOf } from './Accounts';
@@ -118,11 +118,14 @@ export function Installation() {
         </div>
       )}
 
-      {/* One table, grouped by category: the category named on its first row
-          only, so each group reads as one without a heading, a header row and
-          a differently sized set of columns per section. Categories with
-          nothing set up are one line under it rather than empty sections. */}
-      <Table loading={adapters.isPending} columns={adapterColumns(canManage, setEditing)} rows={grouped} />
+      {/* One table, grouped by category: one header and one set of columns,
+          so everything lines up, with a band naming each category above its
+          adapters. Categories with nothing set up are one line under it. */}
+      {adapters.isPending ? (
+        <Table loading columns={adapterColumns(canManage, setEditing)} rows={[]} />
+      ) : (
+        <GroupedAdapters rows={grouped} canManage={canManage} onChange={(row) => setEditing({ existing: row })} />
+      )}
       {!adapters.isPending && missing.length > 0 && (
         <div
           style={{
@@ -1221,6 +1224,114 @@ function ClearFilters({ onClear }: { onClear: () => void }) {
 
 export function Field({ children }: { children: React.ReactNode }) {
   return <div style={{ flex: '1 1 18ch', minWidth: '18ch', maxWidth: '28ch' }}>{children}</div>;
+}
+
+type GroupedRow = AdapterRow & { first?: boolean; kindName?: string };
+
+// The adapters' columns: name, ID, status, and Change for whoever may.
+const ADAPTER_GRID = 'minmax(0,1fr) minmax(0,22ch) 16ch 12ch';
+
+/**
+ * The adapters, grouped by category.
+ *
+ * Not the design system's Table, which has no way to mark where a group begins:
+ * the same header and row styles, one grid for every row so the columns line
+ * up from group to group, and a band above each group naming the category and
+ * what it is for. Each adapter's name sits a step in from the band, under it.
+ */
+function GroupedAdapters({
+  rows,
+  canManage,
+  onChange,
+}: {
+  rows: GroupedRow[];
+  canManage: boolean;
+  onChange: (row: AdapterRow) => void;
+}) {
+  const cell = { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
+  const line = {
+    display: 'grid',
+    gridTemplateColumns: ADAPTER_GRID,
+    alignItems: 'center',
+    gap: 'var(--space-4)',
+    padding: '0 var(--space-3)',
+  } as const;
+
+  return (
+    <div className="pando-table" role="table" aria-label="Adapters">
+      <div
+        role="row"
+        style={{
+          ...line,
+          minHeight: 'var(--control-console)',
+          background: 'var(--paper-sunken)',
+          borderTop: 'var(--border-width) solid var(--rule)',
+          borderBottom: 'var(--border-width) solid var(--rule)',
+        }}
+      >
+        {['Adapter', 'ID', 'Status', ''].map((h) => (
+          <span key={h || 'actions'} role="columnheader" style={{ font: 'var(--type-label)', color: 'var(--ink-secondary)' }}>
+            {h}
+          </span>
+        ))}
+      </div>
+
+      {rows.map((row) => (
+        <div key={row.id} role="rowgroup">
+          {row.first && (
+            <div
+              role="row"
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'baseline',
+                gap: 'var(--space-1) var(--space-3)',
+                padding: 'var(--space-5) var(--space-3) var(--space-2)',
+                borderBottom: 'var(--border-width) solid var(--rule-strong)',
+              }}
+            >
+              <span style={{ font: 'var(--type-label)', color: 'var(--ink)' }}>{categoryLabel(row.category)}</span>
+              {categoryNote(row.category) && (
+                <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
+                  {categoryNote(row.category)}
+                </span>
+              )}
+            </div>
+          )}
+          <div
+            role="row"
+            style={{
+              ...line,
+              minHeight: 'var(--row-height)',
+              borderBottom: 'var(--border-width) solid var(--rule)',
+            }}
+          >
+            {/* Indented, the name alone: the grid stays the header's, so the
+                other columns still line up under it. */}
+            <span style={{ ...cell, font: 'var(--type-body-ui)', paddingLeft: 'var(--space-4)' }}>
+              {row.kindName ?? row.kind}
+            </span>
+            <span style={{ ...cell, font: 'var(--type-code-sm)', color: 'var(--ink-secondary)' }}>{row.id}</span>
+            <span style={cell}>
+              {/* Live, not stored: an adapter that was reachable at startup and
+                  is not now is exactly what this column exists to show. */}
+              <StatusIndicator
+                status={row.healthy === false ? 'failed' : 'running'}
+                label={row.healthy === false ? 'Unreachable' : 'Reachable'}
+              />
+            </span>
+            <span style={{ justifySelf: 'end' }}>
+              {canManage && (
+                <Button variant="secondary" onClick={() => onChange(row)}>
+                  Change
+                </Button>
+              )}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /** The adapters table's columns: the category on the first row of each group,
