@@ -498,19 +498,22 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireInstall(w, r, authz.InstallView); !ok {
 		return
 	}
+	// Empty lists, never null: a typed nil slice in the map is not == nil, so
+	// the check has to be on the slice before it goes in.
+	fixed := s.PolicyOverlay.Fixed()
+	if fixed == nil {
+		fixed = []corepolicy.Fixed{}
+	}
 	out := map[string]any{
 		"file":     "",
 		"settings": []config.Setting{},
-		"policy":   s.PolicyOverlay.Fixed(),
+		"policy":   fixed,
 	}
 	if s.Startup != nil {
 		out["file"] = s.Startup.File
 		if s.Startup.Settings != nil {
 			out["settings"] = s.Startup.Settings
 		}
-	}
-	if out["policy"] == nil {
-		out["policy"] = []corepolicy.Fixed{}
 	}
 	JSON(w, http.StatusOK, out)
 }
