@@ -17,6 +17,10 @@
 // **The runners-up are shown.** R-102 is "ask, never guess", and showing what
 // else bid is how that becomes visible rather than asserted — the user sees the
 // auction instead of a verdict.
+//
+// Reading all of it is app.view. Answering, accepting and looking again are
+// app.spec.edit, so without that verb the proposal and any answers already
+// given are shown, and nothing offers to change them.
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -28,6 +32,7 @@ import { InlineWarning } from '../ui/InlineWarning';
 import { rejectedEntries } from './rejections';
 import { Screening } from './Screening';
 import { Table } from '../ui/Table';
+import { AppVerb, useCan } from './verbs';
 
 interface DetectionResponse {
   status: string;
@@ -45,6 +50,7 @@ interface DetectionResponse {
 
 export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: boolean }) {
   const queries = useQueryClient();
+  const canEdit = useCan(AppVerb.SpecEdit);
 
   const detection = useQuery({
     queryKey: ['apps', appID, 'detection'],
@@ -101,7 +107,7 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
     return (
       <DetectionFailed
         error={detection.data.detection.error}
-        onRetry={() => rerun.mutate()}
+        onRetry={canEdit ? () => rerun.mutate() : undefined}
         retrying={rerun.isPending}
       />
     );
@@ -145,7 +151,7 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
               key={question.key}
               question={question}
               answer={(answers ?? {})[question.key]}
-              onAnswer={(value) => answer.mutate({ [question.key]: value })}
+              onAnswer={canEdit ? (value) => answer.mutate({ [question.key]: value }) : undefined}
               saving={answer.isPending}
             />
           ))}
@@ -162,41 +168,43 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
 
       <RunnersUp candidates={proposal.runners_up ?? []} />
 
-      <section
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 'var(--space-3)',
-          paddingTop: 'var(--space-5)',
-          borderTop: 'var(--border-width) solid var(--rule)',
-        }}
-      >
-        <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
-          {reviewed
-            ? 'This app is already configured. Using this takes the build and the workloads from the repository and keeps what you set yourself.'
-            : 'Accepting saves this as the app’s configuration. It doesn’t deploy anything.'}
-        </p>
-        <Button
-          variant="primary"
-          disabled={unanswered.length > 0 || accept.isPending}
-          // An app that is already configured gets a confirmation rather than
-          // a one-click replace. This used to accept immediately, and the
-          // configuration it discarded — environment variables, dependencies,
-          // storage — was gone from the pinned spec with nothing said.
-          onClick={() => (reviewed ? setReplacing(true) : accept.mutate())}
-          style={{ alignSelf: 'flex-start' }}
+      {canEdit && (
+        <section
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-3)',
+            paddingTop: 'var(--space-5)',
+            borderTop: 'var(--border-width) solid var(--rule)',
+          }}
         >
-          {reviewed ? 'Replace configuration' : 'Accept configuration'}
-        </Button>
-        {unanswered.length > 0 && (
-          <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
-            {unanswered.length === 1
-              ? 'One question still needs an answer.'
-              : `${unanswered.length} questions still need answers.`}
+          <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
+            {reviewed
+              ? 'This app is already configured. Using this takes the build and the workloads from the repository and keeps what you set yourself.'
+              : 'Accepting saves this as the app’s configuration. It doesn’t deploy anything.'}
           </p>
-        )}
-        {accept.isError && <Failure error={accept.error} />}
-      </section>
+          <Button
+            variant="primary"
+            disabled={unanswered.length > 0 || accept.isPending}
+            // An app that is already configured gets a confirmation rather than
+            // a one-click replace. This used to accept immediately, and the
+            // configuration it discarded — environment variables, dependencies,
+            // storage — was gone from the pinned spec with nothing said.
+            onClick={() => (reviewed ? setReplacing(true) : accept.mutate())}
+            style={{ alignSelf: 'flex-start' }}
+          >
+            {reviewed ? 'Replace configuration' : 'Accept configuration'}
+          </Button>
+          {unanswered.length > 0 && (
+            <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+              {unanswered.length === 1
+                ? 'One question still needs an answer.'
+                : `${unanswered.length} questions still need answers.`}
+            </p>
+          )}
+          {accept.isError && <Failure error={accept.error} />}
+        </section>
+      )}
 
       <Dialog
         open={replacing}
@@ -268,7 +276,8 @@ function QuestionCard({
 }: {
   question: Question;
   answer: string | undefined;
-  onAnswer: (value: string) => void;
+  /** Absent for somebody who may read the question but not answer it. */
+  onAnswer?: (value: string) => void;
   saving: boolean;
 }) {
   const [value, setValue] = useState(answer ?? '');
@@ -311,6 +320,7 @@ function QuestionCard({
               ]}
               value={value}
               onChange={(e) => setValue(e.target.value)}
+              disabled={!onAnswer}
               style={{ flex: 1 }}
             />
           ) : (
@@ -319,12 +329,15 @@ function QuestionCard({
               mono={question.kind === 'port' || question.kind === 'path'}
               value={value}
               onChange={(e) => setValue(e.target.value)}
+              disabled={!onAnswer}
               style={{ flex: 1 }}
             />
           )}
-          <Button onClick={() => onAnswer(value)} disabled={!value || saving}>
-            Save answer
-          </Button>
+          {onAnswer && (
+            <Button onClick={() => onAnswer(value)} disabled={!value || saving}>
+              Save answer
+            </Button>
+          )}
         </div>
       </div>
     </Card>
@@ -598,7 +611,8 @@ function DetectionFailed({
   retrying,
 }: {
   error?: { message?: string; remedy?: string };
-  onRetry: () => void;
+  /** Absent for somebody who cannot ask Pando to look again. */
+  onRetry?: () => void;
   retrying: boolean;
 }) {
   return (
@@ -618,11 +632,13 @@ function DetectionFailed({
           {error.remedy}
         </p>
       )}
-      <div>
-        <Button variant="secondary" disabled={retrying} onClick={onRetry}>
-          {retrying ? 'Looking again' : 'Try again'}
-        </Button>
-      </div>
+      {onRetry && (
+        <div>
+          <Button variant="secondary" disabled={retrying} onClick={onRetry}>
+            {retrying ? 'Looking again' : 'Try again'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

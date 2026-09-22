@@ -218,7 +218,8 @@ by itself. The consequence is always stated with it: *anyone on the internet, wi
 
 **R-080 [D]** Control-plane permissions are individual verbs, in two scopes. **App-scoped** verbs are
 held through a grant on one app. **Install-scoped** verbs are held through a grant with no app, and
-confer nothing on any particular app.
+confer nothing on any particular app — except the two `install.apps.*` verbs, which confer the same
+app verbs on every app.
 
 Install-scoped:
 
@@ -230,6 +231,8 @@ Install-scoped:
 | `install.adapters.manage` | Configure adapters |
 | `install.audit.read` | Read the install-wide audit log |
 | `install.backup.manage` | Take, verify and restore backups (R-212–R-216) |
+| `install.apps.view` | See every app read-only: `app.view` and `app.logs.read` on each, without a grant on it |
+| `install.apps.manage` | Manage every app: every app-scoped verb on each, without a grant on it |
 | `app.create` | Create an app. Install-scoped despite the name: there is no app yet when it is checked |
 
 App-scoped:
@@ -261,9 +264,12 @@ App-scoped:
 | **Creator** | install | `app.create` — makes apps, and so owns and manages the ones it makes (R-073), and nothing else |
 
 Owner and Administrator partition the catalog; neither contains a verb from the other's scope. An
-Owner of every app in the installation still administers nothing, and an Administrator is not an
-owner of any app — R-031 gives every app an owner of record, and to manage a particular app an
-administrator holds a grant on it like anyone else (R-087).
+Owner of every app in the installation still administers nothing. An Administrator holds
+`install.apps.manage`, so it can view and manage **any** app, whoever made it, with every app verb —
+subject to host policy like everyone (R-272). It is still not the app's owner of record (R-031), and
+managing an app is not using it: opening an app through the proxy still needs a data grant or
+ownership (R-072, R-087). A custom role may hold `install.apps.view` alone, to see every app and
+change none.
 
 **R-082 [D]** Custom roles may be composed from the verb list and assigned to users or groups.
 

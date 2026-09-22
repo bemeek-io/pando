@@ -33,6 +33,9 @@ export const InstallVerb = {
   AdaptersManage: 'install.adapters.manage',
   AuditRead: 'install.audit.read',
   BackupManage: 'install.backup.manage',
+  /** Every app, read-only / every app, every app verb (R-081). */
+  AppsView: 'install.apps.view',
+  AppsManage: 'install.apps.manage',
   AppCreate: 'app.create',
 } as const;
 

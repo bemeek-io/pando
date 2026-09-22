@@ -4,6 +4,10 @@
 // Both live on the app rather than the installation, because both are the app's:
 // a slot is a hole the app declared (R-130) and a volume is data the app owns
 // and that outlives it (R-204).
+//
+// Reading either is app.view; filling a slot and declaring a volume are
+// app.spec.edit. Without that verb both tables stay, with nothing on them that
+// offers a change the server would refuse.
 
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -15,6 +19,7 @@ import { Environment } from './Environment';
 import { CarriedFiles } from './CarriedFiles';
 import { BuildPlan } from './BuildPlan';
 import { Table } from '../ui/Table';
+import { AppVerb, useCan } from './verbs';
 
 interface Slot {
   key: string;
@@ -64,6 +69,7 @@ const PROVISIONABLE = new Set(['postgres', 'mysql', 'redis']);
 
 function Slots({ appID, focus }: { appID: string; focus?: boolean }) {
   const [editing, setEditing] = useState<Slot | null>(null);
+  const canEdit = useCan(AppVerb.SpecEdit);
   const heading = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -106,24 +112,28 @@ function Slots({ appID, focus }: { appID: string; focus?: boolean }) {
               width: 'minmax(0,28ch)',
               render: (row: Slot) => describe(row),
             },
-            {
-              key: 'edit',
-              header: '',
-              width: '12ch',
-              align: 'right',
-              render: (row: Slot) => (
-                <Button variant="ghost" onClick={() => setEditing(row)}>
-                  Change
-                </Button>
-              ),
-            },
+            ...(canEdit
+              ? [
+                  {
+                    key: 'edit',
+                    header: '',
+                    width: '12ch',
+                    align: 'right' as const,
+                    render: (row: Slot) => (
+                      <Button variant="ghost" onClick={() => setEditing(row)}>
+                        Change
+                      </Button>
+                    ),
+                  },
+                ]
+              : []),
           ]}
           rows={rows}
           empty={<Quiet>This app declares nothing it depends on.</Quiet>}
         />
       </div>
 
-      {editing && (
+      {editing && canEdit && (
         <FillSlot appID={appID} slot={editing} onClose={() => setEditing(null)} />
       )}
     </section>
@@ -273,6 +283,7 @@ function FillSlot({
 function Volumes({ appID, focus }: { appID: string; focus?: boolean }) {
   const queries = useQueryClient();
   const [adding, setAdding] = useState(false);
+  const canEdit = useCan(AppVerb.SpecEdit);
   const heading = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -306,9 +317,11 @@ function Volumes({ appID, focus }: { appID: string; focus?: boolean }) {
     <section ref={heading}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Storage</h4>
-        <Button variant="ghost" onClick={() => setAdding(true)}>
-          Add storage
-        </Button>
+        {canEdit && (
+          <Button variant="ghost" onClick={() => setAdding(true)}>
+            Add storage
+          </Button>
+        )}
       </div>
 
       {/* R-204, where the consequence lands rather than in documentation. */}
@@ -331,7 +344,7 @@ function Volumes({ appID, focus }: { appID: string; focus?: boolean }) {
         />
       </div>
 
-      {adding && (
+      {adding && canEdit && (
         <Dialog
           open
           onClose={() => setAdding(false)}

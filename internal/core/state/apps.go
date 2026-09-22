@@ -212,6 +212,26 @@ func (a *Apps) ByID(ctx context.Context, appID string) (App, bool, error) {
 // list endpoint that leaks the existence of apps is a smaller problem than one
 // that leaks their contents, but it is still a leak.
 func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, error) {
+	return a.listControl(ctx, `
+		JOIN grants g ON g.app_id = a.id AND g.plane = 'control'
+		WHERE a.deleted_at IS NULL
+		  AND (
+		        (g.principal_kind = 'user'  AND g.principal_id = $1)
+		     OR (g.principal_kind = 'token' AND g.principal_id = $2)
+		     OR (g.principal_kind = 'group' AND g.principal_id IN (
+		            SELECT group_id FROM group_members WHERE user_id = $1))
+		  )`, nullable(p.UserID), nullable(accountTokenID(p)))
+}
+
+// ListAll returns every app, for a principal whose install role reaches every
+// app (install.apps.view or install.apps.manage, R-081). The caller decides
+// that; this only reads.
+func (a *Apps) ListAll(ctx context.Context) ([]App, error) {
+	return a.listControl(ctx, `WHERE a.deleted_at IS NULL`)
+}
+
+// listControl is the admin console's app list, narrowed by `where`.
+func (a *Apps) listControl(ctx context.Context, where string, args ...any) ([]App, error) {
 	rows, err := a.db.Query(ctx, `
 		SELECT DISTINCT a.id, a.name, a.slug, a.owner_user_id, a.state, a.desired_state,
 		       a.pinned_spec_id, a.created_at, a.updated_at, r.body->'routing', s.score, s.score_fixable,
@@ -232,16 +252,8 @@ func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, 
 		    ORDER BY (sc.spec_id IS NOT NULL) DESC, sc.ran_at DESC
 		    LIMIT 1
 		) s ON true
-		JOIN grants g ON g.app_id = a.id AND g.plane = 'control'
-		WHERE a.deleted_at IS NULL
-		  AND (
-		        (g.principal_kind = 'user'  AND g.principal_id = $1)
-		     OR (g.principal_kind = 'token' AND g.principal_id = $2)
-		     OR (g.principal_kind = 'group' AND g.principal_id IN (
-		            SELECT group_id FROM group_members WHERE user_id = $1))
-		  )
-		ORDER BY a.created_at DESC`,
-		nullable(p.UserID), nullable(accountTokenID(p)))
+		`+where+`
+		ORDER BY a.created_at DESC`, args...)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not list apps.", err)
 	}

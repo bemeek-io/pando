@@ -36,6 +36,7 @@ import { Reference } from './Reference';
 import { DeleteApp } from './DeleteApp';
 import { DeployButton } from './DeployButton';
 import { Lifecycle } from './Lifecycle';
+import { AppVerb, AppVerbs, can, changesAnything, type AppWithVerbs } from './verbs';
 import type { Route, Section } from '../app/route';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
@@ -464,9 +465,12 @@ function AppScreen({
   // it: accepting a proposal pins a spec, deploying moves the app through
   // building to running. A snapshot taken when the row was clicked is wrong by
   // the time anything interesting has happened.
+  //
+  // It also carries what the caller may do here (`verbs`), which is what every
+  // control below is shown or hidden on. Read once, for the whole screen.
   const app = useQuery({
     queryKey: ['apps', appID],
-    queryFn: () => api.get<App>(`/apps/${appID}`),
+    queryFn: () => api.get<AppWithVerbs>(`/apps/${appID}`),
   });
 
   // An app with no pinned spec has never been through review, so detection is
@@ -476,7 +480,7 @@ function AppScreen({
   // The tab is in the address bar, so a reload comes back to it. Replace
   // rather than push when switching: flicking between tabs should not make the
   // back button walk them one at a time before leaving the app.
-  const tab = routeTab ?? (reviewed ? 'overview' : 'detection');
+  const wanted = routeTab ?? (reviewed ? 'overview' : 'detection');
 
   // Which section of a tab to open at, when something sent you there. A
   // warning about storage should land on storage, not on the top of a settings
@@ -540,13 +544,22 @@ function AppScreen({
     );
   }
 
+  // What the caller may do on this app, by the server's own answer. Every
+  // control on this screen asks about exactly the verb its endpoint checks,
+  // so a person who can only look at an app sees it read-only rather than as
+  // a set of buttons that each come back refused (R-261).
+  const verbs = app.data.verbs ?? [];
+
+  // A tab that is nothing but a control is left out for somebody who cannot
+  // use it. The others stay, read-only: Settings and Sharing are also where
+  // somebody finds out how the app is configured and who can reach it.
   const tabs = reviewed
     ? [
         { value: 'overview', label: 'Overview' },
-        { value: 'logs', label: 'Logs' },
+        ...(can(verbs, AppVerb.LogsRead) ? [{ value: 'logs', label: 'Logs' }] : []),
         { value: 'sharing', label: 'Sharing' },
         { value: 'resources', label: 'Settings' },
-        { value: 'terminal', label: 'Terminal' },
+        ...(can(verbs, AppVerb.Exec) ? [{ value: 'terminal', label: 'Terminal' }] : []),
         { value: 'detection', label: 'Configuration' },
       ]
     : // One name, both states. It used to read "Set up" before a spec was
@@ -556,106 +569,121 @@ function AppScreen({
       // through the whole flow — applies to the place you do it as well.
       [{ value: 'detection', label: 'Configuration' }];
 
+  // A link to a tab this person cannot open lands on the first one they can.
+  const tab = tabs.some((t) => t.value === wanted) ? wanted : (tabs[0]?.value ?? 'detection');
+
   return (
-    <Sheet
-      heading={
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            gap: 'var(--space-3)',
-          }}
-        >
-          <Button variant="ghost" onClick={onBack} style={{ alignSelf: 'flex-start' }}>
-            Apps
-          </Button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3)' }}>
-              <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
-              <StatusIndicator
-                status={statusSymbol(app.data.state)}
-                label={statusLabel(app.data.state)}
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
-              {/* Deploy where somebody looking at an app can reach it, from any
-                  tab, rather than under everything on the overview. Only for an
-                  app that has a configuration to deploy: before that, the thing
-                  to do is accept one. */}
-              {app.data.pinned_spec_id && (
-                <DeployButton
-                  app={app.data}
-                  onRefused={(message, remedy, code) =>
-                    setRefusal(message ? { message, remedy, code } : null)
-                  }
+    <AppVerbs.Provider value={verbs}>
+      <Sheet
+        heading={
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              gap: 'var(--space-3)',
+            }}
+          >
+            <Button variant="ghost" onClick={onBack} style={{ alignSelf: 'flex-start' }}>
+              Apps
+            </Button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3)' }}>
+                <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
+                <StatusIndicator
+                  status={statusSymbol(app.data.state)}
+                  label={statusLabel(app.data.state)}
                 />
-              )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+                {/* Deploy where somebody looking at an app can reach it, from any
+                    tab, rather than under everything on the overview. Only for an
+                    app that has a configuration to deploy: before that, the thing
+                    to do is accept one. */}
+                {app.data.pinned_spec_id && can(verbs, AppVerb.Deploy) && (
+                  <DeployButton
+                    app={app.data}
+                    onRefused={(message, remedy, code) =>
+                      setRefusal(message ? { message, remedy, code } : null)
+                    }
+                  />
+                )}
 
-              {/* Stopping is the thing somebody reaches for when they would
-                  otherwise delete: it keeps the storage, the configuration and
-                  the address, and starting brings back what was running. */}
-              <Lifecycle app={app.data} />
+                {/* Stopping is the thing somebody reaches for when they would
+                    otherwise delete: it keeps the storage, the configuration and
+                    the address, and starting brings back what was running. */}
+                {can(verbs, AppVerb.Restart) && <Lifecycle app={app.data} />}
 
-              {/* In the header rather than on Settings: an app whose source could
-                  not be fetched has no pinned spec and therefore no Settings tab,
-                  and that is the app most likely to be deleted. */}
-              <DeleteApp appID={app.data.id} appName={app.data.name} onDeleted={onBack} />
+                {/* In the header rather than on Settings: an app whose source could
+                    not be fetched has no pinned spec and therefore no Settings tab,
+                    and that is the app most likely to be deleted. */}
+                {can(verbs, AppVerb.Delete) && (
+                  <DeleteApp appID={app.data.id} appName={app.data.name} onDeleted={onBack} />
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      }
-      // The sheet's marginal data. An app's id is what the CLI and the API want
-      // and the console had nowhere to show it, so it was a value you could
-      // only get by reading the address bar.
-      note={app.data.id}
-    >
-      {/* Sheet provides the page inset, so this carries only the measure and
-          the gap above the tabs. */}
-      {refusal && (
-        <div style={{ paddingBottom: 'var(--space-4)', maxWidth: MEASURE }}>
-          {/* The server's words, which are written to be acted on (R-105) —
-              and, where the console has the screen that acts on them, the way
-              there. A refusal that names a remedy on a page with no control
-              for it is a remedy nobody can take. */}
-          <Banner
-            tone="failed"
-            action={
-              REFUSALS[refusal.code ?? ''] ? (
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    const fix = REFUSALS[refusal.code ?? ''];
-                    if (fix) setTab(fix.tab, fix.focus);
-                    setRefusal(null);
-                  }}
-                >
-                  {REFUSALS[refusal.code ?? '']?.label}
-                </Button>
-              ) : (
-                <Button variant="ghost" onClick={() => setRefusal(null)}>
-                  Dismiss
-                </Button>
-              )
-            }
-          >
-            {refusal.message}
-            {refusal.remedy ? ` ${refusal.remedy}` : ''}
-          </Banner>
-        </div>
-      )}
+        }
+        // The sheet's marginal data. An app's id is what the CLI and the API want
+        // and the console had nowhere to show it, so it was a value you could
+        // only get by reading the address bar.
+        note={app.data.id}
+      >
+        {/* Sheet provides the page inset, so this carries only the measure and
+            the gap above the tabs. */}
+        {refusal && (
+          <div style={{ paddingBottom: 'var(--space-4)', maxWidth: MEASURE }}>
+            {/* The server's words, which are written to be acted on (R-105) —
+                and, where the console has the screen that acts on them, the way
+                there. A refusal that names a remedy on a page with no control
+                for it is a remedy nobody can take. */}
+            <Banner
+              tone="failed"
+              action={
+                REFUSALS[refusal.code ?? ''] ? (
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      const fix = REFUSALS[refusal.code ?? ''];
+                      if (fix) setTab(fix.tab, fix.focus);
+                      setRefusal(null);
+                    }}
+                  >
+                    {REFUSALS[refusal.code ?? '']?.label}
+                  </Button>
+                ) : (
+                  <Button variant="ghost" onClick={() => setRefusal(null)}>
+                    Dismiss
+                  </Button>
+                )
+              }
+            >
+              {refusal.message}
+              {refusal.remedy ? ` ${refusal.remedy}` : ''}
+            </Banner>
+          </div>
+        )}
 
-      <Tabs value={tab} onChange={setTab} items={tabs} />
+        {/* Once, rather than on every section: without a verb that changes
+            anything, every control below is absent, and this says why. */}
+        {!changesAnything(verbs) && (
+          <div style={{ paddingBottom: 'var(--space-4)', maxWidth: MEASURE }}>
+            <Quiet>You can view this app but not change it.</Quiet>
+          </div>
+        )}
 
-      <div style={{ paddingTop: 'var(--space-5)' }}>
-        {tab === 'detection' && <DetectionReview appID={app.data.id} reviewed={reviewed} />}
-        {tab === 'sharing' && <Sharing appID={app.data.id} appName={app.data.name} />}
-        {tab === 'overview' && <AppOverview app={app.data} onGo={setTab} />}
-        {tab === 'logs' && <Logs app={app.data} workload={focus} />}
-        {tab === 'resources' && <Resources appID={app.data.id} focus={focus} />}
-        {tab === 'terminal' && <Terminal appID={app.data.id} />}
-      </div>
-    </Sheet>
+        <Tabs value={tab} onChange={setTab} items={tabs} />
+
+        <div style={{ paddingTop: 'var(--space-5)' }}>
+          {tab === 'detection' && <DetectionReview appID={app.data.id} reviewed={reviewed} />}
+          {tab === 'sharing' && <Sharing appID={app.data.id} appName={app.data.name} />}
+          {tab === 'overview' && <AppOverview app={app.data} onGo={setTab} />}
+          {tab === 'logs' && <Logs app={app.data} workload={focus} />}
+          {tab === 'resources' && <Resources appID={app.data.id} focus={focus} />}
+          {tab === 'terminal' && <Terminal appID={app.data.id} />}
+        </div>
+      </Sheet>
+    </AppVerbs.Provider>
   );
 }
 

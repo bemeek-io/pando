@@ -65,6 +65,12 @@ The catalog is in design 06 §5. **There is no verb implication graph** — hold
 not imply `app.view`. Implication graphs are where authorization bugs live. The console suggests
 sensible combinations instead.
 
+The single exception is deliberate and lives in one table, `everyApp`, read in one place,
+`CheckControl` step 6b: `install.apps.manage` is every app verb on every app, `install.apps.view` is
+`app.view` + `app.logs.read` on every app (R-081). Do not read it anywhere else, and never in
+`CheckData`. `AppVerbs` and `Allows` go through the same `control` function, so what the console
+shows as editable cannot disagree with what `CheckControl` allows.
+
 Built-in roles (`viewer`, `operator`, `owner`) are seeded by migration and trigger-protected (R-081).
 A new verb in a later Pando version is added to built-in roles **by migration**. That is the only
 sanctioned way built-in role contents change.

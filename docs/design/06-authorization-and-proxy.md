@@ -270,7 +270,8 @@ tell revocation from a network fault.
 var Verbs = []Verb{
     // Install-scoped: held through a grant with no app (§2.1).
     "install.view", "install.users.manage", "install.policy.manage",
-    "install.adapters.manage", "install.audit.read", "app.create",
+    "install.adapters.manage", "install.audit.read", "install.backup.manage",
+    "install.apps.view", "install.apps.manage", "app.create",
 
     // App-scoped.
     "app.view", "app.logs.read", "app.deploy", "app.restart",
@@ -300,8 +301,20 @@ escalation and has to be gated. Adding it to the catalog without gating it would
 list advisory.
 
 **[D]** Administrator holds every install verb and no app verb; Owner is the mirror image. The two
-partition the catalog. An administrator is therefore **not** an owner of every app, which is the same
-line R-087 draws in `CheckData`: the supported path to an app is a grant.
+partition the catalog. Two of the install verbs reach into apps, and they are the only ones that do:
+`install.apps.manage` stands for every app verb on every app, and `install.apps.view` for the
+Viewer's two (`app.view`, `app.logs.read`). So an administrator can look after any app without a
+grant on it (R-081). This is an implication, the one this design allows between verbs, and it lives in
+exactly one place — `CheckControl`, step 6b, reading the table in `authz.everyApp` — after the app's
+own grants and after host policy, which still denies an administrator (R-272). `CheckData` does not
+read it: managing an app is not using it, and R-087's line holds on the data plane — the supported
+path to *use* an app is a data grant or ownership.
+
+**[D]** What the caller may do on an app is on the wire: `GET /apps/{id}` returns `verbs`, computed by
+`Authorizer.AppVerbs`, which asks `CheckControl`'s own question for each app verb without auditing a
+denial. The console shows a control it cannot use as read-only instead of letting it fail, and it
+cannot drift from the API because it is the API's answer. `GET /users/{id}/apps` returns
+`can_manage` per app the same way, and lists only apps the caller could see.
 
 **[D]** Creator holds `app.create` and nothing else. It is the built-in answer to "may make and run
 their own apps, and touch no other setting": creating an app writes the creator an owner grant on it

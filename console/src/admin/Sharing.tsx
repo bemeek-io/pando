@@ -16,8 +16,13 @@
 // explanation of who to ask** — not hidden. A hidden option produces a support
 // ticket instead of understanding, and a person who cannot find the setting
 // cannot tell whether it exists.
+//
+// **Without app.grants.manage, the list is read-only.** Anyone who can view
+// the app can read who has access to it (the endpoint is app.view); changing
+// it is app.grants.manage. So the table stays, without its Remove column, and
+// the two sections that exist only to change it say what is true instead.
 
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Dialog, Input, Select, Tag } from '@design';
 
@@ -25,6 +30,7 @@ import { api, RequestFailed } from '@api/client';
 import type { GrantRow } from '@api/types.gen';
 import { MEASURE } from '../ui/layout';
 import { Table } from '../ui/Table';
+import { AppVerb, AppVerbs, changesAnything, useCan } from './verbs';
 
 interface GrantsResponse {
   grants: GrantRow[] | null;
@@ -42,6 +48,9 @@ interface GrantsResponse {
 
 export function Sharing({ appID, appName }: { appID: string; appName: string }) {
   const queries = useQueryClient();
+  const canManage = useCan(AppVerb.GrantsManage);
+  // Whether the screen's own "view but not change" note already covers this.
+  const viewOnly = !changesAnything(useContext(AppVerbs));
   const [confirming, setConfirming] = useState(false);
   const [email, setEmail] = useState('');
   // The least access, not the second-least. Sharing an app most often means
@@ -80,126 +89,145 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
           columns={[
             { key: 'who', header: 'Who', width: 'minmax(0,44ch)', render: who },
             { key: 'access', header: 'Access', width: 'minmax(0,28ch)', render: access },
-            {
-              key: 'actions',
-              header: '',
-              width: '12ch',
-              align: 'right',
-              render: (row: Access) => (
-                <Button variant="ghost" onClick={() => row.grantIDs.forEach((id) => revoke.mutate(id))}>
-                  Remove
-                </Button>
-              ),
-            },
+            ...(canManage
+              ? [
+                  {
+                    key: 'actions',
+                    header: '',
+                    width: '12ch',
+                    align: 'right' as const,
+                    render: (row: Access) => (
+                      <Button variant="ghost" onClick={() => row.grantIDs.forEach((id) => revoke.mutate(id))}>
+                        Remove
+                      </Button>
+                    ),
+                  },
+                ]
+              : []),
           ]}
           rows={byPrincipal(rows)}
         />
       </section>
 
-      <section
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 'var(--space-3)',
-          paddingTop: 'var(--space-5)',
-          borderTop: 'var(--border-width) solid var(--rule)',
-        }}
-      >
-        <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Share with someone</h4>
+      {!canManage && (
+        // Whether it is open to everyone is the one fact the sections below
+        // carry that the table does not, so it is said here instead.
         <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
-          They&rsquo;ll see {appName} the next time they sign in. Pando doesn&rsquo;t send them a
-          message.
+          {anonymous
+            ? `Anyone on the internet can open ${appName}, without signing in.`
+            : `Only people given access can open ${appName}.`}
+          {!viewOnly && ' You can see who has access but not change it.'}
         </p>
-        {/* The select used to be sized with `width: var(--space-9)` — a spacing
-            token used as a width, and far narrower than its longest option. The
-            label overflowed and the button sat on top of it. It is sized from
-            its content now, and the row wraps instead of overlapping when there
-            is not enough of it. */}
-        <div
+      )}
+
+      {canManage && (
+        <section
           style={{
             display: 'flex',
-            flexWrap: 'wrap',
+            flexDirection: 'column',
             gap: 'var(--space-3)',
-            alignItems: 'flex-end',
+            paddingTop: 'var(--space-5)',
+            borderTop: 'var(--border-width) solid var(--rule)',
           }}
         >
-          <Input
-            label="Email address"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ flex: '2 1 24ch' }}
-          />
-          <Select
-            label="What they can do"
-            options={[
-              { value: 'use', label: 'Open the app' },
-              { value: 'viewer', label: 'Open it and see its settings' },
-              { value: 'operator', label: 'Open it and deploy it' },
-              { value: 'owner', label: 'Everything, including sharing' },
-            ]}
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            style={{ flex: '1 1 28ch' }}
-          />
-          <Button
-            onClick={() => share.mutate({ email, role })}
-            disabled={!email || share.isPending}
-          >
-            Share app
-          </Button>
-        </div>
-        {share.isError && <Failure error={share.error} />}
-      </section>
-
-      <section
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 'var(--space-3)',
-          paddingTop: 'var(--space-5)',
-          borderTop: 'var(--border-width) solid var(--rule)',
-        }}
-      >
-        <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Make it public</h4>
-
-        {/* R-077 [P], overridden in the heading and kept here. The requirement
-            forbids presenting this as the *bare* word "public" — a toggle
-            labeled "Public" and nothing else, which people skim past without
-            registering what it does. "Make it public" is what the action is
-            called everywhere else in the world, and the consequence directly
-            beneath it is what the requirement is actually protecting. The
-            confirmation step stays too. */}
-        <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink)', margin: 0 }}>
-          Anyone on the internet can open {appName}, without signing in.
-        </p>
-
-        {!allowed && (
-          // Visible and disabled, with who to ask. Hiding it would produce a
-          // support ticket instead of understanding.
-          <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
-            {grants.data?.anonymous_policy_note ??
-              'This installation doesn’t allow apps to be opened up to everyone. An administrator can change that in host policy.'}
+          <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Share with someone</h4>
+          <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
+            They&rsquo;ll see {appName} the next time they sign in. Pando doesn&rsquo;t send them a
+            message.
           </p>
-        )}
+          {/* The select used to be sized with `width: var(--space-9)` — a spacing
+              token used as a width, and far narrower than its longest option. The
+              label overflowed and the button sat on top of it. It is sized from
+              its content now, and the row wraps instead of overlapping when there
+              is not enough of it. */}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 'var(--space-3)',
+              alignItems: 'flex-end',
+            }}
+          >
+            <Input
+              label="Email address"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              style={{ flex: '2 1 24ch' }}
+            />
+            <Select
+              label="What they can do"
+              options={[
+                { value: 'use', label: 'Open the app' },
+                { value: 'viewer', label: 'Open it and see its settings' },
+                { value: 'operator', label: 'Open it and deploy it' },
+                { value: 'owner', label: 'Everything, including sharing' },
+              ]}
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              style={{ flex: '1 1 28ch' }}
+            />
+            <Button
+              onClick={() => share.mutate({ email, role })}
+              disabled={!email || share.isPending}
+            >
+              Share app
+            </Button>
+          </div>
+          {share.isError && <Failure error={share.error} />}
+        </section>
+      )}
 
-        {anonymous ? (
-          <Button
-            variant="destructive"
-            onClick={() => revoke.mutate(anonymous.id)}
-            style={{ alignSelf: 'flex-start' }}
-          >
-            Make it private again
-          </Button>
-        ) : (
-          <Button
-            disabled={!allowed}
-            onClick={() => setConfirming(true)}
-            style={{ alignSelf: 'flex-start' }}
-          >
-            Make it public
-          </Button>
-        )}
-      </section>
+      {canManage && (
+        <section
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-3)',
+            paddingTop: 'var(--space-5)',
+            borderTop: 'var(--border-width) solid var(--rule)',
+          }}
+        >
+          <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Make it public</h4>
+
+          {/* R-077 [P], overridden in the heading and kept here. The requirement
+              forbids presenting this as the *bare* word "public" — a toggle
+              labeled "Public" and nothing else, which people skim past without
+              registering what it does. "Make it public" is what the action is
+              called everywhere else in the world, and the consequence directly
+              beneath it is what the requirement is actually protecting. The
+              confirmation step stays too. */}
+          <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink)', margin: 0 }}>
+            Anyone on the internet can open {appName}, without signing in.
+          </p>
+
+          {!allowed && (
+            // Visible and disabled, with who to ask. Hiding it would produce a
+            // support ticket instead of understanding.
+            <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+              {grants.data?.anonymous_policy_note ??
+                'This installation doesn’t allow apps to be opened up to everyone. An administrator can change that in host policy.'}
+            </p>
+          )}
+
+          {anonymous ? (
+            <Button
+              variant="destructive"
+              onClick={() => revoke.mutate(anonymous.id)}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              Make it private again
+            </Button>
+          ) : (
+            <Button
+              disabled={!allowed}
+              onClick={() => setConfirming(true)}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              Make it public
+            </Button>
+          )}
+        </section>
+      )}
 
       <Dialog
         open={confirming}

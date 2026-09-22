@@ -19,6 +19,7 @@ import { deployLabel, deployStatus } from '../ui/deploys';
 import { Security } from './Security';
 import { AppImage } from './AppImage';
 import { AppName } from './AppName';
+import { AppVerb, useCan } from './verbs';
 
 interface SpecRevision {
   id: string;
@@ -37,6 +38,12 @@ export function AppOverview({
   /** Where a warning's fix lives: a tab, and the section on it. */
   onGo: (tab: string, focus?: string) => void;
 }) {
+  // A fix is offered only to somebody who can make it: "Add storage" in front
+  // of a person who may only look at the app is a control that is refused.
+  // Every fix on this screen is a spec edit.
+  const canEdit = useCan(AppVerb.SpecEdit);
+  const canReadLogs = useCan(AppVerb.LogsRead);
+
   const deployments = useQuery({
     queryKey: ['apps', app.id, 'deployments'],
     queryFn: () => api.get<{ deployments: Deployment[] | null }>(`/apps/${app.id}/deployments`),
@@ -158,9 +165,11 @@ export function AppOverview({
                   status={deployStatus(latest.status, latest.result_state)}
                   label={`${deployLabel(latest.status, latest.result_state)} ${relative(latest.finished_at ?? latest.started_at)}`}
                 />
-                <Button variant="ghost" onClick={() => onGo('logs')}>
-                  Open logs
-                </Button>
+                {canReadLogs && (
+                  <Button variant="ghost" onClick={() => onGo('logs')}>
+                    Open logs
+                  </Button>
+                )}
               </span>
             ) : (
               <span style={{ color: 'var(--ink-secondary)' }}>Not deployed yet.</span>
@@ -173,7 +182,7 @@ export function AppOverview({
       {/* Why an app is degraded, when it is made of several parts. The app's
           own state is one word for all of them, and the part that is failing
           is the thing somebody needs. */}
-      <Parts app={app} onLogs={(workload) => onGo('logs', workload)} />
+      <Parts app={app} onLogs={canReadLogs ? (workload) => onGo('logs', workload) : undefined} />
 
       {/* The security score, where the deploy log used to be — and across the
           measure rather than in the column that held it. A log is a column of
@@ -185,13 +194,15 @@ export function AppOverview({
       {unset.length > 0 && (
         <InlineWarning
           action={
-            <Button
-              variant="secondary"
-              onClick={() => onGo('resources', 'variables')}
-              style={{ alignSelf: 'flex-start' }}
-            >
-              Fill them in
-            </Button>
+            canEdit && (
+              <Button
+                variant="secondary"
+                onClick={() => onGo('resources', 'variables')}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                Fill them in
+              </Button>
+            )
           }
         >
           {unsetMessage(unset.map((e) => e.key))}
@@ -207,7 +218,7 @@ export function AppOverview({
             key={warning.code + warning.message}
             code={warning.code}
             action={
-              fix && (
+              fix && canEdit && (
                 <Button
                   variant="secondary"
                   onClick={() => onGo(fix.tab, fix.focus)}

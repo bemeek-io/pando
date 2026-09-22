@@ -136,6 +136,7 @@ one verb says nothing about another (R-082).
 | --- | --- | --- |
 | `GET /api/v1/apps/{appID}/grants` | `app.view` | Who can reach this app, and who can administer it — two planes, listed separately (R-070, R-071). |
 | `POST /api/v1/apps/{appID}/grants` | `app.grants.manage` | Share the app with a user, a group, a token, or with everyone. The anonymous grant is a real row, refused where host policy forbids it (R-075, R-076). |
+| `PATCH /api/v1/apps/{appID}/grants/{grantID}` | `app.grants.manage` | Change the role a grant for managing the app carries (`role_id`). One update, so the person is never left with nothing in between. |
 | `DELETE /api/v1/apps/{appID}/grants/{grantID}` | `app.grants.manage` | Take a grant away. |
 
 ### Identity
@@ -149,6 +150,7 @@ one verb says nothing about another (R-082).
 | `DELETE /api/v1/users/{userID}` | `install.users.manage` | Delete an account, with the destruction rules that follow from it (R-282). |
 | `PUT /api/v1/users/{userID}/role` | `install.users.manage` | Give an account an installation role. Deliberately not a field on PATCH: changing someone's status and changing their power are different acts. |
 | `DELETE /api/v1/users/{userID}/role` | `install.users.manage` | Take an installation role away. The last administrator cannot be demoted. |
+| `GET /api/v1/users/{userID}/apps` | `install.view` | The apps an account has something on: its role for managing each, directly or through a group, whether it can use each, and whether you can change that (`can_manage`). Only apps you can see are listed. Your own needs nothing. |
 | `GET /api/v1/groups` | `install.view` | Groups, whether Pando's own or an identity adapter's (R-078). |
 | `POST /api/v1/groups` | `install.users.manage` | Create a group. |
 | `PUT /api/v1/groups/{groupID}/members` | `install.users.manage` | Set a group's members. |

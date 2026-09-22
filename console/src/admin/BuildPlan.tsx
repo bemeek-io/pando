@@ -9,7 +9,8 @@
 // runs, and "commit a Dockerfile to your repo to take control" is the opposite
 // of that: it puts deployment files in the source tree, which is the thing
 // Pando exists to avoid. An edit here is a spec revision like any other
-// (R-152), so it can be diffed and rolled back.
+// (R-152), so it can be diffed and rolled back. Which is app.spec.edit:
+// without it the plan is shown and there is no Edit.
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,6 +19,7 @@ import { Banner, Button, Input } from '@design';
 import { api } from '@api/client';
 import type { AppSpec } from '@api/types.gen';
 import { Quiet, messageOf } from '../install/Accounts';
+import { AppVerb, useCan } from './verbs';
 
 interface Revision {
   id: string;
@@ -28,6 +30,7 @@ interface Revision {
 export function BuildPlan({ appID }: { appID: string }) {
   const queries = useQueryClient();
   const [draft, setDraft] = useState<string | null>(null);
+  const canEdit = useCan(AppVerb.SpecEdit);
 
   const specs = useQuery({
     queryKey: ['apps', appID, 'specs'],
@@ -69,9 +72,11 @@ export function BuildPlan({ appID }: { appID: string }) {
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>How this app is built</h4>
         {draft === null ? (
-          <Button variant="ghost" onClick={() => setDraft(current)}>
-            Edit
-          </Button>
+          canEdit && (
+            <Button variant="ghost" onClick={() => setDraft(current)}>
+              Edit
+            </Button>
+          )
         ) : (
           <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
             <Button variant="ghost" onClick={() => setDraft(null)}>
@@ -92,7 +97,7 @@ export function BuildPlan({ appID }: { appID: string }) {
       {save.isError && <Banner tone="failed">{messageOf(save.error)}</Banner>}
 
       <div style={{ marginTop: 'var(--space-4)' }}>
-        {draft === null ? (
+        {draft === null || !canEdit ? (
           <pre
             style={{
               font: 'var(--type-code-sm)',

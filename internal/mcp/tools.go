@@ -374,6 +374,20 @@ var toolList = []tool{
 		},
 	},
 	{
+		Name:        "pando_list_user_apps",
+		Description: "The apps an account has access to: its role for managing each, directly or through a group, whether it can use each, and whether you can change that (can_manage).",
+		Schema: schema(map[string]any{
+			"user_id": str("The account's ID."),
+		}, "user_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "user_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "GET", "/users/" + url.PathEscape(id) + "/apps", nil, nil
+		},
+	},
+	{
 		Name:        "pando_rename_section",
 		Description: "Rename one of your launcher sections.",
 		Schema: schema(map[string]any{

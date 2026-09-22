@@ -393,6 +393,22 @@ Show who an app is shared with
 pando grant list <app>
 ```
 
+#### `grant remove`
+
+Take a grant away
+
+```
+pando grant remove <app> <grant-id>
+```
+
+#### `grant role`
+
+Change the role a grant for managing an app carries
+
+```
+pando grant role <app> <grant-id> <role-id>
+```
+
 ### `login`
 
 Sign in and store a token for this machine
@@ -611,5 +627,21 @@ Revoke a token
 
 ```
 pando token revoke <token-id>
+```
+
+### `user`
+
+Look at accounts
+
+```
+pando user
+```
+
+#### `user apps`
+
+Show the apps an account has access to, and its role on each
+
+```
+pando user apps <user-id>
 ```
 

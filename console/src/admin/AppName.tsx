@@ -10,28 +10,34 @@ import { Button, Input } from '@design';
 
 import { api } from '@api/client';
 import type { App } from '@api/types.gen';
+import { AppVerb, keepVerbs, useCan } from './verbs';
 
 export function AppName({ app }: { app: App }) {
   const queries = useQueryClient();
   const [draft, setDraft] = useState<string | null>(null);
+  const canRename = useCan(AppVerb.SpecEdit);
 
   const rename = useMutation({
     mutationFn: (name: string) => api.patch<App>(`/apps/${app.id}`, { name }),
     onSuccess: (updated) => {
-      queries.setQueryData(['apps', app.id], updated);
+      queries.setQueryData(['apps', app.id], keepVerbs(updated));
       void queries.invalidateQueries({ queryKey: ['apps'] });
       void queries.invalidateQueries({ queryKey: ['me', 'apps'] });
       setDraft(null);
     },
   });
 
-  if (draft === null) {
+  // Without app.spec.edit the name is a value to read, not a control that
+  // is refused when used.
+  if (draft === null || !canRename) {
     return (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
         {app.name}
-        <Button variant="ghost" onClick={() => setDraft(app.name)}>
-          Rename
-        </Button>
+        {canRename && (
+          <Button variant="ghost" onClick={() => setDraft(app.name)}>
+            Rename
+          </Button>
+        )}
       </span>
     );
   }

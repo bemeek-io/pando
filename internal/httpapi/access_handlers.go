@@ -86,6 +86,109 @@ func (s *Server) handleListGrants(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, map[string]any{"grants": grants})
 }
 
+// handleSetGrantRole changes the role a control-plane grant carries: one
+// update, rather than a revoke and a new grant that could leave the person
+// with nothing between the two.
+func (s *Server) handleSetGrantRole(w http.ResponseWriter, r *http.Request) {
+	app, ok := s.requireControl(w, r, authz.AppGrantsManage)
+	if !ok {
+		return
+	}
+	var req struct {
+		RoleID string `json:"role_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read."))
+		return
+	}
+	grantID := chi.URLParam(r, "grantID")
+	if err := s.Grants.SetRole(r.Context(), app.ID, grantID, req.RoleID); err != nil {
+		Error(w, r, err)
+		return
+	}
+	p := PrincipalFrom(r.Context())
+	s.audit(r, audit.Event{
+		PrincipalKind: audit.PrincipalKind(p.Kind), PrincipalID: p.ID, OnBehalfOf: p.UserID,
+		Action: "grant.update", AppID: app.ID, TargetKind: "grant", TargetID: grantID,
+		Detail: map[string]any{"role_id": req.RoleID},
+	})
+	JSON(w, http.StatusNoContent, nil)
+}
+
+// handleUserApps returns the apps an account has something on, and what: its
+// role for managing each (direct or through a group), whether it can use each,
+// and whether the caller may change that.
+//
+// Your own without anything administrative; anyone else's with install.view.
+// Only the apps the caller could see anyway are listed — a list of somebody
+// else's apps is not a way to learn that an app exists.
+func (s *Server) handleUserApps(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "userID")
+	p, ok := s.requireSelfOrInstall(w, r, userID, authz.InstallView)
+	if !ok {
+		return
+	}
+	if _, found, err := s.Users.ByID(r.Context(), userID); err != nil {
+		Error(w, r, err)
+		return
+	} else if !found {
+		Error(w, r, errs.New(errs.NotFound, "There is no account with that ID."))
+		return
+	}
+
+	grants, err := s.Grants.ForUser(r.Context(), userID)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	type access struct {
+		AppID     string               `json:"app_id"`
+		AppName   string               `json:"app_name"`
+		Owner     bool                 `json:"owner"`
+		CanManage bool                 `json:"can_manage"`
+		Control   []state.UserAppGrant `json:"control"`
+		Data      []state.UserAppGrant `json:"data"`
+	}
+	out := []*access{}
+	byApp := map[string]*access{}
+	self := userID == p.UserID
+	for _, g := range grants {
+		a, seen := byApp[g.AppID]
+		if !seen {
+			visible := self
+			if !visible {
+				if visible, err = s.Authz.Allows(r.Context(), p, g.AppID, authz.AppView); err != nil {
+					Error(w, r, err)
+					return
+				}
+			}
+			if !visible {
+				byApp[g.AppID] = nil
+				continue
+			}
+			manage, err := s.Authz.Allows(r.Context(), p, g.AppID, authz.AppGrantsManage)
+			if err != nil {
+				Error(w, r, err)
+				return
+			}
+			a = &access{AppID: g.AppID, AppName: g.AppName, Owner: g.AppOwner == userID,
+				CanManage: manage, Control: []state.UserAppGrant{}, Data: []state.UserAppGrant{}}
+			byApp[g.AppID] = a
+			out = append(out, a)
+		}
+		if a == nil {
+			continue
+		}
+		if g.Plane == "control" {
+			a.Control = append(a.Control, g)
+		} else {
+			a.Data = append(a.Data, g)
+		}
+	}
+	JSON(w, http.StatusOK, map[string]any{"apps": out})
+}
+
 func (s *Server) handleDeleteGrant(w http.ResponseWriter, r *http.Request) {
 	app, ok := s.requireControl(w, r, authz.AppGrantsManage)
 	if !ok {

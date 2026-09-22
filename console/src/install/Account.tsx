@@ -13,6 +13,7 @@ import { Banner, Button, Dialog, EmptyState, Icon, Select, StatusIndicator } fro
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
 import { Sheet } from '../ui/Sheet';
+import { AccountApps } from './AccountApps';
 import type { Account, Role } from './Accounts';
 import { Quiet, RoleLabel, RolePicker, StatusToggle, messageOf } from './Accounts';
 import { NO_FILTERS, WHEN, linkQuery } from './audit';
@@ -134,6 +135,8 @@ export function AccountPage({
             </Detail>
           </dl>
         </section>
+
+        <AccountApps account={a} />
 
         {canReadAudit && <Activity userID={a.id} onAudit={onAudit} />}
       </div>

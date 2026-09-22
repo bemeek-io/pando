@@ -257,9 +257,9 @@ difference is scope rather than size. `dr_bundle` is the whole installation, nee
 `install.backup.manage`, and is encrypted under a passphrase Pando never stores (R-213). `rolling` is
 one app's data, names that app in `app_id`, and needs `app.deploy` **on that app** — the same verb as
 restoring it, because taking a copy and putting it back are two halves of one operation and an owner
-who may do the destructive half should not need an administrator for the safe one. An administrator
-holds no `app.*` verb (R-087), so this is not the install verb with a filter; it is a different
-question.
+who may do the destructive half should not need an administrator for the safe one. It is checked with
+`CheckControl`, so an administrator reaches it through `install.apps.manage` like any other app verb
+(R-081); it is not `install.backup.manage` with a filter, which is a different question.
 
 **[P]** A rolling backup is encrypted under the install's own secrets key, not a typed passphrase.
 R-213 governs the bundle that has to survive the machine; applying it here would mean an app backup

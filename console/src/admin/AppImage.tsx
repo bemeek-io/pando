@@ -1,7 +1,8 @@
 // The image on an app's launcher tile (R-340).
 //
-// Setting it needs app.spec.edit, the same as renaming; the server refuses
-// anyone without it, and says so in the message shown here.
+// Setting it needs app.spec.edit, the same as renaming. Somebody without it
+// sees the image and no Upload or Remove, rather than buttons the server
+// would refuse.
 //
 // With no image, the preview is the terrain the launcher generates from the
 // app's ID — what everyone sees until somebody uploads one.
@@ -18,6 +19,7 @@ import { Button } from '@design';
 import { api, base } from '@api/client';
 import type { App } from '@api/types.gen';
 import { TopoTile } from '../ui/TopoBackground';
+import { AppVerb, keepVerbs, useCan } from './verbs';
 
 const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif';
 
@@ -25,9 +27,11 @@ export function AppImage({ app }: { app: App }) {
   const queries = useQueryClient();
   const picker = useRef<HTMLInputElement>(null);
   const [broken, setBroken] = useState<string | null>(null);
+  // The same verb as the endpoints: PUT and DELETE /icon are app.spec.edit.
+  const canEdit = useCan(AppVerb.SpecEdit);
 
   const refresh = (updated: App) => {
-    queries.setQueryData(['apps', app.id], updated);
+    queries.setQueryData(['apps', app.id], keepVerbs(updated));
     void queries.invalidateQueries({ queryKey: ['apps'] });
     void queries.invalidateQueries({ queryKey: ['me', 'apps'] });
   };
@@ -73,24 +77,28 @@ export function AppImage({ app }: { app: App }) {
           )}
         </div>
 
-        <input
-          ref={picker}
-          type="file"
-          accept={ACCEPT}
-          hidden
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = '';
-            if (file) upload.mutate(file);
-          }}
-        />
-        <Button variant="secondary" disabled={busy} onClick={() => picker.current?.click()}>
-          {upload.isPending ? 'Uploading' : src ? 'Replace' : 'Upload'}
-        </Button>
-        {src && (
-          <Button variant="ghost" disabled={busy} onClick={() => remove.mutate()}>
-            {remove.isPending ? 'Removing' : 'Remove'}
-          </Button>
+        {canEdit && (
+          <>
+            <input
+              ref={picker}
+              type="file"
+              accept={ACCEPT}
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) upload.mutate(file);
+              }}
+            />
+            <Button variant="secondary" disabled={busy} onClick={() => picker.current?.click()}>
+              {upload.isPending ? 'Uploading' : src ? 'Replace' : 'Upload'}
+            </Button>
+            {src && (
+              <Button variant="ghost" disabled={busy} onClick={() => remove.mutate()}>
+                {remove.isPending ? 'Removing' : 'Remove'}
+              </Button>
+            )}
+          </>
         )}
       </div>
 
@@ -101,7 +109,7 @@ export function AppImage({ app }: { app: App }) {
       ) : (
         <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
           Shown on this app&rsquo;s tile in the launcher. Without one, the tile shows a map generated for this
-          app. PNG, JPEG, WebP or GIF, up to 256 KB.
+          app.{canEdit && ' PNG, JPEG, WebP or GIF, up to 256 KB.'}
         </span>
       )}
     </div>

@@ -306,6 +306,9 @@ func (s *Server) Routes() http.Handler {
 			r.Put("/{userID}/role", s.handlePutUserRole)
 			r.Delete("/{userID}/role", s.handleDeleteUserRole)
 
+			// The apps an account has something on, and what (R-081).
+			r.Get("/{userID}/apps", s.handleUserApps)
+
 			// Deletion fires R-282's destruction rules. A separate route from
 			// PATCH status, because suspension is not deletion (R-049) and
 			// neither should be reachable by mistyping the other.
@@ -478,6 +481,7 @@ func (s *Server) Routes() http.Handler {
 				r.Route("/grants", func(r chi.Router) {
 					r.Get("/", s.handleListGrants)
 					r.Post("/", s.handleCreateGrant)
+					r.Patch("/{grantID}", s.handleSetGrantRole)
 					r.Delete("/{grantID}", s.handleDeleteGrant)
 				})
 

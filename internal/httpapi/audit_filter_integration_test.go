@@ -71,7 +71,7 @@ func TestR227_TheAuditLogFindsEverythingToDoWithOneAccount(t *testing.T) {
 	danaID := i.userID(dana)
 	i.createApp(admin, "notes")
 
-	// Something done to her; signing in, above, was something she did.
+	// Something done to the account; signing in, above, was something it did.
 	require.Equal(t, http.StatusNoContent,
 		i.do(admin, http.MethodPatch, "/users/"+danaID, map[string]string{"status": "active"}).Code)
 
@@ -98,8 +98,8 @@ func TestR227_TheAuditLogFindsEverythingToDoWithOneAccount(t *testing.T) {
 			t.Fatalf("%s neither by nor on %s: %+v", e.Action, danaID, e)
 		}
 	}
-	require.True(t, asActor, "an event she was the actor of")
-	require.True(t, asTarget, "an event she was the target of")
+	require.True(t, asActor, "an event the account was the actor of")
+	require.True(t, asTarget, "an event the account was the target of")
 
 	// It combines with the others like any filter.
 	got = i.do(admin, http.MethodGet, "/audit?involving="+danaID+"&action=user.update", nil)

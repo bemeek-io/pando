@@ -60,6 +60,7 @@ boundary (O-12), and offering a tool policy will refuse wastes the agent's turn.
 | `pando_rename_app` | Change an app's display name. Its ID and address do not change. | `app_id`, `name` |
 | `pando_list_my_apps` | The apps you can open — your launcher — with which are favorites and which of your sections each is filed under, and your sections. A different list from pando_list_apps, which is the apps you can administer. | none |
 | `pando_create_section` | Make a section in your own launcher: a named grouping of apps. Only you see it. | `name` |
+| `pando_list_user_apps` | The apps an account has access to: its role for managing each, directly or through a group, whether it can use each, and whether you can change that (can_manage). | `user_id` |
 | `pando_rename_section` | Rename one of your launcher sections. | `name`, `section_id` |
 | `pando_delete_section` | Delete one of your launcher sections. Its apps go back to Your apps; nothing else changes. | `section_id` |
 | `pando_add_app_to_section` | Move an app you can open into one of your launcher sections, out of any other. | `app_id`, `section_id` |

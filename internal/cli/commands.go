@@ -45,6 +45,7 @@ func Commands() []*cobra.Command {
 		withServer(logsCmd(client)),
 		withServer(secretCmd(client)),
 		withServer(grantCmd(client)),
+		withServer(userCmd(client)),
 		withServer(sectionCmd(client)),
 		withServer(auditCmd(client)),
 		withServer(configCmd(client)),
@@ -949,6 +950,61 @@ func grantCmd(client func() (*Client, error)) *cobra.Command {
 			}
 			var out map[string]any
 			if err := c.Do("GET", "/apps/"+args[0]+"/grants", nil, &out); err != nil {
+				return err
+			}
+			return printJSON(cmd.OutOrStdout(), out)
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "role <app> <grant-id> <role-id>",
+		Short: "Change the role a grant for managing an app carries",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("PATCH", "/apps/"+args[0]+"/grants/"+args[1], map[string]any{"role_id": args[2]}, nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Role changed.")
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "remove <app> <grant-id>",
+		Short: "Take a grant away",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("DELETE", "/apps/"+args[0]+"/grants/"+args[1], nil, nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Removed.")
+			return nil
+		},
+	})
+	return cmd
+}
+
+func userCmd(client func() (*Client, error)) *cobra.Command {
+	cmd := &cobra.Command{Use: "user", Short: "Look at accounts"}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "apps <user-id>",
+		Short: "Show the apps an account has access to, and its role on each",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var out map[string]any
+			if err := c.Do("GET", "/users/"+args[0]+"/apps", nil, &out); err != nil {
 				return err
 			}
 			return printJSON(cmd.OutOrStdout(), out)

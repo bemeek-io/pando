@@ -149,36 +149,107 @@ func (a *Authorizer) CheckControl(ctx context.Context, p Principal, appID string
 		return nil
 	}
 
+	denial, err := a.control(ctx, p, appID, verb)
+	if err != nil {
+		return err
+	}
+	if denial != nil {
+		return a.deny(ctx, p, appID, verb, denial)
+	}
+	return nil
+}
+
+// AppVerbs returns the app verbs the principal may use on an app, by asking
+// the same question CheckControl asks for each — so what the console shows as
+// editable is what the API will allow, and cannot drift from it. Denials are
+// not audited: this is somebody looking at a screen, not trying anything.
+func (a *Authorizer) AppVerbs(ctx context.Context, p Principal, appID string) ([]Verb, error) {
+	out := []Verb{}
+	for _, verb := range AppVerbs() {
+		if p.Kind == KindSystem {
+			out = append(out, verb)
+			continue
+		}
+		denial, err := a.control(ctx, p, appID, verb)
+		if err != nil {
+			return nil, err
+		}
+		if denial == nil {
+			out = append(out, verb)
+		}
+	}
+	return out, nil
+}
+
+// Allows reports whether CheckControl would allow the verb, without auditing a
+// denial — for deciding what to show, as AppVerbs does, one verb at a time.
+func (a *Authorizer) Allows(ctx context.Context, p Principal, appID string, verb Verb) (bool, error) {
+	if InstallScoped(verb) {
+		return false, errs.Newf(errs.Internal,
+			"%s is an installation-wide permission and cannot be checked against an app.", verb)
+	}
+	if p.Kind == KindSystem {
+		return true, nil
+	}
+	denial, err := a.control(ctx, p, appID, verb)
+	if err != nil {
+		return false, err
+	}
+	return denial == nil, nil
+}
+
+// control evaluates steps 1–7 for one app verb. It returns the reason for a
+// denial, or a failure to evaluate at all, and audits neither.
+func (a *Authorizer) control(ctx context.Context, p Principal, appID string, verb Verb) (denial, failure error) {
 	// Steps 1–4: the principal itself.
 	if err := a.checkPrincipal(ctx, p); err != nil {
-		return a.deny(ctx, p, appID, verb, err)
+		return err, nil
 	}
 
 	// Step 5: host policy, before grants. A policy that disables a verb
-	// install-wide denies the owner too (R-272).
+	// install-wide denies the owner too (R-272) — and an administrator.
 	if a.policy != nil {
 		if err := a.policy.Allows(ctx, p, verb, appID); err != nil {
-			return a.deny(ctx, p, appID, verb, err)
+			return err, nil
 		}
 	}
 
 	// Steps 6–7: grants, then the verb.
 	grants, err := a.store.ControlGrantsFor(ctx, appID, p)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, g := range grants {
 		role, err := a.store.Role(ctx, g.RoleID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if role.Has(verb) {
-			return nil
+			return nil, nil
 		}
 	}
 
-	return a.deny(ctx, p, appID, verb,
-		errs.Newf(errs.PermVerbRequired, "You do not have permission to do this. It requires %s on this app.", verb))
+	// Step 6b: an install grant that reaches every app (R-081). The only
+	// install verbs that bear on an app are install.apps.view and
+	// install.apps.manage, and what each stands for is the table in everyApp —
+	// nothing else in an install role is read here.
+	install, err := a.store.InstallGrantsFor(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	for _, g := range install {
+		role, err := a.store.Role(ctx, g.RoleID)
+		if err != nil {
+			return nil, err
+		}
+		for _, held := range role.Verbs {
+			if everyApp(held, verb) {
+				return nil, nil
+			}
+		}
+	}
+
+	return errs.Newf(errs.PermVerbRequired, "You do not have permission to do this. It requires %s on this app.", verb), nil
 }
 
 // CheckInstall authorizes an installation-wide action (O-17, R-265).

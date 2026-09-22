@@ -101,6 +101,7 @@ var routeDocs = []reference.Route{
 	// --- sharing ----------------------------------------------------------
 	{Method: "GET", Path: "/api/v1/apps/{appID}/grants", Group: "Sharing", Summary: "Who can reach this app, and who can administer it — two planes, listed separately (R-070, R-071).", Verb: string(authz.AppView)},
 	{Method: "POST", Path: "/api/v1/apps/{appID}/grants", Group: "Sharing", Summary: "Share the app with a user, a group, a token, or with everyone. The anonymous grant is a real row, refused where host policy forbids it (R-075, R-076).", Verb: string(authz.AppGrantsManage)},
+	{Method: "PATCH", Path: "/api/v1/apps/{appID}/grants/{grantID}", Group: "Sharing", Summary: "Change the role a grant for managing the app carries (`role_id`). One update, so the person is never left with nothing in between.", Verb: string(authz.AppGrantsManage)},
 	{Method: "DELETE", Path: "/api/v1/apps/{appID}/grants/{grantID}", Group: "Sharing", Summary: "Take a grant away.", Verb: string(authz.AppGrantsManage)},
 
 	// --- accounts, groups, roles -----------------------------------------
@@ -111,6 +112,7 @@ var routeDocs = []reference.Route{
 	{Method: "DELETE", Path: "/api/v1/users/{userID}", Group: "Identity", Summary: "Delete an account, with the destruction rules that follow from it (R-282).", Verb: string(authz.InstallUsersManage)},
 	{Method: "PUT", Path: "/api/v1/users/{userID}/role", Group: "Identity", Summary: "Give an account an installation role. Deliberately not a field on PATCH: changing someone's status and changing their power are different acts.", Verb: string(authz.InstallUsersManage)},
 	{Method: "DELETE", Path: "/api/v1/users/{userID}/role", Group: "Identity", Summary: "Take an installation role away. The last administrator cannot be demoted.", Verb: string(authz.InstallUsersManage)},
+	{Method: "GET", Path: "/api/v1/users/{userID}/apps", Group: "Identity", Summary: "The apps an account has something on: its role for managing each, directly or through a group, whether it can use each, and whether you can change that (`can_manage`). Only apps you can see are listed. Your own needs nothing.", Verb: string(authz.InstallView)},
 	{Method: "GET", Path: "/api/v1/groups", Group: "Identity", Summary: "Groups, whether Pando's own or an identity adapter's (R-078).", Verb: string(authz.InstallView)},
 	{Method: "POST", Path: "/api/v1/groups", Group: "Identity", Summary: "Create a group.", Verb: string(authz.InstallUsersManage)},
 	{Method: "PUT", Path: "/api/v1/groups/{groupID}/members", Group: "Identity", Summary: "Set a group's members.", Verb: string(authz.InstallUsersManage)},

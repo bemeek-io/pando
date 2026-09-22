@@ -205,7 +205,18 @@ func (s *Server) detectInBackground(parent context.Context, appID string) {
 const detectionTimeout = 10 * time.Minute
 
 func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
-	apps, err := s.Apps.ListForPrincipal(r.Context(), PrincipalFrom(r.Context()))
+	p := PrincipalFrom(r.Context())
+	every, err := s.seesEveryApp(r, p)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	var apps []state.App
+	if every {
+		apps, err = s.Apps.ListAll(r.Context())
+	} else {
+		apps, err = s.Apps.ListForPrincipal(r.Context(), p)
+	}
 	if err != nil {
 		Error(w, r, err)
 		return
@@ -213,6 +224,25 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, map[string]any{
 		"apps": s.withVerdicts(r.Context(), withAddresses(r, apps)),
 	})
+}
+
+// seesEveryApp reports whether the caller's install role reaches every app
+// (install.apps.view or install.apps.manage, R-081), so the list shows them
+// all — the same answer CheckControl gives for app.view on each.
+func (s *Server) seesEveryApp(r *http.Request, p authz.Principal) (bool, error) {
+	if s.Verbs == nil || p.Kind == authz.KindAnonymous {
+		return false, nil
+	}
+	held, err := s.Verbs.InstallVerbsFor(r.Context(), p)
+	if err != nil {
+		return false, err
+	}
+	for _, v := range held {
+		if v == string(authz.InstallAppsView) || v == string(authz.InstallAppsManage) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // withAddresses fills in where each app is reached.
@@ -262,7 +292,19 @@ func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	app.Address = spec.Address(r.Host, app.Slug, app.Routing)
-	JSON(w, http.StatusOK, app)
+
+	// What the caller may do on this app, by the authorizer's own answer
+	// verb by verb, so the console shows what it cannot do as read-only
+	// rather than as a control that fails when used (R-261).
+	verbs, err := s.Authz.AppVerbs(r.Context(), PrincipalFrom(r.Context()), app.ID)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	JSON(w, http.StatusOK, struct {
+		state.App
+		Verbs []authz.Verb `json:"verbs"`
+	}{app, verbs})
 }
 
 func (s *Server) handlePatchApp(w http.ResponseWriter, r *http.Request) {

@@ -405,10 +405,11 @@ func TestSystemPrincipalBypassesGrantsButIsStillAPrincipal(t *testing.T) {
 }
 
 func TestVerbCatalogIsClosed(t *testing.T) {
-	// 13 app verbs plus the seven install-scoped ones (O-17, R-217). The count is here
-	// deliberately: R-080 says the catalog is fixed, so adding a verb should
-	// require editing a test rather than only a constant.
-	require.Len(t, authz.Verbs, 20)
+	// 13 app verbs plus the nine install-scoped ones (O-17, R-217, R-080's
+	// install.apps.*). The count is here deliberately: R-080 says the catalog
+	// is fixed, so adding a verb should require editing a test rather than only
+	// a constant.
+	require.Len(t, authz.Verbs, 22)
 	require.True(t, authz.IsVerb(authz.AppEgressOverride), "R-184's verb must exist")
 	require.False(t, authz.IsVerb(authz.Verb("app.do.anything")))
 
@@ -420,7 +421,7 @@ func TestVerbCatalogIsClosed(t *testing.T) {
 			app++
 		}
 	}
-	require.Equal(t, 7, install)
+	require.Equal(t, 9, install)
 	require.Equal(t, 13, app)
 }
 
@@ -452,10 +453,77 @@ func TestR080_InstallVerbRequiresAnInstallGrant(t *testing.T) {
 	require.NoError(t, a.CheckInstall(ctx, bobP, authz.InstallUsersManage))
 	require.NoError(t, a.CheckInstall(ctx, bobP, authz.AppCreate))
 
-	// And it does not reach into any app. R-031's owner of record survives the
-	// arrival of an administrator: to manage an app, hold a grant on it.
+	// It reaches into every app through install.apps.manage (R-081) — and
+	// only through it: an install role without that verb reaches none.
+	require.NoError(t, a.CheckControl(ctx, bobP, "app_other", authz.AppDelete),
+		"an administrator manages every app")
+	s.roles["role_audit_only"] = authz.Role{ID: "role_audit_only", Verbs: []authz.Verb{authz.InstallAuditRead, authz.InstallUsersManage}}
+	s.install = []authz.Grant{{Plane: "control", PrincipalKind: "user", PrincipalID: bob, RoleID: "role_audit_only"}}
 	require.Error(t, a.CheckControl(ctx, bobP, "app_other", authz.AppView),
-		"an administrator is not an owner of every app")
+		"no install verb but install.apps.* bears on an app")
+}
+
+// TestR081_AdministratorsLookAfterEveryAppButDoNotUseIt asserts the two
+// install.apps verbs: manage is every app verb on every app, view is the
+// Viewer's two, host policy still comes first, and neither opens an app.
+func TestR081_AdministratorsLookAfterEveryAppButDoNotUseIt(t *testing.T) {
+	ctx := context.Background()
+	s := newStore()
+	s.owner[app] = "usr_someone_else"
+	adminP := authz.Principal{Kind: authz.KindUser, ID: bob, UserID: bob, Status: "active"}
+	s.install = []authz.Grant{{Plane: "control", PrincipalKind: "user", PrincipalID: bob, RoleID: authz.RoleAdministrator}}
+
+	a := authz.New(s, nil, nil)
+	for _, v := range authz.AppVerbs() {
+		require.NoError(t, a.CheckControl(ctx, adminP, app, v), v)
+	}
+	// Managing is not using (R-087): the data plane still needs a grant.
+	require.Error(t, a.CheckData(ctx, adminP, app))
+
+	// Policy is a floor for administrators too (R-272).
+	withPolicy := authz.New(s, denyingPolicy{verb: authz.AppExec}, nil)
+	require.Error(t, withPolicy.CheckControl(ctx, adminP, app, authz.AppExec))
+	verbs, err := withPolicy.AppVerbs(ctx, adminP, app)
+	require.NoError(t, err)
+	require.NotContains(t, verbs, authz.AppExec)
+	require.Contains(t, verbs, authz.AppDelete)
+
+	// A custom role that can see every app and change none.
+	s.roles["role_auditor"] = authz.Role{ID: "role_auditor", Verbs: []authz.Verb{authz.InstallAppsView}}
+	s.install = []authz.Grant{{Plane: "control", PrincipalKind: "user", PrincipalID: bob, RoleID: "role_auditor"}}
+	verbs, err = a.AppVerbs(ctx, adminP, app)
+	require.NoError(t, err)
+	require.Equal(t, []authz.Verb{authz.AppView, authz.AppLogsRead}, verbs)
+	require.Error(t, a.CheckControl(ctx, adminP, app, authz.AppDeploy))
+}
+
+// AppVerbs is what the console shows as editable, so it must say exactly what
+// CheckControl says, verb by verb, and audit nothing while it does.
+func TestAppVerbsAgreesWithCheckControl(t *testing.T) {
+	ctx := context.Background()
+	s := newStore()
+	bobP := authz.Principal{Kind: authz.KindUser, ID: bob, UserID: bob, Status: "active"}
+	s.control[app] = []authz.Grant{{Plane: "control", PrincipalKind: "user", PrincipalID: bob, RoleID: authz.RoleOperator}}
+
+	rec := &recorder{}
+	a := authz.New(s, denyingPolicy{verb: authz.AppRestart}, rec)
+	verbs, err := a.AppVerbs(ctx, bobP, app)
+	require.NoError(t, err)
+	require.Equal(t, 0, rec.denials, "looking is not trying")
+
+	for _, v := range authz.AppVerbs() {
+		allowed := a.CheckControl(ctx, bobP, app, v) == nil
+		require.Equal(t, allowed, contains(verbs, v), v)
+	}
+}
+
+func contains(vs []authz.Verb, v authz.Verb) bool {
+	for _, got := range vs {
+		if got == v {
+			return true
+		}
+	}
+	return false
 }
 
 // TestR080_ScopesCannotBeCheckedAgainstEachOther asserts the guard at the

@@ -528,6 +528,83 @@ func (g *Grants) ListForApp(ctx context.Context, appID string) ([]GrantRow, erro
 }
 
 // Delete revokes a grant.
+// SetRole changes the role a control-plane grant carries, in one statement —
+// not a revoke and a new grant, which would leave the person with nothing if
+// the second half failed. A data-plane grant carries no role (R-070) and is
+// refused, and so is an installation role: the composite foreign key on
+// (role_id, role_scope) refuses it, and that becomes a sentence here.
+func (g *Grants) SetRole(ctx context.Context, appID, grantID, roleID string) error {
+	if roleID == "" {
+		return errs.New(errs.ValidInvalid, "A role is needed to change what this grant allows.")
+	}
+	tag, err := g.db.Exec(ctx, `
+		UPDATE grants SET role_id = $3
+		WHERE id = $1 AND app_id = $2 AND plane = 'control'`, grantID, appID, roleID)
+	if err != nil {
+		if isForeignKeyViolation(err) {
+			return errs.New(errs.ValidInvalid,
+				"That is not a role that can be granted on an app.").
+				WithRemedy("Choose Viewer, Operator, Owner, or a custom app role.")
+		}
+		return errs.Wrap(errs.Internal, "Could not change the role.", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return errs.New(errs.NotFound, "There is no grant for managing this app with that ID.")
+	}
+	return nil
+}
+
+// UserAppGrant is one grant that gives a person something on an app, directly
+// or through a group they are in.
+type UserAppGrant struct {
+	AppID     string `json:"app_id"`
+	AppName   string `json:"app_name"`
+	AppOwner  string `json:"-"`
+	GrantID   string `json:"grant_id"`
+	Plane     string `json:"plane"`
+	RoleID    string `json:"role_id,omitempty"`
+	RoleName  string `json:"role_name,omitempty"`
+	Via       string `json:"via"` // user or group
+	GroupID   string `json:"group_id,omitempty"`
+	GroupName string `json:"group_name,omitempty"`
+}
+
+// ForUser returns every app grant that reaches a person: their own, and their
+// groups' (resolved live, R-079). Install grants are not app grants and are
+// not here.
+func (g *Grants) ForUser(ctx context.Context, userID string) ([]UserAppGrant, error) {
+	rows, err := g.db.Query(ctx, `
+		SELECT a.id, a.name, coalesce(a.owner_user_id, ''), g.id, g.plane,
+		       coalesce(g.role_id, ''), coalesce(r.name, ''), g.principal_kind,
+		       coalesce(gr.id, ''), coalesce(gr.name, '')
+		FROM grants g
+		JOIN apps a ON a.id = g.app_id AND a.deleted_at IS NULL
+		LEFT JOIN roles r ON r.id = g.role_id
+		LEFT JOIN groups gr ON g.principal_kind = 'group' AND gr.id = g.principal_id
+		WHERE g.app_id IS NOT NULL
+		  AND (
+		        (g.principal_kind = 'user'  AND g.principal_id = $1)
+		     OR (g.principal_kind = 'group' AND g.principal_id IN (
+		            SELECT group_id FROM group_members WHERE user_id = $1))
+		  )
+		ORDER BY a.name, a.id, g.plane, g.principal_kind DESC`, userID)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the account's apps.", err)
+	}
+	defer rows.Close()
+
+	out := []UserAppGrant{}
+	for rows.Next() {
+		var u UserAppGrant
+		if err := rows.Scan(&u.AppID, &u.AppName, &u.AppOwner, &u.GrantID, &u.Plane,
+			&u.RoleID, &u.RoleName, &u.Via, &u.GroupID, &u.GroupName); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the account's apps.", err)
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 func (g *Grants) Delete(ctx context.Context, appID, grantID string) error {
 	_, err := g.db.Exec(ctx, `DELETE FROM grants WHERE id = $1 AND app_id = $2`, grantID, appID)
 	if err != nil {
