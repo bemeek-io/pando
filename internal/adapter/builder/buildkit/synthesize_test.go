@@ -222,3 +222,29 @@ func TestR020_APlansAssetsSurviveIntoTheBuild(t *testing.T) {
 	_, err = os.Stat(filepath.Join(built, ".nixpacks", "assets", "Caddyfile"))
 	require.NoError(t, err)
 }
+
+// TestR020_APlansBuildArgumentsAreUsed asserts that a stored plan carries the
+// values its Dockerfile's ARG lines need.
+//
+// nixpacks records them beside the Dockerfile, as the docker build command it
+// would have run. Ignoring them left every ARG empty: a single-page app's web
+// root resolved to the repository instead of its dist directory, so the site
+// served the source index.html and came up blank — with a 200, and nothing in
+// the logs to say why.
+func TestR020_APlansBuildArgumentsAreUsed(t *testing.T) {
+	args := planArgs(map[string]string{
+		".nixpacks/build.sh": "docker build /tmp/src -f /tmp/src/.nixpacks/Dockerfile -t x " +
+			"--build-arg CI=true --build-arg NIXPACKS_SPA_OUTPUT_DIR=dist --build-arg NODE_ENV=production",
+	})
+	require.Equal(t, "dist", args["NIXPACKS_SPA_OUTPUT_DIR"])
+	require.Equal(t, "true", args["CI"])
+	require.Equal(t, "production", args["NODE_ENV"])
+}
+
+// A plan with no build script asks for nothing, and a flag written as one
+// token is read the same way.
+func TestPlanArgumentsAreReadWhateverTheSpelling(t *testing.T) {
+	require.Empty(t, planArgs(map[string]string{".nixpacks/Dockerfile": "FROM alpine:3.21\n"}))
+	require.Equal(t, map[string]string{"K": "v"},
+		planArgs(map[string]string{".nixpacks/build.sh": `docker build . --build-arg=K="v"`}))
+}

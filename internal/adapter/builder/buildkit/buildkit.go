@@ -207,6 +207,11 @@ func (a *Adapter) Build(ctx context.Context, req api.BuildRequest) (api.BuildRes
 	frontendAttrs := map[string]string{
 		"filename": filepath.Base(dockerfile),
 	}
+	// The plan's own arguments first, then the spec's: an app that sets one
+	// itself means it.
+	for k, v := range planArgs(req.GeneratedFiles) {
+		frontendAttrs["build-arg:"+k] = v
+	}
 	for k, v := range req.Args {
 		frontendAttrs["build-arg:"+k] = v
 	}

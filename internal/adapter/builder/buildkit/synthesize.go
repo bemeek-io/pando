@@ -354,6 +354,44 @@ func collectPlan(root string) (map[string]string, error) {
 	return files, nil
 }
 
+// planArgs are the build arguments a generated plan says its Dockerfile needs.
+//
+// nixpacks writes its Dockerfile with ARG lines and records the values beside
+// it, in .nixpacks/build.sh, as the docker build command it would have run.
+// Pando stored that file and never read it, so every ARG defaulted to empty —
+// and a plan that serves a built single-page app resolved its web root to
+// `../app/` instead of `../app/dist`, served the repository's source
+// index.html, and the site came up blank with a 200 and nothing in the logs.
+//
+// Read from the plan the spec carries, not from the repository (R-020), and
+// overridden by anything the spec sets itself.
+func planArgs(files map[string]string) map[string]string {
+	args := map[string]string{}
+	body, ok := files[path.Join(".nixpacks", "build.sh")]
+	if !ok {
+		return args
+	}
+
+	fields := strings.Fields(body)
+	for i, field := range fields {
+		var pair string
+		switch {
+		case field == "--build-arg" && i+1 < len(fields):
+			pair = fields[i+1]
+		case strings.HasPrefix(field, "--build-arg="):
+			pair = strings.TrimPrefix(field, "--build-arg=")
+		default:
+			continue
+		}
+		key, value, found := strings.Cut(pair, "=")
+		if !found || key == "" {
+			continue
+		}
+		args[key] = strings.Trim(value, `"'`)
+	}
+	return args
+}
+
 // trim bounds a subprocess's output so one runaway generator cannot put a
 // megabyte of text into an error envelope.
 func trim(out []byte) string {
