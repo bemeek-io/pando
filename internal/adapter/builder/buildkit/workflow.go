@@ -78,7 +78,10 @@ func readWorkflowBuild(contextDir string) declaredBuild {
 			continue
 		}
 
-		command := strings.Join(steps, " && ")
+		command := strings.Join(dropProvidedInstalls(steps, contextDir), " && ")
+		if command == "" {
+			continue
+		}
 		if !safeCommand(command) {
 			continue
 		}
@@ -194,6 +197,63 @@ func buildJobSteps(r io.Reader) []string {
 }
 
 // skippable reports whether a step is CI bookkeeping rather than building.
+// installCommands are the dependency installs a package manager's own provider
+// already runs.
+var installCommands = []string{
+	"npm ci", "npm install", "npm i ", "npm i",
+	"yarn install", "yarn --", "yarn",
+	"pnpm install", "pnpm i ", "pnpm i",
+	"bun install",
+}
+
+// dropProvidedInstalls removes the install a workflow runs before its build,
+// when nixpacks is going to run one anyway.
+//
+// A workflow says `npm ci` then `npm run build` because CI starts with an
+// empty directory. A nixpacks plan has an install phase that already did it,
+// and its build phase mounts node_modules/.cache as a build cache — so the
+// second `npm ci`, which clears node_modules first, fails on a directory it
+// cannot remove: "EBUSY: resource busy or locked, rmdir
+// '/app/node_modules/.cache'". Mirroring a workflow is meant to reproduce
+// what the repository already does, and doing the install twice is not part
+// of that.
+//
+// Only when the package manager's provider is the one nixpacks picked, which
+// is what a package.json at the root means. A client below the root is built
+// by a provider that knows nothing about it and has to install for itself.
+func dropProvidedInstalls(steps []string, contextDir string) []string {
+	if _, err := os.Stat(filepath.Join(contextDir, "package.json")); err != nil {
+		return steps
+	}
+
+	var out []string
+	for _, step := range steps {
+		var kept []string
+		for _, part := range strings.Split(step, "&&") {
+			part = strings.TrimSpace(part)
+			if part == "" || isInstall(part) {
+				continue
+			}
+			kept = append(kept, part)
+		}
+		if len(kept) > 0 {
+			out = append(out, strings.Join(kept, " && "))
+		}
+	}
+	return out
+}
+
+// isInstall reports whether a command is only a dependency install.
+func isInstall(command string) bool {
+	lower := strings.ToLower(strings.TrimSpace(command))
+	for _, install := range installCommands {
+		if lower == strings.TrimSpace(install) || strings.HasPrefix(lower, install+" ") {
+			return true
+		}
+	}
+	return false
+}
+
 func skippable(step string) bool {
 	lower := strings.ToLower(strings.TrimLeft(step, "@-+ "))
 	for _, prefix := range skipCommands {

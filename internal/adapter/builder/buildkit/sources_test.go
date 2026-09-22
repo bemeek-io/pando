@@ -189,3 +189,36 @@ func TestTheChosenBuildCommandIsReadBackOutOfThePlan(t *testing.T) {
 	require.Equal(t, "go build -o out ./cmd/server", planBuildCommand(plan),
 		"the last build-stage RUN that is not nixpacks' own bookkeeping")
 }
+
+// TestAWorkflowsInstallIsNotMirrored asserts that mirroring a workflow copies
+// the build, not the setting up of a blank CI runner.
+//
+// A nixpacks plan installs in its own phase and mounts node_modules/.cache as
+// a build cache in the next one, so a second `npm ci` — which clears
+// node_modules first — failed on a directory it could not remove: "EBUSY:
+// resource busy or locked, rmdir /app/node_modules/.cache".
+func TestAWorkflowsInstallIsNotMirrored(t *testing.T) {
+	root := withFiles(t, map[string]string{
+		"package.json": `{"name":"site","scripts":{"build":"vite build"}}`,
+		".github/workflows/ci.yml": "name: build\non: [push]\njobs:\n  build:\n    runs-on: ubuntu-latest\n" +
+			"    steps:\n      - uses: actions/checkout@v4\n      - run: npm ci\n      - run: npm run build\n",
+	})
+
+	d := readDeclaredBuild(root)
+	require.Equal(t, "npm run build", d.Build,
+		"nixpacks installs in its own phase; repeating it there breaks on the build cache")
+}
+
+// A client below the root is built by a provider that knows nothing about it,
+// so its own install stays.
+func TestANestedClientsInstallIsKept(t *testing.T) {
+	root := withFiles(t, map[string]string{
+		"go.mod":           "module example.com/app\n",
+		"web/package.json": `{"name":"client"}`,
+		".github/workflows/ci.yml": "name: build\non: [push]\njobs:\n  build:\n    runs-on: ubuntu-latest\n" +
+			"    steps:\n      - run: (cd web && npm ci && npm run build)\n      - run: go build ./...\n",
+	})
+
+	d := readDeclaredBuild(root)
+	require.Contains(t, d.Build, "npm ci")
+}
