@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { adapterRequest, blankForm, categoryLabel, formProblems, orderCategories, sortKinds } from './adapters';
+import { adapterRequest, blankForm, categoryLabel, fieldPlaceholder, formProblems, orderCategories, sortKinds } from './adapters';
 import type { AdapterKind } from './adapters';
 
 const anthropic: AdapterKind = {
@@ -88,5 +88,19 @@ describe('adding an adapter', () => {
 describe('adapter categories', () => {
   it('orders categories as an installation is built up, unknown ones last', () => {
     expect(orderCategories(['ai', 'runtime', 'zeta', 'routing', 'ai'])).toEqual(['runtime', 'routing', 'ai', 'zeta']);
+  });
+});
+
+describe('an empty field', () => {
+  it('shows the default, which is what leaving it empty gets', () => {
+    expect(
+      fieldPlaceholder({ key: 'model', label: 'Model', type: 'string', default: 'claude-opus-5', placeholder: 'claude-x' }),
+    ).toBe('claude-opus-5');
+  });
+
+  it('shows an example when there is no default', () => {
+    expect(fieldPlaceholder({ key: 'base_domain', label: 'Base domain', type: 'string', placeholder: 'apps.example.com' })).toBe(
+      'apps.example.com',
+    );
   });
 });

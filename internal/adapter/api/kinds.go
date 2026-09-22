@@ -36,6 +36,11 @@ type Field struct {
 	// again (R-190) — never in "config", which the database refuses it in.
 	Credential bool `json:"credential,omitempty"`
 
-	// Placeholder is an example value, shown in an empty field.
+	// Default is the value used when the setting is left empty — the
+	// adapter's own default, stated so a form can show it rather than an
+	// example that might be mistaken for it.
+	Default string `json:"default,omitempty"`
+
+	// Placeholder is an example value, for a setting with no default.
 	Placeholder string `json:"placeholder,omitempty"`
 }

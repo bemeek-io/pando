@@ -131,7 +131,7 @@ func Info() api.KindInfo {
 		Description: "Serves apps from Pando itself, on a path or a port.",
 		IDPrefix:    "rte_",
 		Fields: []api.Field{
-			{Key: "base_url", Label: "Base URL", Type: "string", Help: "The address apps are reached at. Empty uses the one each request arrives on.", Placeholder: "https://pando.example.com"},
+			{Key: "base_url", Label: "Base URL", Type: "string", Help: "The address apps are reached at.", Default: "The address each request arrives on"},
 		},
 	}
 }

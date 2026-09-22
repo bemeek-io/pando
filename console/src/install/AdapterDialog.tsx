@@ -13,7 +13,7 @@ import { Banner, Button, Checkbox, Dialog, Input, Select } from '@design';
 import { api } from '@api/client';
 import { Quiet, refusal } from './Accounts';
 import { FieldSkeleton, Loading } from '../ui/Loading';
-import { adapterRequest, blankForm, categoryLabel, categoryNote, formProblems, kindKey, orderCategories, sortKinds } from './adapters';
+import { adapterRequest, blankForm, categoryLabel, categoryNote, fieldPlaceholder, formProblems, kindKey, orderCategories, sortKinds } from './adapters';
 import type { AdapterForm, AdapterKind, KindField } from './adapters';
 
 /** A configured adapter, as GET /adapters returns it. */
@@ -290,7 +290,7 @@ function FieldInput({
       type={field.credential ? 'password' : field.type === 'int' ? 'number' : 'text'}
       autoComplete={field.credential ? 'new-password' : 'off'}
       value={typeof value === 'string' ? value : ''}
-      placeholder={field.placeholder}
+      placeholder={fieldPlaceholder(field)}
       helper={helper}
       error={error}
       onChange={(e) => onChange(e.target.value)}

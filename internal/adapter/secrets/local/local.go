@@ -180,7 +180,7 @@ func Info() api.KindInfo {
 		Description: "Keeps secrets encrypted in Pando’s own database.",
 		IDPrefix:    "sek_",
 		Fields: []api.Field{
-			{Key: "key_path", Label: "Key file", Type: "string", Help: "The file holding the encryption key.", Required: true, Placeholder: "/var/lib/pando/secrets.key"},
+			{Key: "key_path", Label: "Key file", Type: "string", Help: "The file holding the encryption key.", Default: DefaultKeyPath},
 		},
 	}
 }

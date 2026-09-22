@@ -1197,9 +1197,9 @@ func Info() api.KindInfo {
 		Description: "Runs apps as containers on a Docker host.",
 		IDPrefix:    "rt_",
 		Fields: []api.Field{
-			{Key: "host", Label: "Docker host", Type: "string", Help: "The Docker endpoint. Empty uses the environment, which the bundled Compose file relies on.", Placeholder: "unix:///var/run/docker.sock"},
-			{Key: "total_cpu_millis", Label: "CPU available", Type: "int", Help: "Thousandths of a core Pando may allocate. Empty is the whole machine.", Placeholder: "4000"},
-			{Key: "total_memory_bytes", Label: "Memory available", Type: "int", Help: "Bytes Pando may allocate. Empty is the whole machine."},
+			{Key: "host", Label: "Docker host", Type: "string", Help: "The Docker endpoint. Empty uses the environment, which the bundled Compose file relies on.", Default: "DOCKER_HOST, or the local socket"},
+			{Key: "total_cpu_millis", Label: "CPU available", Type: "int", Help: "Thousandths of a core Pando may allocate.", Default: "The whole machine"},
+			{Key: "total_memory_bytes", Label: "Memory available", Type: "int", Help: "Bytes Pando may allocate.", Default: "The whole machine"},
 			{Key: "total_disk_bytes", Label: "Disk available", Type: "int", Help: "Bytes of disk Pando may allocate."},
 		},
 	}

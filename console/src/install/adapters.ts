@@ -16,7 +16,17 @@ export interface KindField {
   /** A secret such as an API key: sent in `credentials`, never in `config`
    *  (R-190), and never shown again. */
   credential?: boolean;
+  /** What the adapter uses when the setting is left empty. Shown in the
+   *  empty field, so what it says is what happens. */
+  default?: string;
+  /** An example, for a setting with no default. */
   placeholder?: string;
+}
+
+/** The text an empty field shows: the default when there is one, since
+ *  that is what leaving it empty gets, and an example otherwise. */
+export function fieldPlaceholder(f: KindField): string | undefined {
+  return f.default || f.placeholder;
 }
 
 /** A kind of adapter this build of Pando can run. */
@@ -136,7 +146,7 @@ export function formProblems(
       continue;
     }
     if (f.type === 'int' && !/^-?\d+$/.test(text)) {
-      problems[f.key] = `${f.label} takes a whole number, such as ${f.placeholder || '30'}.`;
+      problems[f.key] = `${f.label} takes a whole number, such as ${[f.default, f.placeholder].find((x) => x && /^\d+$/.test(x)) ?? '30'}.`;
     }
   }
   return problems;
