@@ -344,7 +344,7 @@ func (s *Server) handleCreateAdapter(w http.ResponseWriter, r *http.Request) {
 		if !known {
 			Error(w, r, errs.Newf(errs.ValidInvalid,
 				"This build of Pando has no %s adapter of kind %q.", req.Category, req.Kind).
-				WithRemedy("Use one of: " + strings.Join(names, ", ") + ". GET /api/v1/adapters/kinds lists them with their settings."))
+				WithRemedy("Use one of: "+strings.Join(names, ", ")+". GET /api/v1/adapters/kinds lists them with their settings."))
 			return
 		}
 	}
