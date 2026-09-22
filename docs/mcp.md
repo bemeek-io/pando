@@ -46,7 +46,7 @@ boundary (O-12), and offering a tool policy will refuse wastes the agent's turn.
 | `pando_create_app` | Create an app from a git repository. Returns immediately with the app in draft while Pando works out how to run it; call pando_get_detection next. | `name`, `ref` (optional), `source_url` |
 | `pando_get_detection` | What Pando worked out about an app, including any questions it needs answered before it can deploy. The questions are written to be answerable by whatever wrote the app. | `app_id` |
 | `pando_answer_detection` | Answer one of the questions from pando_get_detection. | `answer`, `app_id`, `key` |
-| `pando_accept_proposal` | Accept what Pando worked out and pin it as the app's setup. This does not deploy — call pando_deploy after. | `app_id` |
+| `pando_accept_proposal` | Accept what Pando worked out and pin it as the app's setup, optionally setting environment variables in the same step. This does not deploy — call pando_deploy after. | `app_id`, `values` (optional) |
 | `pando_plan` | Show what a deploy would do, without doing it. Side-effect free, so it is safe to call after any change to check the change is deployable. | `app_id` |
 | `pando_deploy` | Deploy an app. Returns once the deployment has been accepted, not once it is running. | `app_id`, `idempotency_key` (optional) |
 | `pando_get_logs` | Read an app's recent logs. An app can be made of several parts — a web service, a worker, a database it brought with it — and each has its own log. Without `workload` this is the primary part, the one the app's address resolves to; pando_get_status lists the names. | `app_id`, `workload` (optional) |

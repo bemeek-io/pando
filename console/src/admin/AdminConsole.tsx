@@ -39,6 +39,7 @@ import { Identity } from '../install/Identity';
 import { Backups } from '../install/Backups';
 import { Audit, Installation, Policy } from '../install/Installation';
 import { statusLabel, statusSymbol } from '../ui/status';
+import { AppOnboarding } from './AppOnboarding';
 import { DetectionReview } from './DetectionReview';
 import { Sharing } from './Sharing';
 import { AppOverview } from './AppOverview';
@@ -604,24 +605,30 @@ function AppScreen({
   // a set of buttons that each come back refused (R-261).
   const verbs = app.data.verbs ?? [];
 
+  // An app nobody has accepted yet gets the onboarding page instead of the
+  // tabs: the review of what Pando found, and the choice to keep the app or
+  // reject it. Same address. When it is accepted `reviewed` flips and this
+  // screen takes over — carrying any refusal of the deploy that came with it,
+  // which is why the refusal is set from there.
+  if (!reviewed) {
+    return (
+      <AppVerbs.Provider value={verbs}>
+        <AppOnboarding app={app.data} onBack={onBack} onDeployRefused={setRefusal} />
+      </AppVerbs.Provider>
+    );
+  }
+
   // A tab that is nothing but a control is left out for somebody who cannot
   // use it. The others stay, read-only: Settings and Sharing are also where
   // somebody finds out how the app is configured and who can reach it.
-  const tabs = reviewed
-    ? [
-        { value: 'overview', label: 'Overview' },
-        ...(can(verbs, AppVerb.LogsRead) ? [{ value: 'logs', label: 'Logs' }] : []),
-        { value: 'sharing', label: 'Sharing' },
-        { value: 'resources', label: 'Settings' },
-        ...(can(verbs, AppVerb.Exec) ? [{ value: 'terminal', label: 'Terminal' }] : []),
-        { value: 'detection', label: 'Configuration' },
-      ]
-    : // One name, both states. It used to read "Set up" before a spec was
-      // pinned and "Configuration" after, and somebody who finished setup went
-      // looking for the tab they had just been using and concluded it had
-      // disappeared. The design system's rule — an action keeps its name
-      // through the whole flow — applies to the place you do it as well.
-      [{ value: 'detection', label: 'Configuration' }];
+  const tabs = [
+    { value: 'overview', label: 'Overview' },
+    ...(can(verbs, AppVerb.LogsRead) ? [{ value: 'logs', label: 'Logs' }] : []),
+    { value: 'sharing', label: 'Sharing' },
+    { value: 'resources', label: 'Settings' },
+    ...(can(verbs, AppVerb.Exec) ? [{ value: 'terminal', label: 'Terminal' }] : []),
+    { value: 'detection', label: 'Configuration' },
+  ];
 
   // A link to a tab this person cannot open lands on the first one they can.
   const tab = tabs.some((t) => t.value === wanted) ? wanted : (tabs[0]?.value ?? 'detection');

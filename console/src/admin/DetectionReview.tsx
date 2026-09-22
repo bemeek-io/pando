@@ -47,7 +47,7 @@ import { Table } from '../ui/Table';
 import { LineSkeleton } from '../ui/Loading';
 import { AppVerb, useCan } from './verbs';
 
-interface DetectionResponse {
+export interface DetectionResponse {
   status: string;
   detection: Proposal & {
     // Set only when detection failed outright — a repository that could not be
@@ -56,6 +56,11 @@ interface DetectionResponse {
     // "Pando never got to look", the other is "Pando looked and the answer is
     // no". They read differently and lead to different next steps.
     error?: { message?: string; remedy?: string };
+    // Where a running detection has got to: fetching, detecting, trying,
+    // screening. Set only while status is 'running', and the proposal fields
+    // are present only once that stage has produced them — so while running,
+    // any of them may be absent (see AppOnboarding.tsx).
+    stage?: string;
   };
   answers: Record<string, string> | null;
   commit: string;
@@ -294,7 +299,7 @@ function WinningBid({ candidate }: { candidate: Candidate }) {
   );
 }
 
-function QuestionCard({
+export function QuestionCard({
   question,
   answer,
   onAnswer,
@@ -415,7 +420,7 @@ function Dependencies({ proposal }: { proposal: Proposal }) {
   );
 }
 
-const SLOT_NAMES: Record<string, string> = {
+export const SLOT_NAMES: Record<string, string> = {
   postgres: 'PostgreSQL',
   mysql: 'MySQL',
   redis: 'Redis',
@@ -425,7 +430,7 @@ const SLOT_NAMES: Record<string, string> = {
 };
 
 /** The same sentences the settings screen uses, so one app reads one way. */
-function fills(slot: Slot) {
+export function fills(slot: Slot) {
   if (!slot.resolution) {
     return slot.required ? (
       <StatusIndicator status="failed" label="You choose after accepting" />
@@ -445,7 +450,7 @@ function fills(slot: Slot) {
   }
 }
 
-interface Slot {
+export interface Slot {
   key: string;
   type: string;
   required?: boolean;
@@ -508,7 +513,7 @@ function Warnings({ proposal }: { proposal: Proposal }) {
   );
 }
 
-function RunnersUp({ candidates }: { candidates: Candidate[] }) {
+export function RunnersUp({ candidates }: { candidates: Candidate[] }) {
   const [open, setOpen] = useState(false);
   if (candidates.length === 0) return null;
 
@@ -567,7 +572,7 @@ function RunnersUp({ candidates }: { candidates: Candidate[] }) {
   );
 }
 
-function Blocked({ proposal }: { proposal: Proposal }) {
+export function Blocked({ proposal }: { proposal: Proposal }) {
   // R-099: the reason is the most useful thing Pando has, and it is shown
   // rather than replaced with a generic failure. The compose importer produces
   // a remedy naming the lines to change.
@@ -631,7 +636,7 @@ function Blocked({ proposal }: { proposal: Proposal }) {
 }
 
 
-function DetectionFailed({
+export function DetectionFailed({
   error,
   onRetry,
   retrying,
@@ -673,7 +678,7 @@ function Quiet({ children }: { children: React.ReactNode }) {
   return <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)' }}>{children}</p>;
 }
 
-function Failure({ error }: { error: unknown }) {
+export function Failure({ error }: { error: unknown }) {
   // The envelope's message is written to the R-105 standard, so it is shown as
   // the server wrote it. The remedy goes below it, which is where the design
   // system's voice rules put "and what to do".

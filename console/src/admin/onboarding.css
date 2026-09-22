@@ -1,0 +1,126 @@
+/* Motion on the onboarding page (AppOnboarding.tsx).
+ *
+ * The design system allows one orchestrated moment on load, and onboarding a new
+ * app is recorded in its readme as the second: the contour map draws in as
+ * detection advances, and each finding rises into place as it is found. Nothing
+ * here bounces or scales, everything runs on the motion tokens, and under
+ * prefers-reduced-motion all of it is static (the block at the bottom). */
+
+/* A finding arriving: rises a step and fades in. `--stagger` is its place
+   among its siblings, so a batch arriving together lands one after another. */
+.pando-onboard-enter {
+  animation: pando-onboard-rise var(--dur-base) var(--ease) both;
+  animation-delay: calc(var(--dur-fast) / 2 * var(--stagger, 0));
+}
+
+@keyframes pando-onboard-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-2));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Something the AI screening suggested, arriving: a brief contour-colored wash
+   that fades out once, and the sparkles fading in. */
+.pando-onboard-ai {
+  border-radius: var(--radius-xs);
+  animation: pando-onboard-wash var(--dur-contour-draw) var(--ease) both;
+}
+
+@keyframes pando-onboard-wash {
+  from {
+    background-color: var(--contour-line);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.pando-onboard-ai-icon {
+  animation: pando-fade var(--dur-base) var(--ease) both;
+}
+
+/* The step list. A label goes from secondary ink to ink as its step is reached. */
+.pando-onboard-step {
+  color: var(--ink-secondary);
+  transition: color var(--dur-base) var(--ease);
+}
+
+.pando-onboard-step[data-state='active'],
+.pando-onboard-step[data-state='done'] {
+  color: var(--ink);
+}
+
+/* The active step's marker: a contour ring drawing itself, slowly, for as long
+   as the step lasts. The one loop on the page. */
+.pando-onboard-ring {
+  stroke-dasharray: 1;
+  animation: pando-onboard-survey calc(var(--dur-contour-draw) * 2) var(--ease) infinite;
+}
+
+@keyframes pando-onboard-survey {
+  0% {
+    stroke-dashoffset: 1;
+  }
+  50% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -1;
+  }
+}
+
+/* A finished step's check, drawn in once. `pando-draw` is the design system's. */
+.pando-onboard-check {
+  --dash: 1;
+  stroke-dasharray: 1;
+  animation: pando-draw var(--dur-base) var(--ease) both;
+}
+
+/* The summit lands when detection finishes: the one red mark, dropping into
+   place after the rings. */
+.pando-onboard-map circle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pando-onboard-land var(--dur-base) var(--ease) var(--dur-contour-draw) both;
+}
+
+@keyframes pando-onboard-land {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--space-2) * -1));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The status line's phrase, faded in each time it changes. */
+.pando-onboard-phrase {
+  animation: pando-fade var(--dur-base) var(--ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* base.css shortens every animation to nothing, which leaves an infinite one
+     cycling at that speed. Switched off outright instead, and each element
+     left in its final state. */
+  .pando-onboard-enter,
+  .pando-onboard-ai,
+  .pando-onboard-ai-icon,
+  .pando-onboard-ring,
+  .pando-onboard-check,
+  .pando-onboard-map circle,
+  .pando-onboard-phrase {
+    animation: none;
+  }
+
+  .pando-onboard-ring,
+  .pando-onboard-check {
+    stroke-dasharray: none;
+  }
+}

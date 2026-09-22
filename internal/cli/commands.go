@@ -605,6 +605,7 @@ func partHealth(healthy *bool) string {
 
 func deployCmd(client func() (*Client, error)) *cobra.Command {
 	var asApp string
+	var env []string
 
 	cmd := &cobra.Command{
 		Use:   "deploy <app|path>",
@@ -655,7 +656,7 @@ func deployCmd(client func() (*Client, error)) *cobra.Command {
 				// it — it could not have run at creation, when there was
 				// nothing to look at. Explicit, which is R-022: detection never
 				// re-runs on its own.
-				if err := c.prepareUploadedApp(cmd, appID); err != nil {
+				if err := c.prepareUploadedApp(cmd, appID, env); err != nil {
 					return err
 				}
 				target = appID
@@ -670,6 +671,8 @@ func deployCmd(client func() (*Client, error)) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&asApp, "app", "", "deploy a directory as an existing app, instead of creating one")
+	cmd.Flags().StringArrayVar(&env, "env", nil,
+		"KEY=VALUE, set when a new directory's setup is accepted; repeat for more (e.g. --env API_URL=https://api)")
 	return cmd
 }
 
@@ -680,7 +683,7 @@ func deployCmd(client func() (*Client, error)) *cobra.Command {
 // self-contained and pasteable into the assistant that wrote the app, which is
 // the whole intended workflow for R-262 — and paraphrasing them here would undo
 // that at the last step, exactly as it would in the console.
-func (c *Client) prepareUploadedApp(cmd *cobra.Command, appID string) error {
+func (c *Client) prepareUploadedApp(cmd *cobra.Command, appID string, env []string) error {
 	if err := c.Do("POST", "/apps/"+appID+"/detection/rerun", map[string]any{}, nil); err != nil {
 		return err
 	}
@@ -747,7 +750,18 @@ func (c *Client) prepareUploadedApp(cmd *cobra.Command, appID string) error {
 	// Nothing outstanding, so accept the proposal and pin revision 1. Accepting
 	// does not deploy — that is the next call, and keeping them separate is
 	// what makes "accepted but not deployed" a state someone can sit in.
-	if err := c.Do("POST", "/apps/"+appID+"/detection/accept", map[string]any{}, nil); err != nil {
+	// With the variables given on the command line written into the accepted
+	// setup, as the console's onboarding does — one step, not a setup and
+	// then an edit.
+	values := make([]map[string]any, 0, len(env))
+	for _, kv := range env {
+		key, value, ok := strings.Cut(kv, "=")
+		if !ok || key == "" {
+			return fmt.Errorf("--env takes KEY=VALUE, and %q has no =", kv)
+		}
+		values = append(values, map[string]any{"key": key, "value": value})
+	}
+	if err := c.Do("POST", "/apps/"+appID+"/detection/accept", map[string]any{"values": values}, nil); err != nil {
 		return err
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), "Recognized it: %s, built with %s.\n",

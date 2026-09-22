@@ -163,15 +163,32 @@ var toolList = []tool{
 	},
 	{
 		Name: "pando_accept_proposal",
-		Description: "Accept what Pando worked out and pin it as the app's setup. " +
-			"This does not deploy — call pando_deploy after.",
-		Schema: schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+		Description: "Accept what Pando worked out and pin it as the app's setup, optionally setting " +
+			"environment variables in the same step. This does not deploy — call pando_deploy after.",
+		Schema: schema(map[string]any{
+			"app_id": str("The app's ID."),
+			"values": map[string]any{
+				"type":                 "object",
+				"description":          "Environment variables to set, name to value, e.g. {\"API_URL\": \"https://api\"}. Stored as ordinary variables, not secrets.",
+				"additionalProperties": map[string]any{"type": "string"},
+			},
+		}, "app_id"),
 		request: func(args map[string]any) (string, string, any, error) {
 			id, err := stringArg(args, "app_id", true)
 			if err != nil {
 				return "", "", nil, err
 			}
-			return "POST", appPath(id, "/detection/accept"), map[string]any{}, nil
+			values := []map[string]any{}
+			if raw, ok := args["values"].(map[string]any); ok {
+				for key, v := range raw {
+					value, isString := v.(string)
+					if !isString {
+						return "", "", nil, fmt.Errorf("values.%s must be a string", key)
+					}
+					values = append(values, map[string]any{"key": key, "value": value})
+				}
+			}
+			return "POST", appPath(id, "/detection/accept"), map[string]any{"values": values}, nil
 		},
 	},
 	{

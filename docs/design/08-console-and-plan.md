@@ -169,6 +169,15 @@ Most screens are ordinary CRUD. These four are where requirements are either hon
 **Detection review** — R-102, R-105, R-103.
 Shows the winning bid with its evidence, the runners-up, and every outstanding question. **Each question has a copy button**, because the intended workflow is pasting it into the assistant that wrote the app. Question text is rendered verbatim from the API; the console does not paraphrase it, or the R-105 guarantee is lost in the UI layer.
 
+**[D] Onboarding a new app** — the detection review for an app with no configuration yet is its own
+page, not a one-tab app screen. It builds as detection runs: detection records each stage
+(fetching, detecting, trying, screening) with the proposal as far as it has got, and each section
+appears as soon as its data exists. Variables can be filled in before accepting — `values` on
+accept writes them into the accepted spec in one step. An AI screener's changes are shown inline
+where they apply, marked as suggested by AI, rather than as a separate section. Reject deletes the
+app; Accept and Accept and deploy finish it. It is the second orchestrated moment the design system
+allows motion for: the contour map draws in as detection advances.
+
 **Warnings** — R-201, R-168, R-028.
 Rendered inline where they apply, dismissible, never blocking. The persistence warning uses the observed directory when available: *"Your app wrote to `/app/data` during setup. That data won't survive a redeploy unless you add a volume here."* Warnings and blockers are visually distinct — a warning must never look like an error, or people learn to ignore both.
 
