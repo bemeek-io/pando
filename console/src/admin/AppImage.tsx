@@ -20,8 +20,11 @@ import { api, base } from '@api/client';
 import type { App } from '@api/types.gen';
 import { TopoTile } from '../ui/TopoBackground';
 import { AppVerb, keepVerbs, useCan } from './verbs';
+import { isSVG, svgToPng } from './rasterize';
 
-const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif';
+// SVG is offered too, and converted to a PNG before it leaves the browser (see
+// rasterize.ts); the server itself never accepts one.
+const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml,.svg';
 
 export function AppImage({ app }: { app: App }) {
   const queries = useQueryClient();
@@ -37,7 +40,8 @@ export function AppImage({ app }: { app: App }) {
   };
 
   const upload = useMutation({
-    mutationFn: (file: File) => api.putFile<App>(`/apps/${app.id}/icon`, file),
+    mutationFn: async (file: File) =>
+      api.putFile<App>(`/apps/${app.id}/icon`, isSVG(file) ? await svgToPng(file) : file),
     onSuccess: refresh,
   });
   const remove = useMutation({
@@ -109,7 +113,7 @@ export function AppImage({ app }: { app: App }) {
       ) : (
         <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
           Shown on this app&rsquo;s tile in the launcher. Without one, the tile shows a map generated for this
-          app.{canEdit && ' PNG, JPEG, WebP or GIF, up to 256 KB.'}
+          app.{canEdit && ' PNG, JPEG, WebP, GIF or SVG, up to 256 KB.'}
         </span>
       )}
     </div>
