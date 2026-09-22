@@ -172,7 +172,7 @@ func adapterCmd(client func() (*Client, error)) *cobra.Command {
 			if err := c.Do("POST", "/adapters", body, nil); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Saved %s. Restart Pando to use it: docker compose restart pando\n", id)
+			fmt.Fprintf(cmd.OutOrStdout(), "Saved %s. Restart Pando to use it: pando restart\n", id)
 			return nil
 		},
 	}

@@ -616,6 +616,20 @@ Print the installation's policy
 pando policy show
 ```
 
+### `restart`
+
+Restart Pando, loading its adapters and configuration file again
+
+```
+pando restart
+```
+
+Restart Pando. Requests in flight finish first, and apps behind Pando are unreachable for the seconds it takes. Adapters and the configuration file are read again; environment variables are not.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--wait` | `1m30s` | how long to wait for Pando to come back; 0 returns at once |
+
 ### `rollback`
 
 Roll an app back to an earlier spec

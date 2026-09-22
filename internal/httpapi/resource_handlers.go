@@ -397,7 +397,7 @@ func (s *Server) handleCreateAdapter(w http.ResponseWriter, r *http.Request) {
 	// not is worse than one that says when it will.
 	JSON(w, http.StatusCreated, map[string]any{
 		"id":   req.ID,
-		"note": "Saved. Pando registers adapters at startup, so restart it for this to take effect.",
+		"note": "Saved. Pando registers adapters at startup, so restart it for this to take effect: POST /api/v1/restart, or pando restart.",
 	})
 }
 

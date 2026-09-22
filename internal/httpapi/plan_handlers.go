@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/authz"
@@ -110,6 +111,7 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	restartNeeded := false
 	out := make([]map[string]any, 0, len(configured))
 	for _, c := range configured {
 		entry := map[string]any{
@@ -133,6 +135,16 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 		// endpoint is readable by anyone signed in.
 		if err := health[c.ID]; err != nil {
 			entry["status"] = "unreachable"
+		}
+
+		// Saved since this process started, so not what is running: a new
+		// adapter is not loaded at all, a changed one still runs as it was.
+		// Without this a just-added adapter reads as reachable, having never
+		// been asked.
+		if !s.StartedAt.IsZero() && c.UpdatedAt.After(s.StartedAt) {
+			entry["pending_restart"] = true
+			entry["status"] = "pending_restart"
+			restartNeeded = true
 		}
 
 		switch api.Category(c.Category) {
@@ -164,7 +176,11 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 		out = append(out, entry)
 	}
 
-	JSON(w, http.StatusOK, map[string]any{"adapters": out})
+	body := map[string]any{"adapters": out, "restart_needed": restartNeeded}
+	if !s.StartedAt.IsZero() {
+		body["started_at"] = s.StartedAt.UTC().Format(time.RFC3339Nano)
+	}
+	JSON(w, http.StatusOK, body)
 }
 
 // handleCapacity aggregates what the runtime adapters report (R-243).

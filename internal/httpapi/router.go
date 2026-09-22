@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -124,6 +125,16 @@ type Server struct {
 	// (R-271). PolicyStore already reads through it; this is for refusing a
 	// change to one of them and for saying where each was set. Nil means none.
 	PolicyOverlay *corepolicy.Overlay
+
+	// StartedAt is when this process started. An adapter configured after it
+	// is saved but not running, since adapters are loaded at startup (R-253).
+	StartedAt time.Time
+
+	// Restart asks the server to shut down cleanly and start again, loading
+	// the adapters and the configuration file afresh. It returns at once; the
+	// restart follows the response. Nil means this process cannot restart
+	// itself, and POST /restart says so.
+	Restart func()
 
 	// Startup is the configuration Pando started with, for GET /config: every
 	// non-secret setting and where it came from. Nil in tests that do not set it.
@@ -389,6 +400,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/adapters", s.handleListAdapters)
 		r.Post("/adapters", s.handleCreateAdapter)
 		r.Get("/adapters/kinds", s.handleAdapterKinds)
+		r.Post("/restart", s.handleRestart)
 		r.Get("/capacity", s.handleCapacity)
 
 		// Host policy: read with install.view, written with

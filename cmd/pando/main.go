@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -63,6 +64,31 @@ func main() {
 		// Cobra has already printed the error.
 		os.Exit(1)
 	}
+	if restartRequested.Load() {
+		reexec()
+	}
+}
+
+// restartRequested is set when serve returned because someone asked for a
+// restart (POST /restart) rather than because it was stopped.
+var restartRequested atomic.Bool
+
+// reexec starts Pando again in this process: the same binary, arguments and
+// environment, and the same PID, so a container's PID 1 stays PID 1 and no
+// supervisor or restart policy is needed. Only after serve has returned, so the
+// database pool is closed and the listener released first.
+//
+// The environment is the one the process started with, as with docker compose
+// restart; the configuration file is read afresh.
+func reexec() {
+	exe, err := os.Executable()
+	if err == nil {
+		err = syscall.Exec(exe, os.Args, os.Environ()) //nolint:gosec // G702: this binary, with the arguments and environment it was started with; nothing from a request reaches it.
+	}
+	// Exec returns only on failure. Exit non-zero so that a supervisor, if
+	// there is one, starts Pando instead.
+	fmt.Fprintf(os.Stderr, "pando could not restart itself: %v\n", err)
+	os.Exit(1)
 }
 
 func rootCmd() *cobra.Command {
@@ -184,6 +210,11 @@ func serve(ctx context.Context, configPath string) error {
 	// not be ignored until the wait expires.
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Adapters saved after this are not running until a restart (R-253); the
+	// adapters list compares against it. restartCh is how POST /restart asks.
+	startedAt := time.Now().UTC()
+	restartCh := make(chan struct{}, 1)
 
 	// Connect runs the whole bootstrap: wait for Postgres, migrate as the owner,
 	// provision the restricted application role, apply grants, and verify that
@@ -466,6 +497,13 @@ func serve(ctx context.Context, configPath string) error {
 		Registry:     registry,
 		Adapters:     adapters,
 		AdapterKinds: adapterKinds(),
+		StartedAt:    startedAt,
+		Restart: func() {
+			select {
+			case restartCh <- struct{}{}:
+			default: // one is already on its way
+			}
+		},
 
 		AdapterCredentials: adapterCredentials,
 
@@ -676,11 +714,21 @@ func serve(ctx context.Context, configPath string) error {
 		return err
 	case <-ctx.Done():
 		logger.Info("shutting down")
+	case <-restartCh:
+		logger.Info("restarting")
+		restartRequested.Store(true)
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.Server.ShutdownTimeout)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	err = srv.Shutdown(shutdownCtx)
+	if err != nil && restartRequested.Load() {
+		// A request still open at the deadline, such as a streamed log, is
+		// cut off either way; it is no reason not to come back.
+		logger.Warn("requests were still open at restart", zap.Error(err))
+		return nil
+	}
+	return err
 }
 
 // detectionAuditor adapts the audit writer to what detection needs.

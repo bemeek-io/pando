@@ -103,6 +103,9 @@ type install struct {
 	Adapters    *state.Adapters
 	PolicyStore *state.Policy
 
+	// Restarts counts POST /restart's calls to Server.Restart.
+	Restarts *atomic.Int32
+
 	// AdminID and adminPassword are the first-run account (R-046).
 	AdminID       string
 	adminPassword string
@@ -191,8 +194,11 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 	}
 	authorizer := authz.New(authzStore, hostPolicy, nil)
 
+	restarts := &atomic.Int32{}
 	srv := &httpapi.Server{
-		Logger:   logger,
+		StartedAt: time.Now().UTC(),
+		Restart:   func() { restarts.Add(1) },
+		Logger:    logger,
 		DB:       db,
 		Identity: identity,
 		Users:    users,
@@ -260,7 +266,7 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 	}
 
 	return &install{
-		t: t, handler: srv.Routes(), db: db,
+		t: t, handler: srv.Routes(), db: db, Restarts: restarts,
 		Apps: apps, Users: users, Grants: grants, Sessions: sessions, Tokens: tokens,
 		Secrets: secrets, Volumes: volumes, Adapters: adapters, PolicyStore: policyStore,
 		AdminID: first.User.ID, adminPassword: adminPassword,

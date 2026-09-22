@@ -11,7 +11,6 @@ import {
   Banner,
   Button,
   EmptyState,
-  InlineCode,
   Input,
   Radio,
   Select,
@@ -24,6 +23,7 @@ import {
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb } from '../app/principal';
 import { AdapterDialog } from './AdapterDialog';
+import { RestartButton } from './Restart';
 import { categoryLabel, orderCategories } from './adapters';
 import type { AdapterKind } from './adapters';
 import type { ConfiguredAdapter } from './AdapterDialog';
@@ -41,6 +41,8 @@ import type { AuditFilters } from './audit';
 interface AdapterRow extends ConfiguredAdapter {
   /** An older name for id, from before GET /adapters settled its shape. */
   ref?: string;
+  /** Saved since Pando started, so not yet what runs (R-253). */
+  pending_restart?: boolean;
   [key: string]: unknown;
 }
 
@@ -50,15 +52,16 @@ export function Installation() {
   // nothing about being allowed to change what is in it.
   const canManage = useInstallVerb(InstallVerb.AdaptersManage);
   const [editing, setEditing] = useState<{ existing?: AdapterRow; category?: string } | null>(null);
-  // Kept until dismissed: a saved adapter does nothing until Pando restarts
-  // (R-253), and a notice that vanished on its own would leave someone waiting
-  // for a change that is not coming.
+  // Which adapter was just saved, to name it in the restart notice. The
+  // notice itself follows the server's restart_needed, so it stays until
+  // Pando has restarted — across a reload, and for everyone who looks.
   const [saved, setSaved] = useState<string | null>(null);
 
   const adapters = useQuery({
     queryKey: ['adapters'],
-    queryFn: () => api.get<{ adapters: AdapterRow[] } | AdapterRow[]>('/adapters'),
+    queryFn: () => api.get<{ adapters: AdapterRow[]; restart_needed?: boolean } | AdapterRow[]>('/adapters'),
   });
+  const restartNeeded = !Array.isArray(adapters.data) && adapters.data?.restart_needed === true;
   const capacity = useQuery({
     queryKey: ['capacity'],
     queryFn: () => api.get<unknown>('/capacity'),
@@ -103,17 +106,12 @@ export function Installation() {
     >
       {adapters.isError && <Quiet>{messageOf(adapters.error)}</Quiet>}
 
-      {saved && (
+      {(restartNeeded || saved) && (
         <div style={{ marginBottom: 'var(--space-4)' }}>
-          <Banner
-            tone="info"
-            action={
-              <Button variant="ghost" onClick={() => setSaved(null)}>
-                Dismiss
-              </Button>
-            }
-          >
-            {saved} is saved. Restart Pando to start using it: <InlineCode>docker compose restart pando</InlineCode>
+          <Banner tone="info" action={canManage && <RestartButton onRestarted={() => setSaved(null)} />}>
+            {saved ? `${saved} is saved.` : 'Adapter changes are saved.'} Pando loads adapters when it starts, so{' '}
+            {saved ? 'it takes' : 'they take'} effect after a restart.
+            {!canManage && <> Someone who can manage adapters can restart it.</>}
           </Banner>
         </div>
       )}
@@ -813,6 +811,8 @@ function sourceLabel(src: Source): string {
  * nature: these are read once at startup. Secrets are never listed (R-194).
  */
 function StartupSettings({ config }: { config?: StartupConfig }) {
+  // POST /restart's verb: the same restart applies a saved adapter.
+  const canRestart = useInstallVerb(InstallVerb.AdaptersManage);
   if (!config) return null;
   const rows = config.settings.map((s) => ({
     id: s.key,
@@ -842,7 +842,8 @@ function StartupSettings({ config }: { config?: StartupConfig }) {
           <strong style={{ color: 'var(--ink)' }}>A file</strong>:{' '}
           {config.file ? (
             <>
-              edit <code style={{ font: 'var(--type-code-sm)' }}>{config.file}</code>, then restart Pando.
+              edit <code style={{ font: 'var(--type-code-sm)' }}>{config.file}</code>, then restart Pando with the
+              button below or <code style={{ font: 'var(--type-code-sm)' }}>pando restart</code>.
             </>
           ) : (
             <>
@@ -855,6 +856,11 @@ function StartupSettings({ config }: { config?: StartupConfig }) {
           <strong style={{ color: 'var(--ink)' }}>Default</strong>: not set anywhere. Set the variable shown to change it.
         </li>
       </ul>
+      {config.file && canRestart && (
+        <div style={{ marginTop: 'var(--space-3)' }}>
+          <RestartButton />
+        </div>
+      )}
       <Table
         columns={[
           {
@@ -1228,6 +1234,16 @@ export function Field({ children }: { children: React.ReactNode }) {
 
 type GroupedRow = AdapterRow & { first?: boolean; kindName?: string };
 
+/** Reachable or not — or, saved since Pando started, not running yet. */
+function AdapterStatus({ row }: { row: AdapterRow }) {
+  if (row.pending_restart) return <StatusIndicator status="info" label="Restart to apply" />;
+  return row.healthy === false ? (
+    <StatusIndicator status="failed" label="Unreachable" />
+  ) : (
+    <StatusIndicator status="running" label="Reachable" />
+  );
+}
+
 // The adapters' columns: name, ID, status, and Change for whoever may.
 const ADAPTER_GRID = 'minmax(0,1fr) minmax(0,22ch) 16ch 12ch';
 
@@ -1306,10 +1322,7 @@ function GroupedAdapters({
             <span style={cell}>
               {/* Live, not stored: an adapter that was reachable at startup and
                   is not now is exactly what this column exists to show. */}
-              <StatusIndicator
-                status={row.healthy === false ? 'failed' : 'running'}
-                label={row.healthy === false ? 'Unreachable' : 'Reachable'}
-              />
+              <AdapterStatus row={row} />
             </span>
             <span style={{ justifySelf: 'end' }}>
               {canManage && (
@@ -1354,10 +1367,7 @@ function adapterColumns(
       render: (row: Row) => (
         // Live, not stored: an adapter that was reachable at startup and
         // is not now is exactly what this column exists to show.
-        <StatusIndicator
-          status={row.healthy === false ? 'failed' : 'running'}
-          label={row.healthy === false ? 'Unreachable' : 'Reachable'}
-        />
+        <AdapterStatus row={row} />
       ),
     },
     ...(canManage

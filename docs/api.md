@@ -177,8 +177,9 @@ one verb says nothing about another (R-082).
 
 | Endpoint | Verb | What it does |
 | --- | --- | --- |
-| `GET /api/v1/adapters` | `install.view` | The adapters configured here and what they can currently do — live capabilities, not stored configuration. Names which credentials are set, never their values. |
-| `GET /api/v1/adapters/kinds` | `install.view` | The kinds of adapter this build of Pando can run, and the settings each takes — which are credentials (write-only, stored encrypted), which are required, and an example of each. |
+| `GET /api/v1/adapters` | `install.view` | The adapters configured here and what they can currently do — live capabilities, not stored configuration. Names which credentials are set, never their values. `pending_restart` marks one saved since Pando started, which is not yet what runs; `restart_needed` says any is. |
+| `GET /api/v1/adapters/kinds` | `install.view` | The kinds of adapter this build of Pando can run, and the settings each takes — which are credentials (write-only, stored encrypted), which are required, and the default each takes when left empty or an example. |
+| `POST /api/v1/restart` | `install.adapters.manage` | Restart Pando: finish the requests in flight, then start again, loading the adapters and the configuration file afresh. Apps behind Pando are unreachable for the seconds it takes. Environment variables are not re-read. Returns before the restart; `started_at` on GET /api/v1/adapters changes once it is back. |
 | `POST /api/v1/adapters` | `install.adapters.manage` | Configure an adapter. Settings go in config; credentials such as an API key go in credentials, which is write-only and stored encrypted. |
 | `GET /api/v1/capacity` | `install.view` | What the host has, and what is committed to apps (R-242). |
 | `GET /api/v1/policy` | `install.view` | Host policy. Reading the rules you work under is not the same privilege as changing them (R-274). |

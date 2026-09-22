@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -21,6 +22,11 @@ type AdapterConfig struct {
 	Config    json.RawMessage `json:"-"`
 	IsDefault bool            `json:"is_default"`
 	Enabled   bool            `json:"enabled"`
+
+	// UpdatedAt is when the configuration last changed. Adapters are loaded
+	// at startup (R-253), so one changed after Pando started is not what is
+	// running.
+	UpdatedAt time.Time `json:"-"`
 }
 
 // Adapters reads configured adapter instances.
@@ -35,7 +41,7 @@ func NewAdapters(db *DB) *Adapters { return &Adapters{db: db} }
 // authenticates.
 func (a *Adapters) List(ctx context.Context) ([]AdapterConfig, error) {
 	rows, err := a.db.Query(ctx, `
-		SELECT id, category, kind, name, config, is_default, enabled
+		SELECT id, category, kind, name, config, is_default, enabled, updated_at
 		FROM adapter_configs ORDER BY category, name`)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not read the configured adapters.", err)
@@ -45,7 +51,7 @@ func (a *Adapters) List(ctx context.Context) ([]AdapterConfig, error) {
 	var out []AdapterConfig
 	for rows.Next() {
 		var c AdapterConfig
-		if err := rows.Scan(&c.ID, &c.Category, &c.Kind, &c.Name, &c.Config, &c.IsDefault, &c.Enabled); err != nil {
+		if err := rows.Scan(&c.ID, &c.Category, &c.Kind, &c.Name, &c.Config, &c.IsDefault, &c.Enabled, &c.UpdatedAt); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read the configured adapters.", err)
 		}
 		out = append(out, c)
