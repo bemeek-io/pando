@@ -14,7 +14,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Input } from '@design';
+import { Banner, Button, Input, Select } from '@design';
 
 import { api } from '@api/client';
 import type { AppSpec } from '@api/types.gen';
@@ -47,14 +47,28 @@ export function BuildPlan({ appID }: { appID: string }) {
 
   const spec = full.data?.body;
   const files = spec?.build?.generated_files ?? {};
-  const path = spec?.build?.dockerfile || '.nixpacks/Dockerfile';
-  const current = files[path];
+  const dockerfile = spec?.build?.dockerfile || '.nixpacks/Dockerfile';
+
+  // Every file of the plan, not only the Dockerfile. A generated Dockerfile
+  // copies the files beside it — a package list, a web server's
+  // configuration — and one of those failing the build is not something the
+  // Dockerfile alone can fix. Editing was offered for the one file and the
+  // rest were only stored, which left "editable" true of a plan and false of
+  // the line that was wrong.
+  const paths = Object.keys(files).sort((a, b) => {
+    if (a === dockerfile) return -1;
+    if (b === dockerfile) return 1;
+    return a.localeCompare(b);
+  });
+  const [path, setPath] = useState<string | null>(null);
+  const showing = path && files[path] !== undefined ? path : dockerfile;
+  const current = files[showing];
 
   const save = useMutation({
     mutationFn: (content: string) =>
       api.post(`/apps/${appID}/specs`, {
         ...spec,
-        build: { ...spec?.build, generated_files: { ...files, [path]: content } },
+        build: { ...spec?.build, generated_files: { ...files, [showing]: content } },
       }),
     onSuccess: () => {
       setDraft(null);
@@ -94,6 +108,20 @@ export function BuildPlan({ appID }: { appID: string }) {
         in your repository, and it takes effect at the next deploy.
       </Quiet>
 
+      {paths.length > 1 && (
+        <div style={{ marginTop: 'var(--space-3)', maxWidth: '52ch' }}>
+          <Select
+            label="File"
+            mono
+            value={showing}
+            options={paths}
+            disabled={draft !== null}
+            helper={draft !== null ? 'Save or discard this edit before opening another file.' : undefined}
+            onChange={(e) => setPath(e.target.value)}
+          />
+        </div>
+      )}
+
       {save.isError && <Banner tone="failed">{messageOf(save.error)}</Banner>}
 
       <div style={{ marginTop: 'var(--space-4)' }}>
@@ -117,7 +145,7 @@ export function BuildPlan({ appID }: { appID: string }) {
             rows={22}
             mono
             value={draft}
-            label={path}
+            label={showing}
             helper="Saved as a new revision. The previous one stays in the app's history."
             onChange={(e) => setDraft(e.target.value)}
           />
