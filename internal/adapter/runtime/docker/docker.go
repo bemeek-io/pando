@@ -1156,8 +1156,7 @@ func healthConfig(h *api.HealthPlan) *container.HealthConfig {
 	case len(h.Command) > 0:
 		cfg.Test = append([]string{"CMD"}, h.Command...)
 	case h.Path != "" && h.Port > 0:
-		cfg.Test = []string{"CMD-SHELL",
-			fmt.Sprintf("wget --spider -q http://127.0.0.1:%d%s || exit 1", h.Port, h.Path)}
+		cfg.Test = []string{"CMD-SHELL", httpProbe(h.Port, h.Path)}
 	case h.Port > 0:
 		cfg.Test = []string{"CMD-SHELL", fmt.Sprintf("nc -z 127.0.0.1 %d || exit 1", h.Port)}
 	default:
@@ -1170,6 +1169,28 @@ func healthConfig(h *api.HealthPlan) *container.HealthConfig {
 		cfg.Timeout = time.Duration(h.TimeoutSeconds) * time.Second
 	}
 	return cfg
+}
+
+// httpProbe asks the app whether it is serving, with whatever the image has.
+//
+// It ran `wget` alone, which is not in every image — and an image without it
+// answered "/bin/sh: 1: wget: not found" every thirty seconds until the deploy
+// gave up, for an app that was serving perfectly well. The image belongs to
+// the person who wrote the app, not to Pando, so the probe asks what is there
+// rather than assuming: curl, then wget, then a TCP connection, which says
+// less than an HTTP status but says it without needing anything installed.
+//
+// The last rung is bash's /dev/tcp, so it costs no package either. An image
+// with none of the three is one this cannot probe, and it reports unhealthy —
+// which is a worse answer than "unknown" and is why the rungs come first.
+func httpProbe(port int, path string) string {
+	url := fmt.Sprintf("http://127.0.0.1:%d%s", port, path)
+	return fmt.Sprintf(
+		"if command -v curl >/dev/null 2>&1; then curl -fsS -o /dev/null %s; "+
+			"elif command -v wget >/dev/null 2>&1; then wget --spider -q %s; "+
+			"elif command -v nc >/dev/null 2>&1; then nc -z 127.0.0.1 %d; "+
+			"else (exec 3<>/dev/tcp/127.0.0.1/%d) 2>/dev/null; fi || exit 1",
+		url, url, port, port)
 }
 
 func protocolOf(p string) string {
