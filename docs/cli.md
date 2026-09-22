@@ -393,6 +393,9 @@ pando grant add <app>
 
 | Flag | Default | What it does |
 | --- | --- | --- |
+| `--anyone` |  | share with anyone on the internet, without signing in |
+| `--group` |  | group ID to share with |
+| `--passcode` |  | with --anyone: only those who enter this passcode |
 | `--plane` | `data` | data (use the app) or control (manage it) |
 | `--role` |  | role ID, for control-plane grants |
 | `--user` |  | user ID to share with |
@@ -404,6 +407,17 @@ Show who an app is shared with
 ```
 pando grant list <app>
 ```
+
+#### `grant passcode`
+
+Change the passcode on an app shared with everyone, or remove it
+
+```
+pando grant passcode <app> <grant-id> [passcode]
+```
+
+Sets a new passcode on the app's grant to everyone; everyone let in by the old one
+is asked again. With no passcode, removes it: the app is then open to anyone.
 
 #### `grant remove`
 

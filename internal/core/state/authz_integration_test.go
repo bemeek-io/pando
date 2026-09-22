@@ -342,7 +342,7 @@ func TestR075_AnonymousGrantIsARowAndCannotBeDuplicated(t *testing.T) {
 	require.NoError(t, insert())
 	require.Error(t, insert(), "the anonymous grant must not be insertable twice")
 
-	has, err := state.NewAuthzStore(db).HasAnonymousGrant(ctx, appID)
+	has, _, err := state.NewAuthzStore(db).AnonymousAccess(ctx, appID)
 	require.NoError(t, err)
 	require.True(t, has)
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
+	"github.com/bemeek-io/pando/internal/errs"
 	"github.com/bemeek-io/pando/internal/log"
 )
 
@@ -34,6 +35,12 @@ const HeaderPrefix = "X-Pando-"
 // the same reason HeaderPrefix is: the rule has to cover the cookie nobody has
 // added yet.
 const CookiePrefix = "pando_"
+
+// PasscodeCookiePrefix names the cookie that proves a visitor entered an app's
+// passcode (R-075a): PasscodeCookiePrefix + the app's ID. In Pando's namespace,
+// so stripCookies removes it before anything reaches the app — it is a
+// credential for that app, and the app is not entitled to hold it.
+const PasscodeCookiePrefix = CookiePrefix + "pass_"
 
 // Convenience headers, sent alongside the assertion and documented as
 // UNVERIFIED (R-053). An app that trusts them is trusting the network boundary,
@@ -136,9 +143,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		principal = authz.Anonymous()
 	}
+	// Any passcode this browser has entered, for CheckData to check (R-075a).
+	// Carried on the principal, signed in or not: someone with an account but
+	// no grant on a passcode app gets in the same way a stranger does.
+	principal.Passcodes = passcodesFrom(r)
 
 	// 5. CheckData. The only authorization decision on this path.
-	allowed := p.Authz.CheckData(ctx, principal, app.ID) == nil
+	denial := p.Authz.CheckData(ctx, principal, app.ID)
+	allowed := denial == nil
 
 	// Counted before the branch, so the anonymous path is provably not a bypass:
 	// every request to every app increments this, whatever the outcome.
@@ -147,6 +159,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !allowed {
+		if errs.CodeOf(denial) == errs.PermPasscodeRequired {
+			p.redirectToPasscode(w, r, app.ID)
+			return
+		}
 		if principal.Kind == authz.KindAnonymous {
 			// Send them to sign in, with somewhere to come back to.
 			p.redirectToLogin(w, r)
@@ -370,6 +386,33 @@ func (p *Proxy) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	target := loginPath + "?next=" + url.QueryEscape(r.URL.RequestURI())
 	http.Redirect(w, r, target, http.StatusFound)
+}
+
+// redirectToPasscode sends a visitor to enter an app's passcode: the sign-in
+// page, in its passcode mode, on the same reserved path (R-172) — so it works
+// on an app's own hostname for the same reason sign-in does, and no new path
+// is taken from the apps.
+func (p *Proxy) redirectToPasscode(w http.ResponseWriter, r *http.Request, appID string) {
+	loginPath := p.LoginPath
+	if loginPath == "" {
+		loginPath = "/.pando/login"
+	}
+	target := loginPath + "?passcode=" + url.QueryEscape(appID) + "&next=" + url.QueryEscape(r.URL.RequestURI())
+	http.Redirect(w, r, target, http.StatusFound)
+}
+
+// passcodesFrom reads the passcode unlocks a request carries, by app ID.
+func passcodesFrom(r *http.Request) map[string]string {
+	var out map[string]string
+	for _, c := range r.Cookies() {
+		if appID, ok := strings.CutPrefix(c.Name, PasscodeCookiePrefix); ok && appID != "" && c.Value != "" {
+			if out == nil {
+				out = map[string]string{}
+			}
+			out[appID] = c.Value
+		}
+	}
+	return out
 }
 
 // auditDenial records a refused request.

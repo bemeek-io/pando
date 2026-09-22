@@ -24,6 +24,7 @@ import { api, RequestFailed } from '@api/client';
 
 import { FieldSkeleton, HeadingSkeleton, LineSkeleton, Loading } from '../ui/Loading';
 import { TopoMap } from '../ui/TopoBackground';
+import { signInInstead } from './passcode';
 import { returnTo } from './return-to';
 
 export function Login() {
@@ -142,6 +143,109 @@ function SignIn({ notice }: { notice?: string }) {
         >
           {signIn.isPending ? 'Signing in' : 'Sign in'}
         </Button>
+      </form>
+    </Frame>
+  );
+}
+
+/**
+ * The passcode page, for an app shared with everyone behind a passcode.
+ *
+ * The proxy sends a visitor who has not entered it here, the same way it sends
+ * one to sign in for a private app (R-023) — same address, `?passcode=<app>`
+ * added — and the form takes the sign-in form's place in the same frame. The
+ * right passcode sets a cookie for the app, and the visitor goes back to where
+ * they were headed. Nobody signs in: this is still the anonymous grant (R-075),
+ * with one thing asked first.
+ *
+ * Somebody with an account may be able to open the app as themselves, so the
+ * sign-in form is one quiet step away, keeping where they were going.
+ */
+export function Passcode({ appID, signedIn }: { appID: string; signedIn: boolean }) {
+  const [passcode, setPasscode] = useState('');
+
+  const app = useQuery({
+    queryKey: ['passcode', appID],
+    queryFn: () => api.get<{ app_id: string; name: string }>(`/apps/${appID}/passcode`),
+    retry: false,
+  });
+
+  const enter = useMutation({
+    mutationFn: () => api.post<void>(`/apps/${appID}/passcode`, { passcode }),
+    // Where the proxy said they were going, checked like sign-in's (R-172),
+    // or the app's own front page — this page is on its hostname.
+    onSuccess: () => window.location.assign(returnTo(window.location.search, window.location.href) ?? '/'),
+  });
+
+  const signIn = signedIn ? null : (
+    <Button
+      variant="ghost"
+      fullWidth
+      onClick={() => window.location.assign(signInInstead(window.location.pathname, window.location.search))}
+    >
+      Sign in instead
+    </Button>
+  );
+
+  if (app.isPending) {
+    return (
+      <Frame heading={<HeadingSkeleton width="16ch" />}>
+        <Loading gap="var(--space-4)">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+            <LineSkeleton width="8ch" font="var(--type-label)" />
+            <FieldSkeleton />
+          </div>
+          <Skeleton height="var(--control-console)" />
+        </Loading>
+      </Frame>
+    );
+  }
+
+  if (app.isError) {
+    const missing = app.error instanceof RequestFailed && app.error.status === 404;
+    return (
+      <Frame
+        heading={missing ? 'No passcode needed' : 'Enter the passcode'}
+        lede={
+          missing
+            ? 'This app doesn’t ask for a passcode. If it was shared with you, sign in to open it.'
+            : withRemedy(app.error)
+        }
+      >
+        {signIn}
+      </Frame>
+    );
+  }
+
+  const edit = (value: string) => {
+    if (enter.isError) enter.reset();
+    setPasscode(value);
+  };
+
+  return (
+    <Frame heading="Enter the passcode" lede={`${app.data.name} asks for a passcode. Whoever shared it with you has it.`}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          enter.mutate();
+        }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
+      >
+        <Input
+          label="Passcode"
+          type="password"
+          value={passcode}
+          autoComplete="off"
+          autoFocus
+          onChange={(e) => edit(e.target.value)}
+          // The server's message as written: a wrong passcode and too many
+          // tries each say what to do next (R-105).
+          error={enter.isError ? withRemedy(enter.error) : undefined}
+        />
+        <Button type="submit" variant="primary" fullWidth disabled={enter.isPending || passcode === ''}>
+          {enter.isPending ? 'Checking' : 'Continue'}
+        </Button>
+        {signIn}
       </form>
     </Frame>
   );

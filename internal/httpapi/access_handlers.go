@@ -9,6 +9,7 @@ import (
 
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
+	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
 	"github.com/bemeek-io/pando/internal/hash"
@@ -22,6 +23,10 @@ type grantRequest struct {
 	PrincipalKind string `json:"principal_kind"`
 	PrincipalID   string `json:"principal_id"`
 	RoleID        string `json:"role_id"`
+
+	// Passcode, on a grant to everyone only: shared with anyone who knows it
+	// (R-075a). Never stored or returned; its digest is.
+	Passcode string `json:"passcode"`
 }
 
 // handleCreateGrant shares an app.
@@ -41,11 +46,27 @@ func (s *Server) handleCreateGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Host policy may forbid sharing with everyone (R-076). Checked before the
-	// write, and it returns its own code so the console can explain who to ask
-	// rather than showing a generic refusal.
+	// Host policy may forbid sharing with everyone, or allow it only behind a
+	// passcode (R-076, R-075a). Checked before the write, and it returns its
+	// own code so the console can explain who to ask rather than showing a
+	// generic refusal.
 	if req.PrincipalKind == "anonymous" && s.HostPolicy != nil {
-		if err := s.HostPolicy.AllowsAnonymousGrant(r.Context()); err != nil {
+		if err := s.HostPolicy.AllowsAnonymousGrant(r.Context(), req.Passcode != ""); err != nil {
+			Error(w, r, err)
+			return
+		}
+	}
+
+	// Checked before the grant exists, so a passcode too short to accept does
+	// not leave the app public without one.
+	var digest string
+	if req.Passcode != "" {
+		if req.PrincipalKind != "anonymous" || req.Plane != "data" {
+			Error(w, r, errs.New(errs.ValidInvalid, "Only sharing with everyone can have a passcode."))
+			return
+		}
+		var err error
+		if digest, err = passcodeDigest(req.Passcode); err != nil {
 			Error(w, r, err)
 			return
 		}
@@ -56,6 +77,15 @@ func (s *Server) handleCreateGrant(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		Error(w, r, err)
 		return
+	}
+	if digest != "" {
+		if err := s.Grants.SetPasscode(r.Context(), app.ID, grant.ID, digest); err != nil {
+			// Not left public without the passcode that was asked for.
+			_ = s.Grants.Delete(r.Context(), app.ID, grant.ID)
+			Error(w, r, err)
+			return
+		}
+		grant.Passcode = true
 	}
 
 	s.audit(r, audit.Event{
@@ -69,6 +99,7 @@ func (s *Server) handleCreateGrant(w http.ResponseWriter, r *http.Request) {
 		Detail: map[string]any{
 			"plane":          req.Plane,
 			"principal_kind": req.PrincipalKind,
+			"passcode":       digest != "",
 		},
 	})
 	JSON(w, http.StatusCreated, grant)
@@ -84,7 +115,18 @@ func (s *Server) handleListGrants(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
-	JSON(w, http.StatusOK, map[string]any{"grants": grants})
+	body := map[string]any{"grants": grants, "public_sharing": string(corepolicy.PublicSharingAllowed)}
+	// The host's rule for sharing with everyone (R-076), so the console offers
+	// only what it allows rather than options the server will refuse.
+	if s.HostPolicy != nil {
+		mode, err := s.HostPolicy.PublicSharing(r.Context())
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		body["public_sharing"] = string(mode)
+	}
+	JSON(w, http.StatusOK, body)
 }
 
 // handleSetGrantRole changes the role a control-plane grant carries: one
@@ -97,12 +139,45 @@ func (s *Server) handleSetGrantRole(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		RoleID string `json:"role_id"`
+		// Passcode, on the grant to everyone: a new one, or "" to remove it
+		// (R-075a). Either way everyone let in by the old one is asked again.
+		Passcode *string `json:"passcode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read."))
 		return
 	}
 	grantID := chi.URLParam(r, "grantID")
+	if req.Passcode != nil {
+		// Removing the passcode makes the app plainly public, which a
+		// passcode-only policy does not allow.
+		if *req.Passcode == "" && s.HostPolicy != nil {
+			if err := s.HostPolicy.AllowsAnonymousGrant(r.Context(), false); err != nil {
+				Error(w, r, err)
+				return
+			}
+		}
+		digest := ""
+		if *req.Passcode != "" {
+			var err error
+			if digest, err = passcodeDigest(*req.Passcode); err != nil {
+				Error(w, r, err)
+				return
+			}
+		}
+		if err := s.Grants.SetPasscode(r.Context(), app.ID, grantID, digest); err != nil {
+			Error(w, r, err)
+			return
+		}
+		p := PrincipalFrom(r.Context())
+		s.audit(r, audit.Event{
+			PrincipalKind: audit.PrincipalKind(p.Kind), PrincipalID: p.ID, OnBehalfOf: p.UserID,
+			Action: "grant.update", AppID: app.ID, TargetKind: "grant", TargetID: grantID,
+			Detail: map[string]any{"passcode": digest != ""},
+		})
+		JSON(w, http.StatusNoContent, nil)
+		return
+	}
 	if err := s.Grants.SetRole(r.Context(), app.ID, grantID, req.RoleID); err != nil {
 		Error(w, r, err)
 		return

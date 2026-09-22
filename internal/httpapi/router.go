@@ -197,7 +197,8 @@ type AppHosts interface {
 
 // AnonymousPolicy gates sharing an app with everyone (R-076).
 type AnonymousPolicy interface {
-	AllowsAnonymousGrant(ctx context.Context) error
+	AllowsAnonymousGrant(ctx context.Context, withPasscode bool) error
+	PublicSharing(ctx context.Context) (corepolicy.PublicSharing, error)
 }
 
 // SourcePolicy gates where apps may be created from (R-092).
@@ -497,6 +498,15 @@ func (s *Server) Routes() http.Handler {
 					r.Get("/{depID}", s.handleGetDeployment)
 					r.Get("/{depID}/logs", s.handleDeploymentLogs)
 				})
+
+				// Public with a passcode (R-075a): the passcode page's two calls,
+				// made by a visitor with no account, so no verb — each handler
+				// answers only for an app that asks for a passcode.
+				r.Get("/passcode", s.handleGetPasscodeApp)
+				r.Post("/passcode", s.handleEnterPasscode)
+
+				// People and groups to share with, for whoever may share it.
+				r.Get("/principals", s.handleSharePrincipals)
 
 				r.Route("/grants", func(r chi.Router) {
 					r.Get("/", s.handleListGrants)

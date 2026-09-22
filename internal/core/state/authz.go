@@ -179,20 +179,6 @@ func (s *AuthzStore) HasDataGrant(ctx context.Context, appID string, p authz.Pri
 	return exists, nil
 }
 
-// HasAnonymousGrant reports whether the app is shared with everyone (R-075).
-func (s *AuthzStore) HasAnonymousGrant(ctx context.Context, appID string) (bool, error) {
-	var exists bool
-	err := s.db.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM grants
-			WHERE app_id = $1 AND plane = 'data' AND principal_kind = 'anonymous'
-		)`, appID).Scan(&exists)
-	if err != nil {
-		return false, errs.Wrap(errs.Internal, "Could not read access for this app.", err)
-	}
-	return exists, nil
-}
-
 // Role returns a role by ID.
 func (s *AuthzStore) Role(ctx context.Context, roleID string) (authz.Role, error) {
 	var r authz.Role
@@ -290,6 +276,10 @@ type GrantRow struct {
 	// this screen does not hold. Empty on a data-plane grant, which carries no
 	// role at all (R-070).
 	RoleName string `json:"role_name,omitempty"`
+
+	// Passcode is whether the anonymous grant asks for one (R-075a). Never the
+	// passcode or its digest: nobody reads a passcode back, they set a new one.
+	Passcode bool `json:"passcode,omitempty"`
 }
 
 // Create adds a grant.
@@ -501,7 +491,7 @@ func (g *Grants) ListForApp(ctx context.Context, appID string) ([]GrantRow, erro
 		SELECT g.id, g.app_id, g.plane, g.principal_kind,
 		       coalesce(g.principal_id, ''), coalesce(g.role_id, ''),
 		       coalesce(nullif(u.display_name, ''), u.external_id, gr.name, ''),
-		       coalesce(r.name, '')
+		       coalesce(r.name, ''), g.passcode_hash IS NOT NULL
 		FROM grants g
 		LEFT JOIN users u
 		       ON g.principal_kind = 'user' AND u.id = g.principal_id
@@ -519,7 +509,7 @@ func (g *Grants) ListForApp(ctx context.Context, appID string) ([]GrantRow, erro
 	for rows.Next() {
 		var row GrantRow
 		if err := rows.Scan(&row.ID, &row.AppID, &row.Plane, &row.PrincipalKind,
-			&row.PrincipalID, &row.RoleID, &row.PrincipalName, &row.RoleName); err != nil {
+			&row.PrincipalID, &row.RoleID, &row.PrincipalName, &row.RoleName, &row.Passcode); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read who this app is shared with.", err)
 		}
 		out = append(out, row)

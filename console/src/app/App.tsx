@@ -22,7 +22,8 @@ import { useAdministrative, usePrincipal } from './principal';
 import { useTheme } from '../ui/theme';
 import { useRoute } from './route';
 import type { Route } from './route';
-import { ChangePassword, Login } from '../auth/Login';
+import { ChangePassword, Login, Passcode } from '../auth/Login';
+import { passcodeApp } from '../auth/passcode';
 import { Launcher } from '../launcher/Launcher';
 import { AdminConsole } from '../admin/AdminConsole';
 import { Settings } from '../settings/Settings';
@@ -42,6 +43,15 @@ export function App() {
   // opened settings by its address has nothing behind them in this console,
   // and history.back() would take them off Pando altogether.
   const cameFrom = useRef<Route | null>(null);
+
+  // The passcode page shares the sign-in page's address, and comes before
+  // anything that depends on who this is: a visitor who has a passcode needs no
+  // account, and somebody signed in who lacks access to the app is sent here by
+  // the proxy just the same.
+  const passcodeFor = passcodeApp(window.location.search);
+  if (passcodeFor) {
+    return <Passcode appID={passcodeFor} signedIn={principal.isSuccess} />;
+  }
 
   // Who this is decides which page this is — the launcher, the console or the
   // sign-in form — so nothing more specific than a page can be drawn yet: the

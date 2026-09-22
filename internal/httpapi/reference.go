@@ -41,9 +41,9 @@ var routeDocs = []reference.Route{
 	// --- tokens -----------------------------------------------------------
 	{Method: "GET", Path: "/api/v1/tokens", Group: "Tokens", Summary: "Your own tokens. Never anyone else's."},
 	{Method: "POST", Path: "/api/v1/tokens", Group: "Tokens", Summary: "Mint a delegated token. It acts as you, is bounded by your live grants, and dies with your account (R-058, R-059). The secret is shown once."},
-	{Method: "GET", Path: "/api/v1/tokens/service", Group: "Tokens", Summary: "The installation's service tokens.", Verb: string(authz.InstallUsersManage)},
-	{Method: "POST", Path: "/api/v1/tokens/service", Group: "Tokens", Summary: "Mint a service token: its own principal, holding only what is shared with it, outliving whoever created it (R-060). The secret is shown once.", Verb: string(authz.InstallUsersManage)},
-	{Method: "DELETE", Path: "/api/v1/tokens/{tokenID}", Group: "Tokens", Summary: "Revoke a token. Yours, or anyone's with install.users.manage."},
+	{Method: "GET", Path: "/api/v1/tokens/service", Group: "Tokens", Summary: "The installation's service tokens.", Verb: string(authz.InstallTokensManage)},
+	{Method: "POST", Path: "/api/v1/tokens/service", Group: "Tokens", Summary: "Mint a service token: its own principal, holding only what is shared with it, outliving whoever created it (R-060). The secret is shown once.", Verb: string(authz.InstallTokensManage)},
+	{Method: "DELETE", Path: "/api/v1/tokens/{tokenID}", Group: "Tokens", Summary: "Revoke a token. Yours; a service token with install.tokens.manage; anyone else's with install.users.manage."},
 
 	// --- apps -------------------------------------------------------------
 	{Method: "GET", Path: "/api/v1/apps", Group: "Apps", Summary: "The apps you can administer."},
@@ -104,7 +104,10 @@ var routeDocs = []reference.Route{
 	// --- sharing ----------------------------------------------------------
 	{Method: "GET", Path: "/api/v1/apps/{appID}/grants", Group: "Sharing", Summary: "Who can reach this app, and who can administer it — two planes, listed separately (R-070, R-071).", Verb: string(authz.AppView)},
 	{Method: "POST", Path: "/api/v1/apps/{appID}/grants", Group: "Sharing", Summary: "Share the app with a user, a group, a token, or with everyone. The anonymous grant is a real row, refused where host policy forbids it (R-075, R-076).", Verb: string(authz.AppGrantsManage)},
-	{Method: "PATCH", Path: "/api/v1/apps/{appID}/grants/{grantID}", Group: "Sharing", Summary: "Change the role a grant for managing the app carries (`role_id`). One update, so the person is never left with nothing in between.", Verb: string(authz.AppGrantsManage)},
+	{Method: "PATCH", Path: "/api/v1/apps/{appID}/grants/{grantID}", Group: "Sharing", Summary: "Change the role a grant for managing the app carries (`role_id`), one update so the person is never left with nothing in between; or, on the grant to everyone, set `passcode` (\"\" removes it). A new passcode asks everyone let in by the old one again (R-075a).", Verb: string(authz.AppGrantsManage)},
+	{Method: "GET", Path: "/api/v1/apps/{appID}/principals", Group: "Sharing", Summary: "People and groups to share the app with, matching `q` (username, name or email; group name), at most 20 of each.", Verb: string(authz.AppGrantsManage)},
+	{Method: "GET", Path: "/api/v1/apps/{appID}/passcode", Group: "Sharing", Summary: "The name of an app that asks for a passcode, for its passcode page. Public; not-found for any other app (R-075a)."},
+	{Method: "POST", Path: "/api/v1/apps/{appID}/passcode", Group: "Sharing", Summary: "Enter an app's passcode (`passcode`). Right, and the browser is let in for a day by a cookie the app never sees; ten wrong tries in fifteen minutes and it waits. Public (R-075a)."},
 	{Method: "DELETE", Path: "/api/v1/apps/{appID}/grants/{grantID}", Group: "Sharing", Summary: "Take a grant away.", Verb: string(authz.AppGrantsManage)},
 
 	// --- accounts, groups, roles -----------------------------------------

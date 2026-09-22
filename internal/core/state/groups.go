@@ -76,6 +76,27 @@ func (g *Groups) List(ctx context.Context) ([]Group, error) {
 	return out, rows.Err()
 }
 
+// Search finds groups by name, case-insensitively, at most limit of them.
+func (g *Groups) Search(ctx context.Context, q string, limit int) ([]Group, error) {
+	rows, err := g.db.Query(ctx, `
+		SELECT id, name, created_at FROM groups
+		WHERE $1 = '' OR name ILIKE '%' || $1 || '%'
+		ORDER BY name LIMIT $2`, likeEscape(q), limit)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not search the groups.", err)
+	}
+	defer rows.Close()
+	out := []Group{}
+	for rows.Next() {
+		var group Group
+		if err := rows.Scan(&group.ID, &group.Name, &group.CreatedAt); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not search the groups.", err)
+		}
+		out = append(out, group)
+	}
+	return out, rows.Err()
+}
+
 // ByID returns one group.
 func (g *Groups) ByID(ctx context.Context, groupID string) (Group, bool, error) {
 	var group Group

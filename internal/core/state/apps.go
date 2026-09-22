@@ -730,7 +730,10 @@ func (a *Apps) LiveApps(ctx context.Context) ([]planner.InventoryApp, error) {
 		SELECT a.id, a.name, r.body,
 		       EXISTS (SELECT 1 FROM grants g
 		               WHERE g.app_id = a.id AND g.plane = 'data'
-		                 AND g.principal_kind = 'anonymous')
+		                 AND g.principal_kind = 'anonymous'),
+		       EXISTS (SELECT 1 FROM grants g
+		               WHERE g.app_id = a.id AND g.plane = 'data'
+		                 AND g.principal_kind = 'anonymous' AND g.passcode_hash IS NOT NULL)
 		FROM apps a
 		JOIN spec_revisions r ON r.id = a.pinned_spec_id
 		WHERE a.deleted_at IS NULL
@@ -744,7 +747,7 @@ func (a *Apps) LiveApps(ctx context.Context) ([]planner.InventoryApp, error) {
 	out := make([]planner.InventoryApp, 0)
 	for rows.Next() {
 		var app planner.InventoryApp
-		if err := rows.Scan(&app.AppID, &app.Name, &app.Spec, &app.AnonymousGrant); err != nil {
+		if err := rows.Scan(&app.AppID, &app.Name, &app.Spec, &app.AnonymousGrant, &app.AnonymousPasscode); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list this installation's apps.", err)
 		}
 		out = append(out, app)

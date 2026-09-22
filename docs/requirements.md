@@ -202,7 +202,9 @@ exactly this.
 
 **R-075 [D]** Anonymous is a real ACL subject, not a bypass. An anonymous request is still proxied, logged, rate-limited, and given an assertion (R-056).
 
-**R-076 [D]** Any app owner may grant to anonymous by default. Host policy may restrict this to admins.
+**R-075a [D]** **Public with a passcode.** The grant to anonymous may carry a passcode. The app is still shared with everyone, but the proxy sends a visitor who has not entered it to a passcode page — the sign-in page's other mode, on the same reserved path (R-172) — instead of to sign-in. Entering it sets a cookie in Pando's namespace, never forwarded to the app (R-173), that lets that browser in for a day. Only the passcode's digest is stored; changing it, or making the app private, asks everyone again. Wrong passcodes are limited per app and visitor. It is a key to *using* the app and nothing else (R-070).
+
+**R-076 [D]** Any app owner may grant to anonymous by default. Host policy decides how (`public_sharing`): allowed, with or without a passcode; only with a passcode; or not at all. Like any policy setting it may be fixed at startup (R-271), and is then read-only in the console.
 
 **R-077 [P]** The console must never present this as the bare word "public" **alone**. Naming the
 action *Make it public* is fine and is what people look for; what may not happen is the word standing
@@ -233,6 +235,7 @@ Install-scoped:
 | `install.backup.manage` | Take, verify and restore backups (R-212–R-216) |
 | `install.apps.view` | See every app read-only: `app.view` and `app.logs.read` on each, without a grant on it |
 | `install.apps.manage` | Manage every app: every app-scoped verb on each, without a grant on it |
+| `install.tokens.manage` | List, create and revoke service tokens (R-060) |
 | `app.create` | Create an app. Install-scoped despite the name: there is no app yet when it is checked |
 
 App-scoped:

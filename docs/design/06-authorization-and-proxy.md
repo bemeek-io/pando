@@ -66,8 +66,15 @@ func (a *Authorizer) CheckData(ctx context.Context, p Principal, appID string) e
     if a.state.HasDataGrant(ctx, appID, p) {
         return nil
     }
-    if a.state.HasAnonymousGrant(ctx, appID) {
+    granted, passcode := a.state.AnonymousAccess(ctx, appID)
+    if granted && !passcode {
         return nil   // R-075
+    }
+    if granted && a.state.PasscodeUnlocked(ctx, appID, p.Passcodes[appID]) {
+        return nil   // R-075a
+    }
+    if granted {
+        return ErrPasscodeRequired   // the proxy sends a browser to the passcode page
     }
     return ErrPermission("app.use")
 }
@@ -118,6 +125,18 @@ privileges is a custom role composed from the verb list (R-082), not two grants.
 `grants_data_plane_is_app_scoped`.
 
 **[D]** `CheckData` contains exactly one cross-plane implication — ownership (R-072). No other control-plane role appears in it. A reviewer seeing another control-plane check added to this function should reject the change; that is R-029 and it was reversed once already during design, so it needs a comment saying so in the code.
+
+**[D] Public with a passcode (R-075a) is data-plane only.** The principal carries the unlock tokens
+its request brought (`pando_pass_<app>` cookies), and `CheckData` asks the store whether the one for
+this app is live — unexpired, and made under the app's current anonymous grant, which a new passcode
+or making the app private clears. A live lookup per request, like every other step, so there is no
+cached "unlocked" to outlive a revocation. `PERM_PASSCODE_REQUIRED` is not audited as a denial: it is
+every first visit to a passcode app. The owner and anyone holding their own grant never meet it.
+
+**[P] Sharing looks people up by the app, not the directory.** Choosing whom to share with needs a
+list of people and groups, and an app owner who is not an administrator cannot list accounts
+(`install.view`). `GET /apps/{id}/principals?q=` answers for whoever holds `app.grants.manage` on that
+app, searched and capped at twenty of each: enough to find Dana, not a way to take the directory.
 
 **[D]** Being a Pando admin does not appear in `CheckData` at all. R-087: an admin has root and can reach a container outside Pando, but the supported path requires a grant.
 
@@ -176,6 +195,7 @@ The single enforcement point (R-023). One path for every request to every app �
 3.  Extract session cookie or bearer token
 4.  Authenticate → Principal, or anonymous
 5.  CheckData(principal, app)
+      passcode required   → redirect to the passcode page (R-075a)
       denied + anonymous  → redirect to login
       denied + authed     → 403 page
 6.  Mint assertion (R-051)
@@ -271,7 +291,7 @@ var Verbs = []Verb{
     // Install-scoped: held through a grant with no app (§2.1).
     "install.view", "install.users.manage", "install.policy.manage",
     "install.adapters.manage", "install.audit.read", "install.backup.manage",
-    "install.apps.view", "install.apps.manage", "app.create",
+    "install.apps.view", "install.apps.manage", "install.tokens.manage", "app.create",
 
     // App-scoped.
     "app.view", "app.logs.read", "app.deploy", "app.restart",

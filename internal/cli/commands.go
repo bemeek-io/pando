@@ -1001,13 +1001,43 @@ func grantCmd(client func() (*Client, error)) *cobra.Command {
 				return err
 			}
 			user, _ := cmd.Flags().GetString("user")
+			group, _ := cmd.Flags().GetString("group")
+			anyone, _ := cmd.Flags().GetBool("anyone")
+			passcode, _ := cmd.Flags().GetString("passcode")
 			plane, _ := cmd.Flags().GetString("plane")
 			role, _ := cmd.Flags().GetString("role")
-			if user == "" {
-				return fmt.Errorf("say who to share with: --user=<id>")
+
+			// Exactly one of the three: a grant is to one principal.
+			chosen := 0
+			for _, set := range []bool{user != "", group != "", anyone} {
+				if set {
+					chosen++
+				}
+			}
+			if chosen != 1 {
+				return fmt.Errorf("say who to share with: one of --user=<id>, --group=<id> or --anyone")
+			}
+			if passcode != "" && !anyone {
+				return fmt.Errorf("--passcode goes with --anyone: only sharing with everyone has a passcode")
 			}
 
-			body := map[string]any{"plane": plane, "principal_kind": "user", "principal_id": user}
+			body := map[string]any{"plane": plane}
+			switch {
+			case anyone:
+				// Anyone on the internet, without signing in (R-077) — or
+				// with the passcode, if one is given (R-075a).
+				body["plane"] = "data"
+				body["principal_kind"] = "anonymous"
+				if passcode != "" {
+					body["passcode"] = passcode
+				}
+			case group != "":
+				body["principal_kind"] = "group"
+				body["principal_id"] = group
+			default:
+				body["principal_kind"] = "user"
+				body["principal_id"] = user
+			}
 			if role != "" {
 				body["role_id"] = role
 			}
@@ -1019,6 +1049,9 @@ func grantCmd(client func() (*Client, error)) *cobra.Command {
 		},
 	}
 	add.Flags().String("user", "", "user ID to share with")
+	add.Flags().String("group", "", "group ID to share with")
+	add.Flags().Bool("anyone", false, "share with anyone on the internet, without signing in")
+	add.Flags().String("passcode", "", "with --anyone: only those who enter this passcode")
 	// "data" by default: sharing an app normally means letting someone use it,
 	// not letting them redeploy it. The dangerous one has to be asked for.
 	add.Flags().String("plane", "data", "data (use the app) or control (manage it)")
@@ -1039,6 +1072,33 @@ func grantCmd(client func() (*Client, error)) *cobra.Command {
 				return err
 			}
 			return printJSON(cmd.OutOrStdout(), out)
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "passcode <app> <grant-id> [passcode]",
+		Short: "Change the passcode on an app shared with everyone, or remove it",
+		Long: "Sets a new passcode on the app's grant to everyone; everyone let in by the old one\n" +
+			"is asked again. With no passcode, removes it: the app is then open to anyone.",
+		Args: cobra.RangeArgs(2, 3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			passcode := ""
+			if len(args) == 3 {
+				passcode = args[2]
+			}
+			if err := c.Do("PATCH", "/apps/"+args[0]+"/grants/"+args[1], map[string]any{"passcode": passcode}, nil); err != nil {
+				return err
+			}
+			if passcode == "" {
+				fmt.Fprintln(cmd.OutOrStdout(), "Passcode removed. Anyone on the internet can open it without signing in.")
+			} else {
+				fmt.Fprintln(cmd.OutOrStdout(), "Passcode changed.")
+			}
+			return nil
 		},
 	})
 

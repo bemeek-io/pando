@@ -328,6 +328,15 @@ func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// One of the three rules, or unset: anything else would be saved and
+	// enforce nothing (R-076).
+	if err := doc.PublicSharing.Valid(); err != nil {
+		Error(w, r, errs.Newf(errs.ValidInvalid,
+			"public_sharing is %q, which is not one of Pando's rules for sharing with everyone.", string(doc.PublicSharing)).
+			WithRemedy("Use allowed, passcode_only or none."))
+		return
+	}
+
 	// A disabled verb must be a real verb. Policy can only deny (R-272), so a
 	// typo here denies nothing and looks exactly like a rule that works —
 	// the worst failure mode a security control has.

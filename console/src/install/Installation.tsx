@@ -7,7 +7,7 @@
 
 import { createContext, useContext, useLayoutEffect, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, EmptyState, Input, Select, Skeleton, StatusIndicator, Switch, Tag } from '@design';
+import { Banner, Button, EmptyState, Input, Radio, Select, Skeleton, StatusIndicator, Switch, Tag } from '@design';
 
 import { api } from '@api/client';
 import { Quiet, Screen, messageOf } from './Accounts';
@@ -106,6 +106,7 @@ interface PolicyDoc {
   source_allowlist?: string[];
   disabled_verbs?: string[];
   allow_anonymous_grants?: boolean;
+  public_sharing?: 'allowed' | 'passcode_only' | 'none';
   egress_allowlist?: string[];
   require_backup_before_destroy?: boolean;
   max_token_lifetime_days?: number;
@@ -361,17 +362,37 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
           heading="Who can reach apps"
           note="A floor, never an override: an app owner can be stricter than this and never looser (R-272)."
         >
-          <Fixed field="allow_anonymous_grants">
-            <Switch
-              checked={current.allow_anonymous_grants !== false}
-              disabled={locked('allow_anonymous_grants')}
-              label="Allow apps to be shared with anyone on the internet"
-              // R-076: when this is off the sharing option stays visible and
-              // disabled rather than disappearing. A hidden option produces a
-              // support ticket instead of understanding.
-              description="When this is off, people can still see the option to share an app without sign-in — it's disabled, with a note saying who to ask."
-              onChange={(e) => edit({ allow_anonymous_grants: e.target.checked })}
-            />
+          {/* Three answers, not a switch (R-076, R-075a): anyone, anyone with the
+              app's passcode, or nobody. public_sharing is the setting; the
+              older allow_anonymous_grants still counts when it is unset, and
+              either fixed at startup makes this read-only — whichever is,
+              names where. When sharing is limited, the options people can't
+              use stay visible and disabled on the Sharing tab, with a note
+              saying who to ask, rather than disappearing. */}
+          <Fixed field={fixed.has('public_sharing') || !fixed.has('allow_anonymous_grants') ? 'public_sharing' : 'allow_anonymous_grants'}>
+            <fieldset style={{ border: 0, margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <legend style={{ font: 'var(--type-label)', color: 'var(--ink)', marginBottom: 'var(--space-2)' }}>
+                Sharing apps with everyone
+              </legend>
+              {(
+                [
+                  ['allowed', 'Allowed', 'An app can be shared with anyone on the internet, with or without a passcode.'],
+                  ['passcode_only', 'Only with a passcode', 'Anyone on the internet can open it only after entering its passcode.'],
+                  ['none', 'Not allowed', 'Apps are shared only with people and groups who sign in.'],
+                ] as const
+              ).map(([value, label, description]) => (
+                <Radio
+                  key={value}
+                  name="public_sharing"
+                  value={value}
+                  label={label}
+                  description={description}
+                  checked={publicSharing(current) === value}
+                  disabled={locked('public_sharing') || locked('allow_anonymous_grants')}
+                  onChange={() => edit({ public_sharing: value })}
+                />
+              ))}
+            </fieldset>
           </Fixed>
 
           <Fixed field="disabled_verbs">
@@ -638,6 +659,13 @@ function setIn(src: Source): string {
  * says where it is set. Hover is taken by a wrapper, because a disabled input
  * receives no pointer events of its own.
  */
+/** The rule for sharing with everyone, reading the older boolean when the new
+ *  setting is unset — the same reading as the server's PublicSharingMode. */
+function publicSharing(doc: PolicyDoc): 'allowed' | 'passcode_only' | 'none' {
+  if (doc.public_sharing) return doc.public_sharing;
+  return doc.allow_anonymous_grants === false ? 'none' : 'allowed';
+}
+
 function Fixed({ field, children }: { field: string; children: React.ReactNode }) {
   const src = useContext(FixedFields).get(field);
   const [hover, setHover] = useState(false);

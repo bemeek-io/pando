@@ -50,9 +50,9 @@ one verb says nothing about another (R-082).
 | --- | --- | --- |
 | `GET /api/v1/tokens` |  | Your own tokens. Never anyone else's. |
 | `POST /api/v1/tokens` |  | Mint a delegated token. It acts as you, is bounded by your live grants, and dies with your account (R-058, R-059). The secret is shown once. |
-| `GET /api/v1/tokens/service` | `install.users.manage` | The installation's service tokens. |
-| `POST /api/v1/tokens/service` | `install.users.manage` | Mint a service token: its own principal, holding only what is shared with it, outliving whoever created it (R-060). The secret is shown once. |
-| `DELETE /api/v1/tokens/{tokenID}` |  | Revoke a token. Yours, or anyone's with install.users.manage. |
+| `GET /api/v1/tokens/service` | `install.tokens.manage` | The installation's service tokens. |
+| `POST /api/v1/tokens/service` | `install.tokens.manage` | Mint a service token: its own principal, holding only what is shared with it, outliving whoever created it (R-060). The secret is shown once. |
+| `DELETE /api/v1/tokens/{tokenID}` |  | Revoke a token. Yours; a service token with install.tokens.manage; anyone else's with install.users.manage. |
 
 ### Apps
 
@@ -139,7 +139,10 @@ one verb says nothing about another (R-082).
 | --- | --- | --- |
 | `GET /api/v1/apps/{appID}/grants` | `app.view` | Who can reach this app, and who can administer it — two planes, listed separately (R-070, R-071). |
 | `POST /api/v1/apps/{appID}/grants` | `app.grants.manage` | Share the app with a user, a group, a token, or with everyone. The anonymous grant is a real row, refused where host policy forbids it (R-075, R-076). |
-| `PATCH /api/v1/apps/{appID}/grants/{grantID}` | `app.grants.manage` | Change the role a grant for managing the app carries (`role_id`). One update, so the person is never left with nothing in between. |
+| `PATCH /api/v1/apps/{appID}/grants/{grantID}` | `app.grants.manage` | Change the role a grant for managing the app carries (`role_id`), one update so the person is never left with nothing in between; or, on the grant to everyone, set `passcode` ("" removes it). A new passcode asks everyone let in by the old one again (R-075a). |
+| `GET /api/v1/apps/{appID}/principals` | `app.grants.manage` | People and groups to share the app with, matching `q` (username, name or email; group name), at most 20 of each. |
+| `GET /api/v1/apps/{appID}/passcode` |  | The name of an app that asks for a passcode, for its passcode page. Public; not-found for any other app (R-075a). |
+| `POST /api/v1/apps/{appID}/passcode` |  | Enter an app's passcode (`passcode`). Right, and the browser is let in for a day by a cookie the app never sees; ten wrong tries in fifteen minutes and it waits. Public (R-075a). |
 | `DELETE /api/v1/apps/{appID}/grants/{grantID}` | `app.grants.manage` | Take a grant away. |
 
 ### Identity
@@ -212,6 +215,7 @@ that finds the log line. Branch on the code; the message may be reworded.
 | `AUTH_TOKEN_INVALID` | 401 | The token is unknown, revoked or expired. |
 | `AUTH_TOKEN_ORPHANED` | 401 | The token's owner was suspended or deleted, so the token no longer resolves to anyone (R-059). |
 | `PERM_DENIED` | 403 | Authenticated, but not permitted to do this. |
+| `PERM_PASSCODE_REQUIRED` | 403 | The app is shared with everyone who knows its passcode, and this request has not shown it. A browser is sent to the passcode page; entering it there lets the visitor in. |
 | `PERM_VERB_REQUIRED` | 403 | The caller holds no grant carrying the verb this action needs. |
 | `POLICY_ANONYMOUS_GRANT_FORBIDDEN` | 403 | Host policy does not allow apps to be shared with everyone (R-076). |
 | `POLICY_EXEC_DISABLED` | 403 | Host policy has turned off terminal access, including for an app's owner (R-085). |
@@ -232,6 +236,7 @@ that finds the log line. Branch on the code; the message may be reworded.
 | `BUILD_FAILED` | 422 | The build ran and did not succeed. Its log is the answer. |
 | `BUILD_TIMEOUT` | 422 | The build exceeded the time allowed for it (R-119). |
 | `INTERNAL` | 500 | Pando failed in a way it did not expect. The request ID finds the log line. |
+| `RATE_LIMITED` | 500 | Too many attempts in a short time — at a passcode, for example. Wait a few minutes and try again. |
 | `ADAPTER_FAILED` | 502 | The adapter was reached and failed. |
 | `ADAPTER_UNAVAILABLE` | 502 | The adapter needed for this is not configured or not reachable. |
 

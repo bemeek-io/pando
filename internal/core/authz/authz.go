@@ -45,6 +45,12 @@ type Principal struct {
 
 	// Status of the underlying user, checked at step 2 of the evaluation order.
 	Status string
+
+	// Passcodes are the unlock tokens the request carried, by app ID (R-075a):
+	// proof that whoever is visiting entered a passcode-protected app's
+	// passcode. Unverified as carried — CheckData asks the store whether each
+	// is live, on every request, as it asks about everything else.
+	Passcodes map[string]string
 }
 
 // Anonymous is the principal for an unauthenticated request. It is a real
@@ -82,8 +88,13 @@ type Store interface {
 	// directly or through a group.
 	HasDataGrant(ctx context.Context, appID string, p Principal) (bool, error)
 
-	// HasAnonymousGrant reports whether the app is shared with everyone (R-075).
-	HasAnonymousGrant(ctx context.Context, appID string) (bool, error)
+	// AnonymousAccess reports whether the app is shared with everyone (R-075),
+	// and whether that sharing asks for a passcode (R-075a).
+	AnonymousAccess(ctx context.Context, appID string) (granted, passcode bool, err error)
+
+	// PasscodeUnlocked reports whether token is a live unlock of this app's
+	// passcode: entered, not expired, and made under the grant that stands now.
+	PasscodeUnlocked(ctx context.Context, appID, token string) (bool, error)
 
 	// Role returns a role by ID.
 	Role(ctx context.Context, roleID string) (Role, error)
@@ -338,12 +349,29 @@ func (a *Authorizer) CheckData(ctx context.Context, p Principal, appID string) e
 		return nil
 	}
 
-	anon, err := a.store.HasAnonymousGrant(ctx, appID)
+	anon, passcode, err := a.store.AnonymousAccess(ctx, appID)
 	if err != nil {
 		return err
 	}
-	if anon {
+	if anon && !passcode {
 		return nil // R-075.
+	}
+	if anon && passcode {
+		// Shared with everyone who knows the passcode (R-075a). Still the
+		// data plane alone — a passcode is a key to using the app, and says
+		// nothing about managing it.
+		if token := p.Passcodes[appID]; token != "" {
+			unlocked, err := a.store.PasscodeUnlocked(ctx, appID, token)
+			if err != nil {
+				return err
+			}
+			if unlocked {
+				return nil
+			}
+		}
+		// Not audited as a denial: every first visit to a passcode app lands
+		// here, and the proxy answers it with the passcode page.
+		return errs.New(errs.PermPasscodeRequired, "This app asks for a passcode.")
 	}
 
 	return a.deny(ctx, p, appID, "app.use",

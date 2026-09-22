@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -382,6 +383,45 @@ func (u *Users) UpdateProfile(ctx context.Context, userID string, p Profile) err
 		return errs.Wrap(errs.Internal, "Could not update the account.", err)
 	}
 	return nil
+}
+
+// Search finds active and suspended accounts by username, name or email,
+// case-insensitively, at most limit of them, ordered by username. An empty
+// query lists the first few.
+func (u *Users) Search(ctx context.Context, q string, limit int) ([]User, error) {
+	rows, err := u.db.Query(ctx, `
+		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at
+		FROM users
+		WHERE deleted_at IS NULL
+		  AND ($1 = '' OR external_id ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%' OR email ILIKE '%' || $1 || '%')
+		ORDER BY external_id
+		LIMIT $2`, likeEscape(q), limit)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not search the accounts.", err)
+	}
+	defer rows.Close()
+	out := []User{}
+	for rows.Next() {
+		var user User
+		var email, display *string
+		if err := rows.Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display,
+			&user.Status, &user.MustChangePassword, &user.CreatedAt); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not search the accounts.", err)
+		}
+		if email != nil {
+			user.Email = *email
+		}
+		if display != nil {
+			user.DisplayName = *display
+		}
+		out = append(out, user)
+	}
+	return out, rows.Err()
+}
+
+// likeEscape neutralizes ILIKE's wildcards in a search typed by a person.
+func likeEscape(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 // ErrAlreadySetUp is ClaimFirst's refusal once an installation has an account.

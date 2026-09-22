@@ -74,3 +74,26 @@ func TestR245_AppUsageShowsEachPartBesideItsLimits(t *testing.T) {
 	require.Contains(t, got.out, "stopped")
 	require.Contains(t, got.out, "unknown")
 }
+
+// R-075a: sharing with a group, with everyone, and with everyone behind a
+// passcode, from the CLI as from the console (R-261).
+func TestR075a_GrantAddSharesWithAGroupOrEveryone(t *testing.T) {
+	api := newAPI(t)
+
+	got := run(t, api, "", "grant", "add", "notes", "--group", "grp_01")
+	require.NoError(t, got.err, got.errOut)
+	require.JSONEq(t, `{"plane":"data","principal_kind":"group","principal_id":"grp_01"}`, api.bodyFor("POST /apps/notes/grants"))
+
+	api = newAPI(t)
+	got = run(t, api, "", "grant", "add", "notes", "--anyone", "--passcode", "open-sesame")
+	require.NoError(t, got.err, got.errOut)
+	require.JSONEq(t, `{"plane":"data","principal_kind":"anonymous","passcode":"open-sesame"}`, api.bodyFor("POST /apps/notes/grants"))
+
+	got = run(t, api, "", "grant", "passcode", "notes", "gr_01")
+	require.NoError(t, got.err, got.errOut)
+	require.JSONEq(t, `{"passcode":""}`, api.bodyFor("PATCH /apps/notes/grants/gr_01"))
+	require.Contains(t, got.out, "without signing in")
+
+	require.Error(t, run(t, api, "", "grant", "add", "notes", "--user", "usr_01", "--group", "grp_01").err)
+	require.Error(t, run(t, api, "", "grant", "add", "notes", "--user", "usr_01", "--passcode", "x").err)
+}
