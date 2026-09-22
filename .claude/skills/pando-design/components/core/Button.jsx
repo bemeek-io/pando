@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
 
+// The border is written as its three longhands, never the `border` shorthand.
+// Hover changes borderColor alone, and React, on mouse-out, removes the
+// longhand without re-applying a shorthand it thinks is unchanged — so with
+// `border` the color fell back to currentColor and the hover border stayed
+// lit after the pointer had gone.
 const VARIANTS = {
-  primary: { background: 'var(--ink)', color: 'var(--paper)', border: '1px solid var(--ink)', hover: { background: 'var(--primary-hover)', borderColor: 'var(--primary-hover)' } },
-  secondary: { background: 'var(--paper-raised)', color: 'var(--ink)', border: '1px solid var(--rule-strong)', hover: { borderColor: 'var(--ink-secondary)' } },
-  ghost: { background: 'transparent', color: 'var(--ink)', border: '1px solid transparent', hover: { background: 'var(--paper-sunken)' } },
-  destructive: { background: 'var(--paper-raised)', color: 'var(--marker-deep)', border: '1px solid var(--marker)', hover: { background: 'var(--destructive-hover)' } },
+  primary: { background: 'var(--ink)', color: 'var(--paper)', borderWidth: '1px', borderStyle: 'solid', borderColor: 'var(--ink)', hover: { background: 'var(--primary-hover)', borderColor: 'var(--primary-hover)' } },
+  secondary: { background: 'var(--paper-raised)', color: 'var(--ink)', borderWidth: '1px', borderStyle: 'solid', borderColor: 'var(--rule-strong)', hover: { borderColor: 'var(--ink-secondary)' } },
+  ghost: { background: 'transparent', color: 'var(--ink)', borderWidth: '1px', borderStyle: 'solid', borderColor: 'transparent', hover: { background: 'var(--paper-sunken)' } },
+  destructive: { background: 'var(--paper-raised)', color: 'var(--marker-deep)', borderWidth: '1px', borderStyle: 'solid', borderColor: 'var(--marker)', hover: { background: 'var(--destructive-hover)' } },
 };
 
 export function Button({ variant = 'secondary', size = 'console', icon = null, disabled = false, fullWidth = false, type = 'button', onClick, style, children, ...rest }) {
