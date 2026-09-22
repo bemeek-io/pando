@@ -34,7 +34,7 @@ import { Menu, MenuDivider, MenuItem } from '../ui/Menu';
 import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
 import { useNarrow } from '../ui/narrow';
-import { TopoBackground, TopoTile } from '../ui/TopoBackground';
+import { TopoTile } from '../ui/TopoBackground';
 
 type MyApps = { apps: App[] | null; sections: Section[] | null };
 
@@ -142,8 +142,10 @@ export function Launcher({
   );
 
   return (
+    // Plain paper, no contour background. Every tile carries its own map, and
+    // the design system allows one contour element per screen: a map behind a
+    // grid of maps competed with the tiles for the eye.
     <div style={{ minHeight: '100vh', background: 'var(--paper)', position: 'relative', isolation: 'isolate' }}>
-      <TopoBackground seed="launcher" />
       <header
         style={{
           display: 'flex',
