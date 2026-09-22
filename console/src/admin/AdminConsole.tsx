@@ -273,7 +273,22 @@ export function AdminConsole({
           )}
         </>
       ) : (
-        nav
+        // The window's height, pinned while the page scrolls. Stretched to the
+        // page's height instead, a long screen pushed "Back to my apps" at
+        // the sidebar's foot below the fold. The items scroll within it if
+        // they ever outgrow a short window.
+        <div
+          style={{
+            position: 'sticky',
+            top: 0,
+            height: '100vh',
+            flexShrink: 0,
+            display: 'flex',
+            overflowY: 'auto',
+          }}
+        >
+          {nav}
+        </div>
       )}
 
       <main style={{ flex: 1, minWidth: 0 }}>
