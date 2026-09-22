@@ -211,7 +211,15 @@ const cache = new Map<string, string>();
  * `isolation: isolate`. It fills that root — its full scrolling height — and
  * sits above the root's paper and below everything else.
  */
-export function TopoBackground({ seed }: { seed: string }) {
+export function TopoBackground({
+  seed,
+  fade,
+}: {
+  seed: string;
+  /** Where the lines fade out, as a CSS mask — for a map confined to a band,
+   *  such as the launcher's header, that should not end at a hard edge. */
+  fade?: string;
+}) {
   const d = useMemo(() => {
     let t = cache.get(seed);
     if (t === undefined) {
@@ -234,6 +242,8 @@ export function TopoBackground({ seed }: { seed: string }) {
         zIndex: -1,
         pointerEvents: 'none',
         opacity: BACKGROUND_OPACITY,
+        maskImage: fade,
+        WebkitMaskImage: fade,
       }}
     >
       <defs>

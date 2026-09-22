@@ -34,7 +34,7 @@ import { Menu, MenuDivider, MenuItem } from '../ui/Menu';
 import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
 import { useNarrow } from '../ui/narrow';
-import { TopoTile } from '../ui/TopoBackground';
+import { TopoBackground, TopoTile } from '../ui/TopoBackground';
 
 type MyApps = { apps: App[] | null; sections: Section[] | null };
 
@@ -142,9 +142,10 @@ export function Launcher({
   );
 
   return (
-    // Plain paper, no contour background. Every tile carries its own map, and
-    // the design system allows one contour element per screen: a map behind a
-    // grid of maps competed with the tiles for the eye.
+    // The contour map in the header alone, fading out before it reaches the
+    // tiles. Every tile carries its own map, and a map behind the whole grid
+    // competed with them for the eye; in the header it marks the page without
+    // sitting under anything.
     <div style={{ minHeight: '100vh', background: 'var(--paper)', position: 'relative', isolation: 'isolate' }}>
       <header
         style={{
@@ -157,8 +158,12 @@ export function Launcher({
           gap: narrow ? 'var(--space-3)' : undefined,
           padding: `${narrow ? 'var(--space-4)' : 'var(--space-5)'} var(--console-padding)`,
           borderBottom: 'var(--border-width) solid var(--rule)',
+          position: 'relative',
+          isolation: 'isolate',
+          overflow: 'hidden',
         }}
       >
+        <TopoBackground seed="launcher" fade="linear-gradient(to bottom, black 30%, transparent)" />
         <Logo size={20} />
         <div style={narrow ? { order: 3, flexBasis: '100%' } : undefined}>
           <SearchField
