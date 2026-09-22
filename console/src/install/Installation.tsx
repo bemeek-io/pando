@@ -97,10 +97,15 @@ export function Installation() {
       heading="Adapters"
       action={
         canManage && (
-          // Primary: adding an adapter is the one thing this screen does.
-          <Button variant="primary" onClick={() => setEditing({})}>
-            Add adapter
-          </Button>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            {/* Always here, not only while a change waits on it: a restart
+                is also how an adapter that failed at startup is retried. */}
+            <RestartButton onRestarted={() => setSaved(null)} />
+            {/* Primary: adding an adapter is the one thing this screen does. */}
+            <Button variant="primary" onClick={() => setEditing({})}>
+              Add adapter
+            </Button>
+          </div>
         )
       }
     >
@@ -108,10 +113,10 @@ export function Installation() {
 
       {(restartNeeded || saved) && (
         <div style={{ marginBottom: 'var(--space-4)' }}>
-          <Banner tone="info" action={canManage && <RestartButton onRestarted={() => setSaved(null)} />}>
+          <Banner tone="info">
             {saved ? `${saved} is saved.` : 'Adapter changes are saved.'} Pando loads adapters when it starts, so{' '}
             {saved ? 'it takes' : 'they take'} effect after a restart.
-            {!canManage && <> Someone who can manage adapters can restart it.</>}
+            {canManage ? <> Use Restart Pando above.</> : <> Someone who can manage adapters can restart it.</>}
           </Banner>
         </div>
       )}
@@ -856,7 +861,7 @@ function StartupSettings({ config }: { config?: StartupConfig }) {
           <strong style={{ color: 'var(--ink)' }}>Default</strong>: not set anywhere. Set the variable shown to change it.
         </li>
       </ul>
-      {config.file && canRestart && (
+      {canRestart && (
         <div style={{ marginTop: 'var(--space-3)' }}>
           <RestartButton />
         </div>
