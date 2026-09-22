@@ -10,10 +10,15 @@ describe('route', () => {
     { view: 'admin', section: 'apps' },
     { view: 'admin', section: 'api' },
     { view: 'admin', section: 'apps', appID: 'app_01', tab: 'logs' },
+    { view: 'admin', section: 'accounts' },
+    { view: 'admin', section: 'accounts', userID: 'usr_01' },
+    { view: 'admin', section: 'audit' },
+    { view: 'admin', section: 'audit', query: 'involving=usr_01&when=7d' },
   ];
 
   it.each(routes)('parse is the inverse of format for %o', (route) => {
-    expect(parse(format(route))).toEqual(route);
+    const [path, search] = format(route).split('?');
+    expect(parse(path ?? '', search ? `?${search}` : '')).toEqual(route);
   });
 
   it('still opens the adapters screen at its old address', () => {

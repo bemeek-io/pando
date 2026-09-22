@@ -193,3 +193,58 @@ func TestAGeneratedFileCannotEscapeTheCheckout(t *testing.T) {
 	require.Error(t, err)
 	require.NoFileExists(t, filepath.Join(filepath.Dir(root), "pwned"))
 }
+
+// TestR020_APlansAssetsSurviveIntoTheBuild asserts that a plan is stored whole.
+//
+// A nixpacks plan that serves static files writes its web server's
+// configuration into .nixpacks/assets and a Dockerfile that says
+// COPY .nixpacks/assets /assets/. Reading back only the top level of the plan
+// directory dropped it, and the build failed on that COPY with
+// "/.nixpacks/assets: not found" — Pando's own plan, refused by Pando.
+func TestR020_APlansAssetsSurviveIntoTheBuild(t *testing.T) {
+	root := t.TempDir()
+	plan := filepath.Join(root, ".nixpacks")
+	require.NoError(t, os.MkdirAll(filepath.Join(plan, "assets"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(plan, "Dockerfile"),
+		[]byte("FROM alpine:3.21\nCOPY .nixpacks/assets /assets/\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(plan, "assets", "Caddyfile"),
+		[]byte(":80\nroot * /app/dist\n"), 0o644))
+
+	files, err := collectPlan(root)
+	require.NoError(t, err)
+	require.Equal(t, ":80\nroot * /app/dist\n", files[".nixpacks/assets/Caddyfile"],
+		"every path the generated Dockerfile copies is carried, whatever directory it sits in")
+	require.Contains(t, files, ".nixpacks/Dockerfile")
+
+	// And back out again, into the checkout the build reads.
+	built := t.TempDir()
+	require.NoError(t, writeInto(built, files))
+	_, err = os.Stat(filepath.Join(built, ".nixpacks", "assets", "Caddyfile"))
+	require.NoError(t, err)
+}
+
+// TestR020_APlansBuildArgumentsAreUsed asserts that a stored plan carries the
+// values its Dockerfile's ARG lines need.
+//
+// nixpacks records them beside the Dockerfile, as the docker build command it
+// would have run. Ignoring them left every ARG empty: a single-page app's web
+// root resolved to the repository instead of its dist directory, so the site
+// served the source index.html and came up blank — with a 200, and nothing in
+// the logs to say why.
+func TestR020_APlansBuildArgumentsAreUsed(t *testing.T) {
+	args := planArgs(map[string]string{
+		".nixpacks/build.sh": "docker build /tmp/src -f /tmp/src/.nixpacks/Dockerfile -t x " +
+			"--build-arg CI=true --build-arg NIXPACKS_SPA_OUTPUT_DIR=dist --build-arg NODE_ENV=production",
+	})
+	require.Equal(t, "dist", args["NIXPACKS_SPA_OUTPUT_DIR"])
+	require.Equal(t, "true", args["CI"])
+	require.Equal(t, "production", args["NODE_ENV"])
+}
+
+// A plan with no build script asks for nothing, and a flag written as one
+// token is read the same way.
+func TestPlanArgumentsAreReadWhateverTheSpelling(t *testing.T) {
+	require.Empty(t, planArgs(map[string]string{".nixpacks/Dockerfile": "FROM alpine:3.21\n"}))
+	require.Equal(t, map[string]string{"K": "v"},
+		planArgs(map[string]string{".nixpacks/build.sh": `docker build . --build-arg=K="v"`}))
+}

@@ -130,13 +130,13 @@ func TestR330_AScreeningReadsTheRepositoryThenSubmitsFindings(t *testing.T) {
 	require.Len(t, result.Amendments, 1)
 	require.Equal(t, api.AmendSetEnv, result.Amendments[0].Kind)
 	require.Equal(t, []string{"The README documents HOST."}, result.Notes)
-	require.Equal(t, "claude-opus-5", result.Model)
+	require.Equal(t, anthropicadapter.DefaultModel, result.Model)
 	require.Equal(t, []string{"server.js", "README.md"}, result.FilesRead,
 		"the adapter's own limit of two files held; the third read was refused, not performed")
 
 	require.Len(t, fake.bodies, 3)
 	first := fake.bodies[0]
-	require.Equal(t, "claude-opus-5", first["model"])
+	require.Equal(t, anthropicadapter.DefaultModel, first["model"])
 	prompt, _ := json.Marshal(first["messages"])
 	require.Contains(t, string(prompt), "EADDRINUSE", "the trial log is in the prompt")
 	require.Contains(t, string(prompt), "start_command", "so are Pando's questions")

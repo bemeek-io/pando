@@ -103,22 +103,30 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]map[string]any, 0, len(users))
 	for _, u := range users {
-		out = append(out, map[string]any{
-			"id":                   u.ID,
-			"adapter_id":           u.AdapterID,
-			"external_id":          u.ExternalID,
-			"email":                u.Email,
-			"display_name":         u.DisplayName,
-			"status":               u.Status,
-			"must_change_password": u.MustChangePassword,
-
-			// Empty when the account holds nothing install-wide, which is most
-			// of them. Not null: absent and empty are the same thing to a
-			// client, and only one of them is an answer.
-			"install_role_id": roles[u.ID],
-		})
+		out = append(out, accountView(u, roles[u.ID]))
 	}
 	JSON(w, http.StatusOK, map[string]any{"users": out})
+}
+
+// accountView is an account as the API shows it, in the list and on its own:
+// one shape, so that a client reading one account does not need the list to
+// learn what role it holds.
+func accountView(u state.User, installRoleID string) map[string]any {
+	return map[string]any{
+		"id":                   u.ID,
+		"adapter_id":           u.AdapterID,
+		"external_id":          u.ExternalID,
+		"email":                u.Email,
+		"display_name":         u.DisplayName,
+		"status":               u.Status,
+		"must_change_password": u.MustChangePassword,
+		"created_at":           u.CreatedAt,
+
+		// Empty when the account holds nothing install-wide, which is most
+		// of them. Not null: absent and empty are the same thing to a
+		// client, and only one of them is an answer.
+		"install_role_id": installRoleID,
+	}
 }
 
 // handleListRoles returns roles, read from the database rather than the Go
@@ -320,6 +328,15 @@ func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// One of the three rules, or unset: anything else would be saved and
+	// enforce nothing (R-076).
+	if err := doc.PublicSharing.Valid(); err != nil {
+		Error(w, r, errs.Newf(errs.ValidInvalid,
+			"public_sharing is %q, which is not one of Pando's rules for sharing with everyone.", string(doc.PublicSharing)).
+			WithRemedy("Use allowed, passcode_only or none."))
+		return
+	}
+
 	// A disabled verb must be a real verb. Policy can only deny (R-272), so a
 	// typo here denies nothing and looks exactly like a rule that works —
 	// the worst failure mode a security control has.
@@ -421,6 +438,7 @@ func (s *Server) handleListAudit(w http.ResponseWriter, r *http.Request) {
 
 		PrincipalKind: r.URL.Query().Get("principal_kind"),
 		TargetID:      r.URL.Query().Get("target_id"),
+		Involving:     r.URL.Query().Get("involving"),
 	}
 	// RFC 3339, like every time on the wire. A bound that will not parse is an
 	// error rather than ignored: an investigation that silently searched all

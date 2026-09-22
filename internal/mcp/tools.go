@@ -163,15 +163,32 @@ var toolList = []tool{
 	},
 	{
 		Name: "pando_accept_proposal",
-		Description: "Accept what Pando worked out and pin it as the app's setup. " +
-			"This does not deploy — call pando_deploy after.",
-		Schema: schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+		Description: "Accept what Pando worked out and pin it as the app's setup, optionally setting " +
+			"environment variables in the same step. This does not deploy — call pando_deploy after.",
+		Schema: schema(map[string]any{
+			"app_id": str("The app's ID."),
+			"values": map[string]any{
+				"type":                 "object",
+				"description":          "Environment variables to set, name to value, e.g. {\"API_URL\": \"https://api\"}. Stored as ordinary variables, not secrets.",
+				"additionalProperties": map[string]any{"type": "string"},
+			},
+		}, "app_id"),
 		request: func(args map[string]any) (string, string, any, error) {
 			id, err := stringArg(args, "app_id", true)
 			if err != nil {
 				return "", "", nil, err
 			}
-			return "POST", appPath(id, "/detection/accept"), map[string]any{}, nil
+			values := []map[string]any{}
+			if raw, ok := args["values"].(map[string]any); ok {
+				for key, v := range raw {
+					value, isString := v.(string)
+					if !isString {
+						return "", "", nil, fmt.Errorf("values.%s must be a string", key)
+					}
+					values = append(values, map[string]any{"key": key, "value": value})
+				}
+			}
+			return "POST", appPath(id, "/detection/accept"), map[string]any{"values": values}, nil
 		},
 	},
 	{
@@ -374,6 +391,20 @@ var toolList = []tool{
 		},
 	},
 	{
+		Name:        "pando_list_user_apps",
+		Description: "The apps an account has access to: its role for managing each, directly or through a group, whether it can use each, and whether you can change that (can_manage).",
+		Schema: schema(map[string]any{
+			"user_id": str("The account's ID."),
+		}, "user_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "user_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "GET", "/users/" + url.PathEscape(id) + "/apps", nil, nil
+		},
+	},
+	{
 		Name:        "pando_rename_section",
 		Description: "Rename one of your launcher sections.",
 		Schema: schema(map[string]any{
@@ -454,13 +485,14 @@ var toolList = []tool{
 			"app_id":         str("Events on this app."),
 			"target_kind":    str("What kind of thing it was done to, e.g. user, role, app."),
 			"target_id":      str("The ID of the thing it was done to."),
+			"involving":      str("Events where this ID is the actor or the target: everything to do with one account."),
 			"since":          str("From this time, RFC 3339."),
 			"until":          str("Up to this time, RFC 3339."),
 			"before":         str("The next_before from a previous page, to read further back."),
 		}),
 		request: func(args map[string]any) (string, string, any, error) {
 			q := url.Values{}
-			for _, key := range []string{"action", "principal_id", "principal_kind", "app_id", "target_kind", "target_id", "since", "until", "before"} {
+			for _, key := range []string{"action", "principal_id", "principal_kind", "app_id", "target_kind", "target_id", "involving", "since", "until", "before"} {
 				v, err := stringArg(args, key, false)
 				if err != nil {
 					return "", "", nil, err
@@ -499,6 +531,20 @@ var toolList = []tool{
 				return "", "", nil, err
 			}
 			return "GET", appPath(id, "/status"), nil, nil
+		},
+	},
+	{
+		Name: "pando_get_usage",
+		Description: "What each part of an app is using right now: CPU (thousandths of a core), " +
+			"memory and disk in bytes, and each mounted volume's size, beside its limits " +
+			"(0 means none). A reading, not a history.",
+		Schema: schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			id, err := stringArg(args, "app_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "GET", appPath(id, "/usage"), nil, nil
 		},
 	},
 }

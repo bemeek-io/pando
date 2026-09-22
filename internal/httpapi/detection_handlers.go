@@ -11,6 +11,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/detect"
 	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/bemeek-io/pando/internal/secret"
 )
 
 // handleGetDetection returns the current auction result (design 04 §2.2).
@@ -215,9 +216,35 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 	// of three (R-261) — a guard only the browser enforces is not a guard.
 	var req struct {
 		Confirm bool `json:"confirm"`
+
+		// Values are variables the person set while reviewing — the ones
+		// detection found and could not know the value of, and any they
+		// added. Written into the accepted spec, so accepting and saving them
+		// is one step rather than a configuration followed by an edit.
+		Values []struct {
+			Workload string `json:"workload"`
+			Key      string `json:"key"`
+			Value    string `json:"value"`
+			// Secret stores the value through the secrets adapter and puts a
+			// reference in the spec, as the Environment tab does.
+			Secret bool `json:"secret"`
+		} `json:"values"`
 	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	for _, v := range req.Values {
+		if v.Key == "" {
+			Error(w, r, errs.New(errs.ValidInvalid, "A variable needs a name."))
+			return
+		}
+		if v.Secret {
+			// Writing a secret is its own verb (R-083), accepted or not.
+			if err := s.Authz.CheckControl(r.Context(), PrincipalFrom(r.Context()), app.ID, authz.AppSecretsWrite); err != nil {
+				Error(w, r, err)
+				return
+			}
+		}
 	}
 	if app.PinnedSpecID != "" && !req.Confirm {
 		Error(w, r, errs.New(errs.ValidInvalid,
@@ -280,6 +307,33 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 		if rev, found, revErr := s.Apps.RevisionByID(r.Context(), app.PinnedSpecID); revErr == nil && found {
 			draft = *spec.Carry(rev.Body, &draft)
 		}
+	}
+
+	// The values set during review. A secret goes to the secrets adapter first
+	// and the spec gets only its name, so the pinned spec is safe to export.
+	for _, v := range req.Values {
+		entry := spec.EnvEntry{}
+		if v.Secret {
+			if err := s.Secrets.Put(r.Context(), app.ID, v.Key, secret.New(v.Value)); err != nil {
+				Error(w, r, err)
+				return
+			}
+			ref := v.Key
+			entry.SecretRef = &ref
+		} else {
+			value := v.Value
+			entry.Value = &value
+		}
+		spec.SetEnv(&draft, v.Workload, v.Key, entry)
+	}
+
+	// Refused here rather than pinned and found at deploy. A spec that cannot
+	// deploy was being stored and reported much later, in the deploy's words:
+	// an app with port-mode routing and no port arrived as "0 is not a usable
+	// port number" with nothing saying which step went wrong.
+	if err := spec.Validate(&draft); err != nil {
+		Error(w, r, err)
+		return
 	}
 
 	p := PrincipalFrom(r.Context())

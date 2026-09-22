@@ -195,3 +195,21 @@ func TestAVendoredPackageJsonDoesNotCount(t *testing.T) {
 	})
 	require.NotContains(t, strings.Join(flagsFor(root), " "), "nodejs")
 }
+
+// TestNodeIsNotAddedWhenTheRepositoryItselfIsNode asserts the narrower rule.
+//
+// nixpacks reads a root package.json itself, so its node provider already
+// brings the toolchain. Naming it again made the plan unbuildable: nixpacks
+// drops the overlay that defines npm-<major>_x as soon as the caller names a
+// package, while still asking for npm-9_x, and the generated plan failed on
+// its first step with "undefined variable 'npm-9_x'" — for a repository whose
+// only sin was having a build workflow beside its package.json.
+func TestNodeIsNotAddedWhenTheRepositoryItselfIsNode(t *testing.T) {
+	root := withFiles(t, map[string]string{
+		"package.json": `{"name":"site","scripts":{"build":"vite build"}}`,
+		".github/workflows/ci.yml": "name: build\non: [push]\njobs:\n  build:\n    runs-on: ubuntu-latest\n" +
+			"    steps:\n      - run: npm ci\n      - run: npm run build\n",
+	})
+	require.NotContains(t, strings.Join(flagsFor(root), " "), "nodejs",
+		"nixpacks brings its own node; asking again costs the npm overlay")
+}

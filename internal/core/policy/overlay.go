@@ -109,6 +109,13 @@ func normalize(t reflect.Type, value any) (json.RawMessage, error) {
 	if err := json.Unmarshal(raw, into.Interface()); err != nil {
 		return nil, fmt.Errorf("%s is not a valid %s", raw, kindName(t))
 	}
+	// A field whose type knows its own values says so here, at startup —
+	// public_sharing: "sometimes" would otherwise be stored and mean nothing.
+	if v, ok := into.Elem().Interface().(interface{ Valid() error }); ok {
+		if err := v.Valid(); err != nil {
+			return nil, err
+		}
+	}
 	return json.Marshal(into.Elem().Interface())
 }
 

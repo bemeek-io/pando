@@ -480,3 +480,20 @@ func dedupe(in []api.Finding) []api.Finding {
 	}
 	return out
 }
+
+// Info describes this kind of adapter for the forms that configure one
+// (api.KindInfo, R-261).
+func Info() api.KindInfo {
+	return api.KindInfo{
+		Category:    api.CategoryScanner,
+		Kind:        Kind,
+		Name:        "Trivy",
+		Description: "Scans source and images for known vulnerabilities and gives each app a security score.",
+		IDPrefix:    "scn_",
+		Fields: []api.Field{
+			{Key: "image", Label: "Image", Type: "string", Help: "The Trivy image to run.", Default: "aquasec/trivy:0.74.0 (pinned)"},
+			{Key: "host", Label: "Docker host", Type: "string", Help: "Where to run it.", Default: "DOCKER_HOST, or the local socket"},
+			{Key: "timeout_seconds", Label: "Timeout", Type: "int", Help: "Seconds a scan may take.", Default: "600"},
+		},
+	}
+}

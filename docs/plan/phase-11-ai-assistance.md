@@ -27,7 +27,7 @@ produced, and amending what it missed.
       skipped outcome, never an error (R-335)
 - [x] `detection.screen` audit event naming adapter, model and files read (R-337)
 - [x] `DisableAIScreening` in host policy, checked before the adapter is reached (R-336)
-- [x] The Anthropic adapter: official Go SDK, `claude-opus-5` default, `list_files`/`read_file`
+- [x] The Anthropic adapter: official Go SDK, `claude-opus-5-5` default, `list_files`/`read_file`
       against a budgeted reader, `submit_findings` with `strict: true` (R-339)
 - [x] Outcome stored on the proposal; console types regenerated
 - [x] The review section in the console (`console/src/admin/Screening.tsx`): the model, each change

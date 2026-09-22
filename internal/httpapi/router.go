@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -53,6 +54,10 @@ type Server struct {
 
 	Registry *api.Registry
 	Adapters *state.Adapters
+
+	// AdapterKinds are the kinds of adapter this build can run, with the
+	// settings each takes (api.KindInfo), for GET /adapters/kinds.
+	AdapterKinds []api.KindInfo
 
 	// AdapterCredentials holds adapters' credentials encrypted (O-20). Written
 	// by POST /adapters, never read back by any handler.
@@ -120,6 +125,16 @@ type Server struct {
 	// (R-271). PolicyStore already reads through it; this is for refusing a
 	// change to one of them and for saying where each was set. Nil means none.
 	PolicyOverlay *corepolicy.Overlay
+
+	// StartedAt is when this process started. An adapter configured after it
+	// is saved but not running, since adapters are loaded at startup (R-253).
+	StartedAt time.Time
+
+	// Restart asks the server to shut down cleanly and start again, loading
+	// the adapters and the configuration file afresh. It returns at once; the
+	// restart follows the response. Nil means this process cannot restart
+	// itself, and POST /restart says so.
+	Restart func()
 
 	// Startup is the configuration Pando started with, for GET /config: every
 	// non-secret setting and where it came from. Nil in tests that do not set it.
@@ -197,7 +212,8 @@ type AppHosts interface {
 
 // AnonymousPolicy gates sharing an app with everyone (R-076).
 type AnonymousPolicy interface {
-	AllowsAnonymousGrant(ctx context.Context) error
+	AllowsAnonymousGrant(ctx context.Context, withPasscode bool) error
+	PublicSharing(ctx context.Context) (corepolicy.PublicSharing, error)
 }
 
 // SourcePolicy gates where apps may be created from (R-092).
@@ -267,6 +283,14 @@ func (s *Server) Routes() http.Handler {
 
 		r.Post("/sessions", s.handleLogin)
 		r.Delete("/sessions", s.handleLogout)
+
+		// First-run setup (R-046): public, and refused once any account
+		// exists.
+		r.Get("/setup", s.handleGetSetup)
+		r.Post("/setup", s.handlePostSetup)
+
+		// A strong random password, for creating or resetting an account.
+		r.Post("/passwords/generate", s.handleGeneratePassword)
 		r.Get("/me", s.handleMe)
 
 		// Changing your own password. Self only, no verb — see the handler.
@@ -306,6 +330,12 @@ func (s *Server) Routes() http.Handler {
 			r.Put("/{userID}/role", s.handlePutUserRole)
 			r.Delete("/{userID}/role", s.handleDeleteUserRole)
 
+			// An administrator's reset of someone else's password (R-046).
+			r.Post("/{userID}/password", s.handleResetPassword)
+
+			// The apps an account has something on, and what (R-081).
+			r.Get("/{userID}/apps", s.handleUserApps)
+
 			// Deletion fires R-282's destruction rules. A separate route from
 			// PATCH status, because suspension is not deletion (R-049) and
 			// neither should be reachable by mistyping the other.
@@ -318,6 +348,14 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/", s.handleListGroups)
 			r.Post("/", s.handleCreateGroup)
 			r.Put("/{groupID}/members", s.handleSetGroupMembers)
+			r.Put("/{groupID}/members/{userID}", s.handleAddGroupMember)
+			r.Delete("/{groupID}/members/{userID}", s.handleRemoveGroupMember)
+
+			// A group's installation role and its app grants: what everyone
+			// in it holds (R-078).
+			r.Put("/{groupID}/role", s.handlePutGroupRole)
+			r.Delete("/{groupID}/role", s.handleDeleteGroupRole)
+			r.Get("/{groupID}/apps", s.handleGroupApps)
 			r.Delete("/{groupID}", s.handleDeleteGroup)
 		})
 
@@ -361,6 +399,8 @@ func (s *Server) Routes() http.Handler {
 		// out choices that would fail at plan time.
 		r.Get("/adapters", s.handleListAdapters)
 		r.Post("/adapters", s.handleCreateAdapter)
+		r.Get("/adapters/kinds", s.handleAdapterKinds)
+		r.Post("/restart", s.handleRestart)
 		r.Get("/capacity", s.handleCapacity)
 
 		// Host policy: read with install.view, written with
@@ -456,6 +496,7 @@ func (s *Server) Routes() http.Handler {
 				r.Post("/plan", s.handlePlan)
 
 				r.Get("/status", s.handleAppStatus)
+				r.Get("/usage", s.handleAppUsage)
 				r.Get("/logs", s.handleAppLogs)
 
 				// A terminal inside a running workload (design 04 §2.4).
@@ -475,9 +516,19 @@ func (s *Server) Routes() http.Handler {
 					r.Get("/{depID}/logs", s.handleDeploymentLogs)
 				})
 
+				// Public with a passcode (R-075a): the passcode page's two calls,
+				// made by a visitor with no account, so no verb — each handler
+				// answers only for an app that asks for a passcode.
+				r.Get("/passcode", s.handleGetPasscodeApp)
+				r.Post("/passcode", s.handleEnterPasscode)
+
+				// People and groups to share with, for whoever may share it.
+				r.Get("/principals", s.handleSharePrincipals)
+
 				r.Route("/grants", func(r chi.Router) {
 					r.Get("/", s.handleListGrants)
 					r.Post("/", s.handleCreateGrant)
+					r.Patch("/{grantID}", s.handleSetGrantRole)
 					r.Delete("/{grantID}", s.handleDeleteGrant)
 				})
 

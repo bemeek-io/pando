@@ -17,10 +17,26 @@
 // **The runners-up are shown.** R-102 is "ask, never guess", and showing what
 // else bid is how that becomes visible rather than asserted — the user sees the
 // auction instead of a verdict.
+//
+// Reading all of it is app.view. Answering, accepting and looking again are
+// app.spec.edit, so without that verb the proposal and any answers already
+// given are shown, and nothing offers to change them.
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, CodeBlock, Dialog, Icon, IconButton, Input, Select, StatusIndicator, Tag } from '@design';
+import {
+  Button,
+  Card,
+  CodeBlock,
+  Dialog,
+  Icon,
+  IconButton,
+  Input,
+  Select,
+  SkeletonText,
+  StatusIndicator,
+  Tag,
+} from '@design';
 
 import { api, RequestFailed } from '@api/client';
 import type { Candidate, Proposal, Question } from '@api/types.gen';
@@ -28,8 +44,10 @@ import { InlineWarning } from '../ui/InlineWarning';
 import { rejectedEntries } from './rejections';
 import { Screening } from './Screening';
 import { Table } from '../ui/Table';
+import { LineSkeleton } from '../ui/Loading';
+import { AppVerb, useCan } from './verbs';
 
-interface DetectionResponse {
+export interface DetectionResponse {
   status: string;
   detection: Proposal & {
     // Set only when detection failed outright — a repository that could not be
@@ -38,6 +56,11 @@ interface DetectionResponse {
     // "Pando never got to look", the other is "Pando looked and the answer is
     // no". They read differently and lead to different next steps.
     error?: { message?: string; remedy?: string };
+    // Where a running detection has got to: fetching, detecting, trying,
+    // screening. Set only while status is 'running', and the proposal fields
+    // are present only once that stage has produced them — so while running,
+    // any of them may be absent (see AppOnboarding.tsx).
+    stage?: string;
   };
   answers: Record<string, string> | null;
   commit: string;
@@ -45,6 +68,7 @@ interface DetectionResponse {
 
 export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: boolean }) {
   const queries = useQueryClient();
+  const canEdit = useCan(AppVerb.SpecEdit);
 
   const detection = useQuery({
     queryKey: ['apps', appID, 'detection'],
@@ -83,7 +107,20 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
     onSuccess: () => queries.invalidateQueries({ queryKey: ['apps', appID, 'detection'] }),
   });
 
-  if (detection.isPending) return <Quiet>Reading the repository.</Quiet>;
+  // The winning bid's card, in outline. Not "Reading the repository": that is
+  // what detection says while it runs, and for an app detected last week it
+  // would claim work that is not happening.
+  if (detection.isPending) {
+    // SkeletonText announces itself as loading, so no wrapper says it again.
+    return (
+      <Card padding="md">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <LineSkeleton width="26ch" font="var(--type-h4)" />
+          <SkeletonText lines={3} />
+        </div>
+      </Card>
+    );
+  }
   if (detection.isError) return <Failure error={detection.error} />;
 
   const { status, detection: proposal, answers } = detection.data;
@@ -101,7 +138,7 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
     return (
       <DetectionFailed
         error={detection.data.detection.error}
-        onRetry={() => rerun.mutate()}
+        onRetry={canEdit ? () => rerun.mutate() : undefined}
         retrying={rerun.isPending}
       />
     );
@@ -145,7 +182,7 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
               key={question.key}
               question={question}
               answer={(answers ?? {})[question.key]}
-              onAnswer={(value) => answer.mutate({ [question.key]: value })}
+              onAnswer={canEdit ? (value) => answer.mutate({ [question.key]: value }) : undefined}
               saving={answer.isPending}
             />
           ))}
@@ -162,41 +199,43 @@ export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: 
 
       <RunnersUp candidates={proposal.runners_up ?? []} />
 
-      <section
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 'var(--space-3)',
-          paddingTop: 'var(--space-5)',
-          borderTop: 'var(--border-width) solid var(--rule)',
-        }}
-      >
-        <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
-          {reviewed
-            ? 'This app is already configured. Using this takes the build and the workloads from the repository and keeps what you set yourself.'
-            : 'Accepting saves this as the app’s configuration. It doesn’t deploy anything.'}
-        </p>
-        <Button
-          variant="primary"
-          disabled={unanswered.length > 0 || accept.isPending}
-          // An app that is already configured gets a confirmation rather than
-          // a one-click replace. This used to accept immediately, and the
-          // configuration it discarded — environment variables, dependencies,
-          // storage — was gone from the pinned spec with nothing said.
-          onClick={() => (reviewed ? setReplacing(true) : accept.mutate())}
-          style={{ alignSelf: 'flex-start' }}
+      {canEdit && (
+        <section
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-3)',
+            paddingTop: 'var(--space-5)',
+            borderTop: 'var(--border-width) solid var(--rule)',
+          }}
         >
-          {reviewed ? 'Replace configuration' : 'Accept configuration'}
-        </Button>
-        {unanswered.length > 0 && (
-          <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
-            {unanswered.length === 1
-              ? 'One question still needs an answer.'
-              : `${unanswered.length} questions still need answers.`}
+          <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
+            {reviewed
+              ? 'This app is already configured. Using this takes the build and the workloads from the repository and keeps what you set yourself.'
+              : 'Accepting saves this as the app’s configuration. It doesn’t deploy anything.'}
           </p>
-        )}
-        {accept.isError && <Failure error={accept.error} />}
-      </section>
+          <Button
+            variant="primary"
+            disabled={unanswered.length > 0 || accept.isPending}
+            // An app that is already configured gets a confirmation rather than
+            // a one-click replace. This used to accept immediately, and the
+            // configuration it discarded — environment variables, dependencies,
+            // storage — was gone from the pinned spec with nothing said.
+            onClick={() => (reviewed ? setReplacing(true) : accept.mutate())}
+            style={{ alignSelf: 'flex-start' }}
+          >
+            {reviewed ? 'Replace configuration' : 'Accept configuration'}
+          </Button>
+          {unanswered.length > 0 && (
+            <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+              {unanswered.length === 1
+                ? 'One question still needs an answer.'
+                : `${unanswered.length} questions still need answers.`}
+            </p>
+          )}
+          {accept.isError && <Failure error={accept.error} />}
+        </section>
+      )}
 
       <Dialog
         open={replacing}
@@ -260,7 +299,7 @@ function WinningBid({ candidate }: { candidate: Candidate }) {
   );
 }
 
-function QuestionCard({
+export function QuestionCard({
   question,
   answer,
   onAnswer,
@@ -268,7 +307,8 @@ function QuestionCard({
 }: {
   question: Question;
   answer: string | undefined;
-  onAnswer: (value: string) => void;
+  /** Absent for somebody who may read the question but not answer it. */
+  onAnswer?: (value: string) => void;
   saving: boolean;
 }) {
   const [value, setValue] = useState(answer ?? '');
@@ -311,6 +351,7 @@ function QuestionCard({
               ]}
               value={value}
               onChange={(e) => setValue(e.target.value)}
+              disabled={!onAnswer}
               style={{ flex: 1 }}
             />
           ) : (
@@ -319,12 +360,15 @@ function QuestionCard({
               mono={question.kind === 'port' || question.kind === 'path'}
               value={value}
               onChange={(e) => setValue(e.target.value)}
+              disabled={!onAnswer}
               style={{ flex: 1 }}
             />
           )}
-          <Button onClick={() => onAnswer(value)} disabled={!value || saving}>
-            Save answer
-          </Button>
+          {onAnswer && (
+            <Button onClick={() => onAnswer(value)} disabled={!value || saving}>
+              Save answer
+            </Button>
+          )}
         </div>
       </div>
     </Card>
@@ -376,7 +420,7 @@ function Dependencies({ proposal }: { proposal: Proposal }) {
   );
 }
 
-const SLOT_NAMES: Record<string, string> = {
+export const SLOT_NAMES: Record<string, string> = {
   postgres: 'PostgreSQL',
   mysql: 'MySQL',
   redis: 'Redis',
@@ -386,7 +430,7 @@ const SLOT_NAMES: Record<string, string> = {
 };
 
 /** The same sentences the settings screen uses, so one app reads one way. */
-function fills(slot: Slot) {
+export function fills(slot: Slot) {
   if (!slot.resolution) {
     return slot.required ? (
       <StatusIndicator status="failed" label="You choose after accepting" />
@@ -406,7 +450,7 @@ function fills(slot: Slot) {
   }
 }
 
-interface Slot {
+export interface Slot {
   key: string;
   type: string;
   required?: boolean;
@@ -469,7 +513,7 @@ function Warnings({ proposal }: { proposal: Proposal }) {
   );
 }
 
-function RunnersUp({ candidates }: { candidates: Candidate[] }) {
+export function RunnersUp({ candidates }: { candidates: Candidate[] }) {
   const [open, setOpen] = useState(false);
   if (candidates.length === 0) return null;
 
@@ -528,7 +572,7 @@ function RunnersUp({ candidates }: { candidates: Candidate[] }) {
   );
 }
 
-function Blocked({ proposal }: { proposal: Proposal }) {
+export function Blocked({ proposal }: { proposal: Proposal }) {
   // R-099: the reason is the most useful thing Pando has, and it is shown
   // rather than replaced with a generic failure. The compose importer produces
   // a remedy naming the lines to change.
@@ -592,13 +636,14 @@ function Blocked({ proposal }: { proposal: Proposal }) {
 }
 
 
-function DetectionFailed({
+export function DetectionFailed({
   error,
   onRetry,
   retrying,
 }: {
   error?: { message?: string; remedy?: string };
-  onRetry: () => void;
+  /** Absent for somebody who cannot ask Pando to look again. */
+  onRetry?: () => void;
   retrying: boolean;
 }) {
   return (
@@ -618,11 +663,13 @@ function DetectionFailed({
           {error.remedy}
         </p>
       )}
-      <div>
-        <Button variant="secondary" disabled={retrying} onClick={onRetry}>
-          {retrying ? 'Looking again' : 'Try again'}
-        </Button>
-      </div>
+      {onRetry && (
+        <div>
+          <Button variant="secondary" disabled={retrying} onClick={onRetry}>
+            {retrying ? 'Looking again' : 'Try again'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -631,7 +678,7 @@ function Quiet({ children }: { children: React.ReactNode }) {
   return <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)' }}>{children}</p>;
 }
 
-function Failure({ error }: { error: unknown }) {
+export function Failure({ error }: { error: unknown }) {
   // The envelope's message is written to the R-105 standard, so it is shown as
   // the server wrote it. The remedy goes below it, which is where the design
   // system's voice rules put "and what to do".

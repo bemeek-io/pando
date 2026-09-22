@@ -131,7 +131,7 @@ exactly this.
 
 ### 5.2 Bootstrap
 
-**R-046 [P]** First run creates a single administrative local user. The initial credential is generated and displayed once on the console/CLI, and must be changed on first login. The account is administrative because it holds an install-scoped **Administrator** grant (R-080, R-081) — there is no admin flag on a user — so the power is revocable and grantable like any other.
+**R-046 [P]** A new installation has no account until it is set up: the first person to reach the console chooses the administrator's username and password there, and nothing is printed to a log. The setup endpoint is public and is refused once any account exists; whoever reaches it first becomes the administrator, which the install documentation says plainly. An operator may instead supply the first password at startup (`PANDO_ADMIN_PASSWORD`), which must be changed on first login. Passwords an administrator sets for someone else — creating an account or resetting one — are generated (18–22 characters, upper and lower case, digits and symbols), handed over out of band, and by default must be changed at the next sign-in. The account is administrative because it holds an install-scoped **Administrator** grant (R-080, R-081) — there is no admin flag on a user — so the power is revocable and grantable like any other.
 
 ### 5.3 Sessions and revocation
 
@@ -202,7 +202,9 @@ exactly this.
 
 **R-075 [D]** Anonymous is a real ACL subject, not a bypass. An anonymous request is still proxied, logged, rate-limited, and given an assertion (R-056).
 
-**R-076 [D]** Any app owner may grant to anonymous by default. Host policy may restrict this to admins.
+**R-075a [D]** **Public with a passcode.** The grant to anonymous may carry a passcode. The app is still shared with everyone, but the proxy sends a visitor who has not entered it to a passcode page — the sign-in page's other mode, on the same reserved path (R-172) — instead of to sign-in. Entering it sets a cookie in Pando's namespace, never forwarded to the app (R-173), that lets that browser in for a day. Only the passcode's digest is stored; changing it, or making the app private, asks everyone again. Wrong passcodes are limited per app and visitor. It is a key to *using* the app and nothing else (R-070).
+
+**R-076 [D]** Any app owner may grant to anonymous by default. Host policy decides how (`public_sharing`): allowed, with or without a passcode; only with a passcode; or not at all. Like any policy setting it may be fixed at startup (R-271), and is then read-only in the console.
 
 **R-077 [P]** The console must never present this as the bare word "public" **alone**. Naming the
 action *Make it public* is fine and is what people look for; what may not happen is the word standing
@@ -210,7 +212,7 @@ by itself. The consequence is always stated with it: *anyone on the internet, wi
 
 ### 6.3 Groups
 
-**R-078 [D]** Groups may be Pando-native or pushed from an IdP (R-048). **Permissions attached to a group are defined in Pando**, never inherited from the IdP. The IdP says who is in a group; Pando says what the group can do.
+**R-078 [D]** Groups may be Pando-native or pushed from an IdP (R-048). **Permissions attached to a group are defined in Pando**, never inherited from the IdP. The IdP says who is in a group; Pando says what the group can do. A group may hold an installation role and roles on apps, exactly as an account can, and everyone in it holds them for as long as they are in it (R-079) — so adding someone to a team's group is how they get the team's access.
 
 **R-079 [D]** Group membership is evaluated **live** at request time, not expanded to a member list at grant time. Otherwise upstream removals do not take effect.
 
@@ -218,7 +220,8 @@ by itself. The consequence is always stated with it: *anyone on the internet, wi
 
 **R-080 [D]** Control-plane permissions are individual verbs, in two scopes. **App-scoped** verbs are
 held through a grant on one app. **Install-scoped** verbs are held through a grant with no app, and
-confer nothing on any particular app.
+confer nothing on any particular app — except the two `install.apps.*` verbs, which confer the same
+app verbs on every app.
 
 Install-scoped:
 
@@ -230,6 +233,9 @@ Install-scoped:
 | `install.adapters.manage` | Configure adapters |
 | `install.audit.read` | Read the install-wide audit log |
 | `install.backup.manage` | Take, verify and restore backups (R-212–R-216) |
+| `install.apps.view` | See every app read-only: `app.view` and `app.logs.read` on each, without a grant on it |
+| `install.apps.manage` | Manage every app: every app-scoped verb on each, without a grant on it |
+| `install.tokens.manage` | List, create and revoke service tokens (R-060) |
 | `app.create` | Create an app. Install-scoped despite the name: there is no app yet when it is checked |
 
 App-scoped:
@@ -261,11 +267,14 @@ App-scoped:
 | **Creator** | install | `app.create` — makes apps, and so owns and manages the ones it makes (R-073), and nothing else |
 
 Owner and Administrator partition the catalog; neither contains a verb from the other's scope. An
-Owner of every app in the installation still administers nothing, and an Administrator is not an
-owner of any app — R-031 gives every app an owner of record, and to manage a particular app an
-administrator holds a grant on it like anyone else (R-087).
+Owner of every app in the installation still administers nothing. An Administrator holds
+`install.apps.manage`, so it can view and manage **any** app, whoever made it, with every app verb —
+subject to host policy like everyone (R-272). It is still not the app's owner of record (R-031), and
+managing an app is not using it: opening an app through the proxy still needs a data grant or
+ownership (R-072, R-087). A custom role may hold `install.apps.view` alone, to see every app and
+change none.
 
-**R-082 [D]** Custom roles may be composed from the verb list and assigned to users or groups.
+**R-082 [D]** Custom roles may be composed from the verb list and assigned to users or groups. A role's name is unique ignoring case and surrounding spaces, and no custom role may take the name of a built-in one.
 
 **R-083 [D]** `app.secrets.write` is deliberately separable from `app.secrets.read` — rotating a credential and reading it are different levels of trust. Secrets are write-only after creation for anyone below owner.
 
@@ -277,7 +286,7 @@ administrator holds a grant on it like anyone else (R-087).
 
 **R-087 [D]** Pando does not claim to defend against its own host operator. A host admin has root and can reach any container outside Pando entirely. What Pando guarantees is that the **supported path** requires a grant — so unauthorized access requires deliberately leaving the tool, which is a materially different thing to detect and audit.
 
-**R-088 [D]** **An installation cannot be left with nobody who can administer it.** Removing the last install-wide grant holding `install.users.manage` is refused, and the message names the way out: make someone else an administrator first. The rule is stated in terms of the verb rather than the built-in role, because a custom role (R-082) holding it is just as much an administrator. Recovery from the state this prevents requires shell access to the host and `pando admin`, which is a different and much higher bar than the one click that would otherwise reach it.
+**R-088 [D]** **An installation cannot be left with nobody who can administer it.** Removing the last install-wide grant holding `install.users.manage` is refused, and so is removing the last person who holds it through a group — a group with the role and nobody in it administers nothing, and the message names the way out: make someone else an administrator first. The rule is stated in terms of the verb rather than the built-in role, because a custom role (R-082) holding it is just as much an administrator. Recovery from the state this prevents requires shell access to the host and `pando admin`, which is a different and much higher bar than the one click that would otherwise reach it.
 
 ---
 
@@ -648,6 +657,8 @@ without touching core (O-6 resolved).
 
 **R-243 [D]** **Capacity is adapter-reported, not host-inspected.** The local Docker adapter reports the machine it runs on; a clustered adapter reports what its cluster has. Core does not read `/proc`.
 
+**R-245 [P]** **An app's parts show what they are using now**: CPU, memory and disk for each workload, and each volume's size, beside the limits it runs under — reported by the runtime adapter (R-243) and read on demand. A reading, not a history: Pando keeps no metrics store, graphs no trends and alerts on nothing (R-016). A runtime that cannot report it says so rather than showing zeros.
+
 **R-244 [P] [LATER]** Per-user quotas (max apps, max disk) as a policy knob. The counting required already exists for R-242.
 
 ---
@@ -709,7 +720,7 @@ cannot do one of them says so rather than failing when asked.
 
 **R-266 [D]** Sharing an app sends no message. The app appears in the recipient's launcher tiles (R-264), and for v1 that is the notification. A notify-adapter message would be console-only (R-231) and so would arrive beside the tile that already appeared — and would be invisible to a recipient who has never signed in, which a waiting tile is not. Revisit when an adapter can reach someone who is not already looking at Pando (R-232).
 
-**R-340 [D] [V1]** An app may carry an **image**, shown on its launcher tile (R-264). Anyone who may change the app's spec may set or remove it (`app.spec.edit`); anyone who can open the app can see it. It is presentation, not configuration: it is not part of the spec (R-020) and a rollback does not change it. An app with no image shows a contour map generated from its ID, the same every time and different for every app.
+**R-340 [D] [V1]** An app may carry an **image**, shown on its launcher tile (R-264). Anyone who may change the app's spec may set or remove it (`app.spec.edit`); anyone who can open the app can see it. It is presentation, not configuration: it is not part of the spec (R-020) and a rollback does not change it. An app with no image shows a contour map generated from its ID, the same every time and different for every app. The server accepts raster images only — an SVG can carry script and would be served from Pando's origin — so the console converts an SVG to a PNG in the browser before uploading it.
 
 **R-341 [D] [V1]** A person may mark apps they can open as **favorites**, and their launcher shows those first, above the rest. Favorites belong to the account, not the browser. They grant nothing, are visible only to the person who set them, and an app they can no longer open is not shown whether it is a favorite or not.
 

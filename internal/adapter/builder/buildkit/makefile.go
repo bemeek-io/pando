@@ -225,6 +225,17 @@ var runnerPackages = map[string]string{
 // a script and hoping.
 func toolchainPackages(contextDir string) []string {
 	var pkgs []string
+
+	// A package.json at the root is the repository nixpacks itself reads, so
+	// its node provider already brings the toolchain and naming it again adds
+	// nothing. It is not free either: nixpacks drops the overlay defining
+	// npm-<major>_x as soon as the caller names any package, while still
+	// asking for it, and the plan it writes then fails at the first step with
+	// "undefined variable 'npm-9_x'". Only a client below the root — the case
+	// this exists for — needs Node added.
+	if _, err := os.Stat(filepath.Join(contextDir, "package.json")); err == nil {
+		return nil
+	}
 	if hasFileNamed(contextDir, "package.json") {
 		pkgs = append(pkgs, "nodejs")
 	}

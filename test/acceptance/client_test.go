@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -80,26 +79,20 @@ type client struct {
 	cookie string
 }
 
-var passwordPattern = regexp.MustCompile(`"password":"([^"]+)"`)
-
 // login signs in as the first-run administrator.
 //
-// The password is read from PANDO_TEST_PASSWORD when set, and scraped from the
-// server log otherwise. The override exists because the log is a worse source
-// than it looks: it holds the password only while the container that printed it
-// survives, so rebuilding the image loses it, and changing the password — which
-// R-046 says you must — invalidates it. Both are ordinary things to do, and
-// either one previously turned the whole suite into 48 identical failures whose
-// message was about the log rather than about the change.
+// The password is PANDO_TEST_PASSWORD when set. Otherwise the suite sets up a
+// fresh stack itself, through POST /setup, with suitePassword — and on a stack
+// it set up before, signs in with the same one (R-046).
 func login(t *testing.T) *client {
 	t.Helper()
 	requireStack(t)
 
 	password := adminPassword
 	require.NotEmpty(t, password,
-		"could not find the first-run password in the server log.\n"+
+		"could not sign in as admin.\n"+
 			"Either bring the stack up fresh — `docker compose down -v && docker compose up -d` —\n"+
-			"or set PANDO_TEST_PASSWORD if the admin password has been changed.")
+			"or set PANDO_TEST_PASSWORD to the admin account's password.")
 
 	// Generous, because POST /deployments is not the quick call its 202 status
 	// suggests. It resolves the app's ref to a commit before returning, and
@@ -304,29 +297,45 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// adminPassword is the first-run credential, read once before any test runs.
+// adminPassword is the admin account's password, settled once before any test
+// runs.
 var adminPassword string
 
-// captureAdminPassword reads the password out of the server log at suite start.
+// suitePassword is what the suite sets a fresh stack's administrator up with.
+// Fixed rather than random so a second run against the same stack can sign in
+// without being told anything; the stack is a disposable local one.
+const suitePassword = "pando-acceptance-suite-admin"
+
+// captureAdminPassword settles the admin password at suite start.
 //
-// Once, and early, because the log is a fragile place to keep it: the line
-// lives only as long as the container that printed it, and several tests
-// recreate that container on purpose — teardown needs a fresh Pando to reclaim
-// a deleted app's network. A test that recreated the server used to break
-// sign-in for every test after it, which presents as a cascade of failures
-// nowhere near the cause.
-//
-// PANDO_TEST_PASSWORD still wins, for a stack whose password has been changed.
+// PANDO_TEST_PASSWORD wins, for a stack whose password somebody set. Otherwise
+// a stack still waiting for its first administrator is set up here as "admin"
+// with suitePassword, and a stack already set up is assumed to be one the suite
+// set up on an earlier run. Nothing is read from the server log: since R-046
+// changed, a fresh Pando prints no password.
 func captureAdminPassword() {
 	if adminPassword = os.Getenv("PANDO_TEST_PASSWORD"); adminPassword != "" {
 		return
 	}
-	out, err := exec.Command("docker", "compose", "logs", "pando").CombinedOutput()
+	adminPassword = suitePassword
+
+	c := &http.Client{Timeout: 30 * time.Second}
+	resp, err := c.Get(baseURL() + "/setup")
 	if err != nil {
 		return
 	}
-	if matches := passwordPattern.FindStringSubmatch(string(out)); len(matches) == 2 {
-		adminPassword = matches[1]
+	var setup struct {
+		Needed bool `json:"needed"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&setup)
+	_ = resp.Body.Close()
+	if !setup.Needed {
+		return
+	}
+	resp, err = c.Post(baseURL()+"/setup", "application/json",
+		strings.NewReader(fmt.Sprintf(`{"username":"admin","password":%q}`, suitePassword)))
+	if err == nil {
+		_ = resp.Body.Close()
 	}
 }
 

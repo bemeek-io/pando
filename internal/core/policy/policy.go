@@ -2,6 +2,7 @@ package policy
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"strings"
 
@@ -44,7 +45,15 @@ type Document struct {
 	// AllowAnonymousGrants controls whether an app may be shared with everyone
 	// (R-076). Pointer so that "unset" is distinguishable from "explicitly
 	// false", which matters when a policy document is partially written.
+	//
+	// Superseded by PublicSharing, which says more; still read, so a policy
+	// file or environment that sets it keeps meaning what it meant — false is
+	// PublicSharingNone. PublicSharing wins when both are set.
 	AllowAnonymousGrants *bool `json:"allow_anonymous_grants,omitempty"`
+
+	// PublicSharing is how an app may be shared with everyone (R-076, R-075a):
+	// at all, only behind a passcode, or not at all.
+	PublicSharing PublicSharing `json:"public_sharing,omitempty"`
 
 	// MinBuildIsolation and MinRuntimeIsolation are floors (R-024, R-114).
 	// Separate because how isolated a build must be is a different question
@@ -143,6 +152,39 @@ func (d Document) GraceHours() int {
 // StopsInsecureApps reports whether policy says to stop them (R-316).
 func (d Document) StopsInsecureApps() bool {
 	return d.InsecureAction == InsecureStop
+}
+
+// PublicSharing is the host's rule for sharing an app with everyone.
+type PublicSharing string
+
+const (
+	// PublicSharingAllowed: public, with or without a passcode.
+	PublicSharingAllowed PublicSharing = "allowed"
+	// PublicSharingPasscodeOnly: public only behind a passcode.
+	PublicSharingPasscodeOnly PublicSharing = "passcode_only"
+	// PublicSharingNone: no app may be shared with everyone.
+	PublicSharingNone PublicSharing = "none"
+)
+
+// Valid refuses a value that is none of the three. Empty is unset.
+func (p PublicSharing) Valid() error {
+	switch p {
+	case "", PublicSharingAllowed, PublicSharingPasscodeOnly, PublicSharingNone:
+		return nil
+	}
+	return fmt.Errorf("%q is not a public_sharing setting; use allowed, passcode_only or none", string(p))
+}
+
+// PublicSharingMode is the rule in force, reading the older boolean when the
+// new field is unset.
+func (d Document) PublicSharingMode() PublicSharing {
+	if d.PublicSharing != "" {
+		return d.PublicSharing
+	}
+	if d.AllowAnonymousGrants != nil && !*d.AllowAnonymousGrants {
+		return PublicSharingNone
+	}
+	return PublicSharingAllowed
 }
 
 // Default is the permissive starting posture (R-270).
@@ -261,18 +303,36 @@ func (e *Evaluator) AllowsSource(ctx context.Context, rawURL string) error {
 		WithRemedy("Use a repository from an approved source, or ask an administrator to add this one.")
 }
 
-// AllowsAnonymousGrant checks R-076.
-func (e *Evaluator) AllowsAnonymousGrant(ctx context.Context) error {
+// AllowsAnonymousGrant checks R-076: whether an app may be shared with
+// everyone, with a passcode or without one.
+func (e *Evaluator) AllowsAnonymousGrant(ctx context.Context, withPasscode bool) error {
 	doc, err := e.load(ctx)
 	if err != nil {
 		return err
 	}
-	if doc.AllowAnonymousGrants != nil && !*doc.AllowAnonymousGrants {
+	switch doc.PublicSharingMode() {
+	case PublicSharingNone:
 		return errs.New(errs.PolicyAnonymousGrantForbidden,
 			"Apps on this installation cannot be shared with anyone on the internet.").
 			WithRemedy("Share the app with specific people or groups instead, or ask an administrator whether this can be allowed.")
+	case PublicSharingPasscodeOnly:
+		if !withPasscode {
+			return errs.New(errs.PolicyAnonymousGrantForbidden,
+				"Apps on this installation can be shared with everyone only behind a passcode.").
+				WithRemedy("Make it public with a passcode instead, or share it with specific people or groups.")
+		}
 	}
 	return nil
+}
+
+// PublicSharing is the host's rule for sharing with everyone, for the console
+// to offer only what it allows.
+func (e *Evaluator) PublicSharing(ctx context.Context) (PublicSharing, error) {
+	doc, err := e.load(ctx)
+	if err != nil {
+		return "", err
+	}
+	return doc.PublicSharingMode(), nil
 }
 
 // IsolationFloors returns the build and runtime floors (R-024, R-114).

@@ -169,3 +169,18 @@ func loadOrCreateKey(path string) ([]byte, error) {
 		return nil, errs.Wrap(errs.Internal, fmt.Sprintf("Could not read the key at %s.", path), err)
 	}
 }
+
+// Info describes this kind of adapter for the forms that configure one
+// (api.KindInfo, R-261).
+func Info() api.KindInfo {
+	return api.KindInfo{
+		Category:    api.CategorySecrets,
+		Kind:        Kind,
+		Name:        "Local",
+		Description: "Keeps secrets encrypted in Pando’s own database.",
+		IDPrefix:    "sek_",
+		Fields: []api.Field{
+			{Key: "key_path", Label: "Key file", Type: "string", Help: "The file holding the encryption key.", Default: DefaultKeyPath},
+		},
+	}
+}

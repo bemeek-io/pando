@@ -24,9 +24,13 @@ import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { ScoreBadge } from '../ui/ScoreBadge';
 import { Table } from '../ui/Table';
+import { LineSkeleton, Loading } from '../ui/Loading';
+import { AppVerb, useCan } from './verbs';
 
 export function Security({ appID }: { appID: string }) {
   const queries = useQueryClient();
+  // POST /security/scan is app.deploy, not app.view (see above).
+  const canScan = useCan(AppVerb.Deploy);
 
   const report = useQuery({
     queryKey: ['apps', appID, 'security'],
@@ -56,15 +60,25 @@ export function Security({ appID }: { appID: string }) {
     <section style={{ maxWidth: MEASURE }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
         <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Security</h4>
-        <Button onClick={() => scan.mutate()} disabled={scan.isPending}>
-          {scan.isPending ? 'Scanning' : 'Scan now'}
-        </Button>
+        {canScan && (
+          <Button onClick={() => scan.mutate()} disabled={scan.isPending}>
+            {scan.isPending ? 'Scanning' : 'Scan now'}
+          </Button>
+        )}
       </div>
 
       {report.isError && <Banner tone="failed">{messageOf(report.error)}</Banner>}
       {scan.isError && <Banner tone="failed">{messageOf(scan.error)}</Banner>}
 
       <div style={{ marginTop: 'var(--space-4)' }}>
+        {/* The verdict's two lines — badge and standing, then the counts —
+            while the report loads. */}
+        {report.isPending && (
+          <Loading gap="var(--space-2)">
+            <LineSkeleton width="36ch" />
+            <LineSkeleton width="28ch" />
+          </Loading>
+        )}
         {standing && <Verdict report={report.data as Report} />}
       </div>
 

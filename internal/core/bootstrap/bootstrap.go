@@ -1,14 +1,14 @@
 // Package bootstrap creates the first administrative account on a fresh install.
 //
-// R-046: first run creates a single administrative local user, the initial
-// credential is generated and displayed once, and it must be changed on first
-// login.
+// R-046: a fresh installation has no account until somebody claims it. The
+// first person to reach the console sets the administrator's username and
+// password there (POST /setup, Claim), and nothing is printed to a log. An
+// operator who wants the account made unattended supplies PANDO_ADMIN_PASSWORD,
+// and Run makes it at startup instead.
 package bootstrap
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 
 	"go.uber.org/zap"
 
@@ -26,41 +26,32 @@ const AdminUsername = "admin"
 
 // Result reports what first run produced.
 type Result struct {
+	// Created says Run made the first administrator, from PANDO_ADMIN_PASSWORD.
 	Created bool
 	User    state.User
 
-	// Password is set only when Created is true and Pando generated it. It is
-	// displayed once and never stored in the clear (R-046), so a caller that
-	// discards it cannot recover it — the operator resets rather than
-	// retrieves, with `pando admin reset-password`.
-	Password secret.Value
-
-	// Supplied says the operator provided the password, so there is nothing for
-	// the caller to display. The distinction matters at the log line: printing
-	// a password the operator already has copies it somewhere they did not
-	// choose (R-194).
-	Supplied bool
+	// Unclaimed says the installation has no account and is waiting for the
+	// first person to set one up in the console.
+	Unclaimed bool
 }
 
-// Run seeds the local identity adapter and, if no user exists, the first admin.
+// Run seeds the local identity adapter and, if no account exists and the
+// operator supplied PANDO_ADMIN_PASSWORD, the first administrator.
 //
 // Idempotent: on every start after the first it finds a user and does nothing.
 // The check is "any user at all" rather than "the admin user" so that deleting
 // the seeded admin after creating a real one does not make it reappear on the
 // next restart.
-// Run creates the first administrative account if this install has none.
 //
-// supplied is an operator-chosen initial password, empty to have Pando generate
-// one. It is a [P] override of R-046's "the initial credential is generated":
-// the generated one is shown once, in a log line, and an install whose server
-// container is recreated before anyone reads it has an account nobody can sign
-// in to. That is not a hypothetical — it is what a `docker compose down && up`
-// does, and there was no way back from it until the reset command existed.
+// Without a supplied password it creates nothing and reports Unclaimed: the
+// first person to open the console sets the administrator up there (R-046).
+// Nothing is generated and nothing is printed, so there is no credential in a
+// log line to be read by whoever can read logs, and none lost when a container
+// is recreated before anybody looked.
 //
-// It changes nothing else. The account still must change its password at first
-// sign-in, because an environment variable is not a safer place than a log
-// line — it is in the Compose file, in `docker inspect`, and inherited by every
-// child process. Supplying it buys a way in, not a credential.
+// A supplied password still must be changed at first sign-in, because an
+// environment variable is not a safe place for one — it is in the Compose
+// file, in `docker inspect`, and inherited by every child process.
 func Run(ctx context.Context, users *state.Users, grants *state.Grants, db *state.DB, auditor *audit.Writer, supplied secret.Value) (Result, error) {
 	if err := users.EnsureLocalAdapter(ctx); err != nil {
 		return Result{}, err
@@ -73,22 +64,17 @@ func Run(ctx context.Context, users *state.Users, grants *state.Grants, db *stat
 	if count > 0 {
 		return Result{}, nil
 	}
-
-	password, err := generatePassword()
-	if err != nil {
-		return Result{}, err
+	if supplied.IsZero() {
+		return Result{Unclaimed: true}, nil
 	}
 
-	fromOperator := !supplied.IsZero()
-	if fromOperator {
-		if supplied.Len() < hash.MinPasswordLength {
-			return Result{}, errs.Newf(errs.ValidInvalid,
-				"The administrator password supplied for this installation is shorter than %d characters.",
-				hash.MinPasswordLength).
-				WithRemedy("Set PANDO_ADMIN_PASSWORD to something longer, or unset it and Pando will generate one and print it once.")
-		}
-		password = supplied
+	if supplied.Len() < hash.MinPasswordLength {
+		return Result{}, errs.Newf(errs.ValidInvalid,
+			"The administrator password supplied for this installation is shorter than %d characters.",
+			hash.MinPasswordLength).
+			WithRemedy("Set PANDO_ADMIN_PASSWORD to something longer, or unset it and set up the administrator in the console.")
 	}
+	password := supplied
 	digest, err := hash.New(password)
 	if err != nil {
 		return Result{}, errs.Wrap(errs.Internal, "Could not secure the initial password.", err)
@@ -139,27 +125,53 @@ func Run(ctx context.Context, users *state.Users, grants *state.Grants, db *stat
 	}
 
 	log.From(ctx).Info("created the first administrator", zap.String("user_id", user.ID))
-	// The password is returned only when Pando chose it. Handing back one the
-	// operator already supplied invites the caller to print it, which copies a
-	// credential into a log for no one's benefit (R-194).
-	out := Result{Created: true, User: user, Supplied: fromOperator}
-	if !fromOperator {
-		out.Password = password
-	}
-	return out, nil
+	return Result{Created: true, User: user}, nil
 }
 
-// GeneratePassword returns a credential nobody chose.
+// Claim sets up an unclaimed installation: the first account, as its
+// administrator, with the username and password the person chose (R-046).
+// Refused with state.ErrAlreadySetUp once any account exists.
 //
-// Exported because the reset command needs the same one first run produces:
-// two generators would eventually disagree about length or alphabet, and the
-// weaker one would be the one nobody looked at.
-func GeneratePassword() (secret.Value, error) { return generatePassword() }
-
-func generatePassword() (secret.Value, error) {
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		return secret.Value{}, errs.Wrap(errs.Internal, "Could not generate a password.", err)
+// They chose the password themselves, so it need not be changed at the next
+// sign-in — unlike one supplied through the environment or handed over.
+func Claim(ctx context.Context, users *state.Users, auditor *audit.Writer, username, displayName string, password secret.Value) (state.User, error) {
+	if username == "" {
+		return state.User{}, errs.New(errs.ValidInvalid, "The administrator needs a username.")
 	}
-	return secret.New(base64.RawURLEncoding.EncodeToString(b)), nil
+	if password.Len() < hash.MinPasswordLength {
+		return state.User{}, errs.Newf(errs.ValidInvalid, "A password needs at least %d characters.", hash.MinPasswordLength)
+	}
+	digest, err := hash.New(password)
+	if err != nil {
+		return state.User{}, errs.Wrap(errs.Internal, "Could not secure the password.", err)
+	}
+	// Run seeds this at startup; ensured here too so a claim never depends
+	// on the order things happened in.
+	if err := users.EnsureLocalAdapter(ctx); err != nil {
+		return state.User{}, err
+	}
+	user, grantID, err := users.ClaimFirst(ctx, username, displayName, digest, authz.RoleAdministrator)
+	if err != nil {
+		return state.User{}, err
+	}
+
+	// Attributed to the account that did it: nobody was signed in, and
+	// "system" would say Pando chose this administrator, which it did not.
+	for _, e := range []audit.Event{
+		{PrincipalKind: audit.KindUser, PrincipalID: user.ID, Action: "user.create",
+			TargetKind: "user", TargetID: user.ID,
+			Detail: map[string]any{"reason": "first run setup", "username": username}},
+		{PrincipalKind: audit.KindUser, PrincipalID: user.ID, Action: "grant.create",
+			TargetKind: "grant", TargetID: grantID,
+			Detail: map[string]any{"reason": "first run setup", "scope": "install", "role": authz.RoleAdministrator, "user": user.ID}},
+	} {
+		if auditor == nil {
+			break
+		}
+		if err := auditor.Write(ctx, e); err != nil {
+			return state.User{}, err
+		}
+	}
+	log.From(ctx).Info("the installation was set up", zap.String("user_id", user.ID))
+	return user, nil
 }

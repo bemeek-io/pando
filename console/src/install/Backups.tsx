@@ -51,6 +51,7 @@ export function Backups() {
       {backups.isError && <Quiet>{messageOf(backups.error)}</Quiet>}
 
       <Table
+        loading={backups.isPending}
         // An installation that has never been backed up is the state this
         // screen most needs to be clear about, and it was the one it showed as
         // a row of column headers over blank paper.
@@ -107,10 +108,10 @@ export function Backups() {
               <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
                 {/* Check a backup before it is needed, rather than at the
                     moment of disaster (R-216). */}
-                <Button variant="ghost" onClick={() => setActing({ row, mode: 'verify' })}>
+                <Button variant="secondary" onClick={() => setActing({ row, mode: 'verify' })}>
                   Check
                 </Button>
-                <Button variant="ghost" onClick={() => setActing({ row, mode: 'restore' })}>
+                <Button variant="secondary" onClick={() => setActing({ row, mode: 'restore' })}>
                   Restore
                 </Button>
               </div>

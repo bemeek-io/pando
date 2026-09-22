@@ -45,6 +45,10 @@ func Commands() []*cobra.Command {
 		withServer(logsCmd(client)),
 		withServer(secretCmd(client)),
 		withServer(grantCmd(client)),
+		withServer(userCmd(client)),
+		withServer(groupCmd(client)),
+		withServer(adapterCmd(client)),
+		withServer(restartCmd(client)),
 		withServer(sectionCmd(client)),
 		withServer(auditCmd(client)),
 		withServer(configCmd(client)),
@@ -481,7 +485,92 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 		},
 	})
 
+	cmd.AddCommand(&cobra.Command{
+		Use:   "usage <app>",
+		Short: "What each part of an app is using right now: CPU, memory and disk",
+		Long: "What each part of an app is using right now, beside its limits (R-245).\n\n" +
+			"CPU is in cores; a part with no limit may use what the host has. A reading, not a history.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var usage struct {
+				Supported bool `json:"supported"`
+				Workloads []struct {
+					Name        string `json:"name"`
+					Primary     bool   `json:"primary"`
+					Running     bool   `json:"running"`
+					CPUMillis   int    `json:"cpu_millis"`
+					CPULimit    int    `json:"cpu_limit_millis"`
+					Memory      int64  `json:"memory_bytes"`
+					MemoryLimit int64  `json:"memory_limit_bytes"`
+					Disk        int64  `json:"disk_bytes"`
+					Volumes     []struct {
+						Name  string `json:"name"`
+						Bytes int64  `json:"bytes"`
+					} `json:"volumes"`
+				} `json:"workloads"`
+			}
+			if err := c.Do("GET", "/apps/"+args[0]+"/usage", nil, &usage); err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			if !usage.Supported {
+				fmt.Fprintln(out, "This app's runtime does not report what its parts are using.")
+				return nil
+			}
+			w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "PART\tCPU\tMEMORY\tDISK\tVOLUMES")
+			for _, p := range usage.Workloads {
+				name := p.Name
+				if p.Primary {
+					name += " *"
+				}
+				cpu, mem := "stopped", "stopped"
+				if p.Running {
+					cpu = fmt.Sprintf("%.2f of %s", float64(p.CPUMillis)/1000, limitOr(p.CPULimit > 0, fmt.Sprintf("%.2f", float64(p.CPULimit)/1000)))
+					mem = fmt.Sprintf("%s of %s", size(p.Memory), limitOr(p.MemoryLimit > 0, size(p.MemoryLimit)))
+				}
+				vols := make([]string, 0, len(p.Volumes))
+				for _, v := range p.Volumes {
+					vols = append(vols, v.Name+" "+size(v.Bytes))
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", name, cpu, mem, size(p.Disk), strings.Join(vols, ", "))
+			}
+			_ = w.Flush()
+			fmt.Fprintln(out, "\n* the part this app's address resolves to.")
+			return nil
+		},
+	})
+
 	return cmd
+}
+
+// limitOr is the limit, or "no limit" for a part that may use what the host has.
+func limitOr(has bool, limit string) string {
+	if has {
+		return limit
+	}
+	return "no limit"
+}
+
+// size is bytes as people read them; "unknown" for -1, which the API sends
+// when the runtime could not say.
+func size(b int64) string {
+	switch {
+	case b < 0:
+		return "unknown"
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(b)/(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(b)/(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.0f KB", float64(b)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
 
 // partState reads the runtime's facts as one word somebody can act on.
@@ -518,6 +607,7 @@ func partHealth(healthy *bool) string {
 
 func deployCmd(client func() (*Client, error)) *cobra.Command {
 	var asApp string
+	var env []string
 
 	cmd := &cobra.Command{
 		Use:   "deploy <app|path>",
@@ -568,7 +658,7 @@ func deployCmd(client func() (*Client, error)) *cobra.Command {
 				// it — it could not have run at creation, when there was
 				// nothing to look at. Explicit, which is R-022: detection never
 				// re-runs on its own.
-				if err := c.prepareUploadedApp(cmd, appID); err != nil {
+				if err := c.prepareUploadedApp(cmd, appID, env); err != nil {
 					return err
 				}
 				target = appID
@@ -583,6 +673,8 @@ func deployCmd(client func() (*Client, error)) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&asApp, "app", "", "deploy a directory as an existing app, instead of creating one")
+	cmd.Flags().StringArrayVar(&env, "env", nil,
+		"KEY=VALUE, set when a new directory's setup is accepted; repeat for more (e.g. --env API_URL=https://api)")
 	return cmd
 }
 
@@ -593,7 +685,7 @@ func deployCmd(client func() (*Client, error)) *cobra.Command {
 // self-contained and pasteable into the assistant that wrote the app, which is
 // the whole intended workflow for R-262 — and paraphrasing them here would undo
 // that at the last step, exactly as it would in the console.
-func (c *Client) prepareUploadedApp(cmd *cobra.Command, appID string) error {
+func (c *Client) prepareUploadedApp(cmd *cobra.Command, appID string, env []string) error {
 	if err := c.Do("POST", "/apps/"+appID+"/detection/rerun", map[string]any{}, nil); err != nil {
 		return err
 	}
@@ -660,7 +752,18 @@ func (c *Client) prepareUploadedApp(cmd *cobra.Command, appID string) error {
 	// Nothing outstanding, so accept the proposal and pin revision 1. Accepting
 	// does not deploy — that is the next call, and keeping them separate is
 	// what makes "accepted but not deployed" a state someone can sit in.
-	if err := c.Do("POST", "/apps/"+appID+"/detection/accept", map[string]any{}, nil); err != nil {
+	// With the variables given on the command line written into the accepted
+	// setup, as the console's onboarding does — one step, not a setup and
+	// then an edit.
+	values := make([]map[string]any, 0, len(env))
+	for _, kv := range env {
+		key, value, ok := strings.Cut(kv, "=")
+		if !ok || key == "" {
+			return fmt.Errorf("--env takes KEY=VALUE, and %q has no =", kv)
+		}
+		values = append(values, map[string]any{"key": key, "value": value})
+	}
+	if err := c.Do("POST", "/apps/"+appID+"/detection/accept", map[string]any{"values": values}, nil); err != nil {
 		return err
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), "Recognized it: %s, built with %s.\n",
@@ -914,13 +1017,43 @@ func grantCmd(client func() (*Client, error)) *cobra.Command {
 				return err
 			}
 			user, _ := cmd.Flags().GetString("user")
+			group, _ := cmd.Flags().GetString("group")
+			anyone, _ := cmd.Flags().GetBool("anyone")
+			passcode, _ := cmd.Flags().GetString("passcode")
 			plane, _ := cmd.Flags().GetString("plane")
 			role, _ := cmd.Flags().GetString("role")
-			if user == "" {
-				return fmt.Errorf("say who to share with: --user=<id>")
+
+			// Exactly one of the three: a grant is to one principal.
+			chosen := 0
+			for _, set := range []bool{user != "", group != "", anyone} {
+				if set {
+					chosen++
+				}
+			}
+			if chosen != 1 {
+				return fmt.Errorf("say who to share with: one of --user=<id>, --group=<id> or --anyone")
+			}
+			if passcode != "" && !anyone {
+				return fmt.Errorf("--passcode goes with --anyone: only sharing with everyone has a passcode")
 			}
 
-			body := map[string]any{"plane": plane, "principal_kind": "user", "principal_id": user}
+			body := map[string]any{"plane": plane}
+			switch {
+			case anyone:
+				// Anyone on the internet, without signing in (R-077) — or
+				// with the passcode, if one is given (R-075a).
+				body["plane"] = "data"
+				body["principal_kind"] = "anonymous"
+				if passcode != "" {
+					body["passcode"] = passcode
+				}
+			case group != "":
+				body["principal_kind"] = "group"
+				body["principal_id"] = group
+			default:
+				body["principal_kind"] = "user"
+				body["principal_id"] = user
+			}
 			if role != "" {
 				body["role_id"] = role
 			}
@@ -932,6 +1065,9 @@ func grantCmd(client func() (*Client, error)) *cobra.Command {
 		},
 	}
 	add.Flags().String("user", "", "user ID to share with")
+	add.Flags().String("group", "", "group ID to share with")
+	add.Flags().Bool("anyone", false, "share with anyone on the internet, without signing in")
+	add.Flags().String("passcode", "", "with --anyone: only those who enter this passcode")
 	// "data" by default: sharing an app normally means letting someone use it,
 	// not letting them redeploy it. The dangerous one has to be asked for.
 	add.Flags().String("plane", "data", "data (use the app) or control (manage it)")
@@ -949,6 +1085,278 @@ func grantCmd(client func() (*Client, error)) *cobra.Command {
 			}
 			var out map[string]any
 			if err := c.Do("GET", "/apps/"+args[0]+"/grants", nil, &out); err != nil {
+				return err
+			}
+			return printJSON(cmd.OutOrStdout(), out)
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "passcode <app> <grant-id> [passcode]",
+		Short: "Change the passcode on an app shared with everyone, or remove it",
+		Long: "Sets a new passcode on the app's grant to everyone; everyone let in by the old one\n" +
+			"is asked again. With no passcode, removes it: the app is then open to anyone.",
+		Args: cobra.RangeArgs(2, 3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			passcode := ""
+			if len(args) == 3 {
+				passcode = args[2]
+			}
+			if err := c.Do("PATCH", "/apps/"+args[0]+"/grants/"+args[1], map[string]any{"passcode": passcode}, nil); err != nil {
+				return err
+			}
+			if passcode == "" {
+				fmt.Fprintln(cmd.OutOrStdout(), "Passcode removed. Anyone on the internet can open it without signing in.")
+			} else {
+				fmt.Fprintln(cmd.OutOrStdout(), "Passcode changed.")
+			}
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "role <app> <grant-id> <role-id>",
+		Short: "Change the role a grant for managing an app carries",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("PATCH", "/apps/"+args[0]+"/grants/"+args[1], map[string]any{"role_id": args[2]}, nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Role changed.")
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "remove <app> <grant-id>",
+		Short: "Take a grant away",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do("DELETE", "/apps/"+args[0]+"/grants/"+args[1], nil, nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Removed.")
+			return nil
+		},
+	})
+	return cmd
+}
+
+func userCmd(client func() (*Client, error)) *cobra.Command {
+	cmd := &cobra.Command{Use: "user", Short: "Work with accounts"}
+
+	// generated asks the server for a password, so the CLI's are the same
+	// strength and alphabet as the console's (R-046).
+	generated := func(c *Client) (string, error) {
+		var out struct {
+			Password string `json:"password"`
+		}
+		if err := c.Do("POST", "/passwords/generate", nil, &out); err != nil {
+			return "", err
+		}
+		return out.Password, nil
+	}
+
+	var name, email string
+	var keep bool
+	create := &cobra.Command{
+		Use:   "create <username>",
+		Short: "Create a local account with a generated password",
+		Long: "Creates a local account and prints the password Pando generated for it, once.\n" +
+			"Give it to the account holder yourself; by default they choose their own at first sign-in.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			password, err := generated(c)
+			if err != nil {
+				return err
+			}
+			body := map[string]any{
+				"username": args[0], "display_name": name, "email": email,
+				"password": password, "must_change_password": !keep,
+			}
+			if err := c.Do("POST", "/users", body, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Created %s. Password: %s\n", args[0], password)
+			return nil
+		},
+	}
+	create.Flags().StringVar(&name, "name", "", "the name shown in the console and the audit log")
+	create.Flags().StringVar(&email, "email", "", "the account's email address")
+	create.Flags().BoolVar(&keep, "no-change-required", false, "do not require a new password at first sign-in")
+	cmd.AddCommand(create)
+
+	var keepReset bool
+	reset := &cobra.Command{
+		Use:   "reset-password <user-id>",
+		Short: "Give an account a new generated password",
+		Long: "Sets a new generated password on a local account, ends every session it holds, and prints\n" +
+			"the password once. By default its holder chooses their own at the next sign-in.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			password, err := generated(c)
+			if err != nil {
+				return err
+			}
+			body := map[string]any{"password": password, "must_change_password": !keepReset}
+			if err := c.Do("POST", "/users/"+args[0]+"/password", body, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Password reset. New password: %s\n", password)
+			return nil
+		},
+	}
+	reset.Flags().BoolVar(&keepReset, "no-change-required", false, "do not require a new password at the next sign-in")
+	cmd.AddCommand(reset)
+
+	update := &cobra.Command{
+		Use:   "update <user-id>",
+		Short: "Change an account's username, name or email",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			// Only the flags given: an unset flag leaves that field alone.
+			body := map[string]any{}
+			for flag, field := range map[string]string{"username": "username", "name": "display_name", "email": "email"} {
+				if cmd.Flags().Changed(flag) {
+					v, _ := cmd.Flags().GetString(flag)
+					body[field] = v
+				}
+			}
+			if len(body) == 0 {
+				return fmt.Errorf("say what to change: --username, --name or --email")
+			}
+			if err := c.Do("PATCH", "/users/"+args[0], body, nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Updated.")
+			return nil
+		},
+	}
+	update.Flags().String("username", "", "the name the account signs in with")
+	update.Flags().String("name", "", "the name shown in the console and the audit log")
+	update.Flags().String("email", "", "the account's email address")
+	cmd.AddCommand(update)
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "apps <user-id>",
+		Short: "Show the apps an account has access to, and its role on each",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var out map[string]any
+			if err := c.Do("GET", "/users/"+args[0]+"/apps", nil, &out); err != nil {
+				return err
+			}
+			return printJSON(cmd.OutOrStdout(), out)
+		},
+	})
+	return cmd
+}
+
+func groupCmd(client func() (*Client, error)) *cobra.Command {
+	cmd := &cobra.Command{Use: "group", Short: "Work with groups and what they hold"}
+
+	do := func(method, path string, body any, done string) func(*cobra.Command, []string) error {
+		return func(cmd *cobra.Command, _ []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			if err := c.Do(method, path, body, nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), done)
+			return nil
+		}
+	}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "Show every group, its members and its installation role",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var out map[string]any
+			if err := c.Do("GET", "/groups", nil, &out); err != nil {
+				return err
+			}
+			return printJSON(cmd.OutOrStdout(), out)
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "add-member <group-id> <user-id>",
+		Short: "Add an account to a group; it then holds what the group holds",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return do("PUT", "/groups/"+args[0]+"/members/"+args[1], nil, "Added.")(cmd, args)
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "remove-member <group-id> <user-id>",
+		Short: "Remove an account from a group",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return do("DELETE", "/groups/"+args[0]+"/members/"+args[1], nil, "Removed.")(cmd, args)
+		},
+	})
+	var clear bool
+	role := &cobra.Command{
+		Use:   "role <group-id> [role-id]",
+		Short: "Give a group an installation role, or take it away with --clear",
+		Args:  cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if clear {
+				return do("DELETE", "/groups/"+args[0]+"/role", nil, "Role removed.")(cmd, args)
+			}
+			if len(args) < 2 {
+				return fmt.Errorf("say which role, or pass --clear to take the group's role away")
+			}
+			return do("PUT", "/groups/"+args[0]+"/role", map[string]any{"role_id": args[1]}, "Role set.")(cmd, args)
+		},
+	}
+	role.Flags().BoolVar(&clear, "clear", false, "take the group's installation role away")
+	cmd.AddCommand(role)
+	cmd.AddCommand(&cobra.Command{
+		Use:   "apps <group-id>",
+		Short: "Show the apps a group has access to, and its role on each",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client()
+			if err != nil {
+				return err
+			}
+			var out map[string]any
+			if err := c.Do("GET", "/groups/"+args[0]+"/apps", nil, &out); err != nil {
 				return err
 			}
 			return printJSON(cmd.OutOrStdout(), out)

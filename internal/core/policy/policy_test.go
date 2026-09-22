@@ -125,7 +125,7 @@ func TestAPolicyThatCannotBeLoadedFailsClosedRatherThanSilently(t *testing.T) {
 
 	require.ErrorIs(t, e.Allows(ctx(), person, authz.AppExec, "app_01HQ8"), boom)
 	require.ErrorIs(t, e.AllowsSource(ctx(), "https://github.com/ben/notes"), boom)
-	require.ErrorIs(t, e.AllowsAnonymousGrant(ctx()), boom)
+	require.ErrorIs(t, e.AllowsAnonymousGrant(ctx(), false), boom)
 
 	_, _, err := e.IsolationFloors(ctx())
 	require.ErrorIs(t, err, boom)
@@ -195,19 +195,19 @@ func TestAnEmptyAllowlistRestrictsNothing(t *testing.T) {
 
 // R-076: an app may be shared with everyone unless policy says otherwise.
 func TestR076_AnonymousGrantsAreAllowedUnlessExplicitlyForbidden(t *testing.T) {
-	require.NoError(t, policy.Static(policy.Default()).AllowsAnonymousGrant(ctx()))
+	require.NoError(t, policy.Static(policy.Default()).AllowsAnonymousGrant(ctx(), false))
 
 	// Unset is not the same as false: a partially written document must not
 	// start denying something nobody turned off.
-	require.NoError(t, policy.Static(policy.Document{}).AllowsAnonymousGrant(ctx()))
+	require.NoError(t, policy.Static(policy.Document{}).AllowsAnonymousGrant(ctx(), false))
 
 	forbidden := false
-	err := policy.Static(policy.Document{AllowAnonymousGrants: &forbidden}).AllowsAnonymousGrant(ctx())
+	err := policy.Static(policy.Document{AllowAnonymousGrants: &forbidden}).AllowsAnonymousGrant(ctx(), false)
 	require.Equal(t, errs.PolicyAnonymousGrantForbidden, errs.CodeOf(err))
 	require.NotEmpty(t, errs.As(err).Remedy)
 
 	allowed := true
-	require.NoError(t, policy.Static(policy.Document{AllowAnonymousGrants: &allowed}).AllowsAnonymousGrant(ctx()))
+	require.NoError(t, policy.Static(policy.Document{AllowAnonymousGrants: &allowed}).AllowsAnonymousGrant(ctx(), false))
 }
 
 // R-024 and R-114: two floors, because how isolated a build must be is a
@@ -253,4 +253,35 @@ func TestR336_HostPolicyCanForbidAIScreening(t *testing.T) {
 		return policy.Document{}, errors.New("db down")
 	})
 	require.NotEmpty(t, broken.AllowsScreening(ctx()))
+}
+
+// TestR076_PublicSharingIsAllowedPasscodeOnlyOrNone asserts the three rules for
+// sharing with everyone, and that the older boolean still means what it meant.
+func TestR076_PublicSharingIsAllowedPasscodeOnlyOrNone(t *testing.T) {
+	with := func(d policy.Document) *policy.Evaluator { return policy.Static(d) }
+
+	allowed := with(policy.Document{PublicSharing: policy.PublicSharingAllowed})
+	require.NoError(t, allowed.AllowsAnonymousGrant(ctx(), false))
+	require.NoError(t, allowed.AllowsAnonymousGrant(ctx(), true))
+
+	passcode := with(policy.Document{PublicSharing: policy.PublicSharingPasscodeOnly})
+	require.Error(t, passcode.AllowsAnonymousGrant(ctx(), false), "plain public is refused")
+	require.NoError(t, passcode.AllowsAnonymousGrant(ctx(), true))
+
+	none := with(policy.Document{PublicSharing: policy.PublicSharingNone})
+	require.Error(t, none.AllowsAnonymousGrant(ctx(), false))
+	require.Error(t, none.AllowsAnonymousGrant(ctx(), true), "a passcode does not make it allowed")
+
+	// The older boolean: false is none, and the new field wins over it.
+	no := false
+	require.Equal(t, policy.PublicSharingNone, policy.Document{AllowAnonymousGrants: &no}.PublicSharingMode())
+	require.Equal(t, policy.PublicSharingPasscodeOnly,
+		policy.Document{AllowAnonymousGrants: &no, PublicSharing: policy.PublicSharingPasscodeOnly}.PublicSharingMode())
+	require.Equal(t, policy.PublicSharingAllowed, policy.Document{}.PublicSharingMode())
+
+	// Set at startup, a value that is none of the three stops it.
+	_, err := policy.NewOverlay([]policy.Setting{{Key: "public_sharing", Value: "sometimes"}})
+	require.ErrorContains(t, err, "allowed, passcode_only or none")
+	_, err = policy.NewOverlay([]policy.Setting{{Key: "public_sharing", Value: "passcode_only"}})
+	require.NoError(t, err)
 }

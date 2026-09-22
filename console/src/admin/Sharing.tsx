@@ -7,66 +7,170 @@
 // public", because that is what it is called everywhere else and a heading
 // nobody recognizes is its own kind of unclear. What the requirement is
 // actually protecting is kept — the consequence, *anyone on the internet can
-// open this, without signing in*, sits directly under the heading and in the
-// confirmation, so the word is never doing the work alone. "Public" is a word
-// people skim past; the sentence is not. R-075 makes it a real grant row
-// rather than a flag, and this is the interface to that row.
+// open this, without signing in*, sits directly under the heading, beside each
+// of the two ways to do it, and in the confirmation, so the word is never doing
+// the work alone. "Public" is a word people skim past; the sentence is not.
+// R-075 makes it a real grant row rather than a flag, and this is the interface
+// to that row.
 //
 // **When host policy forbids it, the option is visible but disabled, with an
 // explanation of who to ask** — not hidden. A hidden option produces a support
 // ticket instead of understanding, and a person who cannot find the setting
 // cannot tell whether it exists.
+//
+// **Without app.grants.manage, the list is read-only.** Anyone who can view
+// the app can read who has access to it (the endpoint is app.view); changing
+// it is app.grants.manage. So the table stays, without its Remove column, and
+// the two sections that exist only to change it say what is true instead.
+//
+// Sharing with everyone comes in two kinds: plainly, or behind a passcode. A
+// passcode is still the anonymous grant — nobody signs in — with one thing
+// asked of the visitor first. The proxy sends a visitor without it to a
+// passcode page instead of the sign-in page (auth/Login.tsx).
 
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Dialog, Input, Select, Tag } from '@design';
+import { Button, Dialog, Input, Radio, Select, Skeleton, Tag } from '@design';
 
 import { api, RequestFailed } from '@api/client';
-import type { GrantRow } from '@api/types.gen';
+import type { Role } from '../install/Accounts';
 import { MEASURE } from '../ui/layout';
+import { LineSkeleton } from '../ui/Loading';
 import { Table } from '../ui/Table';
+import { RecipientField, type Chosen } from './RecipientField';
+import { BesideField } from '../ui/BesideField';
+import {
+  BUILT_IN_APP_ROLES,
+  describeChoice,
+  everyone,
+  orderRoles,
+  PASSCODE_MIN,
+  roleChoice,
+  shareRequests,
+  USE_ONLY,
+  type Grant,
+} from './share-access';
+import { AppVerb, AppVerbs, changesAnything, useCan } from './verbs';
 
 interface GrantsResponse {
-  grants: GrantRow[] | null;
+  grants: Grant[] | null;
   /**
-   * Whether host policy allows sharing with everyone (R-076).
+   * What host policy allows in sharing with everyone (R-076): both ways, only
+   * behind a passcode, or not at all.
    *
    * From the API, not inferred: the console must not decide what policy allows.
-   * Absent means the endpoint does not report it yet, and the option stays
-   * enabled — the server refuses it either way, and the refusal carries the
-   * explanation.
+   * Absent is treated as allowed — the server refuses what policy forbids
+   * either way, and the refusal carries the explanation.
    */
-  anonymous_allowed?: boolean;
-  anonymous_policy_note?: string;
+  public_sharing?: PublicSharing;
 }
+
+type PublicSharing = 'allowed' | 'passcode_only' | 'none';
+
+/** The dialog open over the "everyone" section, if any. */
+type Asking = 'public' | 'add-passcode' | 'change-passcode' | 'remove-passcode' | null;
+
+/** A change to the anonymous grant. */
+type EveryoneChange =
+  | { method: 'post'; passcode?: string }
+  | { method: 'patch'; grant: string; passcode: string };
 
 export function Sharing({ appID, appName }: { appID: string; appName: string }) {
   const queries = useQueryClient();
-  const [confirming, setConfirming] = useState(false);
-  const [email, setEmail] = useState('');
+  const canManage = useCan(AppVerb.GrantsManage);
+  // Whether the screen's own "view but not change" note already covers this.
+  const viewOnly = !changesAnything(useContext(AppVerbs));
+
+  const [kind, setKind] = useState<'user' | 'group'>('user');
+  const [recipient, setRecipient] = useState<Chosen | null>(null);
   // The least access, not the second-least. Sharing an app most often means
   // "you can use this"; anything more is a deliberate choice, and a default
   // that quietly hands over the app's settings is the wrong way round.
-  const [role, setRole] = useState('use');
+  const [role, setRole] = useState('');
 
+  // Which way to open it up. The passcode is the default for the same reason
+  // "can open" is above: of two ways to share with strangers, the narrower one.
+  const [withPasscode, setWithPasscode] = useState(true);
+  const [asking, setAsking] = useState<Asking>(null);
+  const [passcode, setPasscode] = useState('');
+
+  const grantsKey = ['apps', appID, 'grants'];
   const grants = useQuery({
-    queryKey: ['apps', appID, 'grants'],
+    queryKey: grantsKey,
     queryFn: () => api.get<GrantsResponse>(`/apps/${appID}/grants`),
   });
 
+  // The roles an app can be granted with, custom ones included. GET /roles is
+  // an install-level read that some people who manage an app's sharing are
+  // refused, and the built-ins exist on every installation (R-081), so a
+  // refusal offers those rather than no choice at all.
+  const roles = useQuery({
+    queryKey: ['roles', 'app'],
+    queryFn: () => api.get<{ roles: Role[] | null }>('/roles?scope=app'),
+    enabled: canManage,
+    retry: false,
+  });
+  const appRoles = orderRoles(roles.data?.roles ?? (roles.isError ? BUILT_IN_APP_ROLES : []));
+
+  const rows = grants.data?.grants ?? [];
+
   const share = useMutation({
-    mutationFn: (body: unknown) => api.post(`/apps/${appID}/grants`, body),
-    onSuccess: () => queries.invalidateQueries({ queryKey: ['apps', appID, 'grants'] }),
+    mutationFn: async (who: Chosen) => {
+      // In order: a failure part way leaves what succeeded in place, and the
+      // table, refreshed either way, shows exactly how far it got.
+      for (const r of shareRequests(rows, who, role || null)) {
+        if (r.method === 'post') await api.post<unknown>(`/apps/${appID}/grants`, r.body);
+        else await api.patch<unknown>(`/apps/${appID}/grants/${r.grant}`, r.body);
+      }
+    },
+    onSuccess: () => {
+      setRecipient(null);
+      setRole('');
+    },
+    onSettled: () => queries.invalidateQueries({ queryKey: grantsKey }),
   });
 
   const revoke = useMutation({
     mutationFn: (grantID: string) => api.del(`/apps/${appID}/grants/${grantID}`),
-    onSuccess: () => queries.invalidateQueries({ queryKey: ['apps', appID, 'grants'] }),
+    onSettled: () => queries.invalidateQueries({ queryKey: grantsKey }),
   });
 
-  const rows = grants.data?.grants ?? [];
+  const open = useMutation({
+    mutationFn: (c: EveryoneChange) =>
+      c.method === 'post'
+        ? api.post<unknown>(`/apps/${appID}/grants`, {
+            plane: 'data',
+            principal_kind: 'anonymous',
+            ...(c.passcode ? { passcode: c.passcode } : {}),
+          })
+        : api.patch<unknown>(`/apps/${appID}/grants/${c.grant}`, { passcode: c.passcode }),
+    onSuccess: () => close(),
+    onSettled: () => queries.invalidateQueries({ queryKey: grantsKey }),
+  });
+
   const anonymous = rows.find((g) => g.principal_kind === 'anonymous');
-  const allowed = grants.data?.anonymous_allowed ?? true;
+  const state = everyone(rows);
+  const policy: PublicSharing = grants.data?.public_sharing ?? 'allowed';
+  // Whether a passcode may be added or changed, and whether one may be done
+  // without. The second is narrower: a passcode-only policy keeps the first.
+  const allowed = policy !== 'none';
+  const plainAllowed = policy === 'allowed';
+  // What is actually offered when opening it up: the passcode, when policy
+  // leaves no choice.
+  const passcodeChosen = withPasscode || !plainAllowed;
+
+  const ask = (what: Asking) => {
+    open.reset();
+    setPasscode('');
+    setAsking(what);
+  };
+  const close = () => {
+    setAsking(null);
+    setPasscode('');
+  };
+
+  const sayPublic = `Anyone on the internet can open ${appName}, without signing in.`;
+  const sayPasscode = `Anyone on the internet who has the passcode can open ${appName}, without signing in.`;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: MEASURE }}>
@@ -77,162 +181,409 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
             screen exists to make visible, not to paper over. */}
         <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Who has access</h4>
         <Table
+          loading={grants.isPending}
+          skeletonRows={2}
           columns={[
             { key: 'who', header: 'Who', width: 'minmax(0,44ch)', render: who },
             { key: 'access', header: 'Access', width: 'minmax(0,28ch)', render: access },
-            {
-              key: 'actions',
-              header: '',
-              width: '12ch',
-              align: 'right',
-              render: (row: Access) => (
-                <Button variant="ghost" onClick={() => row.grantIDs.forEach((id) => revoke.mutate(id))}>
-                  Remove
-                </Button>
-              ),
-            },
+            ...(canManage
+              ? [
+                  {
+                    key: 'actions',
+                    header: '',
+                    width: '12ch',
+                    align: 'right' as const,
+                    render: (row: Access) => (
+                      <Button
+                        variant="secondary"
+                        disabled={revoke.isPending}
+                        onClick={() => row.grantIDs.forEach((id) => revoke.mutate(id))}
+                      >
+                        Remove
+                      </Button>
+                    ),
+                  },
+                ]
+              : []),
           ]}
           rows={byPrincipal(rows)}
         />
+        {revoke.isError && <Failure error={revoke.error} />}
       </section>
 
-      <section
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 'var(--space-3)',
-          paddingTop: 'var(--space-5)',
-          borderTop: 'var(--border-width) solid var(--rule)',
-        }}
-      >
-        <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Share with someone</h4>
+      {/* Whether it is open to everyone is the one fact the sections below
+          carry that the table does not spell out, so it is said here instead —
+          once the grants are in. Before then either sentence would be a guess. */}
+      {!canManage && grants.isPending && <LineSkeleton width="44ch" />}
+      {!canManage && !grants.isPending && (
         <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
-          They&rsquo;ll see {appName} the next time they sign in. Pando doesn&rsquo;t send them a
-          message.
+          {state === 'public'
+            ? sayPublic
+            : state === 'passcode'
+              ? sayPasscode
+              : `Only people given access can open ${appName}.`}
+          {!viewOnly && ' You can see who has access but not change it.'}
         </p>
-        {/* The select used to be sized with `width: var(--space-9)` — a spacing
-            token used as a width, and far narrower than its longest option. The
-            label overflowed and the button sat on top of it. It is sized from
-            its content now, and the row wraps instead of overlapping when there
-            is not enough of it. */}
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 'var(--space-3)',
-            alignItems: 'flex-end',
-          }}
-        >
-          <Input
-            label="Email address"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ flex: '2 1 24ch' }}
-          />
-          <Select
-            label="What they can do"
-            options={[
-              { value: 'use', label: 'Open the app' },
-              { value: 'viewer', label: 'Open it and see its settings' },
-              { value: 'operator', label: 'Open it and deploy it' },
-              { value: 'owner', label: 'Everything, including sharing' },
-            ]}
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            style={{ flex: '1 1 28ch' }}
-          />
-          <Button
-            onClick={() => share.mutate({ email, role })}
-            disabled={!email || share.isPending}
-          >
-            Share app
-          </Button>
-        </div>
-        {share.isError && <Failure error={share.error} />}
-      </section>
+      )}
 
-      <section
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 'var(--space-3)',
-          paddingTop: 'var(--space-5)',
-          borderTop: 'var(--border-width) solid var(--rule)',
-        }}
-      >
-        <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Make it public</h4>
-
-        {/* R-077 [P], overridden in the heading and kept here. The requirement
-            forbids presenting this as the *bare* word "public" — a toggle
-            labeled "Public" and nothing else, which people skim past without
-            registering what it does. "Make it public" is what the action is
-            called everywhere else in the world, and the consequence directly
-            beneath it is what the requirement is actually protecting. The
-            confirmation step stays too. */}
-        <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink)', margin: 0 }}>
-          Anyone on the internet can open {appName}, without signing in.
-        </p>
-
-        {!allowed && (
-          // Visible and disabled, with who to ask. Hiding it would produce a
-          // support ticket instead of understanding.
-          <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
-            {grants.data?.anonymous_policy_note ??
-              'This installation doesn’t allow apps to be opened up to everyone. An administrator can change that in host policy.'}
+      {canManage && (
+        <Section>
+          <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Share with someone</h4>
+          <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
+            They&rsquo;ll see {appName} the next time they sign in. Pando doesn&rsquo;t send them a
+            message.
           </p>
-        )}
-
-        {anonymous ? (
-          <Button
-            variant="destructive"
-            onClick={() => revoke.mutate(anonymous.id)}
-            style={{ alignSelf: 'flex-start' }}
-          >
-            Make it private again
-          </Button>
-        ) : (
-          <Button
-            disabled={!allowed}
-            onClick={() => setConfirming(true)}
-            style={{ alignSelf: 'flex-start' }}
-          >
-            Make it public
-          </Button>
-        )}
-      </section>
-
-      <Dialog
-        open={confirming}
-        title="Make this app public?"
-        description={`Anyone who has the link will be able to open ${appName} without signing in. You can undo this at any time.`}
-        onClose={() => setConfirming(false)}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                share.mutate({ principal_kind: 'anonymous' });
-                setConfirming(false);
+          {/* An account or a group, then which one. Two kinds, so a pair of
+              radios rather than a select: both choices stay in view. */}
+          <div role="radiogroup" aria-label="Share with" style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-5)' }}>
+            <Radio
+              name="share-kind"
+              value="user"
+              label="A person"
+              checked={kind === 'user'}
+              onChange={() => {
+                setKind('user');
+                setRecipient(null);
+                share.reset();
               }}
+            />
+            <Radio
+              name="share-kind"
+              value="group"
+              label="A group"
+              checked={kind === 'group'}
+              onChange={() => {
+                setKind('group');
+                setRecipient(null);
+                share.reset();
+              }}
+            />
+          </div>
+          {/* The row wraps rather than overlapping when there is not enough of
+              it; the select is sized from its content, not from a spacing
+              token. */}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 'var(--space-3)',
+              alignItems: 'flex-end',
+            }}
+          >
+            <div style={{ flex: '2 1 24ch' }}>
+              <RecipientField
+                // A fresh field per kind: text typed while looking for a
+                // person is not a group's name.
+                key={kind}
+                appID={appID}
+                kind={kind}
+                value={recipient}
+                onChange={(c) => {
+                  if (share.isError) share.reset();
+                  setRecipient(c);
+                }}
+              />
+            </div>
+            {roles.isPending ? (
+              <Skeleton width="28ch" height="var(--control-input)" />
+            ) : (
+              <Select
+                label="What they can do"
+                options={[
+                  { value: '', label: USE_ONLY },
+                  ...appRoles.map((r) => ({ value: r.id, label: roleChoice(r) })),
+                ]}
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                style={{ flex: '1 1 28ch' }}
+              />
+            )}
+            <BesideField>
+              <Button
+                variant="primary"
+                onClick={() => recipient && share.mutate(recipient)}
+                disabled={!recipient || share.isPending || grants.isPending}
+              >
+                {share.isPending ? 'Sharing' : 'Share app'}
+              </Button>
+            </BesideField>
+          </div>
+          {/* Under the row rather than under the dropdown: as the dropdown's
+              helper it made that one field taller, and the row, aligned to
+              the bottom, lifted the dropdown off the line the others sit on. */}
+          {!roles.isPending && (
+            <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+              {describeChoice(appRoles.find((r) => r.id === role))}
+            </p>
+          )}
+          {share.isError && <Failure error={share.error} />}
+        </Section>
+      )}
+
+      {canManage && (
+        <Section>
+          {/* R-077 [P], overridden in the heading and kept everywhere else. The
+              requirement forbids presenting this as the *bare* word "public" —
+              a toggle labeled "Public" and nothing else, which people skim past
+              without registering what it does. "Make it public" is what the
+              action is called everywhere else in the world, and the consequence
+              beside each way of doing it is what the requirement is actually
+              protecting. Once it is done, the heading says what is true
+              without the word at all. */}
+          <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>
+            {state === 'private' || grants.isPending ? 'Make it public' : 'Open to everyone'}
+          </h4>
+
+          {grants.isPending ? (
+            <LineSkeleton width="44ch" />
+          ) : state === 'private' && policy !== 'passcode_only' ? (
+            // Both ways, as a choice — or, when policy allows neither, both
+            // still visible and disabled, so the setting can be found.
+            <div
+              role="radiogroup"
+              aria-label="How to make it public"
+              style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}
             >
-              Make it public
+              <Radio
+                name="everyone"
+                value="passcode"
+                label="With a passcode"
+                description={`${sayPasscode} You choose the passcode and give it to them.`}
+                checked={withPasscode}
+                disabled={!allowed}
+                onChange={() => setWithPasscode(true)}
+              />
+              <Radio
+                name="everyone"
+                value="public"
+                label="Without a passcode"
+                description={sayPublic}
+                checked={!withPasscode}
+                disabled={!allowed}
+                onChange={() => setWithPasscode(false)}
+              />
+            </div>
+          ) : (
+            // Private under a passcode-only policy offers the one way there
+            // is; a choice of one is not a choice.
+            <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink)', margin: 0 }}>
+              {state === 'public' ? sayPublic : sayPasscode}
+            </p>
+          )}
+
+          {!grants.isPending && policy !== 'allowed' && (
+            // Visible and disabled, with who to ask. Hiding it would produce a
+            // support ticket instead of understanding.
+            <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+              {policy === 'none'
+                ? 'This installation doesn’t allow sharing with everyone. An administrator can change that in host policy.'
+                : 'This installation allows sharing with everyone only behind a passcode. An administrator can change that in host policy.'}
+            </p>
+          )}
+
+          {/* Which buttons depends on the grants, so none until they arrive:
+              "Make it public" on an app that already is would offer the wrong
+              thing. */}
+          {grants.isPending ? (
+            <Skeleton width="16ch" height="var(--control-console)" />
+          ) : state === 'private' ? (
+            <Button
+              variant="secondary"
+              disabled={!allowed}
+              onClick={() => ask('public')}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              {passcodeChosen ? 'Make it public with a passcode' : 'Make it public'}
             </Button>
-          </>
-        }
-      />
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+              {state === 'passcode' ? (
+                <>
+                  <Button variant="secondary" onClick={() => ask('change-passcode')}>
+                    Change passcode
+                  </Button>
+                  {/* Taking the passcode away is plain public, which only an
+                      "allowed" policy permits; the server refuses it otherwise. */}
+                  {plainAllowed && (
+                    <Button variant="secondary" onClick={() => ask('remove-passcode')}>
+                      Remove passcode
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <Button variant="secondary" disabled={!allowed} onClick={() => ask('add-passcode')}>
+                  Add a passcode
+                </Button>
+              )}
+              <Button
+                variant="destructive"
+                disabled={revoke.isPending}
+                onClick={() => anonymous && revoke.mutate(anonymous.id)}
+              >
+                Make it private again
+              </Button>
+            </div>
+          )}
+        </Section>
+      )}
+
+      {asking && (
+        <EveryoneDialog
+          asking={asking}
+          withPasscode={passcodeChosen}
+          appName={appName}
+          passcode={passcode}
+          onPasscode={(v) => {
+            if (open.isError) open.reset();
+            setPasscode(v);
+          }}
+          pending={open.isPending}
+          error={open.isError ? open.error : null}
+          onClose={close}
+          onConfirm={() => {
+            if (asking === 'public') {
+              open.mutate({ method: 'post', ...(passcodeChosen ? { passcode } : {}) });
+            } else if (anonymous) {
+              open.mutate({ method: 'patch', grant: anonymous.id, passcode: asking === 'remove-passcode' ? '' : passcode });
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
 
-/** One person, and everything they can do with this app. */
+/**
+ * The confirmation for every change to who, beyond the people named, can open
+ * the app — each one asks, because each one changes who on the internet can
+ * reach it. Removing the passcode widens that, so it is confirmed like making
+ * it public; changing it shuts out everyone let in by the old one, so that is
+ * said before it happens.
+ */
+function EveryoneDialog({
+  asking,
+  withPasscode,
+  appName,
+  passcode,
+  onPasscode,
+  pending,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  asking: Exclude<Asking, null>;
+  withPasscode: boolean;
+  appName: string;
+  passcode: string;
+  onPasscode: (v: string) => void;
+  pending: boolean;
+  error: unknown;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const needsPasscode = asking === 'add-passcode' || asking === 'change-passcode' || (asking === 'public' && withPasscode);
+
+  const text: Record<Exclude<Asking, null>, { title: string; description: string; action: string }> = {
+    public: withPasscode
+      ? {
+          title: 'Make this app public with a passcode?',
+          description: `Anyone who has the link and the passcode will be able to open ${appName} without signing in. You can undo this at any time.`,
+          action: 'Make it public',
+        }
+      : {
+          title: 'Make this app public?',
+          description: `Anyone who has the link will be able to open ${appName} without signing in. You can undo this at any time.`,
+          action: 'Make it public',
+        },
+    'add-passcode': {
+      title: 'Add a passcode',
+      description: `Anyone opening ${appName} will be asked for it first, without signing in.`,
+      action: 'Add passcode',
+    },
+    'change-passcode': {
+      title: 'Change the passcode',
+      description: `Everyone who entered the old passcode will be asked for the new one the next time they open ${appName}.`,
+      action: 'Change passcode',
+    },
+    'remove-passcode': {
+      title: 'Remove the passcode?',
+      description: `Anyone who has the link will be able to open ${appName} without signing in or entering a passcode.`,
+      action: 'Remove passcode',
+    },
+  };
+  const t = text[asking];
+  const short = passcode.length < PASSCODE_MIN;
+
+  return (
+    <Dialog
+      open
+      title={t.title}
+      description={t.description}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={pending || (needsPasscode && short)} onClick={onConfirm}>
+            {t.action}
+          </Button>
+        </>
+      }
+    >
+      {needsPasscode ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!pending && !short) onConfirm();
+          }}
+        >
+          {/* Shown as typed, not masked: the person choosing it has to give it
+              to somebody, and Pando keeps only a hash, so this is the one time
+              it can be read back. */}
+          <Input
+            label="Passcode"
+            mono
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            value={passcode}
+            onChange={(e) => onPasscode(e.target.value)}
+            helper={`At least ${PASSCODE_MIN} characters. Give it to the people you want to let in; Pando doesn’t show it again.`}
+            error={error ? messageOf(error) : undefined}
+          />
+        </form>
+      ) : (
+        error != null && <Failure error={error} />
+      )}
+    </Dialog>
+  );
+}
+
+function Section({ children }: { children: React.ReactNode }) {
+  return (
+    <section
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-3)',
+        paddingTop: 'var(--space-5)',
+        borderTop: 'var(--border-width) solid var(--rule)',
+      }}
+    >
+      {children}
+    </section>
+  );
+}
+
+/** One person, group or everyone, and everything they can do with this app. */
 interface Access {
   key: string;
   principalKind: string;
   name: string;
   canOpen: boolean;
+  /** For everyone: whether a passcode is asked for first. */
+  passcode: boolean;
   roles: string[];
   grantIDs: string[];
 }
@@ -245,23 +596,28 @@ interface Access {
  * that the two lines were the same person. R-070/071 keeps the planes separate
  * in the model, which is right; it does not follow that somebody reading a list
  * of who has access should be shown the model.
+ *
+ * Everyone is a row too, when the app is open to them: a list of who has
+ * access that leaves out "anyone on the internet" understates it.
  */
-function byPrincipal(rows: GrantRow[]): Access[] {
+function byPrincipal(rows: Grant[]): Access[] {
   const out = new Map<string, Access>();
 
   for (const row of rows) {
-    // Anonymous is not a person and has its own section below, where the
-    // consequence is spelled out rather than listed in a table.
-    if (row.principal_kind === 'anonymous') continue;
-
     const key = `${row.principal_kind}:${row.principal_id ?? ''}`;
+    const anonymous = row.principal_kind === 'anonymous';
     const entry = out.get(key) ?? {
       key,
       principalKind: row.principal_kind,
       // The name the server resolved, falling back to the identifier only when
       // there is nothing else — a principal deleted since the grant was made.
-      name: row.principal_name || row.principal_id || '',
+      name: anonymous
+        ? row.passcode
+          ? 'Everyone with the passcode'
+          : 'Everyone'
+        : row.principal_name || row.principal_id || '',
       canOpen: false,
+      passcode: Boolean(row.passcode),
       roles: [],
       grantIDs: [],
     };
@@ -279,10 +635,23 @@ function byPrincipal(rows: GrantRow[]): Access[] {
 }
 
 function who(row: Access): React.ReactNode {
-  return <span>{row.name}</span>;
+  if (row.principalKind !== 'group') return <span>{row.name}</span>;
+  // A group's grant is every member's (R-078), which is worth seeing at a
+  // glance beside a list of people.
+  return (
+    <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 'var(--space-2)' }}>
+      {row.name}
+      <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>Group</span>
+    </span>
+  );
 }
 
 function access(row: Access): React.ReactNode {
+  // Everyone opens it without signing in, which is the whole of what that
+  // row means; said as the consequence rather than as a role (R-077).
+  if (row.principalKind === 'anonymous') {
+    return <span>{row.passcode ? 'Can open it with the passcode' : 'Can open it, without signing in'}</span>;
+  }
   // Everything this person can do, in one cell. "Can open it" is the data
   // plane; the roles are control (R-070, R-071). Someone who owns the app has
   // both, and that now reads as one person with two capabilities rather than
@@ -303,6 +672,11 @@ function access(row: Access): React.ReactNode {
  *  sentence case. */
 function sentence(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function messageOf(error: unknown): string {
+  if (error instanceof RequestFailed) return error.remedy ? `${error.message} ${error.remedy}` : error.message;
+  return 'Pando could not reach the server. Check that it is running and try again.';
 }
 
 function Failure({ error }: { error: unknown }) {

@@ -9,6 +9,7 @@ package detection
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/bemeek-io/pando/internal/core/screening"
@@ -139,6 +140,14 @@ func (r *Runner) Detect(ctx context.Context, appID string) (state.Detection, err
 		return state.Detection{}, err
 	}
 
+	// Each stage is recorded as it is reached, with the proposal as far as it
+	// has got, so a person watching sees the app take shape rather than
+	// waiting on a spinner for the whole of it. Status stays running; a
+	// progress write that fails costs a stage of feedback, not the detection.
+	ctx = detect.WithProgress(ctx, func(stage string, partial *detect.Proposal) {
+		_ = r.Detections.Save(ctx, appID, state.DetectionRunning, progressBody(stage, partial), "")
+	})
+
 	proposal, err := r.run(ctx, appID, app.Slug, app.Source)
 	if err != nil {
 		// The failure is recorded rather than only returned: detection runs in
@@ -164,6 +173,7 @@ func (r *Runner) Detect(ctx context.Context, appID string) (state.Detection, err
 }
 
 func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (detect.Proposal, error) {
+	detect.Report(ctx, detect.StageFetching, nil)
 	checkout, err := source.Fetch(ctx, src)
 	if err != nil {
 		return detect.Proposal{}, err
@@ -186,7 +196,14 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 	// and a draft that says nothing about routing or limits is not something
 	// they can review — they would be approving blanks and finding out at
 	// deploy time (R-102: the user sees the reasoning, not a verdict).
-	r.applyDefaults(ctx, &proposal.DraftSpec, slug)
+	if blocked := r.applyDefaults(ctx, &proposal.DraftSpec, slug); blocked != nil {
+		// No port, no app: port-mode routing is how it is reached at all.
+		// Carried as the proposal's blocking reason so that the review says
+		// every port is taken and what to do about it, and accepting is
+		// refused with the same words — rather than the spec being saved
+		// portless and the deploy failing on "0 is not a usable port number".
+		proposal.Blocked = blocked
+	}
 
 	// And to every other reading of the repository, because answering the
 	// tie-break adopts one of them. A candidate completed only at accept time
@@ -197,7 +214,7 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 		}
 		candidate := detect.Assemble(appID, src, proposal.RunnersUp[i].Draft)
 		candidate.Source.Commit = checkout.Commit
-		r.applyDefaults(ctx, &candidate, slug)
+		_ = r.applyDefaults(ctx, &candidate, slug)
 		proposal.RunnersUp[i].Spec = &candidate
 	}
 
@@ -215,6 +232,9 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 	// The outcome is recorded whatever it is, including "nothing ran and here
 	// is why". Screening never fails a detection (R-335), so there is nothing
 	// to check here and that is the point.
+	if r.Screener != nil {
+		detect.Report(ctx, detect.StageScreening, &proposal)
+	}
 	outcome := r.screen(ctx, appID, &proposal, checkout.View(src.Subdir))
 	proposal.Screening = &outcome
 	if outcome.Changed() {
@@ -231,9 +251,11 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 // because policy is a floor and not a preference (R-272): an install that
 // requires VM-class isolation must have every new app inherit that, not a
 // value someone configured elsewhere.
-func (r *Runner) applyDefaults(ctx context.Context, s *spec.AppSpec, slug string) {
+// A returned error is a reason this reading of the repository cannot be
+// accepted as it stands; nil is the ordinary case.
+func (r *Runner) applyDefaults(ctx context.Context, s *spec.AppSpec, slug string) *errs.Error {
 	if r.Install == nil {
-		return
+		return nil
 	}
 	defaults := r.Install.Defaults(ctx)
 
@@ -253,12 +275,30 @@ func (r *Runner) applyDefaults(ctx context.Context, s *spec.AppSpec, slug string
 	if s.Routing.Mode == spec.RoutingPort && s.Routing.Port == 0 && r.Ports != nil {
 		port, err := r.Ports.Allocate(ctx, s.Routing.AdapterRef, s.AppID, r.PortRangeStart, r.PortRangeEnd)
 		if err != nil {
-			// Left at zero. Validation refuses the spec with a message about
-			// the port, and the proposal still reaches the user carrying
-			// everything else detection worked out — which is more use than
-			// failing the whole run over one field.
-			return
+			// Reported rather than left at zero. A zero port reached the user
+			// as "0 is not a usable port number" at deploy time, which says
+			// nothing about the range being full or about deleting an app;
+			// Allocate's own error says both.
+			if e := errs.As(err); e != nil {
+				return e
+			}
+			return errs.Wrap(errs.Internal, "Could not assign this app a port.", err)
 		}
 		s.Routing.Port = port
 	}
+	return nil
+}
+
+// progressBody is what a running detection stores: the stage, and the
+// proposal's fields as far as it has got. The same shape as a finished
+// proposal plus "stage", so one reader serves both.
+func progressBody(stage string, partial *detect.Proposal) map[string]any {
+	body := map[string]any{}
+	if partial != nil {
+		if raw, err := json.Marshal(partial); err == nil {
+			_ = json.Unmarshal(raw, &body)
+		}
+	}
+	body["stage"] = stage
+	return body
 }

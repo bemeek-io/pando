@@ -81,7 +81,8 @@ func (r Reconciler) BackoffSchedule() ([]time.Duration, error) {
 // Bootstrap is what first run needs, and is read on no other run.
 type Bootstrap struct {
 	// AdminPassword is the first administrator's initial password, empty to
-	// have Pando generate one and print it once (R-046).
+	// have the first person to reach the console set the administrator up
+	// there (R-046).
 	//
 	// The one credential in this struct, and the reason nothing logs a Config
 	// wholesale. It exists because the generated password is shown once, in a

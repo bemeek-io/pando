@@ -342,7 +342,7 @@ func TestR075_AnonymousGrantIsARowAndCannotBeDuplicated(t *testing.T) {
 	require.NoError(t, insert())
 	require.Error(t, insert(), "the anonymous grant must not be insertable twice")
 
-	has, err := state.NewAuthzStore(db).HasAnonymousGrant(ctx, appID)
+	has, _, err := state.NewAuthzStore(db).AnonymousAccess(ctx, appID)
 	require.NoError(t, err)
 	require.True(t, has)
 }
@@ -482,19 +482,21 @@ func TestR046_FirstRunCreatesOneAdminAndIsIdempotent(t *testing.T) {
 
 	grants := state.NewGrants(db)
 
-	first, err := bootstrap.Run(ctx, users, grants, db, auditor, secret.Value{})
+	// Supplied, the unattended path: without it first run makes nothing and
+	// the installation waits to be set up in the console.
+	supplied := secret.New("correct-horse-battery-staple")
+	first, err := bootstrap.Run(ctx, users, grants, db, auditor, supplied)
 	require.NoError(t, err)
 	require.True(t, first.Created)
-	require.NotEmpty(t, first.Password.Reveal())
 	require.True(t, first.User.MustChangePassword, "the initial credential must be changed on first login")
 
-	// The password is displayed once and never stored in the clear.
+	// Never stored in the clear.
 	var storedHash string
 	require.NoError(t, db.QueryRow(ctx,
 		`SELECT password_hash FROM users WHERE id = $1`, first.User.ID).Scan(&storedHash))
-	require.NotContains(t, storedHash, first.Password.Reveal())
+	require.NotContains(t, storedHash, supplied.Reveal())
 
-	again, err := bootstrap.Run(ctx, users, grants, db, auditor, secret.Value{})
+	again, err := bootstrap.Run(ctx, users, grants, db, auditor, supplied)
 	require.NoError(t, err)
 	require.False(t, again.Created, "first run must not repeat")
 

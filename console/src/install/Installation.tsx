@@ -7,62 +7,164 @@
 
 import { createContext, useContext, useLayoutEffect, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, EmptyState, Input, Select, StatusIndicator, Switch, Tag } from '@design';
+import {
+  Banner,
+  Button,
+  EmptyState,
+  Input,
+  Radio,
+  Select,
+  Skeleton,
+  StatusIndicator,
+  Switch,
+  Tag,
+} from '@design';
 
 import { api } from '@api/client';
+import { InstallVerb, useInstallVerb } from '../app/principal';
+import { AdapterDialog } from './AdapterDialog';
+import { RestartButton } from './Restart';
+import { categoryLabel, orderCategories } from './adapters';
+import type { AdapterKind } from './adapters';
+import type { ConfiguredAdapter } from './AdapterDialog';
 import { Quiet, Screen, messageOf } from './Accounts';
 import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
 import { Table } from '../ui/Table';
+import { BesideField } from '../ui/BesideField';
+import { FieldSkeleton, LineSkeleton } from '../ui/Loading';
 import { ActorField } from './ActorField';
 import type { Person } from './ActorField';
+import { NO_FILTERS, WHEN, auditQuery } from './audit';
+import type { AuditFilters } from './audit';
 
-interface AdapterRow {
-  ref: string;
-  kind: string;
-  category: string;
-  healthy?: boolean;
+interface AdapterRow extends ConfiguredAdapter {
+  /** An older name for id, from before GET /adapters settled its shape. */
+  ref?: string;
+  /** Saved since Pando started, so not yet what runs (R-253). */
+  pending_restart?: boolean;
   [key: string]: unknown;
 }
 
 export function Installation() {
+  const queries = useQueryClient();
+  // Only on the verb (R-082): install.view shows the list, and holding it says
+  // nothing about being allowed to change what is in it.
+  const canManage = useInstallVerb(InstallVerb.AdaptersManage);
+  const [editing, setEditing] = useState<{ existing?: AdapterRow; category?: string } | null>(null);
+  // Which adapter was just saved, to name it in the restart notice. The
+  // notice itself follows the server's restart_needed, so it stays until
+  // Pando has restarted — across a reload, and for everyone who looks.
+  const [saved, setSaved] = useState<string | null>(null);
+
   const adapters = useQuery({
     queryKey: ['adapters'],
-    queryFn: () => api.get<{ adapters: AdapterRow[] } | AdapterRow[]>('/adapters'),
+    queryFn: () => api.get<{ adapters: AdapterRow[]; restart_needed?: boolean } | AdapterRow[]>('/adapters'),
   });
+  const restartNeeded = !Array.isArray(adapters.data) && adapters.data?.restart_needed === true;
   const capacity = useQuery({
     queryKey: ['capacity'],
     queryFn: () => api.get<unknown>('/capacity'),
   });
 
-  const rows = normalize(adapters.data);
+  const rows = normalize(adapters.data).map((r) => ({ ...r, id: r.id ?? r.ref ?? '' }));
+  // Every kind this build can run: the adapters' proper names, and which
+  // categories could be set up and are not. Shared with the dialog's query.
+  const kinds = useQuery({
+    queryKey: ['adapter-kinds'],
+    queryFn: () => api.get<{ kinds: AdapterKind[] | null }>('/adapters/kinds'),
+  });
+
+  // In category order, then by name, each row told whether it starts its
+  // category and what its kind is called — "BuildKit", not "buildkit".
+  const catalog = kinds.data?.kinds ?? [];
+  const order = orderCategories([...rows.map((r) => r.category), ...catalog.map((k) => k.category)]);
+  const grouped = order.flatMap((category) =>
+    rows
+      .filter((r) => r.category === category)
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((r, i) => ({
+        ...r,
+        first: i === 0,
+        kindName: catalog.find((k) => k.category === r.category && k.kind === r.kind)?.name ?? r.kind,
+      })),
+  );
+  // Categories this build can run that nothing here is set up for.
+  const missing = order.filter((c) => catalog.some((k) => k.category === c) && !rows.some((r) => r.category === c));
 
   return (
-    <Screen heading="Adapters">
+    <Screen
+      heading="Adapters"
+      action={
+        canManage && (
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            {/* Primary: adding an adapter is the one thing this screen does. */}
+            <Button variant="primary" onClick={() => setEditing({})}>
+              Add adapter
+            </Button>
+            {/* Always here, not only while a change waits on it: a restart
+                is also how an adapter that failed at startup is retried.
+                Last, at the edge, apart from the everyday action. */}
+            <RestartButton onRestarted={() => setSaved(null)} />
+          </div>
+        )
+      }
+    >
       {adapters.isError && <Quiet>{messageOf(adapters.error)}</Quiet>}
 
-      <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>Adapters</h4>
-      <Table
-        columns={[
-          { key: 'ref', header: 'Reference', width: 'minmax(0,28ch)', mono: true },
-          { key: 'kind', header: 'Kind', width: 'minmax(0,24ch)' },
-          { key: 'category', header: 'Category', width: '16ch', muted: true },
-          {
-            key: 'healthy',
-            header: 'Status',
-            width: '16ch',
-            render: (row: AdapterRow) => (
-              // Live, not stored: an adapter that was reachable at startup and
-              // is not now is exactly what this column exists to show.
-              <StatusIndicator
-                status={row.healthy === false ? 'failed' : 'running'}
-                label={row.healthy === false ? 'Unreachable' : 'Reachable'}
-              />
-            ),
-          },
-        ]}
-        rows={rows}
-      />
+      {(restartNeeded || saved) && (
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <Banner tone="info">
+            {saved ? `${saved} is saved.` : 'Adapter changes are saved.'} Pando loads adapters when it starts, so{' '}
+            {saved ? 'it takes' : 'they take'} effect after a restart.
+            {canManage ? <> Use Restart Pando above.</> : <> Someone who can manage adapters can restart it.</>}
+          </Banner>
+        </div>
+      )}
+
+      {/* One table, grouped by category: one header and one set of columns,
+          so everything lines up, with a band naming each category above its
+          adapters. Categories with nothing set up are one line under it. */}
+      {adapters.isPending ? (
+        <Table loading columns={adapterColumns(canManage, setEditing)} rows={[]} />
+      ) : (
+        <GroupedAdapters rows={grouped} canManage={canManage} onChange={(row) => setEditing({ existing: row })} />
+      )}
+      {!adapters.isPending && missing.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 'var(--space-2) var(--space-3)',
+            marginTop: 'var(--space-4)',
+          }}
+        >
+          <span style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)' }}>
+            Not set up: {missing.map(categoryLabel).join(', ')}.
+          </span>
+          {canManage &&
+            missing.map((category) => (
+              <Button key={category} variant="secondary" onClick={() => setEditing({ category })}>
+                Add {categoryLabel(category) === 'AI' ? 'an AI' : `a ${category}`} adapter
+              </Button>
+            ))}
+        </div>
+      )}
+
+      {editing && (
+        <AdapterDialog
+          existing={editing.existing}
+          category={editing.category}
+          adapters={rows}
+          onClose={() => setEditing(null)}
+          onSaved={(name) => {
+            setEditing(null);
+            setSaved(name);
+            void queries.invalidateQueries({ queryKey: ['adapters'] });
+          }}
+        />
+      )}
 
       <h4 style={{ font: 'var(--type-h4)', margin: 'var(--space-6) 0 var(--space-3)' }}>
         Capacity
@@ -70,19 +172,29 @@ export function Installation() {
       {/* Machine output, shown verbatim in mono. Capacity is per runtime
           adapter and its shape is the adapter's, not Pando's, so prettifying it
           here would be Pando inventing a schema it does not own (R-243). */}
-      <pre
-        style={{
-          font: 'var(--type-code-sm)',
-          background: 'var(--paper-sunken)',
-          border: 'var(--border-width) solid var(--rule)',
-          borderRadius: 'var(--radius-sm)',
-          padding: 'var(--space-4)',
-          overflowX: 'auto',
-          margin: 0,
-        }}
-      >
-        {capacity.isPending ? 'Loading.' : JSON.stringify(capacity.data, null, 2)}
-      </pre>
+      {capacity.isPending ? (
+        // The block's shape: the answer is machine output of the adapter's
+        // own shape, so its length cannot be known, only that it is a block.
+        <div role="status" aria-label="Loading">
+          <Skeleton height="10rem" />
+        </div>
+      ) : capacity.isError ? (
+        <Quiet>{messageOf(capacity.error)}</Quiet>
+      ) : (
+        <pre
+          style={{
+            font: 'var(--type-code-sm)',
+            background: 'var(--paper-sunken)',
+            border: 'var(--border-width) solid var(--rule)',
+            borderRadius: 'var(--radius-sm)',
+            padding: 'var(--space-4)',
+            overflowX: 'auto',
+            margin: 0,
+          }}
+        >
+          {JSON.stringify(capacity.data, null, 2)}
+        </pre>
+      )}
     </Screen>
   );
 }
@@ -91,6 +203,7 @@ interface PolicyDoc {
   source_allowlist?: string[];
   disabled_verbs?: string[];
   allow_anonymous_grants?: boolean;
+  public_sharing?: 'allowed' | 'passcode_only' | 'none';
   egress_allowlist?: string[];
   require_backup_before_destroy?: boolean;
   max_token_lifetime_days?: number;
@@ -186,7 +299,34 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
     setDraft({ ...current, ...patch });
   };
 
-  if (policy.isPending) return <Screen heading="Policy"><Quiet>Loading.</Quiet></Screen>;
+  // The page's sections in outline — a heading, its note, a control, under a
+  // rule — where the settings will be.
+  if (policy.isPending) {
+    return (
+      <Screen heading="Policy">
+        <div role="status" aria-label="Loading" style={{ display: 'flex', flexDirection: 'column', maxWidth: '68ch' }}>
+          {[0, 1, 2].map((n) => (
+            <div
+              key={n}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-2)',
+                padding: 'var(--space-6) 0',
+                borderTop: n === 0 ? undefined : 'var(--border-width) solid var(--rule)',
+              }}
+            >
+              <LineSkeleton width="22ch" font="var(--type-h4)" />
+              <LineSkeleton width="52ch" />
+              <div style={{ marginTop: 'var(--space-2)' }}>
+                <FieldSkeleton />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Screen>
+    );
+  }
   if (policy.isError)
     return (
       <Screen heading="Policy">
@@ -319,17 +459,37 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
           heading="Who can reach apps"
           note="A floor, never an override: an app owner can be stricter than this and never looser (R-272)."
         >
-          <Fixed field="allow_anonymous_grants">
-            <Switch
-              checked={current.allow_anonymous_grants !== false}
-              disabled={locked('allow_anonymous_grants')}
-              label="Allow apps to be shared with anyone on the internet"
-              // R-076: when this is off the sharing option stays visible and
-              // disabled rather than disappearing. A hidden option produces a
-              // support ticket instead of understanding.
-              description="When this is off, people can still see the option to share an app without sign-in — it's disabled, with a note saying who to ask."
-              onChange={(e) => edit({ allow_anonymous_grants: e.target.checked })}
-            />
+          {/* Three answers, not a switch (R-076, R-075a): anyone, anyone with the
+              app's passcode, or nobody. public_sharing is the setting; the
+              older allow_anonymous_grants still counts when it is unset, and
+              either fixed at startup makes this read-only — whichever is,
+              names where. When sharing is limited, the options people can't
+              use stay visible and disabled on the Sharing tab, with a note
+              saying who to ask, rather than disappearing. */}
+          <Fixed field={fixed.has('public_sharing') || !fixed.has('allow_anonymous_grants') ? 'public_sharing' : 'allow_anonymous_grants'}>
+            <fieldset style={{ border: 0, margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <legend style={{ font: 'var(--type-label)', color: 'var(--ink)', marginBottom: 'var(--space-2)' }}>
+                Sharing apps with everyone
+              </legend>
+              {(
+                [
+                  ['allowed', 'Allowed', 'An app can be shared with anyone on the internet, with or without a passcode.'],
+                  ['passcode_only', 'Only with a passcode', 'Anyone on the internet can open it only after entering its passcode.'],
+                  ['none', 'Not allowed', 'Apps are shared only with people and groups who sign in.'],
+                ] as const
+              ).map(([value, label, description]) => (
+                <Radio
+                  key={value}
+                  name="public_sharing"
+                  value={value}
+                  label={label}
+                  description={description}
+                  checked={publicSharing(current) === value}
+                  disabled={locked('public_sharing') || locked('allow_anonymous_grants')}
+                  onChange={() => edit({ public_sharing: value })}
+                />
+              ))}
+            </fieldset>
           </Fixed>
 
           <Fixed field="disabled_verbs">
@@ -596,6 +756,13 @@ function setIn(src: Source): string {
  * says where it is set. Hover is taken by a wrapper, because a disabled input
  * receives no pointer events of its own.
  */
+/** The rule for sharing with everyone, reading the older boolean when the new
+ *  setting is unset — the same reading as the server's PublicSharingMode. */
+function publicSharing(doc: PolicyDoc): 'allowed' | 'passcode_only' | 'none' {
+  if (doc.public_sharing) return doc.public_sharing;
+  return doc.allow_anonymous_grants === false ? 'none' : 'allowed';
+}
+
 function Fixed({ field, children }: { field: string; children: React.ReactNode }) {
   const src = useContext(FixedFields).get(field);
   const [hover, setHover] = useState(false);
@@ -650,6 +817,8 @@ function sourceLabel(src: Source): string {
  * nature: these are read once at startup. Secrets are never listed (R-194).
  */
 function StartupSettings({ config }: { config?: StartupConfig }) {
+  // POST /restart's verb: the same restart applies a saved adapter.
+  const canRestart = useInstallVerb(InstallVerb.AdaptersManage);
   if (!config) return null;
   const rows = config.settings.map((s) => ({
     id: s.key,
@@ -679,7 +848,8 @@ function StartupSettings({ config }: { config?: StartupConfig }) {
           <strong style={{ color: 'var(--ink)' }}>A file</strong>:{' '}
           {config.file ? (
             <>
-              edit <code style={{ font: 'var(--type-code-sm)' }}>{config.file}</code>, then restart Pando.
+              edit <code style={{ font: 'var(--type-code-sm)' }}>{config.file}</code>, then restart Pando with the
+              button below or <code style={{ font: 'var(--type-code-sm)' }}>pando restart</code>.
             </>
           ) : (
             <>
@@ -692,6 +862,11 @@ function StartupSettings({ config }: { config?: StartupConfig }) {
           <strong style={{ color: 'var(--ink)' }}>Default</strong>: not set anywhere. Set the variable shown to change it.
         </li>
       </ul>
+      {canRestart && (
+        <div style={{ marginTop: 'var(--space-3)' }}>
+          <RestartButton />
+        </div>
+      )}
       <Table
         columns={[
           {
@@ -768,7 +943,7 @@ function clamp(n: number): number {
   return Math.round(n);
 }
 
-interface AuditRecord {
+export interface AuditRecord {
   id: number;
   occurred_at: string;
   principal_kind: string;
@@ -779,20 +954,6 @@ interface AuditRecord {
   target_kind?: string;
   target_id?: string;
 }
-
-// What the audit log can be narrowed by. Each maps to a GET /audit parameter,
-// and they combine — "Dana's changes to roles in the last day" is one query.
-interface AuditFilters {
-  action: string;
-  actor: string;
-  targetKind: string;
-  targetID: string;
-  when: string;
-  since: string;
-  until: string;
-}
-
-const NO_FILTERS: AuditFilters = { action: '', actor: '', targetKind: '', targetID: '', when: '', since: '', until: '' };
 
 // The kinds of thing the server records events against.
 const TARGET_KINDS = [
@@ -815,44 +976,11 @@ const TARGET_KINDS = [
   'launcher_section',
 ];
 
-const WHEN: { value: string; label: string; hours?: number }[] = [
-  { value: '', label: 'All time' },
-  { value: '1h', label: 'Last hour', hours: 1 },
-  { value: '24h', label: 'Last 24 hours', hours: 24 },
-  { value: '7d', label: 'Last 7 days', hours: 24 * 7 },
-  { value: '30d', label: 'Last 30 days', hours: 24 * 30 },
-  { value: 'custom', label: 'Custom range' },
-];
-
-/** The query string for a set of filters, times resolved now. */
-function auditQuery(f: AuditFilters, before?: string): string {
-  const q = new URLSearchParams();
-  if (f.action) q.set('action', f.action);
-  // A whole kind of actor — the system, anonymous — is a kind, not an ID.
-  if (f.actor.startsWith('kind:')) q.set('principal_kind', f.actor.slice('kind:'.length));
-  else if (f.actor) q.set('principal_id', f.actor);
-  if (f.targetKind) q.set('target_kind', f.targetKind);
-  if (f.targetID) q.set('target_id', f.targetID.trim());
-  const preset = WHEN.find((w) => w.value === f.when);
-  if (preset?.hours) q.set('since', new Date(Date.now() - preset.hours * 3_600_000).toISOString());
-  if (f.when === 'custom') {
-    // datetime-local is the viewer's own clock; the wire is UTC (RFC 3339).
-    if (f.since) q.set('since', new Date(f.since).toISOString());
-    if (f.until) q.set('until', new Date(f.until).toISOString());
-  }
-  if (before) q.set('before', before);
-  const s = q.toString();
-  return s ? `?${s}` : '';
-}
-
-export function Audit() {
-  const [filters, setFilters] = useState<AuditFilters>(NO_FILTERS);
-  const set = (patch: Partial<AuditFilters>) => setFilters((f) => ({ ...f, ...patch }));
-  const filtered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS);
-
-  // Pages on the server's cursor (design 04 §2.8): "Show older" asks for the
-  // page before the last one shown, so events arriving meanwhile never shift
-  // what has already been read.
+/** The audit log, paged on the server's cursor, for one set of filters. */
+export function useAuditLog(filters: AuditFilters) {
+  // Pages on the server's cursor (design 04 §2.8): "Load older events" asks
+  // for the page before the last one shown, so events arriving meanwhile never
+  // shift what has already been read.
   const log = useInfiniteQuery({
     queryKey: ['audit', filters],
     initialPageParam: '',
@@ -860,20 +988,43 @@ export function Audit() {
       api.get<{ events: AuditRecord[] | null; next_before: string }>('/audit' + auditQuery(filters, pageParam || undefined)),
     getNextPageParam: (last) => last.next_before || undefined,
   });
+  const events = log.data?.pages.flatMap((p) => p.events ?? []) ?? [];
+  return { log, events };
+}
 
-  // Names for the "who" column and the actor picker. install.audit.read does
-  // not imply install.view — an account can hold only the first — so when the
-  // list is refused, the picker becomes a field for an ID and the column shows
-  // IDs, which is what it did before.
+/** Names for the "who" column and the actor pickers. install.audit.read does
+ *  not imply install.view — an account can hold only the first — so when the
+ *  list is refused, the pickers take an ID and the columns show IDs. */
+export function usePeople() {
   const users = useQuery({
     queryKey: ['users'],
     queryFn: () => api.get<{ users: Person[] }>('/users'),
     retry: false,
   });
-  const people = users.data?.users ?? [];
-  const nameOf = (id?: string) => (id ? (people.find((u) => u.id === id)?.external_id ?? id) : '');
+  return users.data?.users ?? [];
+}
 
-  const events = log.data?.pages.flatMap((p) => p.events ?? []) ?? [];
+export function Audit({
+  initial = NO_FILTERS,
+  onFilters,
+}: {
+  /** Filters carried in from a link, such as an account's page. */
+  initial?: AuditFilters;
+  /** Told of every change, so the address bar can hold the filters and a
+   *  reload or a copied link shows the same events. */
+  onFilters?: (f: AuditFilters) => void;
+}) {
+  const [filters, setFilters] = useState<AuditFilters>(initial);
+  const change = (next: AuditFilters) => {
+    setFilters(next);
+    onFilters?.(next);
+  };
+  const set = (patch: Partial<AuditFilters>) => change({ ...filters, ...patch });
+  const clear = () => change(NO_FILTERS);
+  const filtered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS);
+
+  const { log, events } = useAuditLog(filters);
+  const people = usePeople();
 
   const custom = filters.when === 'custom';
   const range = (
@@ -927,9 +1078,21 @@ export function Audit() {
             />
           </Field>
 
+          {/* The one filter that is an OR: this account as the actor, or as
+              the target. What an account's page links here with. */}
+          <Field>
+            <ActorField
+              label="Actor or target"
+              pando={false}
+              people={people}
+              value={filters.involving}
+              onChange={(involving) => set({ involving })}
+            />
+          </Field>
+
           {!custom && range}
 
-          {filtered && !custom && <ClearFilters onClear={() => setFilters(NO_FILTERS)} />}
+          {filtered && !custom && <ClearFilters onClear={clear} />}
         </FilterRow>
 
         {/* A custom range is three fields that belong together, so they take
@@ -953,15 +1116,17 @@ export function Audit() {
                 onChange={(e) => set({ until: e.target.value })}
               />
             </Field>
-            <ClearFilters onClear={() => setFilters(NO_FILTERS)} />
+            <ClearFilters onClear={clear} />
           </FilterRow>
         )}
       </div>
 
       {log.isError && <Quiet>{messageOf(log.error)}</Quiet>}
 
-      <Table
-        dense
+      <AuditTable
+        events={events}
+        people={people}
+        loading={log.isPending}
         // A filter that matches nothing and a log that holds nothing look
         // identical as an empty table, and on this screen "nothing happened"
         // and "your filter is wrong" are very different answers.
@@ -972,53 +1137,86 @@ export function Audit() {
               : 'The audit log is append-only; recorded events cannot be modified or deleted.'}
           </EmptyState>
         }
-        columns={[
-          {
-            key: 'occurred_at',
-            header: 'Time',
-            width: '20ch',
-            muted: true,
-            render: (row: AuditRecord) => new Date(row.occurred_at).toLocaleString(),
-          },
-          { key: 'action', header: 'Action', width: 'minmax(0,26ch)', mono: true },
-          {
-            key: 'principal_id',
-            header: 'Actor',
-            width: 'minmax(0,20ch)',
-            mono: true,
-            // A delegated token records both itself and the person it acted
-            // for (R-229). Showing only one of them is how "who did this"
-            // stops being answerable.
-            render: (row: AuditRecord) =>
-              row.on_behalf_of && row.on_behalf_of !== row.principal_id
-                ? `${nameOf(row.principal_id)} for ${nameOf(row.on_behalf_of)}`
-                : nameOf(row.principal_id) || row.principal_kind,
-          },
-          {
-            key: 'target_id',
-            header: 'Target',
-            width: 'minmax(0,24ch)',
-            mono: true,
-            muted: true,
-            render: (row: AuditRecord) =>
-              row.target_id ? `${row.target_kind ? row.target_kind + ' ' : ''}${row.target_kind === 'user' ? nameOf(row.target_id) : row.target_id}` : row.app_id || '—',
-          },
-        ]}
-        rows={events}
       />
 
-      {log.hasNextPage && (
-        <div style={{ marginTop: 'var(--space-4)' }}>
-          <Button variant="secondary" disabled={log.isFetchingNextPage} onClick={() => void log.fetchNextPage()}>
-            {log.isFetchingNextPage ? 'Loading' : 'Load older events'}
-          </Button>
-        </div>
-      )}
+      <LoadOlder log={log} />
     </Screen>
   );
 }
 
-function FilterRow({ children }: { children: React.ReactNode }) {
+/** The log's rows: time, action, actor, target. */
+export function AuditTable({
+  events,
+  people,
+  empty,
+  loading = false,
+}: {
+  events: AuditRecord[];
+  people: Person[];
+  empty: React.ReactNode;
+  /** The first page has not arrived. A change of filter is a new query, so
+   *  this is also what shows between one filter and its results — rather than
+   *  "No matching events" for a moment before there are some. */
+  loading?: boolean;
+}) {
+  const nameOf = (id?: string) => (id ? (people.find((u) => u.id === id)?.external_id ?? id) : '');
+  return (
+    <Table
+      dense
+      loading={loading}
+      skeletonRows={6}
+      empty={empty}
+      columns={[
+        {
+          key: 'occurred_at',
+          header: 'Time',
+          width: '20ch',
+          muted: true,
+          render: (row: AuditRecord) => new Date(row.occurred_at).toLocaleString(),
+        },
+        { key: 'action', header: 'Action', width: 'minmax(0,26ch)', mono: true },
+        {
+          key: 'principal_id',
+          header: 'Actor',
+          width: 'minmax(0,20ch)',
+          mono: true,
+          // A delegated token records both itself and the person it acted
+          // for (R-229). Showing only one of them is how "who did this"
+          // stops being answerable.
+          render: (row: AuditRecord) =>
+            row.on_behalf_of && row.on_behalf_of !== row.principal_id
+              ? `${nameOf(row.principal_id)} for ${nameOf(row.on_behalf_of)}`
+              : nameOf(row.principal_id) || row.principal_kind,
+        },
+        {
+          key: 'target_id',
+          header: 'Target',
+          width: 'minmax(0,24ch)',
+          mono: true,
+          muted: true,
+          render: (row: AuditRecord) =>
+            row.target_id
+              ? `${row.target_kind ? row.target_kind + ' ' : ''}${row.target_kind === 'user' ? nameOf(row.target_id) : row.target_id}`
+              : row.app_id || '—',
+        },
+      ]}
+      rows={events}
+    />
+  );
+}
+
+export function LoadOlder({ log }: { log: ReturnType<typeof useAuditLog>['log'] }) {
+  if (!log.hasNextPage) return null;
+  return (
+    <div style={{ marginTop: 'var(--space-4)' }}>
+      <Button variant="secondary" disabled={log.isFetchingNextPage} onClick={() => void log.fetchNextPage()}>
+        {log.isFetchingNextPage ? 'Loading' : 'Load older events'}
+      </Button>
+    </div>
+  );
+}
+
+export function FilterRow({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 'var(--space-3) var(--space-4)' }}>
       {children}
@@ -1028,14 +1226,172 @@ function FilterRow({ children }: { children: React.ReactNode }) {
 
 function ClearFilters({ onClear }: { onClear: () => void }) {
   return (
-    <Button variant="ghost" onClick={onClear}>
-      Clear filters
-    </Button>
+    <BesideField>
+      <Button variant="ghost" onClick={onClear}>
+        Clear filters
+      </Button>
+    </BesideField>
   );
 }
 
-function Field({ children }: { children: React.ReactNode }) {
+export function Field({ children }: { children: React.ReactNode }) {
   return <div style={{ flex: '1 1 18ch', minWidth: '18ch', maxWidth: '28ch' }}>{children}</div>;
+}
+
+type GroupedRow = AdapterRow & { first?: boolean; kindName?: string };
+
+/** Reachable or not — or, saved since Pando started, not running yet. */
+function AdapterStatus({ row }: { row: AdapterRow }) {
+  if (row.pending_restart) return <StatusIndicator status="info" label="Restart to apply" />;
+  return row.healthy === false ? (
+    <StatusIndicator status="failed" label="Unreachable" />
+  ) : (
+    <StatusIndicator status="running" label="Reachable" />
+  );
+}
+
+// The adapters' columns: name, ID, status, and Change for whoever may.
+const ADAPTER_GRID = 'minmax(0,1fr) minmax(0,22ch) 16ch 12ch';
+
+/**
+ * The adapters, grouped by category.
+ *
+ * Not the design system's Table, which has no way to mark where a group begins:
+ * the same header and row styles, one grid for every row so the columns line
+ * up from group to group, and a quiet line above each group naming its
+ * category.
+ */
+function GroupedAdapters({
+  rows,
+  canManage,
+  onChange,
+}: {
+  rows: GroupedRow[];
+  canManage: boolean;
+  onChange: (row: AdapterRow) => void;
+}) {
+  const cell = { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
+  const line = {
+    display: 'grid',
+    gridTemplateColumns: ADAPTER_GRID,
+    alignItems: 'center',
+    gap: 'var(--space-4)',
+    padding: '0 var(--space-3)',
+  } as const;
+
+  return (
+    <div className="pando-table" role="table" aria-label="Adapters">
+      <div
+        role="row"
+        style={{
+          ...line,
+          minHeight: 'var(--control-console)',
+          background: 'var(--paper-sunken)',
+          borderTop: 'var(--border-width) solid var(--rule)',
+          borderBottom: 'var(--border-width) solid var(--rule)',
+        }}
+      >
+        {['Adapter', 'ID', 'Status', ''].map((h) => (
+          <span key={h || 'actions'} role="columnheader" style={{ font: 'var(--type-label)', color: 'var(--ink-secondary)' }}>
+            {h}
+          </span>
+        ))}
+      </div>
+
+      {rows.map((row) => (
+        <div key={row.id} role="rowgroup">
+          {row.first && (
+            // Quiet on purpose: the name, small and secondary, with a little
+            // room above it — enough to see where a group starts, and no more.
+            <div
+              role="row"
+              style={{
+                padding: 'var(--space-4) var(--space-3) var(--space-1)',
+                font: 'var(--type-caption)',
+                color: 'var(--ink-secondary)',
+                borderBottom: 'var(--border-width) solid var(--rule)',
+              }}
+            >
+              {categoryLabel(row.category)}
+            </div>
+          )}
+          <div
+            role="row"
+            style={{
+              ...line,
+              minHeight: 'var(--row-height)',
+              borderBottom: 'var(--border-width) solid var(--rule)',
+            }}
+          >
+            <span style={{ ...cell, font: 'var(--type-body-ui)' }}>{row.kindName ?? row.kind}</span>
+            <span style={{ ...cell, font: 'var(--type-code-sm)', color: 'var(--ink-secondary)' }}>{row.id}</span>
+            <span style={cell}>
+              {/* Live, not stored: an adapter that was reachable at startup and
+                  is not now is exactly what this column exists to show. */}
+              <AdapterStatus row={row} />
+            </span>
+            <span style={{ justifySelf: 'end' }}>
+              {canManage && (
+                <Button variant="secondary" onClick={() => onChange(row)}>
+                  Change
+                </Button>
+              )}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The adapters table's columns: the category on the first row of each group,
+ *  then the adapter by name, its ID, whether it is reachable, and Change. */
+function adapterColumns(
+  canManage: boolean,
+  setEditing: (e: { existing?: AdapterRow; category?: string }) => void,
+) {
+  type Row = AdapterRow & { first?: boolean; kindName?: string };
+  return [
+    {
+      key: 'category',
+      header: 'Category',
+      width: '14ch',
+      render: (row: Row) =>
+        row.first ? <span style={{ font: 'var(--type-label)' }}>{categoryLabel(row.category)}</span> : null,
+    },
+    {
+      key: 'kind',
+      header: 'Adapter',
+      width: 'minmax(0,1fr)',
+      render: (row: Row) => row.kindName ?? row.kind,
+    },
+    { key: 'id', header: 'ID', width: 'minmax(0,22ch)', mono: true, muted: true },
+    {
+      key: 'healthy',
+      header: 'Status',
+      width: '16ch',
+      render: (row: Row) => (
+        // Live, not stored: an adapter that was reachable at startup and
+        // is not now is exactly what this column exists to show.
+        <AdapterStatus row={row} />
+      ),
+    },
+    ...(canManage
+      ? [
+          {
+            key: 'actions',
+            header: '',
+            width: '12ch',
+            align: 'right' as const,
+            render: (row: Row) => (
+              <Button variant="secondary" onClick={() => setEditing({ existing: row })}>
+                Change
+              </Button>
+            ),
+          },
+        ]
+      : []),
+  ];
 }
 
 /** GET /adapters has returned both shapes during this phase; accept either

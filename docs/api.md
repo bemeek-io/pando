@@ -31,6 +31,8 @@ one verb says nothing about another (R-082).
 | --- | --- | --- |
 | `POST /api/v1/sessions` |  | Sign in with a username and password. Sets the session cookie. |
 | `DELETE /api/v1/sessions` |  | Sign out, ending this session. |
+| `GET /api/v1/setup` |  | Whether this installation is waiting for its first administrator (`needed`). Public. |
+| `POST /api/v1/setup` |  | Set up a new installation: the first account (`username`, `display_name`, `password`), made an administrator, and signed in. Public, and refused once any account exists (R-046). |
 | `GET /api/v1/me` |  | Who the caller is, and the install-level verbs they hold. |
 | `POST /api/v1/me/password` |  | Change your own password. Yours only, whatever verbs you hold. |
 | `GET /api/v1/me/apps` |  | The apps you can open, which is a different list from the apps you can administer (R-070, R-071). `favorite` marks the ones you have pinned, `section_id` the section you filed each under, and `sections` lists your sections. |
@@ -48,9 +50,9 @@ one verb says nothing about another (R-082).
 | --- | --- | --- |
 | `GET /api/v1/tokens` |  | Your own tokens. Never anyone else's. |
 | `POST /api/v1/tokens` |  | Mint a delegated token. It acts as you, is bounded by your live grants, and dies with your account (R-058, R-059). The secret is shown once. |
-| `GET /api/v1/tokens/service` | `install.users.manage` | The installation's service tokens. |
-| `POST /api/v1/tokens/service` | `install.users.manage` | Mint a service token: its own principal, holding only what is shared with it, outliving whoever created it (R-060). The secret is shown once. |
-| `DELETE /api/v1/tokens/{tokenID}` |  | Revoke a token. Yours, or anyone's with install.users.manage. |
+| `GET /api/v1/tokens/service` | `install.tokens.manage` | The installation's service tokens. |
+| `POST /api/v1/tokens/service` | `install.tokens.manage` | Mint a service token: its own principal, holding only what is shared with it, outliving whoever created it (R-060). The secret is shown once. |
+| `DELETE /api/v1/tokens/{tokenID}` |  | Revoke a token. Yours; a service token with install.tokens.manage; anyone else's with install.users.manage. |
 
 ### Apps
 
@@ -64,6 +66,7 @@ one verb says nothing about another (R-082).
 | `GET /api/v1/apps/{appID}/icon` |  | The image on the app's launcher tile. Anyone who can open the app can load it; `icon_updated_at` on the app says whether there is one and when it changed (R-340). |
 | `PUT /api/v1/apps/{appID}/icon` | `app.spec.edit` | Set the app's tile image. The body is the image itself — PNG, JPEG, WebP or GIF, at most 256 KB. SVG is refused (R-340). |
 | `DELETE /api/v1/apps/{appID}/icon` | `app.spec.edit` | Remove the app's tile image, so the tile goes back to the map generated for it. |
+| `GET /api/v1/apps/{appID}/usage` | `app.view` | What each part of the app is using now — CPU in thousandths of a core, memory and disk in bytes, and each mounted volume's size — beside its limits (0 is none; `host_cpu_millis` and `host_memory_bytes` say what none means). A reading, not a history (R-245, R-016). `supported: false` when the runtime cannot report it. |
 | `GET /api/v1/apps/{appID}/status` | `app.view` | What the app is doing now: its state, and each part separately — running, restarting and how often, health, exit code — so a single crash-looping part is visible rather than averaged into one word. |
 | `POST /api/v1/apps/{appID}/start` | `app.restart` | Set the app's desired state to running. The reconciler converges to it, so it survives a restart. |
 | `POST /api/v1/apps/{appID}/stop` | `app.restart` | Set the app's desired state to stopped. |
@@ -79,7 +82,7 @@ one verb says nothing about another (R-082).
 | `POST /api/v1/apps/{appID}/detection/rerun` | `app.spec.edit` | Run detection again, against the current commit. |
 | `GET /api/v1/apps/{appID}/detection/diff` | `app.view` | What accepting the proposal would change about the running app. |
 | `POST /api/v1/apps/{appID}/detection/answers` | `app.spec.edit` | Answer detection's questions. Each answer is a fact detection could not find, not a preference. |
-| `POST /api/v1/apps/{appID}/detection/accept` | `app.spec.edit` | Accept the proposal, writing a spec revision and pinning it. Accepting over a configured app needs `confirm`. |
+| `POST /api/v1/apps/{appID}/detection/accept` | `app.spec.edit` | Accept the proposal, writing a spec revision and pinning it. `values` sets variables in the same step — `{key, value, secret?, workload?}` each; a secret goes to the secrets adapter and needs app.secrets.write. Accepting over a configured app needs `confirm`. |
 | `POST /api/v1/apps/{appID}/source` | `app.spec.edit` | Upload a source archive for an app that has no reachable repository. |
 
 ### Configuration
@@ -136,6 +139,10 @@ one verb says nothing about another (R-082).
 | --- | --- | --- |
 | `GET /api/v1/apps/{appID}/grants` | `app.view` | Who can reach this app, and who can administer it — two planes, listed separately (R-070, R-071). |
 | `POST /api/v1/apps/{appID}/grants` | `app.grants.manage` | Share the app with a user, a group, a token, or with everyone. The anonymous grant is a real row, refused where host policy forbids it (R-075, R-076). |
+| `PATCH /api/v1/apps/{appID}/grants/{grantID}` | `app.grants.manage` | Change the role a grant for managing the app carries (`role_id`), one update so the person is never left with nothing in between; or, on the grant to everyone, set `passcode` ("" removes it). A new passcode asks everyone let in by the old one again (R-075a). |
+| `GET /api/v1/apps/{appID}/principals` | `app.grants.manage` | People and groups to share the app with, matching `q` (username, name or email; group name), at most 20 of each. |
+| `GET /api/v1/apps/{appID}/passcode` |  | The name of an app that asks for a passcode, for its passcode page. Public; not-found for any other app (R-075a). |
+| `POST /api/v1/apps/{appID}/passcode` |  | Enter an app's passcode (`passcode`). Right, and the browser is let in for a day by a cookie the app never sees; ten wrong tries in fifteen minutes and it waits. Public (R-075a). |
 | `DELETE /api/v1/apps/{appID}/grants/{grantID}` | `app.grants.manage` | Take a grant away. |
 
 ### Identity
@@ -145,13 +152,21 @@ one verb says nothing about another (R-082).
 | `GET /api/v1/users` | `install.view` | The accounts on this installation. |
 | `POST /api/v1/users` | `install.users.manage` | Create an account. |
 | `GET /api/v1/users/{userID}` | `install.view` | One account. Your own needs no verb. |
-| `PATCH /api/v1/users/{userID}` | `install.users.manage` | Change an account: display name, email, or suspension. Suspension is not deletion (R-049). |
+| `PATCH /api/v1/users/{userID}` | `install.users.manage` | Change an account: any of `username`, `display_name`, `email` and `status`. Username and email only on a local account; a username only with this verb, even your own. Suspension is not deletion (R-049). Your own name and email need no verb. |
 | `DELETE /api/v1/users/{userID}` | `install.users.manage` | Delete an account, with the destruction rules that follow from it (R-282). |
 | `PUT /api/v1/users/{userID}/role` | `install.users.manage` | Give an account an installation role. Deliberately not a field on PATCH: changing someone's status and changing their power are different acts. |
 | `DELETE /api/v1/users/{userID}/role` | `install.users.manage` | Take an installation role away. The last administrator cannot be demoted. |
+| `POST /api/v1/users/{userID}/password` | `install.users.manage` | Reset another local account's password (`password`), ending every session it holds. `must_change_password` defaults to true: whoever set it hands it over, and its holder chooses their own at the next sign-in. Your own is `POST /me/password`. |
+| `POST /api/v1/passwords/generate` | `install.users.manage` | A strong random password, 18 to 22 characters with upper and lower case, digits and symbols, for creating or resetting an account. Stores nothing. |
+| `GET /api/v1/users/{userID}/apps` | `install.view` | The apps an account has something on: its role for managing each, directly or through a group, whether it can use each, and whether you can change that (`can_manage`). Only apps you can see are listed. Your own needs nothing. |
 | `GET /api/v1/groups` | `install.view` | Groups, whether Pando's own or an identity adapter's (R-078). |
 | `POST /api/v1/groups` | `install.users.manage` | Create a group. |
 | `PUT /api/v1/groups/{groupID}/members` | `install.users.manage` | Set a group's members. |
+| `PUT /api/v1/groups/{groupID}/members/{userID}` | `install.users.manage` | Add one account to a group. It then holds everything the group holds. |
+| `DELETE /api/v1/groups/{groupID}/members/{userID}` | `install.users.manage` | Remove one account from a group. Refused when it would leave nobody who can manage accounts (R-088). |
+| `PUT /api/v1/groups/{groupID}/role` | `install.users.manage` | Give a group an installation role (`role_id`), which everyone in it holds. |
+| `DELETE /api/v1/groups/{groupID}/role` | `install.users.manage` | Take a group's installation role away. Refused when it would leave nobody who can manage accounts (R-088). |
+| `GET /api/v1/groups/{groupID}/apps` | `install.view` | A group's app grants: the role everyone in it has on each app, whether they can open it, and whether you can change that (`can_manage`). Only apps you can see. Share an app with a group through `POST /apps/{appID}/grants` with `principal_kind: group`. |
 | `DELETE /api/v1/groups/{groupID}` | `install.users.manage` | Delete a group. Everything shared with it goes with it: its members lose that access and keep anything given to them another way. Refused if it would leave nobody who can manage accounts (R-088). |
 | `GET /api/v1/roles` | `install.view` | Roles, built in and custom. By default the ones granted across the installation; `scope=app` gives the ones granted on an app, and `scope=all` both. Built-in roles are immutable (R-081). |
 | `POST /api/v1/roles` | `install.users.manage` | Compose a custom role from verbs (R-082). |
@@ -162,14 +177,16 @@ one verb says nothing about another (R-082).
 
 | Endpoint | Verb | What it does |
 | --- | --- | --- |
-| `GET /api/v1/adapters` | `install.view` | The adapters configured here and what they can currently do — live capabilities, not stored configuration. Names which credentials are set, never their values. |
+| `GET /api/v1/adapters` | `install.view` | The adapters configured here and what they can currently do — live capabilities, not stored configuration. Names which credentials are set, never their values. `pending_restart` marks one saved since Pando started, which is not yet what runs; `restart_needed` says any is. |
+| `GET /api/v1/adapters/kinds` | `install.view` | The kinds of adapter this build of Pando can run, and the settings each takes — which are credentials (write-only, stored encrypted), which are required, and the default each takes when left empty or an example. |
+| `POST /api/v1/restart` | `install.adapters.manage` | Restart Pando: finish the requests in flight, then start again, loading the adapters and the configuration file afresh. Apps behind Pando are unreachable for the seconds it takes. Environment variables are not re-read. Returns before the restart; `started_at` on GET /api/v1/adapters changes once it is back. |
 | `POST /api/v1/adapters` | `install.adapters.manage` | Configure an adapter. Settings go in config; credentials such as an API key go in credentials, which is write-only and stored encrypted. |
 | `GET /api/v1/capacity` | `install.view` | What the host has, and what is committed to apps (R-242). |
 | `GET /api/v1/policy` | `install.view` | Host policy. Reading the rules you work under is not the same privilege as changing them (R-274). |
 | `PUT /api/v1/policy` | `install.policy.manage` | Replace host policy. Policy is a floor, never an override (R-272). |
 | `POST /api/v1/policy/preview` | `install.policy.manage` | Which apps a candidate policy would block, before it is saved. |
 | `GET /api/v1/config` | `install.view` | The configuration Pando started with (R-271): every non-secret setting, its value and where it came from — an environment variable, the config file, or the default — and the host policy fields fixed there, which cannot be changed through the API while they are set. Secrets are never listed. |
-| `GET /api/v1/audit` | `install.audit.read` | The audit log, newest first. Filters combine: `action` (a prefix), `principal_id` (who did it, including through a token), `principal_kind` (user, token, system or anonymous), `app_id`, `target_kind` and `target_id` (what it was done to), and `since`/`until` (RFC 3339; since inclusive, until exclusive). Pages with `before`. Append-only: no endpoint edits or deletes an event, and the database refuses it too (R-027). |
+| `GET /api/v1/audit` | `install.audit.read` | The audit log, newest first. Filters combine: `action` (a prefix), `principal_id` (who did it, including through a token), `principal_kind` (user, token, system or anonymous), `app_id`, `target_kind` and `target_id` (what it was done to), `involving` (an ID that is the actor or the target — everything to do with one account), and `since`/`until` (RFC 3339; since inclusive, until exclusive). Pages with `before`. Append-only: no endpoint edits or deletes an event, and the database refuses it too (R-027). |
 | `GET /api/v1/backups` | `install.backup.manage` | The backups this installation holds. |
 | `POST /api/v1/backups` | `install.backup.manage` | Take a backup now. |
 | `POST /api/v1/backups/{backupID}/verify` | `install.backup.manage` | Check a backup before it is needed, rather than at the moment of disaster (R-216). |
@@ -200,6 +217,7 @@ that finds the log line. Branch on the code; the message may be reworded.
 | `AUTH_TOKEN_INVALID` | 401 | The token is unknown, revoked or expired. |
 | `AUTH_TOKEN_ORPHANED` | 401 | The token's owner was suspended or deleted, so the token no longer resolves to anyone (R-059). |
 | `PERM_DENIED` | 403 | Authenticated, but not permitted to do this. |
+| `PERM_PASSCODE_REQUIRED` | 403 | The app is shared with everyone who knows its passcode, and this request has not shown it. A browser is sent to the passcode page; entering it there lets the visitor in. |
 | `PERM_VERB_REQUIRED` | 403 | The caller holds no grant carrying the verb this action needs. |
 | `POLICY_ANONYMOUS_GRANT_FORBIDDEN` | 403 | Host policy does not allow apps to be shared with everyone (R-076). |
 | `POLICY_EXEC_DISABLED` | 403 | Host policy has turned off terminal access, including for an app's owner (R-085). |
@@ -220,6 +238,7 @@ that finds the log line. Branch on the code; the message may be reworded.
 | `BUILD_FAILED` | 422 | The build ran and did not succeed. Its log is the answer. |
 | `BUILD_TIMEOUT` | 422 | The build exceeded the time allowed for it (R-119). |
 | `INTERNAL` | 500 | Pando failed in a way it did not expect. The request ID finds the log line. |
+| `RATE_LIMITED` | 500 | Too many attempts in a short time — at a passcode, for example. Wait a few minutes and try again. |
 | `ADAPTER_FAILED` | 502 | The adapter was reached and failed. |
 | `ADAPTER_UNAVAILABLE` | 502 | The adapter needed for this is not configured or not reachable. |
 

@@ -27,6 +27,26 @@ const (
 	// source allowlist would hand it to everyone who could edit one.
 	InstallBackupManage Verb = "install.backup.manage"
 
+	// InstallAppsView and InstallAppsManage are the two install verbs that
+	// reach into apps: seeing every app read-only, and managing every app with
+	// every app verb. They are what makes an administrator able to look after
+	// an app somebody else made without first being granted it — the one
+	// sanctioned way an install grant bears on an app, evaluated in exactly one
+	// place, CheckControl (see everyApp). Separate verbs so a custom role can
+	// let someone look at every app and change none of them.
+	//
+	// Control plane only. Neither appears in CheckData: using an app still
+	// needs a data grant or ownership (R-072, R-087).
+	InstallAppsView   Verb = "install.apps.view"
+	InstallAppsManage Verb = "install.apps.manage"
+
+	// InstallTokensManage covers service tokens (R-060): listing, creating and
+	// revoking them. Its own verb rather than install.users.manage's, because a
+	// service token is a principal an automation acts as — issuing one is a
+	// different trust from managing people, and an installation may want
+	// somebody who runs its CI to hold one without the other.
+	InstallTokensManage Verb = "install.tokens.manage"
+
 	// AppCreate is install-scoped despite its name: there is no app yet when it
 	// is checked. Sequence A step 1 has always called it install-level.
 	AppCreate Verb = "app.create"
@@ -60,6 +80,9 @@ var Verbs = []Verb{
 	InstallAdaptersManage,
 	InstallAuditRead,
 	InstallBackupManage,
+	InstallAppsView,
+	InstallAppsManage,
+	InstallTokensManage,
 	AppCreate,
 
 	AppView,
@@ -98,12 +121,11 @@ const (
 	RoleOperator = "role_operator"
 	RoleOwner    = "role_owner"
 
-	// RoleAdministrator is install-scoped and holds no app verbs. An
-	// administrator is not an owner of every app: they can create apps, manage
-	// users, policy and adapters, and read the audit log, and to manage a
-	// particular app they need a grant on it like anyone else. That is R-031 —
-	// every app has an owner of record — surviving the arrival of an admin role
-	// rather than being quietly overridden by it.
+	// RoleAdministrator is install-scoped and holds no app verbs — but it holds
+	// install.apps.manage, which CheckControl reads as every app verb on every
+	// app (R-081). An administrator can look after any app without a grant on
+	// it. They are still not its owner: R-031's owner of record is unchanged,
+	// and using the app still needs a data grant (R-087).
 	RoleAdministrator = "role_administrator"
 
 	// RoleCreator is install-scoped and holds one verb, app.create. A creator
@@ -149,8 +171,38 @@ func (r Role) Has(v Verb) bool {
 func InstallScoped(v Verb) bool {
 	switch v {
 	case InstallView, InstallUsersManage, InstallPolicyManage,
-		InstallAdaptersManage, InstallAuditRead, InstallBackupManage, AppCreate:
+		InstallAdaptersManage, InstallAuditRead, InstallBackupManage,
+		InstallAppsView, InstallAppsManage, InstallTokensManage, AppCreate:
 		return true
+	default:
+		return false
+	}
+}
+
+// AppVerbs is every app-scoped verb, in catalog order.
+func AppVerbs() []Verb {
+	var out []Verb
+	for _, v := range Verbs {
+		if !InstallScoped(v) {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// everyApp is the whole of how an install grant bears on an app: the app
+// verbs each of the two install.apps verbs stands for, on every app.
+//
+// This is the one place an install verb implies app verbs, and it is a table
+// rather than a rule so that it can be read in one look. install.apps.view is
+// the Viewer role's verbs; install.apps.manage is all of them, which is the
+// Owner role's (R-081).
+func everyApp(install Verb, verb Verb) bool {
+	switch install {
+	case InstallAppsManage:
+		return !InstallScoped(verb)
+	case InstallAppsView:
+		return verb == AppView || verb == AppLogsRead
 	default:
 		return false
 	}

@@ -120,3 +120,18 @@ func (a *Adapter) Observe(_ context.Context, h api.RouteHandle) (api.RouteState,
 }
 
 var _ api.RoutingAdapter = (*Adapter)(nil)
+
+// Info describes this kind of adapter for the forms that configure one
+// (api.KindInfo, R-261).
+func Info() api.KindInfo {
+	return api.KindInfo{
+		Category:    api.CategoryRouting,
+		Kind:        Kind,
+		Name:        "Built in",
+		Description: "Serves apps from Pando itself, on a path or a port.",
+		IDPrefix:    "rte_",
+		Fields: []api.Field{
+			{Key: "base_url", Label: "Base URL", Type: "string", Help: "The address apps are reached at.", Default: "The address each request arrives on"},
+		},
+	}
+}

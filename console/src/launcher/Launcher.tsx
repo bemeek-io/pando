@@ -24,7 +24,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, EmptyState, Icon, IconButton, Input, Logo } from '@design';
+import { Button, EmptyState, Icon, IconButton, Input, Logo, Skeleton } from '@design';
 
 import { api, base } from '@api/client';
 import type { App, Section } from '@api/types.gen';
@@ -142,8 +142,11 @@ export function Launcher({
   );
 
   return (
+    // The contour map in the header alone, fading out before it reaches the
+    // tiles. Every tile carries its own map, and a map behind the whole grid
+    // competed with them for the eye; in the header it marks the page without
+    // sitting under anything.
     <div style={{ minHeight: '100vh', background: 'var(--paper)', position: 'relative', isolation: 'isolate' }}>
-      <TopoBackground seed="launcher" />
       <header
         style={{
           display: 'flex',
@@ -155,8 +158,12 @@ export function Launcher({
           gap: narrow ? 'var(--space-3)' : undefined,
           padding: `${narrow ? 'var(--space-4)' : 'var(--space-5)'} var(--console-padding)`,
           borderBottom: 'var(--border-width) solid var(--rule)',
+          position: 'relative',
+          isolation: 'isolate',
+          overflow: 'hidden',
         }}
       >
+        <TopoBackground seed="launcher" fade="linear-gradient(to bottom, black 30%, transparent)" />
         <Logo size={20} />
         <div style={narrow ? { order: 3, flexBasis: '100%' } : undefined}>
           <SearchField
@@ -242,7 +249,17 @@ export function Launcher({
             open={searching}
             onDropApp={dropInto('unsorted')}
           >
-            {apps.isPending && <Quiet>Loading your apps.</Quiet>}
+            {/* Tiles' shapes, where the tiles will be: the page does not jump
+                when they arrive, and nothing says "loading" in words. */}
+            {apps.isPending && (
+              <div role="status" aria-label="Loading your apps">
+                <Grid>
+                  {Array.from({ length: 4 }, (_, i) => (
+                    <Skeleton key={i} height="auto" radius="md" style={{ aspectRatio: '1 / 1' }} />
+                  ))}
+                </Grid>
+              </div>
+            )}
 
             {apps.isError && <Quiet>Pando couldn&rsquo;t load your apps. Reload the page to try again.</Quiet>}
 
@@ -831,7 +848,7 @@ function NewSection({ arrange }: { arrange: Arrange }) {
   return (
     <div style={{ padding: '0 var(--console-padding) var(--space-8)' }}>
       {name === null ? (
-        <Button variant="ghost" onClick={() => setName('')}>
+        <Button variant="secondary" onClick={() => setName('')}>
           New section
         </Button>
       ) : (

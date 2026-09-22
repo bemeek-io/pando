@@ -95,6 +95,10 @@ func (f *fakeRuntime) Capabilities(context.Context) (api.RuntimeCapabilities, er
 }
 func (f *fakeRuntime) Capacity(context.Context) (api.Capacity, error) { return api.Capacity{}, nil }
 
+func (f *fakeRuntime) Usage(context.Context, api.BundleRef) (api.BundleUsage, error) {
+	return api.BundleUsage{}, nil
+}
+
 func (f *fakeRuntime) Observe(context.Context, api.BundleRef) (api.ObservedBundle, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

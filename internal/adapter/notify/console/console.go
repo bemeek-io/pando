@@ -106,3 +106,18 @@ func (a *Adapter) Notify(ctx context.Context, n api.Notification) error {
 }
 
 var _ api.NotifyAdapter = (*Adapter)(nil)
+
+// Info describes this kind of adapter for the forms that configure one
+// (api.KindInfo, R-261).
+func Info() api.KindInfo {
+	return api.KindInfo{
+		Category:    api.CategoryNotify,
+		Kind:        Kind,
+		Name:        "Console",
+		Description: "Shows notifications in the console.",
+		IDPrefix:    "ntf_",
+		Fields: []api.Field{
+			{Key: "retain_days", Label: "Keep for", Type: "int", Help: "Days a notification is kept.", Default: "30"},
+		},
+	}
+}

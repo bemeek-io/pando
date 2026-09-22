@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -61,6 +62,8 @@ type User struct {
 	Status      string `json:"status"`
 
 	MustChangePassword bool `json:"must_change_password"`
+
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Create inserts a user and returns it.
@@ -74,10 +77,12 @@ func (u *Users) Create(ctx context.Context, adapterID, externalID, email, displa
 		Status:             "active",
 		MustChangePassword: mustChange,
 	}
-	_, err := u.db.Exec(ctx, `
+	err := u.db.QueryRow(ctx, `
 		INSERT INTO users (id, adapter_id, external_id, email, display_name, password_hash, must_change_password, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')`,
-		user.ID, adapterID, externalID, nullable(email), nullable(displayName), nullable(passwordHash), mustChange)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+		RETURNING created_at`,
+		user.ID, adapterID, externalID, nullable(email), nullable(displayName), nullable(passwordHash), mustChange).
+		Scan(&user.CreatedAt)
 	if err != nil {
 		return User{}, errs.Wrap(errs.Internal, "Could not create the account.", err)
 	}
@@ -89,11 +94,11 @@ func (u *Users) ByExternalID(ctx context.Context, adapterID, externalID string) 
 	var user User
 	var email, display *string
 	err := u.db.QueryRow(ctx, `
-		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password
+		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at
 		FROM users
 		WHERE adapter_id = $1 AND external_id = $2 AND deleted_at IS NULL`,
 		adapterID, externalID).
-		Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display, &user.Status, &user.MustChangePassword)
+		Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display, &user.Status, &user.MustChangePassword, &user.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, false, nil
 	}
@@ -114,9 +119,9 @@ func (u *Users) ByID(ctx context.Context, userID string) (User, bool, error) {
 	var user User
 	var email, display *string
 	err := u.db.QueryRow(ctx, `
-		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password
+		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at
 		FROM users WHERE id = $1`, userID).
-		Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display, &user.Status, &user.MustChangePassword)
+		Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display, &user.Status, &user.MustChangePassword, &user.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, false, nil
 	}
@@ -143,7 +148,7 @@ func (u *Users) ByID(ctx context.Context, userID string) (User, bool, error) {
 // every other list, and the shape of the response already allows it.
 func (u *Users) List(ctx context.Context) ([]User, error) {
 	rows, err := u.db.Query(ctx, `
-		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password
+		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at
 		FROM users WHERE deleted_at IS NULL ORDER BY id DESC`)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not read the accounts.", err)
@@ -155,7 +160,7 @@ func (u *Users) List(ctx context.Context) ([]User, error) {
 		var user User
 		var email, display *string
 		if err := rows.Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display,
-			&user.Status, &user.MustChangePassword); err != nil {
+			&user.Status, &user.MustChangePassword, &user.CreatedAt); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read the accounts.", err)
 		}
 		if email != nil {
@@ -315,6 +320,172 @@ func (u *Users) ResetPassword(ctx context.Context, username, passwordHash string
 		return "", errs.Wrap(errs.Internal, "Could not reset the password.", err)
 	}
 	return userID, nil
+}
+
+// SetPasswordFor sets a local account's password on an administrator's behalf,
+// and whether its holder must change it at the next sign-in.
+//
+// Returns false when there is no such local account: an external identity
+// provider owns its own credentials (R-044).
+func (u *Users) SetPasswordFor(ctx context.Context, userID, passwordHash string, mustChange bool) (bool, error) {
+	tag, err := u.db.Exec(ctx, `
+		UPDATE users
+		SET password_hash = $2, must_change_password = $3, updated_at = now()
+		WHERE id = $1 AND adapter_id = $4 AND deleted_at IS NULL`,
+		userID, passwordHash, mustChange, LocalAdapterID)
+	if err != nil {
+		return false, errs.Wrap(errs.Internal, "Could not reset the password.", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// Profile is the part of an account a person or an administrator edits. A nil
+// field is left as it is.
+type Profile struct {
+	Username    *string
+	DisplayName *string
+	Email       *string
+}
+
+// UpdateProfile changes an account's username, name or email.
+//
+// Username and email only on a local account: an external identity provider
+// owns those, and a change here would be overwritten at the next sign-in —
+// or worse, would make the account stop matching its subject (R-054 is about
+// users.id, which never changes, but the provider matches on external_id).
+func (u *Users) UpdateProfile(ctx context.Context, userID string, p Profile) error {
+	user, found, err := u.ByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errs.New(errs.NotFound, "There is no account with that ID.")
+	}
+	if user.AdapterID != LocalAdapterID && (p.Username != nil || p.Email != nil) {
+		return errs.New(errs.ValidInvalid,
+			"This account comes from an external identity provider, so its username and email are changed there.")
+	}
+	if p.Username != nil && *p.Username == "" {
+		return errs.New(errs.ValidInvalid, "An account needs a username.")
+	}
+
+	_, err = u.db.Exec(ctx, `
+		UPDATE users SET
+		  external_id  = coalesce($2, external_id),
+		  display_name = CASE WHEN $3::text IS NULL THEN display_name ELSE nullif($3, '') END,
+		  email        = CASE WHEN $4::text IS NULL THEN email ELSE nullif($4, '') END,
+		  updated_at   = now()
+		WHERE id = $1 AND deleted_at IS NULL`, userID, p.Username, p.DisplayName, p.Email)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return errs.Newf(errs.ValidInvalid, "There is already an account called %q.", *p.Username)
+		}
+		return errs.Wrap(errs.Internal, "Could not update the account.", err)
+	}
+	return nil
+}
+
+// Search finds active and suspended accounts by username, name or email,
+// case-insensitively, at most limit of them, ordered by username. An empty
+// query lists the first few.
+func (u *Users) Search(ctx context.Context, q string, limit int) ([]User, error) {
+	rows, err := u.db.Query(ctx, `
+		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at
+		FROM users
+		WHERE deleted_at IS NULL
+		  AND ($1 = '' OR external_id ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%' OR email ILIKE '%' || $1 || '%')
+		ORDER BY external_id
+		LIMIT $2`, likeEscape(q), limit)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not search the accounts.", err)
+	}
+	defer rows.Close()
+	out := []User{}
+	for rows.Next() {
+		var user User
+		var email, display *string
+		if err := rows.Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display,
+			&user.Status, &user.MustChangePassword, &user.CreatedAt); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not search the accounts.", err)
+		}
+		if email != nil {
+			user.Email = *email
+		}
+		if display != nil {
+			user.DisplayName = *display
+		}
+		out = append(out, user)
+	}
+	return out, rows.Err()
+}
+
+// likeEscape neutralizes ILIKE's wildcards in a search typed by a person.
+func likeEscape(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
+// ErrAlreadySetUp is ClaimFirst's refusal once an installation has an account.
+var ErrAlreadySetUp = errs.New(errs.ValidInvalid, "This installation is already set up.").
+	WithRemedy("Sign in with an existing account. An administrator can create one for you.")
+
+// ClaimFirst creates the installation's first account and makes it an
+// administrator, if and only if there is no account yet (R-046).
+//
+// One transaction, serialized by an advisory lock, so two people submitting the
+// setup form at the same moment cannot both become the first administrator:
+// the second waits, then finds an account and is refused.
+func (u *Users) ClaimFirst(ctx context.Context, username, displayName, passwordHash, roleID string) (User, string, error) {
+	tx, err := u.db.Begin(ctx)
+	if err != nil {
+		return User{}, "", errs.Wrap(errs.Internal, "Could not set up the installation.", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Any fixed key; it only has to be the same key for every claimant.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(46046)`); err != nil {
+		return User{}, "", errs.Wrap(errs.Internal, "Could not set up the installation.", err)
+	}
+	var count int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM users WHERE deleted_at IS NULL`).Scan(&count); err != nil {
+		return User{}, "", errs.Wrap(errs.Internal, "Could not set up the installation.", err)
+	}
+	if count > 0 {
+		return User{}, "", ErrAlreadySetUp
+	}
+
+	user := User{
+		ID: id.New(id.User), AdapterID: LocalAdapterID, ExternalID: username,
+		DisplayName: displayName, Status: "active",
+	}
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO users (id, adapter_id, external_id, display_name, password_hash, must_change_password, status)
+		VALUES ($1, $2, $3, $4, $5, false, 'active')
+		RETURNING created_at`,
+		user.ID, LocalAdapterID, username, nullable(displayName), passwordHash).Scan(&user.CreatedAt); err != nil {
+		return User{}, "", errs.Wrap(errs.Internal, "Could not create the account.", err)
+	}
+
+	grantID := id.New(id.Grant)
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO grants (id, app_id, plane, role_scope, principal_kind, principal_id, role_id, created_by)
+		VALUES ($1, NULL, 'control', 'install', 'user', $2, $3, 'system')`,
+		grantID, user.ID, roleID); err != nil {
+		return User{}, "", errs.Wrap(errs.Internal, "Could not make the account an administrator.", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return User{}, "", errs.Wrap(errs.Internal, "Could not set up the installation.", err)
+	}
+	return user, grantID, nil
+}
+
+// NeedsSetup reports whether the installation has no account yet.
+func (u *Users) NeedsSetup(ctx context.Context) (bool, error) {
+	var any bool
+	if err := u.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE deleted_at IS NULL)`).Scan(&any); err != nil {
+		return false, errs.Wrap(errs.Internal, "Could not check for existing accounts.", err)
+	}
+	return !any, nil
 }
 
 // Delete soft-deletes a user, which is what fires R-282's destruction rules.

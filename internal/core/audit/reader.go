@@ -61,6 +61,12 @@ type Query struct {
 	TargetKind string
 	TargetID   string
 
+	// Involving narrows to events where one ID is on either side: the actor
+	// (or the person a token acted for) or the target. "Everything to do with
+	// this account" — what it did and what was done to it — which the actor and
+	// target filters cannot say, because filters combine with AND.
+	Involving string
+
 	// Since and Until bound when it happened: Since inclusive, Until
 	// exclusive, so consecutive ranges neither overlap nor leave a gap. Zero
 	// means unbounded.
@@ -138,6 +144,10 @@ func (r *Reader) List(ctx context.Context, q Query) ([]Record, error) {
 	}
 	if q.TargetID != "" {
 		where = append(where, "target_id = "+arg(q.TargetID))
+	}
+	if q.Involving != "" {
+		v := arg(q.Involving)
+		where = append(where, "(principal_id = "+v+" OR on_behalf_of = "+v+" OR target_id = "+v+")")
 	}
 	if !q.Since.IsZero() {
 		where = append(where, "occurred_at >= "+arg(q.Since))

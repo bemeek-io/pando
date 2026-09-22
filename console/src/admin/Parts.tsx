@@ -53,6 +53,9 @@ export function Parts({ app, onLogs }: { app: App; onLogs?: (workload: string) =
   const parts = status.data?.workloads ?? [];
 
   // One part is the app, and the app's own status line already says how it is.
+  // Nothing while the status loads either, not a skeleton: most apps are one
+  // part, and a placeholder for a section that then does not appear moves
+  // everything under it twice.
   if (!app.pinned_spec_id || parts.length < 2) return null;
 
   return (
@@ -113,7 +116,7 @@ export function Parts({ app, onLogs }: { app: App; onLogs?: (workload: string) =
               align: 'right',
               render: (row: Part) =>
                 onLogs && (
-                  <Button variant="ghost" onClick={() => onLogs(row.name)}>
+                  <Button variant="secondary" onClick={() => onLogs(row.name)}>
                     Logs
                   </Button>
                 ),

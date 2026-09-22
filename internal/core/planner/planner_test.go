@@ -39,6 +39,9 @@ func (f *fakeRuntime) Capacity(context.Context) (api.Capacity, error) { return f
 func (f *fakeRuntime) Apply(context.Context, api.BundlePlan) (api.BundleHandle, error) {
 	return api.BundleHandle{}, nil
 }
+func (f *fakeRuntime) Usage(context.Context, api.BundleRef) (api.BundleUsage, error) {
+	return api.BundleUsage{}, nil
+}
 func (f *fakeRuntime) Observe(context.Context, api.BundleRef) (api.ObservedBundle, error) {
 	return api.ObservedBundle{}, nil
 }

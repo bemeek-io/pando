@@ -45,6 +45,8 @@ export { Dialog } from './components/feedback/Dialog';
 export type { DialogProps } from './components/feedback/Dialog';
 export { EmptyState } from './components/feedback/EmptyState';
 export type { EmptyStateProps } from './components/feedback/EmptyState';
+export { Skeleton, SkeletonText } from './components/feedback/Skeleton';
+export type { SkeletonProps, SkeletonTextProps } from './components/feedback/Skeleton';
 export { Toast } from './components/feedback/Toast';
 export type { ToastProps } from './components/feedback/Toast';
 export { Tooltip } from './components/feedback/Tooltip';

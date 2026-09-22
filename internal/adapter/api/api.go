@@ -53,6 +53,11 @@ type RuntimeCapabilities struct {
 	SupportsResourceLimits bool
 	SupportsStartThenSwap  bool // R-145
 
+	// ReportsUsage means Usage works: the runtime can say what each workload
+	// is using now (R-245). False, and the console says the runtime does not
+	// report it rather than showing zeros.
+	ReportsUsage bool
+
 	// LogRetention is what the runtime can do about R-222's size cap.
 	LogRetention LogRetentionCapability
 
@@ -159,6 +164,11 @@ type RuntimeAdapter interface {
 	// what to do (design 05). An adapter that silently restarts things makes
 	// drift undetectable and breaks R-148's report path.
 	Observe(ctx context.Context, ref BundleRef) (ObservedBundle, error)
+
+	// Usage reports what each workload is using right now — CPU, memory and
+	// disk — and each volume's size (R-245). A reading, not a history: Pando
+	// keeps no time series (R-016). Only called when ReportsUsage is true.
+	Usage(ctx context.Context, ref BundleRef) (BundleUsage, error)
 
 	Stop(ctx context.Context, ref BundleRef) error
 	Destroy(ctx context.Context, ref BundleRef, opts DestroyOptions) error
@@ -485,6 +495,37 @@ type LogRetentionCapability struct {
 	// rounds; a runtime with a hard floor says so here so the planner can
 	// refuse a spec asking for less rather than silently granting more.
 	MinBytes int64
+}
+
+// BundleUsage is one reading of what an app's workloads are using (R-245).
+type BundleUsage struct {
+	Workloads []WorkloadUsage
+	Volumes   []VolumeUsage
+	Reported  time.Time
+}
+
+// WorkloadUsage is one workload's use, beside its limits. A limit of 0 means
+// none: the workload may use what the host has.
+type WorkloadUsage struct {
+	Workload string
+	Running  bool
+
+	// CPUMillis is thousandths of a core, averaged over the adapter's sample.
+	CPUMillis      int
+	CPULimitMillis int
+
+	MemoryBytes      int64
+	MemoryLimitBytes int64
+
+	// DiskBytes is what the workload has written outside its volumes, -1 when
+	// the runtime cannot say.
+	DiskBytes int64
+}
+
+// VolumeUsage is how much a volume holds, -1 when the runtime cannot say.
+type VolumeUsage struct {
+	VolumeID string
+	Bytes    int64
 }
 
 // Capacity is what the adapter reports about itself (R-243).

@@ -12,6 +12,10 @@
 //
 // The value is a principal ID, or `kind:<kind>` for a whole kind of actor;
 // auditQuery turns the second into principal_kind.
+//
+// The same field, relabeled and without Pando's own actors, is the log's
+// "Actor or target" filter: those are accounts, and a kind is not an ID that
+// can be on either side.
 
 import { useEffect, useRef, useState } from 'react';
 import { Input } from '@design';
@@ -46,19 +50,32 @@ export function ActorField({
   people,
   value,
   onChange,
+  label = 'Actor',
+  pando = true,
 }: {
   people: Person[];
   /** A principal ID, `kind:<kind>`, or empty. */
   value: string;
   onChange: (actor: string) => void;
+  label?: string;
+  /** Whether to offer Pando's own actors — the system, anonymous. */
+  pando?: boolean;
 }) {
+  const own = pando ? PANDO : [];
   const options: Option[] = [
-    ...PANDO,
+    ...own,
     ...people.map((p) => ({ value: p.id, label: p.external_id, note: p.display_name || p.email })),
   ];
   const labelOf = (v: string) => options.find((o) => o.value === v)?.label ?? v;
 
   const [text, setText] = useState(() => (value ? labelOf(value) : ''));
+
+  // A value that arrived with the page — a link from an account — shows as an
+  // ID until the accounts load, and as the username once they have.
+  const known = value ? labelOf(value) : '';
+  useEffect(() => {
+    if (value && text === value && known !== value) setText(known);
+  }, [value, known, text]);
   const [open, setOpen] = useState(false);
   const [at, setAt] = useState(0);
   const root = useRef<HTMLDivElement>(null);
@@ -83,7 +100,7 @@ export function ActorField({
           matches(text, o.label, o.note, o.value, people.find((p) => p.id === o.value)?.email),
         )
         .slice(0, SHOWN)
-    : PANDO;
+    : own;
 
   const choose = (o: Option) => {
     setText(o.label);
@@ -94,7 +111,7 @@ export function ActorField({
   return (
     <div ref={root} style={{ position: 'relative' }}>
       <Input
-        label="Actor"
+        label={label}
         mono
         role="combobox"
         aria-expanded={open && found.length > 0}
@@ -132,7 +149,7 @@ export function ActorField({
       {open && found.length > 0 && (
         <div
           role="listbox"
-          aria-label="Matching actors"
+          aria-label={`Matching ${label.toLowerCase()}`}
           style={{
             position: 'absolute',
             top: '100%',

@@ -125,15 +125,15 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 // it survives the person who created it. That is a new subject on the
 // installation, which is administration.
 //
-// The verb is install.users.manage, the same one that creates and deletes
-// accounts, because this creates something that acts like one. There is no
-// separate token verb: a second verb that only ever travels with the first is
-// a list to maintain and nothing to enforce (R-082 — no implication graph, so
-// every verb someone holds is a verb someone had to grant).
+// The verb is install.tokens.manage (R-080). It used to be install.users.manage,
+// on the reasoning that a service token acts like an account; but issuing a
+// credential for an automation and managing people are different trusts, and an
+// installation may want whoever runs its CI to hold the first without the
+// second. The Administrator holds both.
 
 func (s *Server) handleListServiceTokens(w http.ResponseWriter, r *http.Request) {
 	p := PrincipalFrom(r.Context())
-	if err := s.Authz.CheckInstall(r.Context(), p, authz.InstallUsersManage); err != nil {
+	if err := s.Authz.CheckInstall(r.Context(), p, authz.InstallTokensManage); err != nil {
 		Error(w, r, err)
 		return
 	}
@@ -148,7 +148,7 @@ func (s *Server) handleListServiceTokens(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleCreateServiceToken(w http.ResponseWriter, r *http.Request) {
 	p := PrincipalFrom(r.Context())
-	if err := s.Authz.CheckInstall(r.Context(), p, authz.InstallUsersManage); err != nil {
+	if err := s.Authz.CheckInstall(r.Context(), p, authz.InstallTokensManage); err != nil {
 		Error(w, r, err)
 		return
 	}
@@ -221,9 +221,10 @@ func (s *Server) handleCreateServiceToken(w http.ResponseWriter, r *http.Request
 
 // handleRevokeToken revokes a token.
 //
-// Your own, or anyone's with install.users.manage — the same self-or-verb shape
-// as the account endpoints, and for the same reason: revoking someone else's
-// credential is administration.
+// Your own; a service token with install.tokens.manage; anyone else's with
+// install.users.manage — the same self-or-verb shape as the account endpoints,
+// and for the same reason: revoking someone else's credential is
+// administration.
 func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
 	p := PrincipalFrom(r.Context())
 	if p.Kind == authz.KindAnonymous {
@@ -242,7 +243,16 @@ func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if owner == "" || owner != p.UserID {
+	// A service token has no owner: revoking one is managing service tokens.
+	// Somebody else's own token is somebody else's credential: that is
+	// managing accounts. Your own needs nothing.
+	switch {
+	case owner == "":
+		if err := s.Authz.CheckInstall(r.Context(), p, authz.InstallTokensManage); err != nil {
+			Error(w, r, err)
+			return
+		}
+	case owner != p.UserID:
 		if err := s.Authz.CheckInstall(r.Context(), p, authz.InstallUsersManage); err != nil {
 			Error(w, r, err)
 			return

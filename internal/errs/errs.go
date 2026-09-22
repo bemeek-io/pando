@@ -28,6 +28,13 @@ const (
 	PermDenied       Code = "PERM_DENIED"
 	PermVerbRequired Code = "PERM_VERB_REQUIRED"
 
+	// PermPasscodeRequired: the app is shared with everyone who knows its
+	// passcode, and this request has not shown it (R-075a).
+	PermPasscodeRequired Code = "PERM_PASSCODE_REQUIRED"
+
+	// RateLimited: too many attempts in too short a time; wait and try again.
+	RateLimited Code = "RATE_LIMITED"
+
 	// POLICY_* — blocked by host policy. 403.
 	// Policy is evaluated before grants and is a floor, not an override (R-272).
 	PolicySourceNotAllowed        Code = "POLICY_SOURCE_NOT_ALLOWED"        // R-092, raised before clone

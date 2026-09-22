@@ -71,7 +71,7 @@ export function CarriedFiles({ appID }: { appID: string }) {
               width: '12ch',
               align: 'right',
               render: (row: Row) => (
-                <Button variant="ghost" onClick={() => setShowing(row)}>
+                <Button variant="secondary" onClick={() => setShowing(row)}>
                   View
                 </Button>
               ),

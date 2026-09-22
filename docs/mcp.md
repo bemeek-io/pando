@@ -46,7 +46,7 @@ boundary (O-12), and offering a tool policy will refuse wastes the agent's turn.
 | `pando_create_app` | Create an app from a git repository. Returns immediately with the app in draft while Pando works out how to run it; call pando_get_detection next. | `name`, `ref` (optional), `source_url` |
 | `pando_get_detection` | What Pando worked out about an app, including any questions it needs answered before it can deploy. The questions are written to be answerable by whatever wrote the app. | `app_id` |
 | `pando_answer_detection` | Answer one of the questions from pando_get_detection. | `answer`, `app_id`, `key` |
-| `pando_accept_proposal` | Accept what Pando worked out and pin it as the app's setup. This does not deploy — call pando_deploy after. | `app_id` |
+| `pando_accept_proposal` | Accept what Pando worked out and pin it as the app's setup, optionally setting environment variables in the same step. This does not deploy — call pando_deploy after. | `app_id`, `values` (optional) |
 | `pando_plan` | Show what a deploy would do, without doing it. Side-effect free, so it is safe to call after any change to check the change is deployable. | `app_id` |
 | `pando_deploy` | Deploy an app. Returns once the deployment has been accepted, not once it is running. | `app_id`, `idempotency_key` (optional) |
 | `pando_get_logs` | Read an app's recent logs. An app can be made of several parts — a web service, a worker, a database it brought with it — and each has its own log. Without `workload` this is the primary part, the one the app's address resolves to; pando_get_status lists the names. | `app_id`, `workload` (optional) |
@@ -60,11 +60,13 @@ boundary (O-12), and offering a tool policy will refuse wastes the agent's turn.
 | `pando_rename_app` | Change an app's display name. Its ID and address do not change. | `app_id`, `name` |
 | `pando_list_my_apps` | The apps you can open — your launcher — with which are favorites and which of your sections each is filed under, and your sections. A different list from pando_list_apps, which is the apps you can administer. | none |
 | `pando_create_section` | Make a section in your own launcher: a named grouping of apps. Only you see it. | `name` |
+| `pando_list_user_apps` | The apps an account has access to: its role for managing each, directly or through a group, whether it can use each, and whether you can change that (can_manage). | `user_id` |
 | `pando_rename_section` | Rename one of your launcher sections. | `name`, `section_id` |
 | `pando_delete_section` | Delete one of your launcher sections. Its apps go back to Your apps; nothing else changes. | `section_id` |
 | `pando_add_app_to_section` | Move an app you can open into one of your launcher sections, out of any other. | `app_id`, `section_id` |
 | `pando_remove_app_from_section` | Move an app out of one of your launcher sections, back to Your apps. | `app_id`, `section_id` |
-| `pando_list_audit` | Read the audit log, newest first. Every filter is optional and they combine: what was done (an action prefix such as app. or grant.delete), who did it, which app, what it was done to, and when (RFC 3339 times; since inclusive, until exclusive). | `action` (optional), `app_id` (optional), `before` (optional), `principal_id` (optional), `principal_kind` (optional), `since` (optional), `target_id` (optional), `target_kind` (optional), `until` (optional) |
+| `pando_list_audit` | Read the audit log, newest first. Every filter is optional and they combine: what was done (an action prefix such as app. or grant.delete), who did it, which app, what it was done to, and when (RFC 3339 times; since inclusive, until exclusive). | `action` (optional), `app_id` (optional), `before` (optional), `involving` (optional), `principal_id` (optional), `principal_kind` (optional), `since` (optional), `target_id` (optional), `target_kind` (optional), `until` (optional) |
 | `pando_get_config` | The configuration the Pando server started with: every non-secret setting, its value and where it was set (an environment variable, the config file, or the default), and the host policy fields fixed there, which cannot be changed through the API while they are set. | none |
 | `pando_get_status` | What an app is doing right now: running, degraded, failed, and why — including each part separately, so a single part that is crash-looping is visible rather than averaged into one word for the app. | `app_id` |
+| `pando_get_usage` | What each part of an app is using right now: CPU (thousandths of a core), memory and disk in bytes, and each mounted volume's size, beside its limits (0 means none). A reading, not a history. | `app_id` |
 

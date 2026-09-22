@@ -29,13 +29,14 @@ type store struct {
 	owner     map[string]string
 	data      map[string][]string
 	anonymous map[string]bool
+	passcode  map[string]string
 	status    map[string]string
 }
 
 func newStore() *store {
 	return &store{
 		owner: map[string]string{}, data: map[string][]string{},
-		anonymous: map[string]bool{}, status: map[string]string{},
+		anonymous: map[string]bool{}, passcode: map[string]string{}, status: map[string]string{},
 	}
 }
 
@@ -72,8 +73,11 @@ func (s *store) HasDataGrant(_ context.Context, appID string, p authz.Principal)
 	}
 	return false, nil
 }
-func (s *store) HasAnonymousGrant(_ context.Context, appID string) (bool, error) {
-	return s.anonymous[appID], nil
+func (s *store) AnonymousAccess(_ context.Context, appID string) (bool, bool, error) {
+	return s.anonymous[appID], s.passcode[appID] != "", nil
+}
+func (s *store) PasscodeUnlocked(_ context.Context, appID, token string) (bool, error) {
+	return token != "" && s.passcode[appID] == token, nil
 }
 func (s *store) Role(context.Context, string) (authz.Role, error) { return authz.Role{}, nil }
 
@@ -809,4 +813,48 @@ func TestR173_PandosOwnCookiesNeverReachAnApp(t *testing.T) {
 	// The app's own cookies are untouched: this is a filter, not a purge.
 	require.Contains(t, forwarded, "theme=dark")
 	require.Contains(t, forwarded, "cart=two-items")
+}
+
+// TestR075a_APasscodeAppAsksForItsPasscode asserts the proxy's half of public
+// with a passcode: without the unlock, a visitor — signed in or not — is sent to
+// the passcode page, not to sign-in; with it, they reach the app; and the
+// unlock cookie, a credential, never reaches the app itself (R-173).
+func TestR075a_APasscodeAppAsksForItsPasscode(t *testing.T) {
+	for _, who := range []authz.Principal{authz.Anonymous(), activeUser("usr_nobody")} {
+		front, _, _, got := harness(t, who, func(s *store) {
+			s.anonymous[appID] = true
+			s.passcode[appID] = "unlock-token"
+		})
+		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}}
+
+		resp, err := client.Get(front.URL + "/notes?page=2")
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		require.Equal(t, http.StatusFound, resp.StatusCode)
+		location := resp.Header.Get("Location")
+		require.Contains(t, location, "/.pando/login?passcode="+appID)
+		require.Contains(t, location, "next=%2Fnotes%3Fpage%3D2")
+
+		// A wrong unlock is no unlock.
+		req, _ := http.NewRequest(http.MethodGet, front.URL+"/notes", nil)
+		req.AddCookie(&http.Cookie{Name: proxy.PasscodeCookiePrefix + appID, Value: "guessed"})
+		resp, err = client.Do(req)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		require.Equal(t, http.StatusFound, resp.StatusCode)
+
+		// The right one, for this app, lets them through without the app
+		// ever seeing it.
+		req, _ = http.NewRequest(http.MethodGet, front.URL+"/notes", nil)
+		req.AddCookie(&http.Cookie{Name: proxy.PasscodeCookiePrefix + appID, Value: "unlock-token"})
+		req.AddCookie(&http.Cookie{Name: "theme", Value: "dark"})
+		resp, err = client.Do(req)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.NotContains(t, got.header.Get("Cookie"), "unlock-token")
+		require.Contains(t, got.header.Get("Cookie"), "theme=dark")
+	}
 }

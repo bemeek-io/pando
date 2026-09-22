@@ -12,6 +12,12 @@
 // reference (R-190, R-191) — so pasting an API key into the wrong box would put
 // it in every export of this app forever. The form asks which, and defaults to
 // the safe one.
+//
+// Two verbs, one for each kind. Every change here writes a spec revision, which
+// is app.spec.edit; a secret is also a write to the secrets adapter, which is
+// app.secrets.write. Without the first the list is read-only. Without the
+// second a variable can still be set as an ordinary value, and a secret's row
+// cannot be changed — a Save that stored half of it would be worse than none.
 
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -22,6 +28,7 @@ import type { AppSpec, EnvEntry, Workload } from '@api/types.gen';
 import { Quiet, messageOf } from '../install/Accounts';
 import { looksSensitive } from './sensitive';
 import { Table } from '../ui/Table';
+import { AppVerb, useCan } from './verbs';
 
 interface Revision {
   id: string;
@@ -43,6 +50,8 @@ export function Environment({ appID, focus }: { appID: string; focus?: boolean }
   const queries = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
+  const canEdit = useCan(AppVerb.SpecEdit);
+  const canWriteSecrets = useCan(AppVerb.SecretsWrite);
   const heading = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -131,16 +140,16 @@ export function Environment({ appID, focus }: { appID: string; focus?: boolean }
     <section ref={heading}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>Environment</h4>
-        {latest && (
-          <Button variant="ghost" onClick={() => setAdding(true)}>
+        {latest && canEdit && (
+          <Button variant="secondary" onClick={() => setAdding(true)}>
             Add variable
           </Button>
         )}
       </div>
 
       <Quiet>
-        What the app reads from its environment. Pando works out what it can; add anything it
-        missed.
+        What the app reads from its environment.
+        {canEdit && ' Pando works out what it can; add anything it missed.'}
       </Quiet>
 
       {specs.isError && <Banner tone="failed">{messageOf(specs.error)}</Banner>}
@@ -161,42 +170,53 @@ export function Environment({ appID, focus }: { appID: string; focus?: boolean }
 
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
+          // Two requests, and the second waits on the first. `full` is not
+          // enabled without a revision, and a disabled query is pending for
+          // good, so it counts only once there is one.
+          loading={specs.isPending || (Boolean(newest) && full.isPending)}
           columns={[
             { key: 'key', header: 'Name', width: 'minmax(0,26ch)', mono: true },
             { key: 'shown', header: 'Value', width: 'minmax(0,28ch)', mono: true, muted: true },
             { key: 'workload', header: 'Part of the app', width: '18ch', muted: true },
-            {
-              key: 'actions',
-              header: '',
-              width: '24ch',
-              align: 'right',
-              render: (row: Row) =>
-                // A slot is filled on the Dependencies list, and removing it
-                // here would take away the only thing pointing at a database.
-                row.kind === 'slot' ? null : (
-                  <span style={{ display: 'inline-flex', gap: 'var(--space-3)' }}>
-                    {/* Detection declared these and had no values to put in
-                        them, so the only action on a variable was to delete
-                        it: a list of everything the app reads, and no way to
-                        say what it reads. */}
-                    <Button variant="ghost" onClick={() => setEditing(row)}>
-                      {row.unset ? 'Set value' : 'Change'}
-                    </Button>
-                    <Button variant="ghost" onClick={() => remove.mutate(row)}>
-                      Remove
-                    </Button>
-                  </span>
-                ),
-            },
+            ...(canEdit
+              ? [
+                  {
+                    key: 'actions',
+                    header: '',
+                    width: '24ch',
+                    align: 'right' as const,
+                    render: (row: Row) =>
+                      // A slot is filled on the Dependencies list, and removing it
+                      // here would take away the only thing pointing at a database.
+                      row.kind === 'slot' ? null : (
+                        <span style={{ display: 'inline-flex', gap: 'var(--space-3)' }}>
+                          {/* Detection declared these and had no values to put in
+                              them, so the only action on a variable was to delete
+                              it: a list of everything the app reads, and no way to
+                              say what it reads. */}
+                          {(row.kind !== 'secret' || canWriteSecrets) && (
+                            <Button variant="secondary" onClick={() => setEditing(row)}>
+                              {row.unset ? 'Set value' : 'Change'}
+                            </Button>
+                          )}
+                          <Button variant="secondary" onClick={() => remove.mutate(row)}>
+                            Remove
+                          </Button>
+                        </span>
+                      ),
+                  },
+                ]
+              : []),
           ]}
           rows={rows}
           empty={<Quiet>This app reads nothing from its environment.</Quiet>}
         />
       </div>
 
-      {adding && latest && (
+      {adding && latest && canEdit && (
         <VariableDialog
           workloads={workloads}
+          canWriteSecrets={canWriteSecrets}
           onClose={() => setAdding(false)}
           onSave={(entry) => save.mutate(entry)}
           saving={save.isPending}
@@ -204,9 +224,10 @@ export function Environment({ appID, focus }: { appID: string; focus?: boolean }
         />
       )}
 
-      {editing && latest && (
+      {editing && latest && canEdit && (
         <VariableDialog
           workloads={[editing.workload]}
+          canWriteSecrets={canWriteSecrets}
           existing={editing}
           onClose={() => setEditing(null)}
           onSave={(entry) => save.mutate(entry)}
@@ -257,6 +278,7 @@ function envRows(body?: AppSpec): Row[] {
  */
 function VariableDialog({
   workloads,
+  canWriteSecrets,
   existing,
   onClose,
   onSave,
@@ -264,6 +286,8 @@ function VariableDialog({
   error,
 }: {
   workloads: string[];
+  /** Without app.secrets.write the value can only be an ordinary setting. */
+  canWriteSecrets: boolean;
   existing?: { key: string; kind: 'value' | 'secret' | 'slot' };
   onClose: () => void;
   onSave: (entry: { key: string; value: string; secret: boolean; workload: string }) => void;
@@ -273,7 +297,7 @@ function VariableDialog({
   const [key, setKey] = useState(existing?.key ?? '');
   const [value, setValue] = useState('');
   const [secret, setSecret] = useState(
-    existing ? existing.kind === 'secret' || looksSensitive(existing.key) : false,
+    canWriteSecrets && (existing ? existing.kind === 'secret' || looksSensitive(existing.key) : false),
   );
   const [workload, setWorkload] = useState(workloads[0] ?? '');
 
@@ -319,6 +343,10 @@ function VariableDialog({
             { value: 'secret', label: 'A secret — a key, token or password' },
           ]}
           onChange={(e) => setSecret(e.target.value === 'secret')}
+          // Shown and fixed rather than hidden: the choice exists, and the
+          // helper says why it is not this person's to make.
+          disabled={!canWriteSecrets}
+          helper={canWriteSecrets ? undefined : 'You can’t store secrets for this app, so this is kept as an ordinary setting.'}
         />
 
         {/* Warned, not prevented. Which variables are credentials is the

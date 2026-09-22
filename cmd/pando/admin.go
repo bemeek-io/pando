@@ -125,7 +125,7 @@ func passwordFor(cmd *cobra.Command, supplied string) (secret.Value, bool, error
 		}
 	}
 
-	password, err := bootstrap.GeneratePassword()
+	password, err := hash.Generate()
 	return password, true, err
 }
 

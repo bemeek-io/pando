@@ -76,6 +76,52 @@ The environment beats the stored file; `--server` beats both.
 
 ## Commands
 
+### `adapter`
+
+See and configure this installation's adapters
+
+```
+pando adapter
+```
+
+#### `adapter add`
+
+Add an adapter, or change one, by kind
+
+```
+pando adapter add <category>/<kind>
+```
+
+Adds an adapter of a kind from `pando adapter kinds`. Ordinary settings go in --set KEY=VALUE;
+a secret setting such as an API key is asked for without echoing it, so it never lands in
+your shell history (piped in when stdin is not a terminal). Adding with an existing --id
+changes that adapter. Pando loads adapters at startup: restart it afterwards.
+
+  pando adapter add ai/anthropic --set model=claude-sonnet-5
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--default` | `true` | make it the default adapter of its category |
+| `--id` |  | the adapter's ID (default: the kind's usual prefix and name, e.g. ai_anthropic) |
+| `--name` |  | what the console calls it (default: the kind's name) |
+| `--set` | `[]` | a setting, KEY=VALUE; repeat for more |
+
+#### `adapter kinds`
+
+Show the kinds of adapter this build can run, and their settings
+
+```
+pando adapter kinds
+```
+
+#### `adapter list`
+
+Show the adapters configured here
+
+```
+pando adapter list
+```
+
 ### `app`
 
 Work with apps
@@ -235,6 +281,18 @@ Unpin an app from your launcher
 pando app unfavorite <app>
 ```
 
+#### `app usage`
+
+What each part of an app is using right now: CPU, memory and disk
+
+```
+pando app usage <app>
+```
+
+What each part of an app is using right now, beside its limits (R-245).
+
+CPU is in cores; a part with no limit may use what the host has. A reading, not a history.
+
 ### `audit`
 
 Read the audit log
@@ -255,6 +313,7 @@ Lists what was done on this installation, newest first. The filters combine.
 | `--actor-kind` |  | what kind of actor: user, token, system or anonymous |
 | `--app` |  | events on this app |
 | `--before` |  | the page before this cursor, as printed after a full page |
+| `--involving` |  | events where this ID is the actor or the target, e.g. a user ID |
 | `--limit` | `0` | how many events (default 100, at most 500) |
 | `--since` |  | from this time, or this long ago (24h) |
 | `--target` |  | the ID of the thing it was done to |
@@ -335,6 +394,7 @@ generated an app cannot commit and push, but it can run a command.
 | Flag | Default | What it does |
 | --- | --- | --- |
 | `--app` |  | deploy a directory as an existing app, instead of creating one |
+| `--env` | `[]` | KEY=VALUE, set when a new directory's setup is accepted; repeat for more (e.g. --env API_URL=https://api) |
 
 ### `exec`
 
@@ -380,6 +440,9 @@ pando grant add <app>
 
 | Flag | Default | What it does |
 | --- | --- | --- |
+| `--anyone` |  | share with anyone on the internet, without signing in |
+| `--group` |  | group ID to share with |
+| `--passcode` |  | with --anyone: only those who enter this passcode |
 | `--plane` | `data` | data (use the app) or control (manage it) |
 | `--role` |  | role ID, for control-plane grants |
 | `--user` |  | user ID to share with |
@@ -391,6 +454,85 @@ Show who an app is shared with
 ```
 pando grant list <app>
 ```
+
+#### `grant passcode`
+
+Change the passcode on an app shared with everyone, or remove it
+
+```
+pando grant passcode <app> <grant-id> [passcode]
+```
+
+Sets a new passcode on the app's grant to everyone; everyone let in by the old one
+is asked again. With no passcode, removes it: the app is then open to anyone.
+
+#### `grant remove`
+
+Take a grant away
+
+```
+pando grant remove <app> <grant-id>
+```
+
+#### `grant role`
+
+Change the role a grant for managing an app carries
+
+```
+pando grant role <app> <grant-id> <role-id>
+```
+
+### `group`
+
+Work with groups and what they hold
+
+```
+pando group
+```
+
+#### `group add-member`
+
+Add an account to a group; it then holds what the group holds
+
+```
+pando group add-member <group-id> <user-id>
+```
+
+#### `group apps`
+
+Show the apps a group has access to, and its role on each
+
+```
+pando group apps <group-id>
+```
+
+#### `group list`
+
+Show every group, its members and its installation role
+
+```
+pando group list
+```
+
+#### `group remove-member`
+
+Remove an account from a group
+
+```
+pando group remove-member <group-id> <user-id>
+```
+
+#### `group role`
+
+Give a group an installation role, or take it away with --clear
+
+```
+pando group role <group-id> [role-id]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--clear` |  | take the group's installation role away |
 
 ### `login`
 
@@ -473,6 +615,20 @@ Print the installation's policy
 ```
 pando policy show
 ```
+
+### `restart`
+
+Restart Pando, loading its adapters and configuration file again
+
+```
+pando restart
+```
+
+Restart Pando. Requests in flight finish first, and apps behind Pando are unreachable for the seconds it takes. Adapters and the configuration file are read again; environment variables are not.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--wait` | `1m30s` | how long to wait for Pando to come back; 0 returns at once |
 
 ### `rollback`
 
@@ -611,4 +767,66 @@ Revoke a token
 ```
 pando token revoke <token-id>
 ```
+
+### `user`
+
+Work with accounts
+
+```
+pando user
+```
+
+#### `user apps`
+
+Show the apps an account has access to, and its role on each
+
+```
+pando user apps <user-id>
+```
+
+#### `user create`
+
+Create a local account with a generated password
+
+```
+pando user create <username>
+```
+
+Creates a local account and prints the password Pando generated for it, once.
+Give it to the account holder yourself; by default they choose their own at first sign-in.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--email` |  | the account's email address |
+| `--name` |  | the name shown in the console and the audit log |
+| `--no-change-required` |  | do not require a new password at first sign-in |
+
+#### `user reset-password`
+
+Give an account a new generated password
+
+```
+pando user reset-password <user-id>
+```
+
+Sets a new generated password on a local account, ends every session it holds, and prints
+the password once. By default its holder chooses their own at the next sign-in.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--no-change-required` |  | do not require a new password at the next sign-in |
+
+#### `user update`
+
+Change an account's username, name or email
+
+```
+pando user update <user-id>
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--email` |  | the account's email address |
+| `--name` |  | the name shown in the console and the audit log |
+| `--username` |  | the name the account signs in with |
 

@@ -19,6 +19,7 @@ import { useTheme } from '../ui/theme';
 import type { Preference } from '../ui/theme';
 import { MEASURE } from '../ui/layout';
 import { Sheet } from '../ui/Sheet';
+import { LineSkeleton } from '../ui/Loading';
 import { SignOut } from '../ui/SignOut';
 import { TopoBackground } from '../ui/TopoBackground';
 
@@ -83,6 +84,13 @@ export function Settings({
 
             <section>
               <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-3)' }}>Account</h4>
+              {/* Usually already loaded by the time this page opens; when it is
+                  not, the line keeps its place so Sign out does not move. */}
+              {me.isPending && (
+                <div style={{ marginBottom: 'var(--space-3)' }}>
+                  <LineSkeleton width="28ch" />
+                </div>
+              )}
               {who && (
                 <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: '0 0 var(--space-3)' }}>
                   Signed in as <strong style={{ color: 'var(--ink)' }}>{who}</strong>.

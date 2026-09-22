@@ -14,9 +14,11 @@
 // could not be fetched never gets past detection, has no pinned spec, and shows
 // one tab. A delete on the settings tab is a delete that app cannot reach.
 //
-// Nothing here checks a verb. `app.delete` is per-app and is not in any payload
-// the console holds (`GET /me` carries install verbs only), so this follows the
-// rest of the app screen: the action is offered and the server refuses it.
+// The verb is checked where this is placed, not here. The app's header shows
+// it only on app.delete, from the verbs `GET /apps/{id}` returns. The screen
+// for an app whose record would not load has no verbs to go on, and offers it
+// anyway: that is the app somebody is most likely trying to remove, and the
+// server refuses anybody who may not.
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';

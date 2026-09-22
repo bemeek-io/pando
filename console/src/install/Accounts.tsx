@@ -5,42 +5,49 @@
 // run: the verbs existed, the role existed, and nothing could write a second
 // grant. An install had exactly one administrator forever.
 //
-// Two separate actions on every row, because they are two separate powers.
+// The list is read-only: who each account is, whether it can sign in, and its
+// installation role. A row opens the account's own page (Account.tsx), which
+// holds the actions — two separate ones, because they are two separate powers.
 // Suspending an account stops it signing in (R-049); changing its role changes
 // what it may do. The API keeps them on different routes and different verbs,
-// and this screen does not merge them back together.
+// and the console does not merge them back together.
+//
+// Nobody types a password for somebody else. Adding an account shows one Pando
+// generated (GeneratedPassword.tsx), for the administrator to pass on.
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Dialog, Input, Select, StatusIndicator, Tag } from '@design';
+import { Banner, Button, Dialog, Input, Select, StatusIndicator, Tag } from '@design';
 
 import { api, RequestFailed } from '@api/client';
-import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
+import { InstallVerb, useInstallVerb } from '../app/principal';
+import { GeneratedPassword } from './GeneratedPassword';
 import { Sheet } from '../ui/Sheet';
 import { SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
 import { Table } from '../ui/Table';
 
-interface Account {
+export interface Account {
   id: string;
+  adapter_id: string;
   external_id: string;
   email?: string;
   display_name?: string;
   status: string;
   must_change_password: boolean;
   install_role_id: string;
+  created_at?: string;
 }
 
-interface Role {
+export interface Role {
   id: string;
   name: string;
   builtin: boolean;
   verbs: string[];
 }
 
-export function Accounts() {
+export function Accounts({ onOpen }: { onOpen: (account: Account) => void }) {
   const manage = useInstallVerb(InstallVerb.UsersManage);
-  const me = usePrincipal();
   const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -85,16 +92,24 @@ export function Accounts() {
       {accounts.isError && <Quiet>{messageOf(accounts.error)}</Quiet>}
 
       <Table
+        loading={accounts.isPending}
+        onRowClick={onOpen}
         columns={[
-          { key: 'external_id', header: 'Username', width: 'minmax(0,24ch)', filter: 'text' },
+          { key: 'external_id', header: 'Username', width: 'minmax(0,22ch)', mono: true, filter: 'text' },
           {
             key: 'display_name',
             header: 'Name',
             width: 'minmax(0,22ch)',
+            filter: 'text',
+            render: (row: Account) => row.display_name || '—',
+          },
+          {
+            key: 'email',
+            header: 'Email',
+            width: 'minmax(0,28ch)',
             muted: true,
             filter: 'text',
-            filterValue: (row: Account) => `${row.display_name ?? ''} ${row.email ?? ''}`,
-            render: (row: Account) => row.display_name || row.email || '—',
+            render: (row: Account) => row.email || '—',
           },
           {
             key: 'status',
@@ -114,37 +129,15 @@ export function Accounts() {
           },
           {
             key: 'install_role_id',
-            header: 'Installation role',
-            width: 'minmax(0,24ch)',
+            header: 'Role',
+            width: 'minmax(0,20ch)',
             filter: 'values',
             filterValue: (row: Account) => {
               const r = roles.data?.roles.find((x) => x.id === row.install_role_id);
               return r ? sentence(r.name) : 'None';
             },
-            render: (row: Account) => (
-              <div style={{ padding: 'var(--space-2) 0' }}>
-                {manage ? (
-                  <RolePicker
-                    account={row}
-                    roles={roles.data?.roles ?? []}
-                    // You can demote yourself when somebody else can still
-                    // administer — the server refuses the last one. What the
-                    // console will not do is make that look like a normal edit.
-                    isSelf={row.id === me.data?.user_id}
-                  />
-                ) : (
-                  <RoleLabel roleID={row.install_role_id} roles={roles.data?.roles ?? []} />
-                )}
-              </div>
-            ),
-          },
-          {
-            key: 'actions',
-            header: '',
-            width: '16ch',
-            align: 'right',
-            render: (row: Account) =>
-              manage && row.id !== me.data?.user_id ? <StatusToggle account={row} /> : null,
+            // Read-only here; it changes on the account's page.
+            render: (row: Account) => <RoleLabel roleID={row.install_role_id} roles={roles.data?.roles ?? []} />,
           },
         ]}
         rows={rows}
@@ -156,13 +149,13 @@ export function Accounts() {
   );
 }
 
-function RoleLabel({ roleID, roles }: { roleID: string; roles: Role[] }) {
+export function RoleLabel({ roleID, roles }: { roleID: string; roles: Role[] }) {
   if (!roleID) return <span style={{ color: 'var(--ink-tertiary)' }}>None</span>;
   const role = roles.find((r) => r.id === roleID);
   return <Tag>{role ? sentence(role.name) : roleID}</Tag>;
 }
 
-function RolePicker({
+export function RolePicker({
   account,
   roles,
   isSelf,
@@ -204,7 +197,7 @@ function RolePicker({
   );
 }
 
-function StatusToggle({ account }: { account: Account }) {
+export function StatusToggle({ account }: { account: Account }) {
   const queries = useQueryClient();
   const suspended = account.status !== 'active';
 
@@ -217,7 +210,7 @@ function StatusToggle({ account }: { account: Account }) {
   // is worth saying before it happens rather than after.
   return (
     <Button
-      variant={suspended ? 'secondary' : 'ghost'}
+      variant="secondary"
       disabled={set.isPending}
       onClick={() => set.mutate(suspended ? 'active' : 'suspended')}
     >
@@ -230,6 +223,7 @@ function AddAccount({ onClose }: { onClose: () => void }) {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  const [mustChange, setMustChange] = useState(true);
   const queries = useQueryClient();
 
   const create = useMutation({
@@ -238,6 +232,7 @@ function AddAccount({ onClose }: { onClose: () => void }) {
         username,
         password,
         display_name: displayName,
+        must_change_password: mustChange,
       }),
     onSuccess: () => {
       void queries.invalidateQueries({ queryKey: ['users'] });
@@ -249,7 +244,9 @@ function AddAccount({ onClose }: { onClose: () => void }) {
     <Dialog
       open
       title="Add account"
-      description="A local account. Give the person the password you set here; they choose their own after signing in."
+      // The password is only ever on this screen: Pando cannot show it again
+      // and sends it nowhere, so handing it over is the administrator's job.
+      description="A local account with a password Pando generates. Copy the password and give it to the person separately; Pando does not send it to them."
       onClose={onClose}
       footer={
         <>
@@ -267,20 +264,29 @@ function AddAccount({ onClose }: { onClose: () => void }) {
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-        <Input label="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
+        <Input
+          label="Username"
+          value={username}
+          onChange={(e) => {
+            // A refusal ("that username is taken") belongs to the value that
+            // caused it.
+            if (create.isError) create.reset();
+            setUsername(e.target.value);
+          }}
+        />
         <Input
           label="Name"
           value={displayName}
           helper="Shown in the console and in the audit log."
           onChange={(e) => setDisplayName(e.target.value)}
         />
-        <Input
-          label="Password"
-          type="password"
+        <GeneratedPassword
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          error={create.isError ? messageOf(create.error) : undefined}
+          onChange={setPassword}
+          mustChange={mustChange}
+          onMustChange={setMustChange}
         />
+        {create.isError && <Banner tone="failed">{messageOf(create.error)}</Banner>}
       </div>
     </Dialog>
   );
@@ -315,8 +321,16 @@ export function messageOf(error: unknown): string {
   return 'Pando could not reach the server. Reload the page to try again.';
 }
 
+/** The server's message and, when it gave one, its remedy (R-105). Most
+ *  refusals on these screens are the last-administrator rule (R-088), and the
+ *  remedy is the way through it. */
+export function refusal(error: unknown): string {
+  const remedy = error instanceof RequestFailed ? error.remedy : undefined;
+  return remedy ? `${messageOf(error)} ${remedy}` : messageOf(error);
+}
+
 /** Role names are stored lowercase; the design system sets everything in
  *  sentence case. */
-function sentence(s: string): string {
+export function sentence(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

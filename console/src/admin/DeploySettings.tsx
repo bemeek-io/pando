@@ -13,6 +13,9 @@
 // Auto-rollback is off because health is a nullable signal (R-147, design 05
 // §4): an app with no health check reports nothing, and rolling back on "no
 // signal" would undo good deploys.
+//
+// Saving is a spec revision, so app.spec.edit. Without it the settings are
+// shown as they are, disabled, and there is no Save.
 
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
@@ -21,8 +24,10 @@ import { Button, Checkbox, Switch } from '@design';
 import { api, RequestFailed } from '@api/client';
 import type { AppSpec } from '@api/types.gen';
 import { MEASURE } from '../ui/layout';
+import { AppVerb, useCan } from './verbs';
 
 export function DeploySettings({ appID, spec }: { appID: string; spec: AppSpec }) {
+  const canEdit = useCan(AppVerb.SpecEdit);
   const [startThenSwap, setStartThenSwap] = useState(
     spec.deploy?.strategy === 'start_then_swap',
   );
@@ -50,6 +55,7 @@ export function DeploySettings({ appID, spec }: { appID: string; spec: AppSpec }
           <Checkbox
             checked={autoDeploy}
             onChange={(e) => setAutoDeploy(e.target.checked)}
+            disabled={!canEdit}
             label="Deploy automatically"
           />
         }
@@ -64,6 +70,7 @@ export function DeploySettings({ appID, spec }: { appID: string; spec: AppSpec }
           <Switch
             checked={startThenSwap}
             onChange={(e) => setStartThenSwap(e.target.checked)}
+            disabled={!canEdit}
             label="Start the new version before stopping the old one"
           />
         }
@@ -80,6 +87,7 @@ export function DeploySettings({ appID, spec }: { appID: string; spec: AppSpec }
           <Switch
             checked={autoRollback}
             onChange={(e) => setAutoRollback(e.target.checked)}
+            disabled={!canEdit}
             label="Roll back automatically"
           />
         }
@@ -88,22 +96,24 @@ export function DeploySettings({ appID, spec }: { appID: string; spec: AppSpec }
         health check reports nothing, and Pando would undo deploys that were fine.
       </Setting>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-        <Button
-          variant="primary"
-          onClick={() => save.mutate()}
-          disabled={save.isPending}
-          style={{ alignSelf: 'flex-start' }}
-        >
-          Save settings
-        </Button>
-        {save.isError && <Failure error={save.error} />}
-        {save.isSuccess && (
-          <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
-            Saved as a new configuration revision. It takes effect on the next deploy.
-          </p>
-        )}
-      </div>
+      {canEdit && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+          <Button
+            variant="primary"
+            onClick={() => save.mutate()}
+            disabled={save.isPending}
+            style={{ alignSelf: 'flex-start' }}
+          >
+            Save settings
+          </Button>
+          {save.isError && <Failure error={save.error} />}
+          {save.isSuccess && (
+            <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+              Saved as a new configuration revision. It takes effect on the next deploy.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

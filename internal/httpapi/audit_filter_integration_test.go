@@ -60,3 +60,83 @@ func TestTheAuditLogFiltersByTargetAndTime(t *testing.T) {
 	bad := i.do(admin, http.MethodGet, "/audit?since=yesterday", nil)
 	require.Equal(t, http.StatusBadRequest, bad.Code, bad.String())
 }
+
+// TestR227_TheAuditLogFindsEverythingToDoWithOneAccount asserts that
+// `involving` reads one account's whole history — what it did, and what was
+// done to it — which the actor and target filters, combined with AND, cannot.
+func TestR227_TheAuditLogFindsEverythingToDoWithOneAccount(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+	dana := i.user("dana")
+	danaID := i.userID(dana)
+	i.createApp(admin, "notes")
+
+	// Something done to the account; signing in, above, was something it did.
+	require.Equal(t, http.StatusNoContent,
+		i.do(admin, http.MethodPatch, "/users/"+danaID, map[string]string{"status": "active"}).Code)
+
+	var page struct {
+		Events []struct {
+			Action      string `json:"action"`
+			PrincipalID string `json:"principal_id"`
+			OnBehalfOf  string `json:"on_behalf_of"`
+			TargetID    string `json:"target_id"`
+		} `json:"events"`
+	}
+	got := i.do(admin, http.MethodGet, "/audit?involving="+danaID, nil)
+	require.Equal(t, http.StatusOK, got.Code, got.String())
+	got.JSON(t, &page)
+
+	var asActor, asTarget bool
+	for _, e := range page.Events {
+		switch danaID {
+		case e.PrincipalID, e.OnBehalfOf:
+			asActor = true
+		case e.TargetID:
+			asTarget = true
+		default:
+			t.Fatalf("%s neither by nor on %s: %+v", e.Action, danaID, e)
+		}
+	}
+	require.True(t, asActor, "an event the account was the actor of")
+	require.True(t, asTarget, "an event the account was the target of")
+
+	// It combines with the others like any filter.
+	got = i.do(admin, http.MethodGet, "/audit?involving="+danaID+"&action=user.update", nil)
+	got.JSON(t, &page)
+	require.Len(t, page.Events, 1)
+}
+
+// GET /users/{id} is the same shape as a row of GET /users: an account's page
+// needs its role and when it was made, and should not need the whole list.
+func TestOneAccountCarriesItsRoleAndWhenItWasMade(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+
+	var one struct {
+		ID            string    `json:"id"`
+		InstallRoleID string    `json:"install_role_id"`
+		CreatedAt     time.Time `json:"created_at"`
+	}
+	got := i.do(admin, http.MethodGet, "/users/"+i.AdminID, nil)
+	require.Equal(t, http.StatusOK, got.Code, got.String())
+	got.JSON(t, &one)
+	require.Equal(t, i.AdminID, one.ID)
+	require.NotEmpty(t, one.InstallRoleID)
+	require.WithinDuration(t, time.Now(), one.CreatedAt, time.Hour)
+
+	var list struct {
+		Users []struct {
+			ID            string    `json:"id"`
+			InstallRoleID string    `json:"install_role_id"`
+			CreatedAt     time.Time `json:"created_at"`
+		} `json:"users"`
+	}
+	i.do(admin, http.MethodGet, "/users", nil).JSON(t, &list)
+	for _, u := range list.Users {
+		if u.ID == one.ID {
+			require.Equal(t, one.InstallRoleID, u.InstallRoleID)
+			require.True(t, one.CreatedAt.Equal(u.CreatedAt))
+		}
+	}
+}

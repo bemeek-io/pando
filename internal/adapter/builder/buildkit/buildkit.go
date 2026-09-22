@@ -207,6 +207,11 @@ func (a *Adapter) Build(ctx context.Context, req api.BuildRequest) (api.BuildRes
 	frontendAttrs := map[string]string{
 		"filename": filepath.Base(dockerfile),
 	}
+	// The plan's own arguments first, then the spec's: an app that sets one
+	// itself means it.
+	for k, v := range planArgs(req.GeneratedFiles) {
+		frontendAttrs["build-arg:"+k] = v
+	}
 	for k, v := range req.Args {
 		frontendAttrs["build-arg:"+k] = v
 	}
@@ -312,4 +317,19 @@ func cachePath(namespace string) string {
 		root = "/var/lib/pando/buildcache"
 	}
 	return filepath.Join(root, namespace)
+}
+
+// Info describes this kind of adapter for the forms that configure one
+// (api.KindInfo, R-261).
+func Info() api.KindInfo {
+	return api.KindInfo{
+		Category:    api.CategoryBuilder,
+		Kind:        Kind,
+		Name:        "BuildKit",
+		Description: "Builds images from source in an isolated BuildKit daemon.",
+		IDPrefix:    "bld_",
+		Fields: []api.Field{
+			{Key: "address", Label: "BuildKit address", Type: "string", Help: "Where the BuildKit daemon listens. PANDO_BUILDKIT_ADDRESS is used when this is empty.", Default: "tcp://buildkit:1234"},
+		},
+	}
 }

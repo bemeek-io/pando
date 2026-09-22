@@ -24,12 +24,13 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 	"go.uber.org/zap"
 
+	aianthropic "github.com/bemeek-io/pando/internal/adapter/ai/anthropic"
 	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
 	backuplocal "github.com/bemeek-io/pando/internal/adapter/backup/local"
 	identitylocal "github.com/bemeek-io/pando/internal/adapter/identity/local"
 	secretslocal "github.com/bemeek-io/pando/internal/adapter/secrets/local"
-	"github.com/bemeek-io/pando/internal/core/assertion"
 	"github.com/bemeek-io/pando/internal/config"
+	"github.com/bemeek-io/pando/internal/core/assertion"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/backup"
@@ -101,6 +102,9 @@ type install struct {
 	Volumes     *state.Volumes
 	Adapters    *state.Adapters
 	PolicyStore *state.Policy
+
+	// Restarts counts POST /restart's calls to Server.Restart.
+	Restarts *atomic.Int32
 
 	// AdminID and adminPassword are the first-run account (R-046).
 	AdminID       string
@@ -190,8 +194,11 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 	}
 	authorizer := authz.New(authzStore, hostPolicy, nil)
 
+	restarts := &atomic.Int32{}
 	srv := &httpapi.Server{
-		Logger:   logger,
+		StartedAt: time.Now().UTC(),
+		Restart:   func() { restarts.Add(1) },
+		Logger:    logger,
 		DB:       db,
 		Identity: identity,
 		Users:    users,
@@ -202,18 +209,19 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 		Auditor:  auditor,
 		Policy:   hostPolicy,
 
-		Registry:    registry,
-		Adapters:    adapters,
-		Allocations: allocations,
+		Registry:     registry,
+		Adapters:     adapters,
+		AdapterKinds: []adapterapi.KindInfo{aianthropic.Info(), secretslocal.Info()},
+		Allocations:  allocations,
 
 		AdapterCredentials: state.NewAdapterCredentials(db, secretsAdapter, "sec_local"),
-		Planner:     appPlanner,
-		Deployments: deployments,
-		Reconciles:  state.NewReconciles(db),
-		Deployer:    deployer,
-		Logs:        logStore,
-		Secrets:     secrets,
-		Detections:  state.NewDetections(db),
+		Planner:            appPlanner,
+		Deployments:        deployments,
+		Reconciles:         state.NewReconciles(db),
+		Deployer:           deployer,
+		Logs:               logStore,
+		Secrets:            secrets,
+		Detections:         state.NewDetections(db),
 
 		Authz:   authorizer,
 		Authent: authenticator,
@@ -258,7 +266,7 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 	}
 
 	return &install{
-		t: t, handler: srv.Routes(), db: db,
+		t: t, handler: srv.Routes(), db: db, Restarts: restarts,
 		Apps: apps, Users: users, Grants: grants, Sessions: sessions, Tokens: tokens,
 		Secrets: secrets, Volumes: volumes, Adapters: adapters, PolicyStore: policyStore,
 		AdminID: first.User.ID, adminPassword: adminPassword,

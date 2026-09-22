@@ -26,6 +26,9 @@ var meanings = map[Code]string{
 
 	PermDenied:       "Authenticated, but not permitted to do this.",
 	PermVerbRequired: "The caller holds no grant carrying the verb this action needs.",
+	RateLimited:      "Too many attempts in a short time — at a passcode, for example. Wait a few minutes and try again.",
+	PermPasscodeRequired: "The app is shared with everyone who knows its passcode, and this request has not shown it. " +
+		"A browser is sent to the passcode page; entering it there lets the visitor in.",
 
 	PolicySourceNotAllowed:        "Host policy does not allow apps from this source (R-092).",
 	PolicyExecDisabled:            "Host policy has turned off terminal access, including for an app's owner (R-085).",

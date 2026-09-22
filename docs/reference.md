@@ -123,13 +123,13 @@ as `PANDO_POLICY_<SETTING>`:
 policy:
   min_security_score: 70
   disabled_verbs: [app.exec]
-  allow_anonymous_grants: false
+  public_sharing: passcode_only   # allowed, passcode_only or none
 ```
 
 ```sh
 PANDO_POLICY_MIN_SECURITY_SCORE=70
 PANDO_POLICY_DISABLED_VERBS=app.exec,app.secrets.read   # lists are comma-separated
-PANDO_POLICY_ALLOW_ANONYMOUS_GRANTS=false
+PANDO_POLICY_PUBLIC_SHARING=passcode_only
 ```
 
 A setting fixed this way overrides what is saved in the console, applies everywhere policy is
@@ -140,10 +140,14 @@ name that is not a policy setting, or a value that does not read as one, stops P
 rather than being ignored.
 
 The settings are `source_allowlist`, `disabled_verbs`, `agent_disabled_verbs`,
-`allow_anonymous_grants`, `min_build_isolation`, `min_runtime_isolation`, `egress_allowlist`,
+`public_sharing`, `allow_anonymous_grants`, `min_build_isolation`, `min_runtime_isolation`, `egress_allowlist`,
 `require_backup_before_destroy`, `max_token_lifetime_days`, `max_log_disk_bytes`,
 `disable_ai_screening`, `min_security_score`, `insecure_action`, `insecure_grace_hours` and
 `ignore_unfixable_findings`.
+
+`public_sharing` is how an app may be shared with everyone: `allowed` (with or without a passcode),
+`passcode_only`, or `none`. The older `allow_anonymous_grants: false` still means `none` when
+`public_sharing` is unset.
 
 `GET /api/v1/config`, `pando config` and the Policy screen list every setting Pando started with,
 its value, and where it came from. Secrets are never shown.

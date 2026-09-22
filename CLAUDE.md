@@ -67,8 +67,10 @@ Three more that have no mechanism yet and therefore depend on you:
 - **The two *scopes* are never conflated either** (R-080). `CheckControl` takes an app,
   `CheckInstall` does not, and each refuses the other's verbs with an internal error rather than
   evaluating it. The asymmetry is why: an install verb checked against an app denies, which is safe;
-  an app verb checked install-wide looks for a grant that *can* exist. An administrator holds no
-  `app.*` verb and is not an owner of every app (R-087).
+  an app verb checked install-wide looks for a grant that *can* exist. The one bridge is
+  `install.apps.view` / `install.apps.manage`, which `CheckControl` alone reads as app verbs on every
+  app (R-081, `authz.everyApp`) — that is how an administrator manages any app. It never reaches
+  `CheckData`: managing an app is not using it (R-087).
 - **The proxy is never routed around** (R-023). Routing adapters put traffic *in front of* Pando's
   proxy; they never point at a workload. An adapter author's instinct will be to point Traefik
   straight at the container. That is the bug.

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -63,6 +64,31 @@ func main() {
 		// Cobra has already printed the error.
 		os.Exit(1)
 	}
+	if restartRequested.Load() {
+		reexec()
+	}
+}
+
+// restartRequested is set when serve returned because someone asked for a
+// restart (POST /restart) rather than because it was stopped.
+var restartRequested atomic.Bool
+
+// reexec starts Pando again in this process: the same binary, arguments and
+// environment, and the same PID, so a container's PID 1 stays PID 1 and no
+// supervisor or restart policy is needed. Only after serve has returned, so the
+// database pool is closed and the listener released first.
+//
+// The environment is the one the process started with, as with docker compose
+// restart; the configuration file is read afresh.
+func reexec() {
+	exe, err := os.Executable()
+	if err == nil {
+		err = syscall.Exec(exe, os.Args, os.Environ()) //nolint:gosec // G702: this binary, with the arguments and environment it was started with; nothing from a request reaches it.
+	}
+	// Exec returns only on failure. Exit non-zero so that a supervisor, if
+	// there is one, starts Pando instead.
+	fmt.Fprintf(os.Stderr, "pando could not restart itself: %v\n", err)
+	os.Exit(1)
 }
 
 func rootCmd() *cobra.Command {
@@ -185,6 +211,11 @@ func serve(ctx context.Context, configPath string) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Adapters saved after this are not running until a restart (R-253); the
+	// adapters list compares against it. restartCh is how POST /restart asks.
+	startedAt := time.Now().UTC()
+	restartCh := make(chan struct{}, 1)
+
 	// Connect runs the whole bootstrap: wait for Postgres, migrate as the owner,
 	// provision the restricted application role, apply grants, and verify that
 	// the audit log cannot be rewritten. It refuses to return a usable database
@@ -235,16 +266,17 @@ func serve(ctx context.Context, configPath string) error {
 	policyStore := policyOverlay.Wrap(state.NewPolicy(db))
 	hostPolicy := corepolicy.New(policyStore.Load)
 
-	// R-046: the first run creates one administrative account and shows its
-	// password once. It is never stored in the clear, so an operator who misses
-	// it resets rather than retrieves.
+	// R-046: a fresh installation waits for the first person to open the
+	// console and set up the administrator there — unless the operator supplied
+	// PANDO_ADMIN_PASSWORD, in which case the account is made now. No password
+	// is ever printed.
 	first, err := bootstrap.Run(ctx, users, grants, db, auditor,
 		secret.New(cfg.Bootstrap.AdminPassword))
 	if err != nil {
 		return err
 	}
 	switch {
-	case first.Created && first.Supplied:
+	case first.Created:
 		// No password field. The operator supplied it and already has it;
 		// printing it would copy a credential into a log for nobody's benefit
 		// (R-194).
@@ -252,11 +284,12 @@ func serve(ctx context.Context, configPath string) error {
 			zap.String("username", bootstrap.AdminUsername),
 			zap.String("note", "using the password from PANDO_ADMIN_PASSWORD; it must still be changed on first login"))
 
-	case first.Created:
-		logger.Warn("first run: created an administrator account",
-			zap.String("username", bootstrap.AdminUsername),
-			zap.String("password", first.Password.Reveal()),
-			zap.String("note", "this is shown once and must be changed on first login"))
+	case first.Unclaimed:
+		// Said loudly: until somebody does this, whoever reaches the console
+		// first becomes the administrator.
+		logger.Warn("this installation is not set up yet",
+			zap.String("next", "open the console and set up the administrator account"),
+			zap.String("note", "the first person to reach the sign-in page sets it up; do this before exposing Pando to anyone else"))
 
 	case cfg.Bootstrap.AdminPassword != "":
 		// Said out loud, because the alternative is an operator who set it,
@@ -461,8 +494,16 @@ func serve(ctx context.Context, configPath string) error {
 		Auditor:  auditor,
 		Policy:   hostPolicy,
 
-		Registry: registry,
-		Adapters: adapters,
+		Registry:     registry,
+		Adapters:     adapters,
+		AdapterKinds: adapterKinds(),
+		StartedAt:    startedAt,
+		Restart: func() {
+			select {
+			case restartCh <- struct{}{}:
+			default: // one is already on its way
+			}
+		},
 
 		AdapterCredentials: adapterCredentials,
 
@@ -673,11 +714,21 @@ func serve(ctx context.Context, configPath string) error {
 		return err
 	case <-ctx.Done():
 		logger.Info("shutting down")
+	case <-restartCh:
+		logger.Info("restarting")
+		restartRequested.Store(true)
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.Server.ShutdownTimeout)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	err = srv.Shutdown(shutdownCtx)
+	if err != nil && restartRequested.Load() {
+		// A request still open at the deadline, such as a streamed log, is
+		// cut off either way; it is no reason not to come back.
+		logger.Warn("requests were still open at restart", zap.Error(err))
+		return nil
+	}
+	return err
 }
 
 // detectionAuditor adapts the audit writer to what detection needs.
@@ -1155,4 +1206,23 @@ func startupPolicy(cfg *config.Config) (*corepolicy.Overlay, error) {
 		}
 	}
 	return overlay, nil
+}
+
+// adapterKinds is every kind of adapter this build can run, for the console's
+// and the CLI's "add an adapter" forms. Kept beside the switch that constructs
+// them, which is the other list of the same kinds: a kind added there and not
+// here would be runnable but not configurable from anywhere but the API.
+func adapterKinds() []adapterapi.KindInfo {
+	return []adapterapi.KindInfo{
+		aianthropic.Info(),
+		dockerruntime.Info(),
+		loopback.Info(),
+		traefik.Info(),
+		buildkitadapter.Info(),
+		trivyscanner.Info(),
+		secretslocal.Info(),
+		backuplocal.Info(),
+		servicesdocker.Info(),
+		notifyconsole.Info(),
+	}
 }

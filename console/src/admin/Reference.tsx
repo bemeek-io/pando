@@ -18,7 +18,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, CodeBlock, Dialog, Input, Tabs, Tag } from '@design';
+import { Banner, Button, CodeBlock, Dialog, Input, Skeleton, Tabs, Tag } from '@design';
 
 import { api } from '@api/client';
 import type { Command, Document, Route, Token } from '@api/types.gen';
@@ -27,6 +27,7 @@ import { Quiet, Screen, messageOf } from '../install/Accounts';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { Table } from '../ui/Table';
+import { LineSkeleton, Loading } from '../ui/Loading';
 
 export function Reference() {
   const [tab, setTab] = useState('connect');
@@ -57,6 +58,18 @@ export function Reference() {
       />
 
       <div style={{ marginTop: 'var(--space-5)' }}>
+        {/* Every tab but Tokens renders the reference, so until it arrives
+            they share one outline: a heading and a code block, which is how
+            each of them opens. */}
+        {doc.isPending && tab !== 'tokens' && (
+          <Loading>
+            <div style={{ maxWidth: MEASURE, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <LineSkeleton width="16ch" font="var(--type-h4)" />
+              <Skeleton height="6rem" radius="md" />
+              <LineSkeleton width="48ch" />
+            </div>
+          </Loading>
+        )}
         {tab === 'connect' && <Connect doc={doc.data} />}
         {tab === 'tokens' && <Tokens />}
         {tab === 'api' && <API doc={doc.data} />}
@@ -70,8 +83,11 @@ export function Reference() {
 
 // --- connect ---------------------------------------------------------------
 
+// Without the reference, each surface renders nothing: while it loads the
+// screen shows its outline, and when it failed the banner above says why. The
+// bare "Loading." these used to show stayed up for good after a failure.
 function Connect({ doc }: { doc?: Document }) {
-  if (!doc) return <Quiet>Loading.</Quiet>;
+  if (!doc) return null;
 
   // Where this console is, which is where the API is. Written out rather than
   // left as "your server": the whole point of this screen is that it can be
@@ -202,7 +218,9 @@ function packageLines(doc: Document): string[] {
 // --- tokens ----------------------------------------------------------------
 
 function Tokens() {
-  const canManageUsers = useInstallVerb(InstallVerb.UsersManage);
+  // Service tokens have their own verb (R-080): issuing a credential for an
+  // automation is not the same trust as managing people.
+  const canManageTokens = useInstallVerb(InstallVerb.TokensManage);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-7)', maxWidth: MEASURE }}>
@@ -214,7 +232,7 @@ function Tokens() {
         queryKey={['tokens']}
       />
 
-      {canManageUsers && (
+      {canManageTokens && (
         <TokenList
           heading="Service tokens"
           // R-060: the difference that matters, in the place where the choice
@@ -268,6 +286,8 @@ function TokenList({
 
       <div style={{ marginTop: 'var(--space-4)' }}>
         <Table
+          loading={tokens.isPending}
+          skeletonRows={2}
           columns={[
             { key: 'name', header: 'Name', width: 'minmax(0,30ch)' },
             {
@@ -427,7 +447,7 @@ function NewToken({
 // --- the surfaces ----------------------------------------------------------
 
 function API({ doc }: { doc?: Document }) {
-  if (!doc) return <Quiet>Loading.</Quiet>;
+  if (!doc) return null;
 
   const routes = doc.api.routes ?? [];
   const groups = [...new Set(routes.map((r) => r.group))];
@@ -472,7 +492,7 @@ function API({ doc }: { doc?: Document }) {
 }
 
 function CLI({ doc }: { doc?: Document }) {
-  if (!doc) return <Quiet>Loading.</Quiet>;
+  if (!doc) return null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: MEASURE }}>
@@ -515,7 +535,7 @@ function CommandDoc({ command, depth = 0 }: { command: Command; depth?: number }
 }
 
 function MCP({ doc }: { doc?: Document }) {
-  if (!doc) return <Quiet>Loading.</Quiet>;
+  if (!doc) return null;
 
   return (
     <div>
@@ -546,7 +566,7 @@ function MCP({ doc }: { doc?: Document }) {
 }
 
 function Errors({ doc }: { doc?: Document }) {
-  if (!doc) return <Quiet>Loading.</Quiet>;
+  if (!doc) return null;
 
   return (
     <div>

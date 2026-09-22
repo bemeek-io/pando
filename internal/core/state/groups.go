@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -75,6 +76,27 @@ func (g *Groups) List(ctx context.Context) ([]Group, error) {
 	return out, rows.Err()
 }
 
+// Search finds groups by name, case-insensitively, at most limit of them.
+func (g *Groups) Search(ctx context.Context, q string, limit int) ([]Group, error) {
+	rows, err := g.db.Query(ctx, `
+		SELECT id, name, created_at FROM groups
+		WHERE $1 = '' OR name ILIKE '%' || $1 || '%'
+		ORDER BY name LIMIT $2`, likeEscape(q), limit)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not search the groups.", err)
+	}
+	defer rows.Close()
+	out := []Group{}
+	for rows.Next() {
+		var group Group
+		if err := rows.Scan(&group.ID, &group.Name, &group.CreatedAt); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not search the groups.", err)
+		}
+		out = append(out, group)
+	}
+	return out, rows.Err()
+}
+
 // ByID returns one group.
 func (g *Groups) ByID(ctx context.Context, groupID string) (Group, bool, error) {
 	var group Group
@@ -107,6 +129,10 @@ func (g *Groups) SetMembers(ctx context.Context, groupID string, userIDs []strin
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	before, err := peopleWhoManage(ctx, tx)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not change the group's members.", err)
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM group_members WHERE group_id = $1`, groupID); err != nil {
 		return errs.Wrap(errs.Internal, "Could not change the group's members.", err)
 	}
@@ -120,8 +146,113 @@ func (g *Groups) SetMembers(ctx context.Context, groupID string, userIDs []strin
 			return errs.Wrap(errs.Internal, "Could not change the group's members.", err)
 		}
 	}
+	if err := refuseLockout(ctx, tx, before); err != nil {
+		return err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return errs.Wrap(errs.Internal, "Could not change the group's members.", err)
+	}
+	return nil
+}
+
+// AddMember puts one person in a group. Adding someone already in it is not
+// an error: the outcome holds. Refused for a group synced from an identity
+// provider, whose membership belongs to the provider (R-079).
+func (g *Groups) AddMember(ctx context.Context, groupID, userID string) error {
+	if err := g.native(ctx, groupID); err != nil {
+		return err
+	}
+	_, err := g.db.Exec(ctx,
+		`INSERT INTO group_members (group_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+		groupID, userID)
+	if err != nil {
+		if isForeignKeyViolation(err) {
+			return errs.New(errs.NotFound, "There is no account with that ID.")
+		}
+		return errs.Wrap(errs.Internal, "Could not add the account to the group.", err)
+	}
+	return nil
+}
+
+// RemoveMember takes one person out of a group, and with them whatever the
+// group gave them. Refused when it would leave nobody who can manage accounts
+// (R-088) — the last member of a group holding the administrator role is as
+// much the last administrator as a direct grant is.
+func (g *Groups) RemoveMember(ctx context.Context, groupID, userID string) error {
+	if err := g.native(ctx, groupID); err != nil {
+		return err
+	}
+	tx, err := g.db.Begin(ctx)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not remove the account from the group.", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	before, err := peopleWhoManage(ctx, tx)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not remove the account from the group.", err)
+	}
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM group_members WHERE group_id = $1 AND user_id = $2`, groupID, userID); err != nil {
+		return errs.Wrap(errs.Internal, "Could not remove the account from the group.", err)
+	}
+	if err := refuseLockout(ctx, tx, before); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return errs.Wrap(errs.Internal, "Could not remove the account from the group.", err)
+	}
+	return nil
+}
+
+// native refuses a change to a group that does not exist, or whose
+// membership an identity provider owns.
+func (g *Groups) native(ctx context.Context, groupID string) error {
+	var adapter *string
+	err := g.db.QueryRow(ctx, `SELECT adapter_id FROM groups WHERE id = $1`, groupID).Scan(&adapter)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errs.New(errs.NotFound, "There is no group with that ID.")
+	}
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not read the group.", err)
+	}
+	if adapter != nil {
+		return errs.New(errs.ValidInvalid, "This group comes from an identity provider, so its members are changed there.").
+			WithRemedy("Change the membership in the identity provider; Pando picks it up at the next sign-in.")
+	}
+	return nil
+}
+
+// peopleWhoManage counts the active accounts that can manage accounts, directly
+// or through a group — the R-088 quantity when membership changes. Counting
+// grants, as accountManagers does, would count a group holding the
+// administrator role as a manager even with nobody left in it.
+func peopleWhoManage(ctx context.Context, tx pgx.Tx) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `
+		SELECT count(DISTINCT u.id)
+		FROM users u
+		JOIN grants g ON g.app_id IS NULL AND g.plane = 'control'
+		JOIN roles r ON r.id = g.role_id
+		WHERE u.deleted_at IS NULL AND u.status = 'active'
+		  AND $1 = ANY (r.verbs)
+		  AND (
+		        (g.principal_kind = 'user'  AND g.principal_id = u.id)
+		     OR (g.principal_kind = 'group' AND g.principal_id IN (
+		            SELECT group_id FROM group_members WHERE user_id = u.id))
+		  )`, string(authz.InstallUsersManage)).Scan(&n)
+	return n, err
+}
+
+func refuseLockout(ctx context.Context, tx pgx.Tx, before int) error {
+	after, err := peopleWhoManage(ctx, tx)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not change the group's members.", err)
+	}
+	if before > 0 && after == 0 {
+		return errs.New(errs.ValidInvalid,
+			"This would leave nobody who can manage accounts, so Pando cannot make this change.").
+			WithRemedy("Make someone else an administrator first, then change this group.")
 	}
 	return nil
 }
@@ -186,8 +317,29 @@ func NewRoles(db *DB) *Roles { return &Roles{db: db} }
 // a role naming a verb Pando does not have would grant nothing and look like it
 // granted something.
 func (r *Roles) CreateCustom(ctx context.Context, name, scope string, verbs []authz.Verb) (authz.Role, error) {
+	name = strings.TrimSpace(name)
 	if name == "" {
 		return authz.Role{}, errs.New(errs.ValidInvalid, "A role needs a name.")
+	}
+
+	// Names are unique ignoring case and spaces, built-ins included: the
+	// built-ins are stored lowercase and shown capitalized, so "Administrator"
+	// would otherwise sit in every picker beside the real one. The index
+	// (roles_name_folded_unique) is what guarantees it; this is what says
+	// which role is in the way.
+	var taken string
+	var builtin bool
+	err := r.db.QueryRow(ctx,
+		`SELECT name, builtin FROM roles WHERE lower(btrim(name)) = lower($1)`, name).Scan(&taken, &builtin)
+	switch {
+	case err == nil && builtin:
+		return authz.Role{}, errs.Newf(errs.ValidInvalid, "Pando already has a built-in role called %q.", taken).
+			WithRemedy("Choose a different name.")
+	case err == nil:
+		return authz.Role{}, errs.Newf(errs.ValidInvalid, "There is already a role called %q.", taken).
+			WithRemedy("Choose a different name.")
+	case !errors.Is(err, pgx.ErrNoRows):
+		return authz.Role{}, errs.Wrap(errs.Internal, "Could not create the role.", err)
 	}
 	if len(verbs) == 0 {
 		return authz.Role{}, errs.New(errs.ValidInvalid, "A role needs at least one permission.").
@@ -220,7 +372,7 @@ func (r *Roles) CreateCustom(ctx context.Context, name, scope string, verbs []au
 	}
 
 	role := authz.Role{ID: id.New(id.Role), Name: name, Builtin: false, Verbs: verbs}
-	_, err := r.db.Exec(ctx,
+	_, err = r.db.Exec(ctx,
 		`INSERT INTO roles (id, name, builtin, scope, verbs) VALUES ($1, $2, false, $3, $4)`,
 		role.ID, name, scope, names)
 	if err != nil {

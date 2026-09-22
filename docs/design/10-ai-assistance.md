@@ -83,7 +83,7 @@ type AICapabilities struct {
 skipped with a reason in the proposal rather than by a failed assertion nobody can plan around.
 
 **[D]** `Model` is on the capabilities rather than only in the adapter's config because the review
-shows it, for example "Anthropic (`claude-opus-5`) read 7 files and changed 3 things". Core cannot show
+shows it, for example "Anthropic (`claude-opus-5-5`) read 7 files and changed 3 things". Core cannot show
 a value it never receives.
 
 ```go
@@ -310,10 +310,11 @@ was shaped against.
 avoid a dependency and would mean owning the request shape, the retry policy, the streaming envelope
 and the error taxonomy for a provider whose API is not ours to keep up with.
 
-**[P] `claude-opus-5` is the default model**, overridable per install. Screening runs once per
+**[P] `claude-opus-5-5` is the default model**, overridable per install. Screening runs once per
 detection, on a repository somebody is about to deploy, and the thing being optimized is whether the
 app comes up on the first try — this is not a high-volume path where a cheaper model pays for itself.
-An install that disagrees sets `model` in the adapter's config.
+It replaced `claude-opus-5` as the default because it is newer and costs less per token. An install
+that disagrees sets `model` in the adapter's config.
 
 **[P] The model reads the repository through two tools**, `list_files` and `read_file`, backed by the
 `SourceView` and counted against `ScreenBudget`. The alternative — core packing a bundle of files into
@@ -340,7 +341,7 @@ seeding a broken one would put a permanently unhealthy adapter in every install'
 
 ```json
 {
-  "model": "claude-opus-5",
+  "model": "claude-opus-5-5",
   "screen_plans": true,
   "max_files": 40,
   "max_bytes": 262144,

@@ -200,9 +200,11 @@ never removed and never replaced with a glow.
 
 **Motion.** Motion responds to what a person does. Hover and press transitions take
 120ms, panels 200ms, everything on `cubic-bezier(0.2, 0, 0, 1)`, no bounce and no
-scale-in. There is exactly one orchestrated moment: on first load of the marketing hero
-the contours draw in from the outermost ring inward over 900ms, then the summit mark
-appears. Nothing else animates on load. Building status shows a hollow ring rather than a
+scale-in. There are two orchestrated moments. On first load of the marketing hero the
+contours draw in from the outermost ring inward over 900ms, then the summit mark
+appears. Onboarding a new app is the second: the contour map draws in ring by ring as
+detection advances, and each finding rises into place as it is found. Nowhere else does
+anything animate on load. Building status shows a hollow ring rather than a
 spinner, so a table stays calm while a deploy runs. Under `prefers-reduced-motion` the
 map simply appears.
 

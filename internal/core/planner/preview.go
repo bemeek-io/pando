@@ -28,8 +28,10 @@ type InventoryApp struct {
 	Spec *spec.AppSpec
 
 	// AnonymousGrant is whether anyone on the internet can reach this app
-	// without signing in (R-075, R-077).
-	AnonymousGrant bool
+	// without signing in (R-075, R-077), and AnonymousPasscode whether they
+	// need its passcode to (R-075a).
+	AnonymousGrant    bool
+	AnonymousPasscode bool
 }
 
 // PolicyViolation is one app a candidate policy would block.
@@ -112,7 +114,7 @@ func (p *Planner) violation(ctx context.Context, app InventoryApp, caps map[stri
 	// under a policy that forbids it is the case where "report now, block on
 	// next deploy" is least comfortable and most worth stating plainly.
 	if app.AnonymousGrant {
-		if err := p.policy.AllowsAnonymousGrant(ctx); err != nil {
+		if err := p.policy.AllowsAnonymousGrant(ctx, app.AnonymousPasscode); err != nil {
 			return asViolation(app, err), true
 		}
 	}

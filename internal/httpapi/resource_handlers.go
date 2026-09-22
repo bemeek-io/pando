@@ -329,6 +329,25 @@ func (s *Server) handleCreateAdapter(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, errs.New(errs.ValidInvalid, "An adapter needs an id, a category and a kind."))
 		return
 	}
+	// A kind this build cannot run would be saved and then skipped at every
+	// startup, with only a log line to say so. Refused here instead, naming
+	// the kinds there are.
+	if len(s.AdapterKinds) > 0 {
+		known := false
+		var names []string
+		for _, k := range s.AdapterKinds {
+			names = append(names, string(k.Category)+"/"+k.Kind)
+			if string(k.Category) == req.Category && k.Kind == req.Kind {
+				known = true
+			}
+		}
+		if !known {
+			Error(w, r, errs.Newf(errs.ValidInvalid,
+				"This build of Pando has no %s adapter of kind %q.", req.Category, req.Kind).
+				WithRemedy("Use one of: "+strings.Join(names, ", ")+". GET /api/v1/adapters/kinds lists them with their settings."))
+			return
+		}
+	}
 	if reason := inlineCredential(req.Config); reason != "" {
 		Error(w, r, errs.New(errs.ValidInvalid, reason).
 			WithRemedy(`Send it in the request's "credentials" object instead, for example {"credentials": {"api_key": "…"}}. Pando stores that encrypted.`))
@@ -378,7 +397,7 @@ func (s *Server) handleCreateAdapter(w http.ResponseWriter, r *http.Request) {
 	// not is worse than one that says when it will.
 	JSON(w, http.StatusCreated, map[string]any{
 		"id":   req.ID,
-		"note": "Saved. Pando registers adapters at startup, so restart it for this to take effect.",
+		"note": "Saved. Pando registers adapters at startup, so restart it for this to take effect: POST /api/v1/restart, or pando restart.",
 	})
 }
 

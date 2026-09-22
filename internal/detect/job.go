@@ -154,6 +154,7 @@ func (j *Job) Run(ctx context.Context, appID string, src spec.Source, view api.S
 	}
 
 	// Steps 8 and 9 — the auction.
+	Report(ctx, StageDetecting, nil)
 	result, err := j.Auction.Run(ctx, view)
 	if err != nil {
 		return Proposal{}, err
@@ -178,6 +179,13 @@ func (j *Job) Run(ctx context.Context, appID string, src spec.Source, view api.S
 	}
 
 	draft := result.Winner.Draft
+
+	// What the auction found, before the trial run — which can take most of a
+	// minute, and is long enough that somebody watching should see the
+	// approach, the workloads and the variables rather than a spinner.
+	partial := proposal
+	partial.DraftSpec = j.assemble(appID, src, draft)
+	Report(ctx, StageTrying, &partial)
 
 	// Step 10 — the trial run.
 	trial := j.trial(ctx, draft)

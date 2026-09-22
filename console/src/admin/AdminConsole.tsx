@@ -13,17 +13,33 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Banner, Button, EmptyState, Icon, IconButton, Logo, SidebarNav, StatusIndicator, Tabs, Tooltip } from '@design';
+import {
+  Badge,
+  Banner,
+  Button,
+  EmptyState,
+  Icon,
+  IconButton,
+  Logo,
+  SidebarNav,
+  Skeleton,
+  StatusIndicator,
+  Tabs,
+  Tooltip,
+} from '@design';
 import type { SidebarItem } from '@design';
 
 import { api } from '@api/client';
 import type { App } from '@api/types.gen';
 import { InstallVerb, useInstallVerb } from '../app/principal';
+import { AccountPage } from '../install/Account';
 import { Accounts, messageOf } from '../install/Accounts';
+import { filtersFrom, linkQuery } from '../install/audit';
 import { Identity } from '../install/Identity';
 import { Backups } from '../install/Backups';
 import { Audit, Installation, Policy } from '../install/Installation';
 import { statusLabel, statusSymbol } from '../ui/status';
+import { AppOnboarding } from './AppOnboarding';
 import { DetectionReview } from './DetectionReview';
 import { Sharing } from './Sharing';
 import { AppOverview } from './AppOverview';
@@ -34,6 +50,7 @@ import { Reference } from './Reference';
 import { DeleteApp } from './DeleteApp';
 import { DeployButton } from './DeployButton';
 import { Lifecycle } from './Lifecycle';
+import { AppVerb, AppVerbs, can, changesAnything, type AppWithVerbs } from './verbs';
 import type { Route, Section } from '../app/route';
 import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
@@ -45,6 +62,7 @@ import { SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
 import { useNarrow } from '../ui/narrow';
 import { Table } from '../ui/Table';
+import { FieldSkeleton, HeadingSkeleton, LineSkeleton, Loading } from '../ui/Loading';
 
 export function AdminConsole({
   route,
@@ -255,16 +273,52 @@ export function AdminConsole({
           )}
         </>
       ) : (
-        nav
+        // The window's height, pinned while the page scrolls. Stretched to the
+        // page's height instead, a long screen pushed "Back to my apps" at
+        // the sidebar's foot below the fold. The items scroll within it if
+        // they ever outgrow a short window.
+        <div
+          style={{
+            position: 'sticky',
+            top: 0,
+            height: '100vh',
+            flexShrink: 0,
+            display: 'flex',
+            overflowY: 'auto',
+          }}
+        >
+          {nav}
+        </div>
       )}
 
       <main style={{ flex: 1, minWidth: 0 }}>
-        {section === 'accounts' && <Accounts />}
+        {section === 'accounts' &&
+          (route.userID ? (
+            <AccountPage
+              userID={route.userID}
+              onBack={() => go({ view: 'admin', section: 'accounts' })}
+              onAudit={(query) => go({ view: 'admin', section: 'audit', query })}
+              onGroups={() => go({ view: 'admin', section: 'identity' })}
+            />
+          ) : (
+            <Accounts onOpen={(a) => go({ view: 'admin', section: 'accounts', userID: a.id })} />
+          ))}
         {section === 'identity' && <Identity canEdit={canManageUsers} />}
         {section === 'adapters' && <Installation />}
         {section === 'policy' && <Policy canEdit={canManagePolicy} />}
         {section === 'backups' && <Backups />}
-        {section === 'audit' && <Audit />}
+        {section === 'audit' && (
+          <Audit
+            // Filters carried in from a link, such as an account's page. Each
+            // change writes the address back, so a reload or a copied link
+            // shows the same events.
+            initial={filtersFrom(route.query)}
+            onFilters={(f) => {
+              const query = linkQuery(f);
+              go(query ? { view: 'admin', section: 'audit', query } : { view: 'admin', section: 'audit' }, true);
+            }}
+          />
+        )}
         {section === 'api' && <Reference />}
         {section === 'apps' &&
           (selectedID ? (
@@ -280,7 +334,14 @@ export function AdminConsole({
             // the request returns, and the next thing to do is look at what it
             // found — landing back on a list with a new row saying "draft"
             // leaves the person to work that out.
-            <AppsList rows={rows} onOpen={(app) => setSelectedID(app.id)} onAdded={(app) => setSelectedID(app.id)} />
+            <AppsList
+              rows={rows}
+              // Guarded by `administrative`: a query that is not enabled stays
+              // pending forever, and would leave the list loading for good.
+              loading={administrative && apps.isPending}
+              onOpen={(app) => setSelectedID(app.id)}
+              onAdded={(app) => setSelectedID(app.id)}
+            />
           ))}
       </main>
     </div>
@@ -289,10 +350,13 @@ export function AdminConsole({
 
 function AppsList({
   rows,
+  loading,
   onOpen,
   onAdded,
 }: {
   rows: App[];
+  /** The list has not arrived: placeholder rows, not "Add your first app". */
+  loading: boolean;
   onOpen: (app: App) => void;
   onAdded: (app: App) => void;
 }) {
@@ -327,6 +391,7 @@ function AppsList({
         }
       >
         <Table
+          loading={loading}
           onRowClick={onOpen}
           // A fresh install has no apps, and the list was a set of column
           // headers over nothing. R-002 is about the tenth app; the first one
@@ -442,9 +507,12 @@ function AppScreen({
   // it: accepting a proposal pins a spec, deploying moves the app through
   // building to running. A snapshot taken when the row was clicked is wrong by
   // the time anything interesting has happened.
+  //
+  // It also carries what the caller may do here (`verbs`), which is what every
+  // control below is shown or hidden on. Read once, for the whole screen.
   const app = useQuery({
     queryKey: ['apps', appID],
-    queryFn: () => api.get<App>(`/apps/${appID}`),
+    queryFn: () => api.get<AppWithVerbs>(`/apps/${appID}`),
   });
 
   // An app with no pinned spec has never been through review, so detection is
@@ -454,7 +522,7 @@ function AppScreen({
   // The tab is in the address bar, so a reload comes back to it. Replace
   // rather than push when switching: flicking between tabs should not make the
   // back button walk them one at a time before leaving the app.
-  const tab = routeTab ?? (reviewed ? 'overview' : 'detection');
+  const wanted = routeTab ?? (reviewed ? 'overview' : 'detection');
 
   // Which section of a tab to open at, when something sent you there. A
   // warning about storage should land on storage, not on the top of a settings
@@ -485,7 +553,35 @@ function AppScreen({
     if (reviewed && routeTab === 'detection') onTab('overview');
   }, [reviewed]);
 
-  if (app.isPending) return null;
+  // The header's shape while the record loads — the back button is real, since
+  // it needs nothing from the app — rather than a blank page. The list's row
+  // supplies the name when there is one, so the heading does not change as the
+  // record arrives.
+  if (app.isPending) {
+    return (
+      <Sheet
+        heading={
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+            <Button variant="ghost" icon={<Icon name="arrow-left" />} onClick={onBack}>
+              Apps
+            </Button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+              {listed ? <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{listed.name}</h3> : <HeadingSkeleton />}
+              <LineSkeleton width="10ch" />
+            </div>
+          </div>
+        }
+      >
+        {/* The tab row, then a card: what every tab opens with. */}
+        <Loading gap="var(--space-5)">
+          <FieldSkeleton width="40ch" />
+          <div style={{ maxWidth: MEASURE }}>
+            <Skeleton height="12rem" radius="md" />
+          </div>
+        </Loading>
+      </Sheet>
+    );
+  }
   if (app.isError || !app.data) {
     // An app whose record will not load is exactly the app somebody is trying
     // to get rid of, and this screen used to offer them a back button and
@@ -507,7 +603,7 @@ function AppScreen({
             gap: 'var(--space-4)',
           }}
         >
-          <Button variant="ghost" onClick={onBack}>
+          <Button variant="ghost" icon={<Icon name="arrow-left" />} onClick={onBack}>
             Apps
           </Button>
           {listed && <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{listed.name}</h3>}
@@ -518,122 +614,152 @@ function AppScreen({
     );
   }
 
-  const tabs = reviewed
-    ? [
-        { value: 'overview', label: 'Overview' },
-        { value: 'logs', label: 'Logs' },
-        { value: 'sharing', label: 'Sharing' },
-        { value: 'resources', label: 'Settings' },
-        { value: 'terminal', label: 'Terminal' },
-        { value: 'detection', label: 'Configuration' },
-      ]
-    : // One name, both states. It used to read "Set up" before a spec was
-      // pinned and "Configuration" after, and somebody who finished setup went
-      // looking for the tab they had just been using and concluded it had
-      // disappeared. The design system's rule — an action keeps its name
-      // through the whole flow — applies to the place you do it as well.
-      [{ value: 'detection', label: 'Configuration' }];
+  // What the caller may do on this app, by the server's own answer. Every
+  // control on this screen asks about exactly the verb its endpoint checks,
+  // so a person who can only look at an app sees it read-only rather than as
+  // a set of buttons that each come back refused (R-261).
+  const verbs = app.data.verbs ?? [];
+
+  // An app nobody has accepted yet gets the onboarding page instead of the
+  // tabs: the review of what Pando found, and the choice to keep the app or
+  // reject it. Same address. When it is accepted `reviewed` flips and this
+  // screen takes over — carrying any refusal of the deploy that came with it,
+  // which is why the refusal is set from there.
+  if (!reviewed) {
+    return (
+      <AppVerbs.Provider value={verbs}>
+        <AppOnboarding app={app.data} onBack={onBack} onDeployRefused={setRefusal} />
+      </AppVerbs.Provider>
+    );
+  }
+
+  // A tab that is nothing but a control is left out for somebody who cannot
+  // use it. The others stay, read-only: Settings and Sharing are also where
+  // somebody finds out how the app is configured and who can reach it.
+  const tabs = [
+    { value: 'overview', label: 'Overview' },
+    ...(can(verbs, AppVerb.LogsRead) ? [{ value: 'logs', label: 'Logs' }] : []),
+    { value: 'sharing', label: 'Sharing' },
+    { value: 'resources', label: 'Settings' },
+    ...(can(verbs, AppVerb.Exec) ? [{ value: 'terminal', label: 'Terminal' }] : []),
+    { value: 'detection', label: 'Configuration' },
+  ];
+
+  // A link to a tab this person cannot open lands on the first one they can.
+  const tab = tabs.some((t) => t.value === wanted) ? wanted : (tabs[0]?.value ?? 'detection');
 
   return (
-    <Sheet
-      heading={
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            gap: 'var(--space-3)',
-          }}
-        >
-          <Button variant="ghost" onClick={onBack} style={{ alignSelf: 'flex-start' }}>
-            Apps
-          </Button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3)' }}>
-              <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
-              <StatusIndicator
-                status={statusSymbol(app.data.state)}
-                label={statusLabel(app.data.state)}
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
-              {/* Deploy where somebody looking at an app can reach it, from any
-                  tab, rather than under everything on the overview. Only for an
-                  app that has a configuration to deploy: before that, the thing
-                  to do is accept one. */}
-              {app.data.pinned_spec_id && (
-                <DeployButton
-                  app={app.data}
-                  onRefused={(message, remedy, code) =>
-                    setRefusal(message ? { message, remedy, code } : null)
-                  }
+    <AppVerbs.Provider value={verbs}>
+      <Sheet
+        heading={
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              gap: 'var(--space-3)',
+            }}
+          >
+            <Button variant="ghost" icon={<Icon name="arrow-left" />} onClick={onBack} style={{ alignSelf: 'flex-start' }}>
+              Apps
+            </Button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3)' }}>
+                <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>{app.data.name}</h3>
+                <StatusIndicator
+                  status={statusSymbol(app.data.state)}
+                  label={statusLabel(app.data.state)}
                 />
-              )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+                {/* Deploy where somebody looking at an app can reach it, from any
+                    tab, rather than under everything on the overview. Only for an
+                    app that has a configuration to deploy: before that, the thing
+                    to do is accept one. */}
+                {app.data.pinned_spec_id && can(verbs, AppVerb.Deploy) && (
+                  <DeployButton
+                    app={app.data}
+                    onRefused={(message, remedy, code) =>
+                      setRefusal(message ? { message, remedy, code } : null)
+                    }
+                  />
+                )}
 
-              {/* Stopping is the thing somebody reaches for when they would
-                  otherwise delete: it keeps the storage, the configuration and
-                  the address, and starting brings back what was running. */}
-              <Lifecycle app={app.data} />
+                {/* Stopping is the thing somebody reaches for when they would
+                    otherwise delete: it keeps the storage, the configuration and
+                    the address, and starting brings back what was running. */}
+                {can(verbs, AppVerb.Restart) && <Lifecycle app={app.data} />}
 
-              {/* In the header rather than on Settings: an app whose source could
-                  not be fetched has no pinned spec and therefore no Settings tab,
-                  and that is the app most likely to be deleted. */}
-              <DeleteApp appID={app.data.id} appName={app.data.name} onDeleted={onBack} />
+                {/* In the header rather than on Settings: an app whose source could
+                    not be fetched has no pinned spec and therefore no Settings tab,
+                    and that is the app most likely to be deleted. */}
+                {can(verbs, AppVerb.Delete) && (
+                  <DeleteApp appID={app.data.id} appName={app.data.name} onDeleted={onBack} />
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      }
-      // The sheet's marginal data. An app's id is what the CLI and the API want
-      // and the console had nowhere to show it, so it was a value you could
-      // only get by reading the address bar.
-      note={app.data.id}
-    >
-      {/* Sheet provides the page inset, so this carries only the measure and
-          the gap above the tabs. */}
-      {refusal && (
-        <div style={{ paddingBottom: 'var(--space-4)', maxWidth: MEASURE }}>
-          {/* The server's words, which are written to be acted on (R-105) —
-              and, where the console has the screen that acts on them, the way
-              there. A refusal that names a remedy on a page with no control
-              for it is a remedy nobody can take. */}
-          <Banner
-            tone="failed"
-            action={
-              REFUSALS[refusal.code ?? ''] ? (
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    const fix = REFUSALS[refusal.code ?? ''];
-                    if (fix) setTab(fix.tab, fix.focus);
-                    setRefusal(null);
-                  }}
-                >
-                  {REFUSALS[refusal.code ?? '']?.label}
-                </Button>
-              ) : (
-                <Button variant="ghost" onClick={() => setRefusal(null)}>
-                  Dismiss
-                </Button>
-              )
-            }
-          >
-            {refusal.message}
-            {refusal.remedy ? ` ${refusal.remedy}` : ''}
-          </Banner>
-        </div>
-      )}
+        }
+        // The sheet's marginal data. An app's id is what the CLI and the API want
+        // and the console had nowhere to show it, so it was a value you could
+        // only get by reading the address bar.
+        note={app.data.id}
+      >
+        {/* Sheet provides the page inset, so this carries only the measure and
+            the gap above the tabs. */}
+        {refusal && (
+          <div style={{ paddingBottom: 'var(--space-4)', maxWidth: MEASURE }}>
+            {/* The server's words, which are written to be acted on (R-105) —
+                and, where the console has the screen that acts on them, the way
+                there. A refusal that names a remedy on a page with no control
+                for it is a remedy nobody can take. */}
+            <Banner
+              tone="failed"
+              action={
+                REFUSALS[refusal.code ?? ''] ? (
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      const fix = REFUSALS[refusal.code ?? ''];
+                      if (fix) setTab(fix.tab, fix.focus);
+                      setRefusal(null);
+                    }}
+                  >
+                    {REFUSALS[refusal.code ?? '']?.label}
+                  </Button>
+                ) : (
+                  <Button variant="ghost" onClick={() => setRefusal(null)}>
+                    Dismiss
+                  </Button>
+                )
+              }
+            >
+              {refusal.message}
+              {refusal.remedy ? ` ${refusal.remedy}` : ''}
+            </Banner>
+          </div>
+        )}
 
-      <Tabs value={tab} onChange={setTab} items={tabs} />
+        {/* Once, rather than on every section: without a verb that changes
+            anything, every control below is absent, and this says why. */}
+        {!changesAnything(verbs) && (
+          <div style={{ paddingBottom: 'var(--space-4)', maxWidth: MEASURE }}>
+            <Quiet>You can view this app but not change it.</Quiet>
+          </div>
+        )}
 
-      <div style={{ paddingTop: 'var(--space-5)' }}>
-        {tab === 'detection' && <DetectionReview appID={app.data.id} reviewed={reviewed} />}
-        {tab === 'sharing' && <Sharing appID={app.data.id} appName={app.data.name} />}
-        {tab === 'overview' && <AppOverview app={app.data} onGo={setTab} />}
-        {tab === 'logs' && <Logs app={app.data} workload={focus} />}
-        {tab === 'resources' && <Resources appID={app.data.id} focus={focus} />}
-        {tab === 'terminal' && <Terminal appID={app.data.id} />}
-      </div>
-    </Sheet>
+        <Tabs value={tab} onChange={setTab} items={tabs} />
+
+        <div style={{ paddingTop: 'var(--space-5)' }}>
+          {tab === 'detection' && <DetectionReview appID={app.data.id} reviewed={reviewed} />}
+          {tab === 'sharing' && <Sharing appID={app.data.id} appName={app.data.name} />}
+          {tab === 'overview' && <AppOverview app={app.data} onGo={setTab} />}
+          {tab === 'logs' && <Logs app={app.data} workload={focus} />}
+          {tab === 'resources' && <Resources appID={app.data.id} focus={focus} />}
+          {tab === 'terminal' && <Terminal appID={app.data.id} />}
+        </div>
+      </Sheet>
+    </AppVerbs.Provider>
   );
 }
 

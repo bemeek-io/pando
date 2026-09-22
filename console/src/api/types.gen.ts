@@ -78,6 +78,7 @@ export interface GrantRow {
   role_id?: string;
   principal_name?: string;
   role_name?: string;
+  passcode?: boolean;
 }
 
 export interface User {
@@ -88,6 +89,7 @@ export interface User {
   display_name?: string;
   status: string;
   must_change_password: boolean;
+  created_at: string;
 }
 
 export interface Proposal {
@@ -185,6 +187,7 @@ export interface Document {
   disabled_verbs?: (string[] | null);
   agent_disabled_verbs?: (string[] | null);
   allow_anonymous_grants?: boolean;
+  public_sharing?: string;
   min_build_isolation?: number;
   min_runtime_isolation?: number;
   egress_allowlist?: (string[] | null);

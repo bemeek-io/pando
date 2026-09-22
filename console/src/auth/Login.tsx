@@ -1,8 +1,15 @@
-// Sign in.
+// Sign in, and on a new installation, set up.
 //
 // The console had no login screen at all: `/login` rendered the launcher, which
-// rendered a link to `/login`. A fresh install printed a password to the server
-// log and gave nobody anywhere to type it. This is that screen.
+// rendered a link to `/login`. This is that screen.
+//
+// A new installation has no account, and nothing to sign in with. It used to
+// generate an administrator password and print it to the server log, which
+// meant the first person in had to be the person with the log. Now the first
+// person to reach this page creates the administrator account (R-046's single
+// administrative local user) with a password they chose — and the server
+// refuses a second attempt the moment one account exists, so there is exactly
+// one first person.
 //
 // Local accounts only for now. An external identity provider begins with a
 // redirect (`IdentityAdapter.Begin`), and when one is configured this page
@@ -10,15 +17,66 @@
 // alternatives to this form, not alternatives to signing in.
 
 import { useEffect, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Button, Input, Logo } from '@design';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Banner, Button, Input, Logo, Skeleton } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 
+import { FieldSkeleton, HeadingSkeleton, LineSkeleton, Loading } from '../ui/Loading';
 import { TopoMap } from '../ui/TopoBackground';
+import { signInInstead } from './passcode';
 import { returnTo } from './return-to';
 
 export function Login() {
+  // Why the setup form was taken away, when somebody else finished first.
+  const [taken, setTaken] = useState<string>();
+
+  const setup = useQuery({
+    queryKey: ['setup'],
+    queryFn: () => api.get<{ needed: boolean }>('/setup'),
+  });
+
+  // Not a form yet: the page does not know which form it is, and showing the
+  // sign-in form for a moment on a new installation invites typing into it. So
+  // the outline both forms share — a heading, two labeled fields, a button —
+  // with nothing in it to type into.
+  if (setup.isPending) {
+    return (
+      <Frame heading={<HeadingSkeleton width="14ch" />}>
+        <Loading gap="var(--space-4)">
+          {[0, 1].map((n) => (
+            <div key={n} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <LineSkeleton width="10ch" font="var(--type-label)" />
+              <FieldSkeleton />
+            </div>
+          ))}
+          <Skeleton height="var(--control-console)" />
+        </Loading>
+      </Frame>
+    );
+  }
+
+  // A failure to ask falls back to signing in, which is right on every
+  // installation but a new one — and on a new one, signing in says why not.
+  if (setup.data?.needed) {
+    return (
+      <Setup
+        onTaken={async (message) => {
+          const again = await setup.refetch();
+          if (again.data?.needed === false) {
+            setTaken(message);
+            return true;
+          }
+          return false;
+        }}
+      />
+    );
+  }
+
+  return <SignIn notice={taken} />;
+}
+
+function SignIn({ notice }: { notice?: string }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const queries = useQueryClient();
@@ -59,6 +117,7 @@ export function Login() {
         }}
         style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
       >
+        {notice && <Banner tone="info">{notice}</Banner>}
         <Input
           label="Username"
           value={username}
@@ -90,12 +149,205 @@ export function Login() {
 }
 
 /**
- * The first-run password change (R-046).
+ * The passcode page, for an app shared with everyone behind a passcode.
  *
- * The initial credential is generated, printed once to the server log and never
- * stored in the clear, so it is a handover token rather than a password — and
- * until this screen existed, the flag saying it had to be changed was something
- * nothing could clear.
+ * The proxy sends a visitor who has not entered it here, the same way it sends
+ * one to sign in for a private app (R-023) — same address, `?passcode=<app>`
+ * added — and the form takes the sign-in form's place in the same frame. The
+ * right passcode sets a cookie for the app, and the visitor goes back to where
+ * they were headed. Nobody signs in: this is still the anonymous grant (R-075),
+ * with one thing asked first.
+ *
+ * Somebody with an account may be able to open the app as themselves, so the
+ * sign-in form is one quiet step away, keeping where they were going.
+ */
+export function Passcode({ appID, signedIn }: { appID: string; signedIn: boolean }) {
+  const [passcode, setPasscode] = useState('');
+
+  const app = useQuery({
+    queryKey: ['passcode', appID],
+    queryFn: () => api.get<{ app_id: string; name: string }>(`/apps/${appID}/passcode`),
+    retry: false,
+  });
+
+  const enter = useMutation({
+    mutationFn: () => api.post<void>(`/apps/${appID}/passcode`, { passcode }),
+    // Where the proxy said they were going, checked like sign-in's (R-172),
+    // or the app's own front page — this page is on its hostname.
+    onSuccess: () => window.location.assign(returnTo(window.location.search, window.location.href) ?? '/'),
+  });
+
+  const signIn = signedIn ? null : (
+    <Button
+      variant="ghost"
+      fullWidth
+      onClick={() => window.location.assign(signInInstead(window.location.pathname, window.location.search))}
+    >
+      Sign in instead
+    </Button>
+  );
+
+  if (app.isPending) {
+    return (
+      <Frame heading={<HeadingSkeleton width="16ch" />}>
+        <Loading gap="var(--space-4)">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+            <LineSkeleton width="8ch" font="var(--type-label)" />
+            <FieldSkeleton />
+          </div>
+          <Skeleton height="var(--control-console)" />
+        </Loading>
+      </Frame>
+    );
+  }
+
+  if (app.isError) {
+    const missing = app.error instanceof RequestFailed && app.error.status === 404;
+    return (
+      <Frame
+        heading={missing ? 'No passcode needed' : 'Enter the passcode'}
+        lede={
+          missing
+            ? 'This app doesn’t ask for a passcode. If it was shared with you, sign in to open it.'
+            : withRemedy(app.error)
+        }
+      >
+        {signIn}
+      </Frame>
+    );
+  }
+
+  const edit = (value: string) => {
+    if (enter.isError) enter.reset();
+    setPasscode(value);
+  };
+
+  return (
+    <Frame heading="Enter the passcode" lede={`${app.data.name} asks for a passcode. Whoever shared it with you has it.`}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          enter.mutate();
+        }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
+      >
+        <Input
+          label="Passcode"
+          type="password"
+          value={passcode}
+          autoComplete="off"
+          autoFocus
+          onChange={(e) => edit(e.target.value)}
+          // The server's message as written: a wrong passcode and too many
+          // tries each say what to do next (R-105).
+          error={enter.isError ? withRemedy(enter.error) : undefined}
+        />
+        <Button type="submit" variant="primary" fullWidth disabled={enter.isPending || passcode === ''}>
+          {enter.isPending ? 'Checking' : 'Continue'}
+        </Button>
+        {signIn}
+      </form>
+    </Frame>
+  );
+}
+
+/**
+ * A new installation's first account.
+ *
+ * `onTaken` is asked whenever the server refuses, and answers whether the
+ * refusal was somebody else finishing setup first. A refusal is otherwise
+ * about this form — a short password, an unusable username — and stays on it.
+ */
+function Setup({ onTaken }: { onTaken: (message: string) => Promise<boolean> }) {
+  const [username, setUsername] = useState('admin');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const queries = useQueryClient();
+
+  const mismatch = confirm !== '' && password !== confirm;
+
+  const create = useMutation({
+    mutationFn: () =>
+      api.post<unknown>('/setup', { username, display_name: displayName, password }),
+    // The server set the session cookie; everything downstream reads GET /me,
+    // exactly as after signing in.
+    onSuccess: () => void queries.invalidateQueries(),
+    onError: (e) => void onTaken(withRemedy(e)),
+  });
+
+  const edit = (set: (v: string) => void) => (value: string) => {
+    if (create.isError) create.reset();
+    set(value);
+  };
+
+  return (
+    <Frame
+      heading="Set up Pando"
+      lede="This installation has no accounts yet. The first person here creates the administrator account."
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          create.mutate();
+        }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
+      >
+        <Input
+          label="Username"
+          value={username}
+          autoComplete="username"
+          autoFocus
+          onChange={(e) => edit(setUsername)(e.target.value)}
+        />
+        <Input
+          label="Name"
+          value={displayName}
+          autoComplete="name"
+          helper="Optional. Shown in the console and in the audit log."
+          onChange={(e) => edit(setDisplayName)(e.target.value)}
+        />
+        <Input
+          label="Password"
+          type="password"
+          value={password}
+          autoComplete="new-password"
+          helper="At least 10 characters."
+          // The server's refusal, on the field it is most often about (see
+          // ChangePassword). A username it cannot use says so in its own words.
+          error={!mismatch && create.isError ? messageOf(create.error) : undefined}
+          onChange={(e) => edit(setPassword)(e.target.value)}
+        />
+        <Input
+          label="Password again"
+          type="password"
+          value={confirm}
+          autoComplete="new-password"
+          onChange={(e) => edit(setConfirm)(e.target.value)}
+          error={mismatch ? 'These two passwords are different.' : undefined}
+        />
+        <Button
+          type="submit"
+          variant="primary"
+          fullWidth
+          disabled={create.isPending || username === '' || password === '' || password !== confirm}
+        >
+          {create.isPending ? 'Setting up' : 'Create account'}
+        </Button>
+      </form>
+    </Frame>
+  );
+}
+
+/**
+ * The forced password change (R-046).
+ *
+ * An account arrives here when somebody else chose its password: an
+ * administrator who added it or reset it and handed the password over, or
+ * whoever set PANDO_ADMIN_PASSWORD for an installation's first account. A
+ * password known to two people is a handover token rather than a password —
+ * and until this screen existed, the flag saying it had to be changed was
+ * something nothing could clear.
  */
 export function ChangePassword({ username }: { username?: string }) {
   const [current, setCurrent] = useState('');
@@ -127,9 +379,9 @@ export function ChangePassword({ username }: { username?: string }) {
   return (
     <Frame
       heading="Choose a password"
-      // Said plainly, and only once. The person is holding a string out of a
-      // log file; they do not need to be told that this is for security.
-      lede="The password Pando generated for this account was shown once in the server log. Replace it with one you'll remember."
+      // Said plainly, and only once. The person is holding a string somebody
+      // gave them; they do not need to be told that this is for security.
+      lede="You signed in with a password somebody else set. Choose your own."
     >
       <form
         onSubmit={(e) => {
@@ -205,7 +457,9 @@ function Frame({
   lede,
   children,
 }: {
-  heading?: string;
+  /** A string is the page's h1; anything else — a loading outline — stands in
+   *  its place without being announced as a heading. */
+  heading?: React.ReactNode;
   lede?: string;
   children: React.ReactNode;
 }) {
@@ -236,7 +490,11 @@ function Frame({
           <div style={{ marginBottom: 'var(--space-6)' }}>
             <Logo size={24} />
           </div>
-          <h1 style={{ font: 'var(--type-h3)', color: 'var(--ink)', margin: 0 }}>{heading}</h1>
+          {typeof heading === 'string' ? (
+            heading && <h1 style={{ font: 'var(--type-h3)', color: 'var(--ink)', margin: 0 }}>{heading}</h1>
+          ) : (
+            heading
+          )}
           {lede && (
             <p
               style={{
@@ -272,4 +530,11 @@ function useWide(): boolean {
 function messageOf(error: unknown): string {
   if (error instanceof RequestFailed) return error.message;
   return 'Pando could not reach the server. Check that it is running and try again.';
+}
+
+/** The message and, when the server gave one, what to do about it. */
+function withRemedy(error: unknown): string {
+  const message = messageOf(error);
+  const remedy = error instanceof RequestFailed ? error.remedy : undefined;
+  return remedy ? `${message} ${remedy}` : message;
 }

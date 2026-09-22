@@ -22,6 +22,7 @@ import { Button, Card, Select } from '@design';
 import { api, base } from '@api/client';
 import type { AppSpec } from '@api/types.gen';
 import { MEASURE } from '../ui/layout';
+import { FieldSkeleton, LineSkeleton, Loading } from '../ui/Loading';
 
 export function Terminal({ appID }: { appID: string }) {
   const [open, setOpen] = useState(false);
@@ -41,6 +42,7 @@ export function Terminal({ appID }: { appID: string }) {
     return (
       <Warning
         names={names.all}
+        loading={names.loading}
         chosen={chosen}
         onChoose={setWorkload}
         onOpen={() => setOpen(true)}
@@ -61,7 +63,7 @@ export function Terminal({ appID }: { appID: string }) {
 }
 
 /** The app's workload names, and which one is primary. */
-function useWorkloads(appID: string): { all: string[]; primary: string } {
+function useWorkloads(appID: string): { all: string[]; primary: string; loading: boolean } {
   const specs = useQuery({
     queryKey: ['apps', appID, 'specs'],
     queryFn: () => api.get<{ revisions: Array<{ id: string; revision: number }> | null; pinned_spec_id: string }>(
@@ -81,6 +83,8 @@ function useWorkloads(appID: string): { all: string[]; primary: string } {
   return {
     all: workloads.map((w) => w.name),
     primary: (workloads.find((w) => w.primary) ?? workloads[0])?.name ?? '',
+    // `full` waits on a pinned revision and is pending for good without one.
+    loading: specs.isPending || (Boolean(pinned) && full.isPending),
   };
 }
 
@@ -96,13 +100,25 @@ function WorkloadPicker({
   names,
   chosen,
   onChoose,
+  loading = false,
 }: {
   names: string[];
   chosen: string;
   onChoose: (w: string) => void;
+  loading?: boolean;
 }) {
-  // Nothing to show before the spec has loaded, or for an app with no
-  // workloads at all — which is an app that has never been through review.
+  // The field's shape while the spec loads, so Open terminal does not move
+  // down under the pointer when the list arrives.
+  if (loading) {
+    return (
+      <Loading gap="var(--space-2)">
+        <LineSkeleton width="18ch" font="var(--type-label)" />
+        <FieldSkeleton width="32ch" />
+      </Loading>
+    );
+  }
+  // Nothing for an app with no workloads at all — which is an app that has
+  // never been through review.
   if (names.length === 0) return null;
   return (
     <Select
@@ -123,11 +139,13 @@ function WorkloadPicker({
  */
 function Warning({
   names,
+  loading,
   chosen,
   onChoose,
   onOpen,
 }: {
   names: string[];
+  loading: boolean;
   chosen: string;
   onChoose: (w: string) => void;
   onOpen: () => void;
@@ -148,7 +166,7 @@ function Warning({
           type or what comes back.
         </p>
 
-        <WorkloadPicker names={names} chosen={chosen} onChoose={onChoose} />
+        <WorkloadPicker names={names} chosen={chosen} onChoose={onChoose} loading={loading} />
 
         <Button variant="primary" onClick={onOpen} style={{ alignSelf: 'flex-start' }}>
           Open terminal
@@ -265,7 +283,7 @@ function Session({
           <WorkloadPicker names={names} chosen={workload ?? ''} onChoose={onChoose} />
           <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>{status}</span>
         </div>
-        <Button variant="ghost" onClick={onClose}>
+        <Button variant="secondary" onClick={onClose}>
           Close terminal
         </Button>
       </div>

@@ -314,6 +314,45 @@ func TestRegisteringAnAdapterIsAdministration(t *testing.T) {
 	require.Contains(t, []int{http.StatusForbidden, http.StatusNotFound}, denied.Code, denied.String())
 }
 
+// TestR253_AnAdapterSavedAfterStartupIsMarkedUntilARestart asserts R-253's
+// consequence as the API reports it: a new adapter is saved but not running,
+// and says so, rather than reading as reachable.
+func TestR253_AnAdapterSavedAfterStartupIsMarkedUntilARestart(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+
+	created := i.do(admin, http.MethodPost, "/adapters", map[string]any{
+		"id": "ai_anthropic", "category": "ai", "kind": "anthropic", "name": "Anthropic",
+	})
+	require.Equal(t, http.StatusCreated, created.Code, created.String())
+
+	listed := i.do(admin, http.MethodGet, "/adapters", nil)
+	require.Equal(t, http.StatusOK, listed.Code, listed.String())
+	require.Contains(t, listed.String(), `"restart_needed":true`)
+	require.Contains(t, listed.String(), `"pending_restart":true`)
+	require.Contains(t, listed.String(), `"started_at":`)
+}
+
+// TestR253_RestartingIsForWhoeverMayChangeAdapters asserts that POST /restart
+// — how a saved adapter is put into effect — is behind the same verb as saving
+// one, and is audited.
+func TestR253_RestartingIsForWhoeverMayChangeAdapters(t *testing.T) {
+	i := newInstall(t)
+
+	denied := i.do(i.user("ordinary"), http.MethodPost, "/restart", nil)
+	require.Contains(t, []int{http.StatusForbidden, http.StatusNotFound}, denied.Code, denied.String())
+	require.Zero(t, i.Restarts.Load(), "a refused restart does not restart")
+
+	admin := i.admin()
+	accepted := i.do(admin, http.MethodPost, "/restart", nil)
+	require.Equal(t, http.StatusAccepted, accepted.Code, accepted.String())
+	require.Equal(t, int32(1), i.Restarts.Load())
+
+	audited := i.do(admin, http.MethodGet, "/audit?action=install.restart", nil)
+	require.Equal(t, http.StatusOK, audited.Code, audited.String())
+	require.Contains(t, audited.String(), `"install.restart"`)
+}
+
 // TestR190_AnAdapterCredentialGoesInEncryptedAndNeverComesBack asserts O-20's
 // resolution end to end: sent as a credential, stored as ciphertext, listed by
 // name, never returned.

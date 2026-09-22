@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/authz"
@@ -49,6 +50,20 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleAdapterKinds lists the kinds of adapter this build can run and the
+// settings each takes, so the console and the CLI can offer a form for adding
+// one rather than a JSON body to write by hand (R-261).
+func (s *Server) handleAdapterKinds(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireInstall(w, r, authz.InstallView); !ok {
+		return
+	}
+	kinds := s.AdapterKinds
+	if kinds == nil {
+		kinds = []api.KindInfo{}
+	}
+	JSON(w, http.StatusOK, map[string]any{"kinds": kinds})
+}
+
 // handleListAdapters returns configured adapters with their LIVE capabilities.
 //
 // Live rather than stored (design 04 §2.8), so the console can grey out routing
@@ -82,6 +97,21 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The stored settings, for whoever may change them: the console's Change
+	// form fills itself from them, rather than saving over every setting left
+	// blank. Not for install.view alone — settings name hosts and paths, the
+	// same operator detail the error messages below are withheld for.
+	// Credentials are never among them: the database refuses them in config.
+	showConfig := false
+	if s.Verbs != nil {
+		if held, err := s.Verbs.InstallVerbsFor(r.Context(), PrincipalFrom(r.Context())); err == nil {
+			for _, v := range held {
+				showConfig = showConfig || v == string(authz.InstallAdaptersManage)
+			}
+		}
+	}
+
+	restartNeeded := false
 	out := make([]map[string]any, 0, len(configured))
 	for _, c := range configured {
 		entry := map[string]any{
@@ -96,12 +126,25 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 		if fields := credentials[c.ID]; len(fields) > 0 {
 			entry["credentials_set"] = fields
 		}
+		if showConfig && len(c.Config) > 0 {
+			entry["config"] = c.Config
+		}
 
 		// An unhealthy adapter's error message is not returned. It can carry a
 		// host, a port, or a path from the operator's infrastructure, and this
 		// endpoint is readable by anyone signed in.
 		if err := health[c.ID]; err != nil {
 			entry["status"] = "unreachable"
+		}
+
+		// Saved since this process started, so not what is running: a new
+		// adapter is not loaded at all, a changed one still runs as it was.
+		// Without this a just-added adapter reads as reachable, having never
+		// been asked.
+		if !s.StartedAt.IsZero() && c.UpdatedAt.After(s.StartedAt) {
+			entry["pending_restart"] = true
+			entry["status"] = "pending_restart"
+			restartNeeded = true
 		}
 
 		switch api.Category(c.Category) {
@@ -133,7 +176,11 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 		out = append(out, entry)
 	}
 
-	JSON(w, http.StatusOK, map[string]any{"adapters": out})
+	body := map[string]any{"adapters": out, "restart_needed": restartNeeded}
+	if !s.StartedAt.IsZero() {
+		body["started_at"] = s.StartedAt.UTC().Format(time.RFC3339Nano)
+	}
+	JSON(w, http.StatusOK, body)
 }
 
 // handleCapacity aggregates what the runtime adapters report (R-243).

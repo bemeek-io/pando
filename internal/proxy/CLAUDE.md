@@ -22,7 +22,8 @@ adding a fast path, you are adding a security hole.
  2. App exists and running?            → 404 / 503
  3. Session cookie or bearer token
  4. Authenticate → Principal, or anonymous
- 5. CheckData(principal, app)
+ 5. CheckData(principal, app)        (principal carries pando_pass_* unlocks, R-075a)
+      passcode required  → 302 /.pando/login?passcode=<app>
       denied + anonymous → 302 login
       denied + authed    → 403
  6. Mint assertion (R-051)
