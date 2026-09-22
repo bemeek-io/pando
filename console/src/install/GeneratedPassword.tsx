@@ -9,6 +9,9 @@
 // The field is read-only on purpose. The value is meant to be read and copied,
 // not edited into something weaker; somebody who wants a different one asks for
 // another.
+//
+// Masked until asked for. The dialog is open on an administrator's screen,
+// which may be shared or looked over; Copy works without ever showing it.
 
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
@@ -67,7 +70,7 @@ export function GeneratedPassword({
   );
 }
 
-/** A password shown read-only, with a way to copy it. */
+/** A password, masked read-only, with a way to show it and to copy it. */
 export function PasswordToCopy({
   value,
   pending = false,
@@ -84,6 +87,9 @@ export function PasswordToCopy({
   // container.
   const box = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState<'yes' | 'select' | null>(null);
+  // Kept across Regenerate: somebody who chose to see it wants to see the
+  // next one too.
+  const [shown, setShown] = useState(false);
 
   // A new password is not the one that was copied.
   useEffect(() => setCopied(null), [value]);
@@ -97,10 +103,14 @@ export function PasswordToCopy({
       setCopied('yes');
       window.setTimeout(() => setCopied(null), 2_000);
     } catch {
-      // Select it instead, so copying it is one keystroke away.
-      const field = box.current?.querySelector('input');
-      field?.focus();
-      field?.select();
+      // Select it instead, so copying it is one keystroke away — shown first,
+      // because browsers will not copy out of a masked field.
+      setShown(true);
+      window.setTimeout(() => {
+        const field = box.current?.querySelector('input');
+        field?.focus();
+        field?.select();
+      });
       setCopied('select');
     }
   }
@@ -111,6 +121,7 @@ export function PasswordToCopy({
         label="Password"
         mono
         readOnly
+        type={shown ? 'text' : 'password'}
         value={pending ? '' : value}
         placeholder={pending ? 'Generating' : undefined}
         autoComplete="off"
@@ -125,6 +136,14 @@ export function PasswordToCopy({
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
         <Button variant="secondary" disabled={value === ''} onClick={() => void copy()}>
           {copied === 'yes' ? 'Copied' : 'Copy'}
+        </Button>
+        <Button
+          variant="ghost"
+          disabled={value === ''}
+          aria-pressed={shown}
+          onClick={() => setShown((v) => !v)}
+        >
+          {shown ? 'Hide' : 'Show'}
         </Button>
         {extra}
       </div>
