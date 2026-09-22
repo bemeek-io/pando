@@ -38,6 +38,7 @@ import { MEASURE } from '../ui/layout';
 import { LineSkeleton } from '../ui/Loading';
 import { Table } from '../ui/Table';
 import { RecipientField, type Chosen } from './RecipientField';
+import { BesideField } from '../ui/BesideField';
 import {
   BUILT_IN_APP_ROLES,
   describeChoice,
@@ -284,7 +285,7 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
               />
             </div>
             {roles.isPending ? (
-              <Skeleton width="28ch" height="var(--control-console)" />
+              <Skeleton width="28ch" height="var(--control-input)" />
             ) : (
               <Select
                 label="What they can do"
@@ -292,20 +293,29 @@ export function Sharing({ appID, appName }: { appID: string; appName: string }) 
                   { value: '', label: USE_ONLY },
                   ...appRoles.map((r) => ({ value: r.id, label: roleChoice(r) })),
                 ]}
-                helper={describeChoice(appRoles.find((r) => r.id === role))}
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
                 style={{ flex: '1 1 28ch' }}
               />
             )}
-            <Button
-              variant="primary"
-              onClick={() => recipient && share.mutate(recipient)}
-              disabled={!recipient || share.isPending || grants.isPending}
-            >
-              {share.isPending ? 'Sharing' : 'Share app'}
-            </Button>
+            <BesideField>
+              <Button
+                variant="primary"
+                onClick={() => recipient && share.mutate(recipient)}
+                disabled={!recipient || share.isPending || grants.isPending}
+              >
+                {share.isPending ? 'Sharing' : 'Share app'}
+              </Button>
+            </BesideField>
           </div>
+          {/* Under the row rather than under the dropdown: as the dropdown's
+              helper it made that one field taller, and the row, aligned to
+              the bottom, lifted the dropdown off the line the others sit on. */}
+          {!roles.isPending && (
+            <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+              {describeChoice(appRoles.find((r) => r.id === role))}
+            </p>
+          )}
           {share.isError && <Failure error={share.error} />}
         </Section>
       )}
