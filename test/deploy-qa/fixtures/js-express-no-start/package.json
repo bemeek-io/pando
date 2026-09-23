@@ -1,0 +1,7 @@
+{
+  "name": "js-express-no-start",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "dependencies": { "express": "^4.21.2" }
+}

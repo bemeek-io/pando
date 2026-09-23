@@ -1,0 +1,12 @@
+services:
+  app:
+    build: ./app
+    ports:
+      - "8000:8000"
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - counter-data:/data
+
+volumes:
+  counter-data:

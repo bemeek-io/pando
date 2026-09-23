@@ -1,0 +1,334 @@
+[
+ {
+  "id": "img-nginx",
+  "kind": "image",
+  "image": "nginx:alpine",
+  "source": "docker-image",
+  "language": "html",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "img-httpd",
+  "kind": "image",
+  "image": "httpd:alpine",
+  "source": "docker-image",
+  "language": "html",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "img-caddy",
+  "kind": "image",
+  "image": "caddy:alpine",
+  "source": "docker-image",
+  "language": "go",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "img-whoami",
+  "kind": "image",
+  "image": "traefik/whoami:latest",
+  "source": "docker-image",
+  "language": "go",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "img-httpbin",
+  "kind": "image",
+  "image": "kennethreitz/httpbin:latest",
+  "source": "docker-image",
+  "language": "python",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "img-go-httpbin",
+  "kind": "image",
+  "image": "ghcr.io/mccutchen/go-httpbin:latest",
+  "source": "docker-image",
+  "language": "go",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8080
+  }
+ },
+ {
+  "id": "img-podinfo",
+  "kind": "image",
+  "image": "ghcr.io/stefanprodan/podinfo:latest",
+  "source": "docker-image",
+  "language": "go",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 9898
+  }
+ },
+ {
+  "id": "img-uptime-kuma",
+  "kind": "image",
+  "image": "louislam/uptime-kuma:1",
+  "source": "docker-image",
+  "language": "javascript",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 3001
+  }
+ },
+ {
+  "id": "img-it-tools",
+  "kind": "image",
+  "image": "corentinth/it-tools:latest",
+  "source": "docker-image",
+  "language": "typescript",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "img-excalidraw",
+  "kind": "image",
+  "image": "excalidraw/excalidraw:latest",
+  "source": "docker-image",
+  "language": "typescript",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "img-homepage",
+  "kind": "image",
+  "image": "ghcr.io/gethomepage/homepage:latest",
+  "source": "docker-image",
+  "language": "javascript",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 3000
+  }
+ },
+ {
+  "id": "img-gitea",
+  "kind": "image",
+  "image": "gitea/gitea:latest",
+  "source": "docker-image",
+  "language": "go",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 3000
+  }
+ },
+ {
+  "id": "img-grafana",
+  "kind": "image",
+  "image": "grafana/grafana:latest",
+  "source": "docker-image",
+  "language": "go",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 3000
+  }
+ },
+ {
+  "id": "img-adminer",
+  "kind": "image",
+  "image": "adminer:latest",
+  "source": "docker-image",
+  "language": "php",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8080
+  }
+ },
+ {
+  "id": "img-vaultwarden",
+  "kind": "image",
+  "image": "vaultwarden/server:latest",
+  "source": "docker-image",
+  "language": "rust",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "img-filebrowser",
+  "kind": "image",
+  "image": "filebrowser/filebrowser:latest",
+  "source": "docker-image",
+  "language": "go",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "img-n8n",
+  "kind": "image",
+  "image": "n8nio/n8n:latest",
+  "source": "docker-image",
+  "language": "typescript",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 5678
+  }
+ },
+ {
+  "id": "img-code-server",
+  "kind": "image",
+  "image": "codercom/code-server:latest",
+  "source": "docker-image",
+  "language": "typescript",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8080
+  }
+ },
+ {
+  "id": "img-mailpit",
+  "kind": "image",
+  "image": "axllent/mailpit:latest",
+  "source": "docker-image",
+  "language": "go",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8025
+  }
+ },
+ {
+  "id": "img-ghost",
+  "kind": "image",
+  "image": "ghost:5-alpine",
+  "source": "docker-image",
+  "language": "javascript",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 2368
+  }
+ },
+ {
+  "id": "img-dozzle",
+  "kind": "image",
+  "image": "amir20/dozzle:latest",
+  "source": "docker-image",
+  "language": "go",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8080
+  }
+ },
+ {
+  "id": "img-miniflux",
+  "kind": "image",
+  "image": "miniflux/miniflux:latest",
+  "source": "docker-image",
+  "language": "go",
+  "packaging": "image",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8080
+  }
+ },
+ {
+  "id": "img-redis",
+  "kind": "image",
+  "image": "redis:7-alpine",
+  "source": "docker-image",
+  "language": "c",
+  "packaging": "image",
+  "expect": "refuse",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "img-postgres",
+  "kind": "image",
+  "image": "postgres:17-alpine",
+  "source": "docker-image",
+  "language": "c",
+  "packaging": "image",
+  "expect": "refuse",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ }
+]

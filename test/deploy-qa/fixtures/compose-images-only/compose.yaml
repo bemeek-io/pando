@@ -1,0 +1,10 @@
+services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+
+  whoami:
+    image: traefik/whoami
+    ports:
+      - "8081:80"

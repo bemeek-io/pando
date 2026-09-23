@@ -1,0 +1,7 @@
+{
+  "name": "js-koa",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": { "start": "node app.js" },
+  "dependencies": { "koa": "^2.15.3", "@koa/router": "^13.1.0" }
+}

@@ -1,0 +1,5 @@
+# Everything a run writes: state, logs, results, reports.
+/out/
+# Built by `qa.py up` for the Docker host's architecture.
+/fixtures/edge-prebuilt-binary/server
+__pycache__/

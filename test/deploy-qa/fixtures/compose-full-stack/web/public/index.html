@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Full stack</title></head>
+<body>
+<h1>PANDO-QA compose-full-stack OK</h1>
+<p>API status: <span id="status">checking</span></p>
+<script>
+fetch("/api/health").then(r => r.json()).then(j => {
+  document.getElementById("status").textContent = JSON.stringify(j);
+}).catch(e => { document.getElementById("status").textContent = "unreachable"; });
+</script>
+</body>
+</html>

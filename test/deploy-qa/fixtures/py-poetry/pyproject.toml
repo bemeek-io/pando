@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "py-poetry"
+version = "0.1.0"
+description = "A small Flask app managed by Poetry"
+authors = ["QA <qa@example.com>"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.10"
+flask = "^3.1"
+gunicorn = "^23.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

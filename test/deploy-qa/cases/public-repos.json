@@ -1,0 +1,1206 @@
+[
+ {
+  "id": "gh-html5-boilerplate",
+  "kind": "git",
+  "url": "https://github.com/h5bp/html5-boilerplate",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "html",
+  "packaging": "static",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "static_source": "run-build"
+  }
+ },
+ {
+  "id": "gh-2048",
+  "kind": "git",
+  "url": "https://github.com/gabrielecirulli/2048",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "html",
+  "packaging": "static",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-static-website-example",
+  "kind": "git",
+  "url": "https://github.com/cloudacademy/static-website-example",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "html",
+  "packaging": "static",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-startbootstrap-landing",
+  "kind": "git",
+  "url": "https://github.com/StartBootstrap/startbootstrap-landing-page",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "html",
+  "packaging": "static",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "static_source": "serve-committed"
+  }
+ },
+ {
+  "id": "gh-revealjs",
+  "kind": "git",
+  "url": "https://github.com/hakimel/reveal.js",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "static",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-mdn-beginner-html",
+  "kind": "git",
+  "url": "https://github.com/mdn/beginner-html-site-styled",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "html",
+  "packaging": "static",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-jekyll-now",
+  "kind": "git",
+  "url": "https://github.com/barryclark/jekyll-now",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "ruby",
+  "packaging": "static-generator",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-hugo-basic-example",
+  "kind": "git",
+  "url": "https://github.com/gohugoio/hugoBasicExample",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "static-generator",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-docker-getting-started",
+  "kind": "git",
+  "url": "https://github.com/docker/getting-started",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "python",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "gh-linux-tweet-app",
+  "kind": "git",
+  "url": "https://github.com/dockersamples/linux_tweet_app",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "html",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-heroku-node",
+  "kind": "git",
+  "url": "https://github.com/heroku/node-js-getting-started",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 5006
+  }
+ },
+ {
+  "id": "gh-docker-getting-started-app",
+  "kind": "git",
+  "url": "https://github.com/docker/getting-started-app",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 3000,
+   "start_command": "node src/index.js"
+  }
+ },
+ {
+  "id": "gh-welcome-to-docker",
+  "kind": "git",
+  "url": "https://github.com/docker/welcome-to-docker",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-vite-template-react",
+  "kind": "git",
+  "url": "https://github.com/vitejs/vite",
+  "ref": "main",
+  "subdir": "packages/create-vite/template-react",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-vite-template-vue",
+  "kind": "git",
+  "url": "https://github.com/vitejs/vite",
+  "ref": "main",
+  "subdir": "packages/create-vite/template-vue",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-vite-template-svelte-ts",
+  "kind": "git",
+  "url": "https://github.com/vitejs/vite",
+  "ref": "main",
+  "subdir": "packages/create-vite/template-svelte-ts",
+  "source": "public-github",
+  "language": "typescript",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-vite-template-vanilla",
+  "kind": "git",
+  "url": "https://github.com/vitejs/vite",
+  "ref": "main",
+  "subdir": "packages/create-vite/template-vanilla",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-angular-realworld",
+  "kind": "git",
+  "url": "https://github.com/realworld-apps/angular-realworld-example-app",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "typescript",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-nest-typescript-starter",
+  "kind": "git",
+  "url": "https://github.com/nestjs/typescript-starter",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "typescript",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 3000
+  }
+ },
+ {
+  "id": "gh-nuxt-starter",
+  "kind": "git",
+  "url": "https://github.com/nuxt/starter",
+  "ref": "templates",
+  "subdir": "",
+  "source": "public-github",
+  "language": "typescript",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 3000
+  }
+ },
+ {
+  "id": "gh-gatsby-starter-blog",
+  "kind": "git",
+  "url": "https://github.com/gatsbyjs/gatsby-starter-blog",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-svelte-template",
+  "kind": "git",
+  "url": "https://github.com/sveltejs/template",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "static_source": "run-build"
+  }
+ },
+ {
+  "id": "gh-docker-nodejs-sample",
+  "kind": "git",
+  "url": "https://github.com/docker/docker-nodejs-sample",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 3000,
+   "start_command": "node src/index.js"
+  }
+ },
+ {
+  "id": "gh-node-realworld",
+  "kind": "git",
+  "url": "https://github.com/gothinkster/node-express-realworld-example-app",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "typescript",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 3000
+  }
+ },
+ {
+  "id": "gh-hackathon-starter",
+  "kind": "git",
+  "url": "https://github.com/sahat/hackathon-starter",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-node-docker-good-defaults",
+  "kind": "git",
+  "url": "https://github.com/BretFisher/node-docker-good-defaults",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 3000
+  }
+ },
+ {
+  "id": "gh-excalidraw",
+  "kind": "git",
+  "url": "https://github.com/excalidraw/excalidraw",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "typescript",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "gh-uptime-kuma",
+  "kind": "git",
+  "url": "https://github.com/louislam/uptime-kuma",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 3001
+  }
+ },
+ {
+  "id": "gh-it-tools",
+  "kind": "git",
+  "url": "https://github.com/CorentinTh/it-tools",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "typescript",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-homepage",
+  "kind": "git",
+  "url": "https://github.com/gethomepage/homepage",
+  "ref": "dev",
+  "subdir": "",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 3000
+  }
+ },
+ {
+  "id": "gh-dashy",
+  "kind": "git",
+  "url": "https://github.com/Lissy93/dashy",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-heroku-python",
+  "kind": "git",
+  "url": "https://github.com/heroku/python-getting-started",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "python",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-flask-library",
+  "kind": "git",
+  "url": "https://github.com/pallets/flask",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "python",
+  "packaging": "library",
+  "expect": "refuse",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-full-stack-fastapi",
+  "kind": "git",
+  "url": "https://github.com/fastapi/full-stack-fastapi-template",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "python",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "frontend"
+  }
+ },
+ {
+  "id": "gh-httpbin",
+  "kind": "git",
+  "url": "https://github.com/postmanlabs/httpbin",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "python",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "build_method": "dockerfile"
+  }
+ },
+ {
+  "id": "gh-streamlit-example",
+  "kind": "git",
+  "url": "https://github.com/streamlit/streamlit-example",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "python",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8501,
+   "start_command": "streamlit run streamlit_app.py --server.port 8501 --server.address 0.0.0.0"
+  }
+ },
+ {
+  "id": "gh-heroku-go",
+  "kind": "git",
+  "url": "https://github.com/heroku/go-getting-started",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-chi-library",
+  "kind": "git",
+  "url": "https://github.com/go-chi/chi",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "library",
+  "expect": "refuse",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-podinfo",
+  "kind": "git",
+  "url": "https://github.com/stefanprodan/podinfo",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 9898
+  }
+ },
+ {
+  "id": "gh-whoami",
+  "kind": "git",
+  "url": "https://github.com/traefik/whoami",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "gh-go-httpbin",
+  "kind": "git",
+  "url": "https://github.com/mccutchen/go-httpbin",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8080
+  }
+ },
+ {
+  "id": "gh-gin-realworld",
+  "kind": "git",
+  "url": "https://github.com/gothinkster/golang-gin-realworld-example-app",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8080
+  }
+ },
+ {
+  "id": "gh-miniflux",
+  "kind": "git",
+  "url": "https://github.com/miniflux/v2",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8080
+  }
+ },
+ {
+  "id": "gh-memos",
+  "kind": "git",
+  "url": "https://github.com/usememos/memos",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 5230
+  }
+ },
+ {
+  "id": "gh-spring-petclinic",
+  "kind": "git",
+  "url": "https://github.com/spring-projects/spring-petclinic",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "java",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8080
+  }
+ },
+ {
+  "id": "gh-heroku-java",
+  "kind": "git",
+  "url": "https://github.com/heroku/java-getting-started",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "java",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8080
+  }
+ },
+ {
+  "id": "gh-spring-gs-rest-service",
+  "kind": "git",
+  "url": "https://github.com/spring-guides/gs-rest-service",
+  "ref": "main",
+  "subdir": "complete",
+  "source": "public-github",
+  "language": "java",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8080,
+   "start_command": "./mvnw spring-boot:run"
+  }
+ },
+ {
+  "id": "gh-heroku-ruby",
+  "kind": "git",
+  "url": "https://github.com/heroku/ruby-getting-started",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "ruby",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-heroku-php",
+  "kind": "git",
+  "url": "https://github.com/heroku/php-getting-started",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "php",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-laravel",
+  "kind": "git",
+  "url": "https://github.com/laravel/laravel",
+  "ref": "13.x",
+  "subdir": "",
+  "source": "public-github",
+  "language": "php",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-dotnet-aspnetapp",
+  "kind": "git",
+  "url": "https://github.com/dotnet/dotnet-docker",
+  "ref": "main",
+  "subdir": "samples/AspNetCoreRazorApp",
+  "source": "public-github",
+  "language": "csharp",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 8080
+  }
+ },
+ {
+  "id": "gh-axum-hello-world",
+  "kind": "git",
+  "url": "https://github.com/tokio-rs/axum",
+  "ref": "main",
+  "subdir": "examples/hello-world",
+  "source": "public-github",
+  "language": "rust",
+  "packaging": "buildpack",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 3000
+  }
+ },
+ {
+  "id": "gh-vaultwarden",
+  "kind": "git",
+  "url": "https://github.com/dani-garcia/vaultwarden",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "rust",
+  "packaging": "dockerfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "gh-example-voting-app",
+  "kind": "git",
+  "url": "https://github.com/dockersamples/example-voting-app",
+  "ref": "main",
+  "subdir": "",
+  "source": "public-github",
+  "language": "polyglot",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "vote"
+  }
+ },
+ {
+  "id": "ac-flask",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "flask",
+  "source": "public-github",
+  "language": "python",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "ac-django",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "django",
+  "source": "public-github",
+  "language": "python",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "ac-fastapi",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "fastapi",
+  "source": "public-github",
+  "language": "python",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "ac-nginx-flask-mysql",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "nginx-flask-mysql",
+  "source": "public-github",
+  "language": "python",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "proxy"
+  }
+ },
+ {
+  "id": "ac-nginx-flask-mongo",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "nginx-flask-mongo",
+  "source": "public-github",
+  "language": "python",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "web"
+  }
+ },
+ {
+  "id": "ac-react-express-mysql",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "react-express-mysql",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "frontend"
+  }
+ },
+ {
+  "id": "ac-react-express-mongodb",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "react-express-mongodb",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "frontend"
+  }
+ },
+ {
+  "id": "ac-react-java-mysql",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "react-java-mysql",
+  "source": "public-github",
+  "language": "java",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "frontend"
+  }
+ },
+ {
+  "id": "ac-react-rust-postgres",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "react-rust-postgres",
+  "source": "public-github",
+  "language": "rust",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "frontend"
+  }
+ },
+ {
+  "id": "ac-spring-postgres",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "spring-postgres",
+  "source": "public-github",
+  "language": "java",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "backend"
+  }
+ },
+ {
+  "id": "ac-nginx-golang",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "nginx-golang",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "proxy"
+  }
+ },
+ {
+  "id": "ac-nginx-golang-mysql",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "nginx-golang-mysql",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "proxy"
+  }
+ },
+ {
+  "id": "ac-nginx-nodejs-redis",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "nginx-nodejs-redis",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "nginx"
+  }
+ },
+ {
+  "id": "ac-wordpress-mysql",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "wordpress-mysql",
+  "source": "public-github",
+  "language": "php",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "wordpress"
+  }
+ },
+ {
+  "id": "ac-gitea-postgres",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "gitea-postgres",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "gitea"
+  }
+ },
+ {
+  "id": "ac-nextcloud-redis-mariadb",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "nextcloud-redis-mariadb",
+  "source": "public-github",
+  "language": "php",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "nc"
+  }
+ },
+ {
+  "id": "ac-prometheus-grafana",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "prometheus-grafana",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "grafana"
+  }
+ },
+ {
+  "id": "ac-angular",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "angular",
+  "source": "public-github",
+  "language": "typescript",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "ac-vuejs",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "vuejs",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "ac-react-nginx",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "react-nginx",
+  "source": "public-github",
+  "language": "javascript",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "port": 80
+  }
+ },
+ {
+  "id": "ac-traefik-golang",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "traefik-golang",
+  "source": "public-github",
+  "language": "go",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {
+   "primary_service": "backend"
+  }
+ },
+ {
+  "id": "ac-apache-php",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "apache-php",
+  "source": "public-github",
+  "language": "php",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "ac-sparkjava",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "sparkjava",
+  "source": "public-github",
+  "language": "java",
+  "packaging": "compose",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "ac-minecraft",
+  "kind": "git",
+  "url": "https://github.com/docker/awesome-compose",
+  "ref": "master",
+  "subdir": "minecraft",
+  "source": "public-github",
+  "language": "java",
+  "packaging": "compose",
+  "expect": "refuse",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ },
+ {
+  "id": "gh-hello-world-empty",
+  "kind": "git",
+  "url": "https://github.com/octocat/Hello-World",
+  "ref": "master",
+  "subdir": "",
+  "source": "public-github",
+  "language": "none",
+  "packaging": "empty",
+  "expect": "refuse",
+  "http_path": "/",
+  "expect_text": null,
+  "facts": {}
+ }
+]

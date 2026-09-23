@@ -1,0 +1,1182 @@
+[
+ {
+  "id": "static-plain",
+  "kind": "upload",
+  "path": "fixtures/static-plain",
+  "category": "static",
+  "shape": "index.html + style.css + app.js at root, no package.json",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA static-plain OK",
+  "facts": {
+   "port": 80,
+   "start_command": null,
+   "build_command": null,
+   "static_source": "."
+  },
+  "notes": ""
+ },
+ {
+  "id": "static-public-dir",
+  "kind": "upload",
+  "path": "fixtures/static-public-dir",
+  "category": "static",
+  "shape": "Static site in public/ with a package.json that has no build or start script",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA static-public-dir OK",
+  "facts": {
+   "port": 80,
+   "start_command": null,
+   "build_command": null,
+   "static_source": "public"
+  },
+  "notes": "package.json has only a 'lint' script."
+ },
+ {
+  "id": "static-docs-dir",
+  "kind": "upload",
+  "path": "fixtures/static-docs-dir",
+  "category": "static",
+  "shape": "Static site only under docs/ (GitHub Pages style); root holds just README.md",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA static-docs-dir OK",
+  "facts": {
+   "port": 80,
+   "start_command": null,
+   "build_command": null,
+   "static_source": "docs"
+  },
+  "notes": ""
+ },
+ {
+  "id": "static-multipage",
+  "kind": "upload",
+  "path": "fixtures/static-multipage",
+  "category": "static",
+  "shape": "Multiple HTML pages at root plus css/ and images/ (svg + png)",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA static-multipage OK",
+  "facts": {
+   "port": 80,
+   "start_command": null,
+   "build_command": null,
+   "static_source": "."
+  },
+  "notes": ""
+ },
+ {
+  "id": "js-vite-react",
+  "kind": "upload",
+  "path": "fixtures/js-vite-react",
+  "category": "vite",
+  "shape": "Vite + React SPA from create-vite, npm lockfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-vite-react OK",
+  "facts": {
+   "port": 80,
+   "start_command": null,
+   "build_command": "npm run build",
+   "static_source": "dist"
+  },
+  "notes": "Also has a public/ dir (Vite static assets, favicon only) that is not the site root. Marker is static in index.html."
+ },
+ {
+  "id": "js-vite-vue",
+  "kind": "upload",
+  "path": "fixtures/js-vite-vue",
+  "category": "vite",
+  "shape": "Vite + Vue SPA from create-vite, npm lockfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-vite-vue OK",
+  "facts": {
+   "port": 80,
+   "start_command": null,
+   "build_command": "npm run build",
+   "static_source": "dist"
+  },
+  "notes": "Also has a public/ dir that is not the site root."
+ },
+ {
+  "id": "js-vite-svelte",
+  "kind": "upload",
+  "path": "fixtures/js-vite-svelte",
+  "category": "vite",
+  "shape": "Vite + Svelte SPA from create-vite, npm lockfile",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-vite-svelte OK",
+  "facts": {
+   "port": 80,
+   "start_command": null,
+   "build_command": "npm run build",
+   "static_source": "dist"
+  },
+  "notes": "Also has a public/ dir that is not the site root."
+ },
+ {
+  "id": "js-angular",
+  "kind": "upload",
+  "path": "fixtures/js-angular",
+  "category": "angular",
+  "shape": "Angular CLI app (standalone, no SSR), @angular/build:application",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-angular OK",
+  "facts": {
+   "port": 80,
+   "start_command": null,
+   "build_command": "npm run build",
+   "static_source": "dist/js-angular/browser"
+  },
+  "notes": "Output lands in dist/js-angular/browser, not dist/. Has a public/ dir of assets."
+ },
+ {
+  "id": "js-astro-static",
+  "kind": "upload",
+  "path": "fixtures/js-astro-static",
+  "category": "astro",
+  "shape": "Minimal hand-written Astro static site, 2 pages",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-astro-static OK",
+  "facts": {
+   "port": 80,
+   "start_command": null,
+   "build_command": "npm run build",
+   "static_source": "dist"
+  },
+  "notes": ""
+ },
+ {
+  "id": "js-express",
+  "kind": "upload",
+  "path": "fixtures/js-express",
+  "category": "node",
+  "shape": "Express server, start: node server.js, PORT env default 3000",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-express OK",
+  "facts": {
+   "port": 3000,
+   "start_command": "npm start",
+   "build_command": null,
+   "static_source": null
+  },
+  "notes": ""
+ },
+ {
+  "id": "js-express-no-start",
+  "kind": "upload",
+  "path": "fixtures/js-express-no-start",
+  "category": "node",
+  "shape": "Express with no scripts; main: index.js; hard-coded port 8080",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-express-no-start OK",
+  "facts": {
+   "port": 8080,
+   "start_command": "node index.js",
+   "build_command": null,
+   "static_source": null
+  },
+  "notes": "Ignores PORT. Verified by remapping 8080 to 41011 with a node -r preload, because 8080 was in use on the host."
+ },
+ {
+  "id": "js-fastify-ts",
+  "kind": "upload",
+  "path": "fixtures/js-fastify-ts",
+  "category": "node",
+  "shape": "Fastify in TypeScript; build: tsc -> dist/; start: node dist/server.js; 0.0.0.0, PORT default 3000",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-fastify-ts OK",
+  "facts": {
+   "port": 3000,
+   "start_command": "npm start",
+   "build_command": "npm run build",
+   "static_source": null
+  },
+  "notes": "Needs devDependencies (typescript) during the build."
+ },
+ {
+  "id": "js-koa",
+  "kind": "upload",
+  "path": "fixtures/js-koa",
+  "category": "node",
+  "shape": "Koa + @koa/router, start: node app.js, PORT default 4000",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-koa OK",
+  "facts": {
+   "port": 4000,
+   "start_command": "npm start",
+   "build_command": null,
+   "static_source": null
+  },
+  "notes": ""
+ },
+ {
+  "id": "js-nextjs",
+  "kind": "upload",
+  "path": "fixtures/js-nextjs",
+  "category": "nextjs",
+  "shape": "Minimal Next.js 16 app router, one page, dev/build/start scripts",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-nextjs OK",
+  "facts": {
+   "port": 3000,
+   "start_command": "npm start",
+   "build_command": "npm run build",
+   "static_source": null
+  },
+  "notes": "The page is prerendered static, but it runs as a server through next start."
+ },
+ {
+  "id": "js-pnpm",
+  "kind": "upload",
+  "path": "fixtures/js-pnpm",
+  "category": "node",
+  "shape": "Express app with pnpm-lock.yaml (pnpm 10), no package-lock",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-pnpm OK",
+  "facts": {
+   "port": 3000,
+   "start_command": "pnpm start",
+   "build_command": null,
+   "static_source": null
+  },
+  "notes": ""
+ },
+ {
+  "id": "js-yarn",
+  "kind": "upload",
+  "path": "fixtures/js-yarn",
+  "category": "node",
+  "shape": "Express app with yarn.lock (yarn classic 1.22), no package-lock",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-yarn OK",
+  "facts": {
+   "port": 3000,
+   "start_command": "yarn start",
+   "build_command": null,
+   "static_source": null
+  },
+  "notes": ""
+ },
+ {
+  "id": "js-bun",
+  "kind": "upload",
+  "path": "fixtures/js-bun",
+  "category": "bun",
+  "shape": "Bun.serve server in TypeScript with bun.lock (text lockfile, bun 1.4)",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-bun OK",
+  "facts": {
+   "port": 3000,
+   "start_command": "bun run index.ts",
+   "build_command": null,
+   "static_source": null
+  },
+  "notes": "Verified with bun via npx (bun is not installed globally). Its only dependency is @types/bun."
+ },
+ {
+  "id": "js-deno",
+  "kind": "upload",
+  "path": "fixtures/js-deno",
+  "category": "deno",
+  "shape": "Deno.serve server; deno.json start task; PORT default 8000",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-deno OK",
+  "facts": {
+   "port": 8000,
+   "start_command": "deno task start",
+   "build_command": null,
+   "static_source": null
+  },
+  "notes": "No package.json and no deno.lock (it has no dependencies). Verified with deno via npx."
+ },
+ {
+  "id": "js-localhost-trap",
+  "kind": "upload",
+  "path": "fixtures/js-localhost-trap",
+  "category": "node",
+  "shape": "Express that binds 127.0.0.1 explicitly (PORT default 3000)",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-localhost-trap OK",
+  "facts": {
+   "port": 3000,
+   "start_command": "npm start",
+   "build_command": null,
+   "static_source": null
+  },
+  "notes": "Expected to be unreachable from outside a container. Verified reachable on the host loopback."
+ },
+ {
+  "id": "js-procfile",
+  "kind": "upload",
+  "path": "fixtures/js-procfile",
+  "category": "node",
+  "shape": "Express app with Procfile 'web: node app.js' and no start script; PORT default 5000",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-procfile OK",
+  "facts": {
+   "port": 5000,
+   "start_command": "node app.js",
+   "build_command": null,
+   "static_source": null
+  },
+  "notes": "The Procfile is the only start declaration."
+ },
+ {
+  "id": "js-node-http-esm",
+  "kind": "upload",
+  "path": "fixtures/js-node-http-esm",
+  "category": "node",
+  "shape": "Zero-dependency node:http server, ESM, start: node src/main.mjs, PORT default 3000",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA js-node-http-esm OK",
+  "facts": {
+   "port": 3000,
+   "start_command": "npm start",
+   "build_command": null,
+   "static_source": null
+  },
+  "notes": "Extra case: no dependencies, entry is under src/, not at root."
+ },
+ {
+  "id": "py-flask",
+  "kind": "upload",
+  "path": "fixtures/py-flask",
+  "category": "python",
+  "shape": "Flask app.py + requirements.txt, no Procfile; `python app.py` reads PORT",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA py-flask OK",
+  "facts": {
+   "port": 5000,
+   "start_command": "python app.py",
+   "build_command": null
+  },
+  "notes": "local toolchain: started on a free port, curled /, marker found, process killed (python 3.14 venv, `python app.py`)."
+ },
+ {
+  "id": "py-flask-gunicorn-procfile",
+  "kind": "upload",
+  "path": "fixtures/py-flask-gunicorn-procfile",
+  "category": "python",
+  "shape": "Flask + gunicorn in requirements.txt, Procfile web line binds $PORT",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA py-flask-gunicorn-procfile OK",
+  "facts": {
+   "port": 8000,
+   "start_command": "gunicorn app:app --bind 0.0.0.0:$PORT",
+   "build_command": null
+  },
+  "notes": "local toolchain: started on a free port, curled /, marker found, process killed (ran the Procfile command with PORT set). Port depends entirely on $PORT from Procfile; 8000 is gunicorn's usual convention, the app has no default of its own."
+ },
+ {
+  "id": "py-fastapi",
+  "kind": "upload",
+  "path": "fixtures/py-fastapi",
+  "category": "python",
+  "shape": "FastAPI main.py (app object) + uvicorn in requirements.txt, no start script",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA py-fastapi OK",
+  "facts": {
+   "port": 8000,
+   "start_command": "uvicorn main:app --host 0.0.0.0 --port 8000",
+   "build_command": null
+  },
+  "notes": "local toolchain: started on a free port, curled /, marker found, process killed (uvicorn in venv)."
+ },
+ {
+  "id": "py-django",
+  "kind": "upload",
+  "path": "fixtures/py-django",
+  "category": "python",
+  "shape": "django-admin startproject layout (manage.py, mysite/), requirements.txt with django+gunicorn, DEBUG off, ALLOWED_HOSTS *",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA py-django OK",
+  "facts": {
+   "port": 8000,
+   "start_command": "gunicorn mysite.wsgi --bind 0.0.0.0:8000",
+   "build_command": null
+  },
+  "notes": "local toolchain: started on a free port, curled /, marker found, process killed with both gunicorn mysite.wsgi and `python manage.py runserver 0.0.0.0:PORT`. No DB needed for /; no static files; migrations never run (db.sqlite3 not committed)."
+ },
+ {
+  "id": "py-poetry",
+  "kind": "upload",
+  "path": "fixtures/py-poetry",
+  "category": "python",
+  "shape": "Flask app with Poetry pyproject.toml (package-mode=false) + poetry.lock, no requirements.txt",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA py-poetry OK",
+  "facts": {
+   "port": 8000,
+   "start_command": "poetry run gunicorn app:app --bind 0.0.0.0:8000",
+   "build_command": "poetry install"
+  },
+  "notes": "local toolchain: started on a free port, curled /, marker found, process killed (poetry 2.5.1 lock+install into external venv; verified via `poetry run gunicorn` and `poetry run python app.py`, which defaults to 5000)."
+ },
+ {
+  "id": "py-uv",
+  "kind": "upload",
+  "path": "fixtures/py-uv",
+  "category": "python",
+  "shape": "FastAPI app with PEP 621 pyproject.toml + uv.lock, no requirements.txt",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA py-uv OK",
+  "facts": {
+   "port": 8000,
+   "start_command": "uv run uvicorn main:app --host 0.0.0.0 --port 8000",
+   "build_command": "uv sync"
+  },
+  "notes": "local toolchain: started on a free port, curled /, marker found, process killed (uv 0.12 `uv lock` then `uv run uvicorn`, env outside dir)."
+ },
+ {
+  "id": "py-streamlit",
+  "kind": "upload",
+  "path": "fixtures/py-streamlit",
+  "category": "python",
+  "shape": "Streamlit streamlit_app.py + requirements.txt",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "Streamlit",
+  "facts": {
+   "port": 8501,
+   "start_command": "streamlit run streamlit_app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true",
+   "build_command": null
+  },
+  "notes": "Local venv; raw HTML at / served, contains 'Streamlit'. The marker 'PANDO-QA py-streamlit OK' is in st.title and only appears after JS/websocket render, so expect_text is 'Streamlit' instead."
+ },
+ {
+  "id": "py-stdlib",
+  "kind": "upload",
+  "path": "fixtures/py-stdlib",
+  "category": "python",
+  "shape": "zero-dependency http.server main.py, no requirements.txt or pyproject",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA py-stdlib OK",
+  "facts": {
+   "port": 8080,
+   "start_command": "python main.py",
+   "build_command": null
+  },
+  "notes": "local toolchain: started on a free port, curled /, marker found, process killed (system python3)."
+ },
+ {
+  "id": "go-nethttp",
+  "kind": "upload",
+  "path": "fixtures/go-nethttp",
+  "category": "go",
+  "shape": "go.mod + main.go (net/http), no deps, no go.sum",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA go-nethttp OK",
+  "facts": {
+   "port": 8080,
+   "start_command": "./server",
+   "build_command": "go build -o server ."
+  },
+  "notes": "local toolchain: started on a free port, curled /, marker found, process killed (go run .)."
+ },
+ {
+  "id": "go-gin",
+  "kind": "upload",
+  "path": "fixtures/go-gin",
+  "category": "go",
+  "shape": "gin app, go.mod + go.sum from go mod tidy",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA go-gin OK",
+  "facts": {
+   "port": 8080,
+   "start_command": "./server",
+   "build_command": "go build -o server ."
+  },
+  "notes": "local toolchain: started on a free port, curled /, marker found, process killed (go run .). go mod tidy raised the go directive to 1.25.0 (gin 1.12 requires it), so the builder needs Go >= 1.25 or toolchain auto-download."
+ },
+ {
+  "id": "go-cmd-layout",
+  "kind": "upload",
+  "path": "fixtures/go-cmd-layout",
+  "category": "go",
+  "shape": "main package at cmd/server, code in internal/; root has only go.mod (no deps, so no go.sum)",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA go-cmd-layout OK",
+  "facts": {
+   "port": 8080,
+   "start_command": "./server",
+   "build_command": "go build -o server ./cmd/server"
+  },
+  "notes": "local toolchain: started on a free port, curled /, marker found, process killed (go run ./cmd/server). `go build .` at root fails: no Go files at root; detector must find ./cmd/server."
+ },
+ {
+  "id": "go-makefile",
+  "kind": "upload",
+  "path": "fixtures/go-makefile",
+  "category": "go",
+  "shape": "net/http app + Makefile (build -> bin/server, run target)",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA go-makefile OK",
+  "facts": {
+   "port": 8080,
+   "start_command": "./bin/server",
+   "build_command": "make build"
+  },
+  "notes": "local toolchain: started on a free port, curled /, marker found, process killed (make run)."
+ },
+ {
+  "id": "java-spring-maven",
+  "kind": "upload",
+  "path": "fixtures/java-spring-maven",
+  "category": "java",
+  "shape": "start.spring.io Spring Boot 4.1.1 web, Maven wrapper (mvnw + .mvn/wrapper), Java 21, @RestController at /",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA java-spring-maven OK",
+  "facts": {
+   "port": 8080,
+   "start_command": "java -jar target/java-spring-maven-0.0.1-SNAPSHOT.jar",
+   "build_command": "./mvnw -B package -DskipTests"
+  },
+  "notes": "local toolchain: started on a free port, curled /, marker found, process killed (./mvnw package with local JDK 24, then java -jar). Spring Boot ignores PORT; it reads server.port / SERVER_PORT, default 8080."
+ },
+ {
+  "id": "java-spring-gradle",
+  "kind": "upload",
+  "path": "fixtures/java-spring-gradle",
+  "category": "java",
+  "shape": "start.spring.io Spring Boot 4.1.1 web, Gradle wrapper (gradlew + gradle-wrapper.jar), Groovy DSL, Java 21 toolchain, @RestController at /",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA java-spring-gradle OK",
+  "facts": {
+   "port": 8080,
+   "start_command": "java -jar build/libs/java-spring-gradle-0.0.1-SNAPSHOT.jar",
+   "build_command": "./gradlew bootJar"
+  },
+  "notes": "Docker eclipse-temurin:21-jdk, `./gradlew bootRun`, curled marker, container removed. Local JDK 24 build failed: build.gradle pins a Java 21 toolchain and no JDK 21 was installed, so the builder must provide JDK 21 (or allow toolchain provisioning). Port via SERVER_PORT, default 8080."
+ },
+ {
+  "id": "java-plain",
+  "kind": "upload",
+  "path": "fixtures/java-plain",
+  "category": "java",
+  "shape": "single Main.java using com.sun.net.httpserver, no build tool",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA java-plain OK",
+  "facts": {
+   "port": 8080,
+   "start_command": "java Main.java",
+   "build_command": null
+  },
+  "notes": "local toolchain: started on a free port, curled /, marker found, process killed (both `java Main.java` source-launch and javac + java -cp). Reads PORT, default 8080."
+ },
+ {
+  "id": "rust-axum",
+  "kind": "upload",
+  "path": "fixtures/rust-axum",
+  "category": "rust",
+  "shape": "Cargo project axum 0.8 + tokio, Cargo.lock committed",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA rust-axum OK",
+  "facts": {
+   "port": 3000,
+   "start_command": "./target/release/rust-axum",
+   "build_command": "cargo build --release"
+  },
+  "notes": "Docker rust:1-slim: cargo generate-lockfile && cargo run --release, curled marker, container removed. Reads PORT, default 3000."
+ },
+ {
+  "id": "ruby-sinatra",
+  "kind": "upload",
+  "path": "fixtures/ruby-sinatra",
+  "category": "ruby",
+  "shape": "Sinatra 4 modular app.rb + config.ru + Gemfile/Gemfile.lock (puma, rackup), platforms ruby/x86_64-linux/aarch64-linux",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA ruby-sinatra OK",
+  "facts": {
+   "port": 9292,
+   "start_command": "bundle exec rackup -o 0.0.0.0 -p 9292",
+   "build_command": "bundle install"
+  },
+  "notes": "Docker ruby:3.3: bundle lock + install + rackup, curled marker (also with a foreign Host header: host_authorization is disabled), container removed. Local ruby is 2.6, too old. Uses rackup's default port 9292; no PORT handling beyond what the start command passes."
+ },
+ {
+  "id": "php-plain",
+  "kind": "upload",
+  "path": "fixtures/php-plain",
+  "category": "php",
+  "shape": "single index.php, no composer.json",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA php-plain OK",
+  "facts": {
+   "port": 8080,
+   "start_command": "php -S 0.0.0.0:8080",
+   "build_command": null
+  },
+  "notes": "Docker php:8.3-cli `php -S 0.0.0.0:8080`, curled marker, container removed. Port is whatever the server command chooses; 8080 used."
+ },
+ {
+  "id": "php-composer-slim",
+  "kind": "upload",
+  "path": "fixtures/php-composer-slim",
+  "category": "php",
+  "shape": "Slim 4 + slim/psr7 via composer.json/composer.lock, front controller public/index.php, vendor/ not committed",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA php-composer-slim OK",
+  "facts": {
+   "port": 8080,
+   "start_command": "php -S 0.0.0.0:8080 -t public",
+   "build_command": "composer install --no-dev"
+  },
+  "notes": "Docker composer:2 `composer install`, then php:8.3-cli `php -S 0.0.0.0:8080 -t public`, curled marker, containers removed, vendor/ deleted. Document root must be public/."
+ },
+ {
+  "id": "dotnet-minimal",
+  "kind": "upload",
+  "path": "fixtures/dotnet-minimal",
+  "category": "dotnet",
+  "shape": "ASP.NET Core minimal API Program.cs + dotnet-minimal.csproj (net8.0), no launchSettings",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA dotnet-minimal OK",
+  "facts": {
+   "port": 8080,
+   "start_command": "dotnet dotnet-minimal.dll",
+   "build_command": "dotnet publish -c Release -o out"
+  },
+  "notes": "Docker mcr.microsoft.com/dotnet/sdk:8.0: dotnet publish + run, curled marker, container removed, bin/obj deleted. Listens on 8080 because official .NET 8 images set ASPNETCORE_HTTP_PORTS=8080; outside those images Kestrel defaults to http://localhost:5000 (loopback only), so the runtime must set ASPNETCORE_HTTP_PORTS/ASPNETCORE_URLS."
+ },
+ {
+  "id": "elixir-plug",
+  "kind": "upload",
+  "path": "fixtures/elixir-plug",
+  "category": "elixir",
+  "shape": "Mix project, Plug.Router served by Bandit from an OTP Application, mix.lock committed, no Phoenix, no config/",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA elixir-plug OK",
+  "facts": {
+   "port": 4000,
+   "start_command": "mix run --no-halt",
+   "build_command": "mix deps.get && mix compile"
+  },
+  "notes": "Docker elixir:1.17: mix local.hex, deps.get, mix run --no-halt, curled marker, container removed, _build/deps deleted. Reads PORT, default 4000, binds 0.0.0.0."
+ },
+ {
+  "id": "ctr-dockerfile-expose",
+  "kind": "upload",
+  "path": "fixtures/ctr-dockerfile-expose",
+  "category": "dockerfile",
+  "shape": "Root Dockerfile (node:22-alpine) with EXPOSE 8080",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA ctr-dockerfile-expose OK",
+  "facts": {
+   "port": 8080,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker build + docker run on a 127.0.0.1:18xxx host port; GET / contained the marker; container and image removed afterward."
+ },
+ {
+  "id": "ctr-dockerfile-no-expose",
+  "kind": "upload",
+  "path": "fixtures/ctr-dockerfile-no-expose",
+  "category": "dockerfile",
+  "shape": "Root Dockerfile with no EXPOSE line; Node server hardcoded to port 5000 (port only discoverable from source)",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA ctr-dockerfile-no-expose OK",
+  "facts": {
+   "port": 5000,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker build + docker run on a 127.0.0.1:18xxx host port; GET / contained the marker; container and image removed afterward."
+ },
+ {
+  "id": "ctr-dockerfile-subdir",
+  "kind": "upload",
+  "path": "fixtures/ctr-dockerfile-subdir",
+  "category": "dockerfile",
+  "shape": "Dockerfile at docker/Dockerfile, build context = repo root; nothing at root but app/ source and README",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA ctr-dockerfile-subdir OK",
+  "facts": {
+   "port": 8000,
+   "primary_service": null,
+   "dockerfile_path": "docker/Dockerfile",
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker build + docker run on a 127.0.0.1:18xxx host port; GET / contained the marker; container and image removed afterward. Built with -f docker/Dockerfile ."
+ },
+ {
+  "id": "ctr-containerfile",
+  "kind": "upload",
+  "path": "fixtures/ctr-containerfile",
+  "category": "dockerfile",
+  "shape": "Root file named Containerfile (no Dockerfile); Python stdlib server, EXPOSE 8080",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA ctr-containerfile OK",
+  "facts": {
+   "port": 8080,
+   "primary_service": null,
+   "dockerfile_path": "Containerfile",
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker build + docker run on a 127.0.0.1:18xxx host port; GET / contained the marker; container and image removed afterward. Built with -f Containerfile."
+ },
+ {
+  "id": "ctr-multistage-go",
+  "kind": "upload",
+  "path": "fixtures/ctr-multistage-go",
+  "category": "dockerfile",
+  "shape": "Multi-stage: golang:1.27-alpine builder -> gcr.io/distroless/static-debian12:nonroot with only the binary; EXPOSE 8080",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA ctr-multistage-go OK",
+  "facts": {
+   "port": 8080,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker build + docker run on a 127.0.0.1:18xxx host port; GET / contained the marker; container and image removed afterward."
+ },
+ {
+  "id": "ctr-dockerfile-prod-only",
+  "kind": "upload",
+  "path": "fixtures/ctr-dockerfile-prod-only",
+  "category": "dockerfile",
+  "shape": "Only Dockerfile.prod exists (no plain Dockerfile); Node on 3000, EXPOSE 3000; package.json also present",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA ctr-dockerfile-prod-only OK",
+  "facts": {
+   "port": 3000,
+   "primary_service": null,
+   "dockerfile_path": "Dockerfile.prod",
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker build + docker run on a 127.0.0.1:18xxx host port; GET / contained the marker; container and image removed afterward. Built with -f Dockerfile.prod."
+ },
+ {
+  "id": "ctr-dockerfile-buildarg",
+  "kind": "upload",
+  "path": "fixtures/ctr-dockerfile-buildarg",
+  "category": "dockerfile",
+  "shape": "Dockerfile with ARG APP_VERSION=1.0.0 (has default) baked into a VERSION file; builds with no --build-arg",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA ctr-dockerfile-buildarg OK",
+  "facts": {
+   "port": 8080,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker build + docker run on a 127.0.0.1:18xxx host port; GET / contained the marker; container and image removed afterward. Built with no build args; page shows 'version 1.0.0'."
+ },
+ {
+  "id": "ctr-dockerfile-required-arg",
+  "kind": "upload",
+  "path": "fixtures/ctr-dockerfile-required-arg",
+  "category": "dockerfile",
+  "shape": "Dockerfile with ARG GREETING and no default; a RUN step fails the build with a clear message unless --build-arg GREETING=... is given",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA ctr-dockerfile-required-arg OK",
+  "facts": {
+   "port": 8080,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": {
+    "GREETING": "hello-qa"
+   },
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "Confirmed build FAILS without the arg (message: 'The GREETING build argument is required...'). With --build-arg GREETING=hello-qa: docker build + docker run on a 127.0.0.1:18xxx host port; GET / contained the marker; container and image removed afterward. Page shows the greeting."
+ },
+ {
+  "id": "ctr-nginx-static",
+  "kind": "upload",
+  "path": "fixtures/ctr-nginx-static",
+  "category": "dockerfile",
+  "shape": "Dockerfile FROM nginx:alpine copying site/ into /usr/share/nginx/html; EXPOSE 80",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA ctr-nginx-static OK",
+  "facts": {
+   "port": 80,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker build + docker run on a 127.0.0.1:18xxx host port; GET / contained the marker; container and image removed afterward."
+ },
+ {
+  "id": "ctr-dockerfile-env-required",
+  "kind": "upload",
+  "path": "fixtures/ctr-dockerfile-env-required",
+  "category": "dockerfile",
+  "shape": "Node server that exits 1 at startup with a clear message unless API_TOKEN is set; Dockerfile EXPOSE 8080",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA ctr-dockerfile-env-required OK",
+  "facts": {
+   "port": 8080,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": {
+    "API_TOKEN": "qa-token"
+   },
+   "deployable_project": null
+  },
+  "notes": "Confirmed container exits 1 with 'API_TOKEN is not set...' when unset. With -e API_TOKEN=qa-token: docker build + docker run on a 127.0.0.1:18xxx host port; GET / contained the marker; container and image removed afterward."
+ },
+ {
+  "id": "compose-web-redis",
+  "kind": "upload",
+  "path": "fixtures/compose-web-redis",
+  "category": "compose",
+  "shape": "docker-compose.yml: web (build ./web, Python redis hit counter, 8000:8000) + redis:7-alpine",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA compose-web-redis OK",
+  "facts": {
+   "port": 8000,
+   "primary_service": "web",
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker compose -p qaverify-<id> up --build with an override remapping ports to 127.0.0.1:18xxx; GET / contained the expected text; then down -v --rmi local."
+ },
+ {
+  "id": "compose-full-stack",
+  "kind": "upload",
+  "path": "fixtures/compose-full-stack",
+  "category": "compose",
+  "shape": "compose.yaml, 4 services: proxy (nginx built with baked conf, 8080:80; / -> web, /api/ -> api), web (nginx static via Dockerfile), api (Python + psycopg, :8000), db (postgres:16-alpine, healthcheck, named volume); api depends_on db service_healthy",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA compose-full-stack OK",
+  "facts": {
+   "port": 80,
+   "primary_service": "proxy",
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker compose -p qaverify-<id> up --build with an override remapping ports to 127.0.0.1:18xxx; GET / contained the expected text; then down -v --rmi local. Also GET /api/health via proxy returned {\"status\":\"ok\",\"db\":\"ok\"} after SELECT 1 against postgres."
+ },
+ {
+  "id": "compose-images-only",
+  "kind": "upload",
+  "path": "fixtures/compose-images-only",
+  "category": "compose",
+  "shape": "compose.yaml with only public images, no build: web = nginx:alpine (8080:80, default welcome page), whoami = traefik/whoami (8081:80)",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "Welcome to nginx",
+  "facts": {
+   "port": 80,
+   "primary_service": "web",
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker compose -p qaverify-<id> up --build with an override remapping ports to 127.0.0.1:18xxx; GET / contained the expected text; then down -v --rmi local. No marker possible without a build or bind mount; the obvious entry is 'web' (nginx default page, expect 'Welcome to nginx'). whoami verified separately (returns 'Hostname: ...'); if Pando picks whoami instead, expect_text would be 'Hostname'."
+ },
+ {
+  "id": "compose-named-volume",
+  "kind": "upload",
+  "path": "fixtures/compose-named-volume",
+  "category": "compose",
+  "shape": "docker-compose.yml: single 'app' service (Python) incrementing a counter file on named volume counter-data mounted at /data; 8000:8000",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA compose-named-volume OK",
+  "facts": {
+   "port": 8000,
+   "primary_service": "app",
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker compose -p qaverify-<id> up --build with an override remapping ports to 127.0.0.1:18xxx; GET / contained the expected text; then down -v --rmi local. Also verified persistence: down (without -v) then up again, counter continued (2 -> 5)."
+ },
+ {
+  "id": "compose-env-file",
+  "kind": "upload",
+  "path": "fixtures/compose-env-file",
+  "category": "compose",
+  "shape": "compose.yaml with env_file: .env, but .env is NOT present (only .env.example and a .gitignore listing .env); Node web on 3000 exits if SECRET_KEY/SITE_NAME missing",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA compose-env-file OK",
+  "facts": {
+   "port": 3000,
+   "primary_service": "web",
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": {
+    "SECRET_KEY": "qa-secret",
+    "SITE_NAME": "qa-site"
+   },
+   "deployable_project": null
+  },
+  "notes": "Without .env, 'docker compose config' refuses (env file not found). Verified by temporarily writing .env with the slot values: docker compose -p qaverify-<id> up --build with an override remapping ports to 127.0.0.1:18xxx; GET / contained the expected text; then down -v --rmi local. .env deleted afterward; the dir ships without it."
+ },
+ {
+  "id": "compose-profiles",
+  "kind": "upload",
+  "path": "fixtures/compose-profiles",
+  "category": "compose",
+  "shape": "compose.yaml: default 'web' service (Python, 8000:8000) plus debug-shell (busybox, profile 'debug') and mailcatcher (mailhog/mailhog, profile 'tools', 8025:8025); only web should run by default",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA compose-profiles OK",
+  "facts": {
+   "port": 8000,
+   "primary_service": "web",
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker compose -p qaverify-<id> up --build with an override remapping ports to 127.0.0.1:18xxx; GET / contained the expected text; then down -v --rmi local. Default profile only (profiled services not started, mailhog image never pulled)."
+ },
+ {
+  "id": "compose-worker-queue",
+  "kind": "upload",
+  "path": "fixtures/compose-worker-queue",
+  "category": "compose",
+  "shape": "docker-compose.yml: web (Python, 8000:8000, LPUSH per request) + worker (same build, command override, no port, BRPOP) + redis:7-alpine",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA compose-worker-queue OK",
+  "facts": {
+   "port": 8000,
+   "primary_service": "web",
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "docker compose -p qaverify-<id> up --build with an override remapping ports to 127.0.0.1:18xxx; GET / contained the expected text; then down -v --rmi local. Worker logs showed jobs processed; page shows 'processed by worker: N'."
+ },
+ {
+  "id": "edge-makefile-c",
+  "kind": "upload",
+  "path": "fixtures/edge-makefile-c",
+  "category": "makefile",
+  "shape": "Tiny C socket HTTP server in src/server.c built by a Makefile (make -> ./server), no Dockerfile; listens on $PORT default 8080",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA edge-makefile-c OK",
+  "facts": {
+   "port": 8080,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": "./server",
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "Built and run inside alpine:3.21 + build-base via 'make && ./server' on 127.0.0.1:18209; marker returned. Container removed. Build artifact not left in dir (.gitignore lists server)."
+ },
+ {
+  "id": "edge-prebuilt-binary",
+  "kind": "upload",
+  "path": "fixtures/edge-prebuilt-binary",
+  "category": "binary",
+  "shape": "Only a committed static linux/arm64 Go binary ./server (CGO_ENABLED=0, matches Docker host arch aarch64) plus Procfile 'web: ./server'; no source; $PORT default 8080",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA edge-prebuilt-binary OK",
+  "facts": {
+   "port": 8080,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": "./server",
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "Ran the binary in alpine:3.21 and busybox:1.37 containers (bind-mounted, read-only); marker returned. Binary is arm64 only."
+ },
+ {
+  "id": "edge-procfile-web-worker",
+  "kind": "upload",
+  "path": "fixtures/edge-procfile-web-worker",
+  "category": "procfile",
+  "shape": "Python Flask app, requirements.txt (flask, gunicorn), .python-version 3.12, Procfile with 'web: gunicorn app:app --bind 0.0.0.0:${PORT:-8000} --workers 2' and 'worker: python -u worker.py' (heartbeat loop)",
+  "expect": "web",
+  "http_path": "/",
+  "expect_text": "PANDO-QA edge-procfile-web-worker OK",
+  "facts": {
+   "port": 8000,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": "gunicorn app:app --bind 0.0.0.0:${PORT:-8000} --workers 2",
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "In python:3.12-slim: pip install -r requirements.txt, started worker in background and the Procfile web command with PORT=8000; marker returned. Container removed."
+ },
+ {
+  "id": "edge-monorepo-no-compose",
+  "kind": "upload",
+  "path": "fixtures/edge-monorepo-no-compose",
+  "category": "monorepo",
+  "shape": "frontend/ (Node, package.json start = node server.js, serves public/, port 3000) and backend/ (Go API, go.mod, port 8080, /api/notes) with only a README at root; no compose, no root manifest",
+  "expect": "refuse",
+  "http_path": "/",
+  "expect_text": "PANDO-QA edge-monorepo-no-compose OK",
+  "facts": {
+   "port": 3000,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": "npm start",
+   "build_args": null,
+   "slots": null,
+   "deployable_project": "frontend"
+  },
+  "notes": "Expected: Pando asks which project to deploy or refuses to invent a topology, not silently deploys one. If a person picks frontend, GET / has the marker (verified: node:22-alpine 'npm start' in frontend/ on 18212). backend verified to compile with go build."
+ },
+ {
+  "id": "edge-readme-only",
+  "kind": "upload",
+  "path": "fixtures/edge-readme-only",
+  "category": "negative",
+  "shape": "Only README.md (design notes) and LICENSE (MIT); no code",
+  "expect": "refuse",
+  "http_path": "/",
+  "expect_text": "PANDO-QA edge-readme-only OK",
+  "facts": {
+   "port": null,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "Nothing to deploy; expect a clear refusal. Not verified (no runnable content by design)."
+ },
+ {
+  "id": "edge-library",
+  "kind": "upload",
+  "path": "fixtures/edge-library",
+  "category": "negative",
+  "shape": "Python library: pyproject.toml (hatchling), src/slugkit/__init__.py, tests/; no server or entry point",
+  "expect": "refuse",
+  "http_path": "/",
+  "expect_text": "PANDO-QA edge-library OK",
+  "facts": {
+   "port": null,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "Expect refusal or a question, not a broken deploy. slugify import sanity-checked locally; nothing to serve by design."
+ },
+ {
+  "id": "edge-cli-tool",
+  "kind": "upload",
+  "path": "fixtures/edge-cli-tool",
+  "category": "negative",
+  "shape": "Go CLI (wordcount) with go.mod + main.go that reads stdin/files, prints counts and exits; no server",
+  "expect": "refuse",
+  "http_path": "/",
+  "expect_text": "PANDO-QA edge-cli-tool OK",
+  "facts": {
+   "port": null,
+   "primary_service": null,
+   "dockerfile_path": null,
+   "start_command": null,
+   "build_args": null,
+   "slots": null,
+   "deployable_project": null
+  },
+  "notes": "Expect refusal or a question, not a crash-looping deploy. go vet + go run sanity-checked locally; nothing to serve by design."
+ }
+]

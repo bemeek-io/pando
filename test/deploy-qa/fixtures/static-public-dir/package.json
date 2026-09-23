@@ -1,0 +1,9 @@
+{
+  "name": "static-public-dir",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A small brochure site",
+  "scripts": {
+    "lint": "echo no lint configured"
+  }
+}

@@ -1,0 +1,20 @@
+services:
+  web:
+    build: ./web
+    ports:
+      - "8000:8000"
+
+  # Only started with: docker compose --profile debug up
+  debug-shell:
+    image: busybox:1.37
+    profiles: ["debug"]
+    command: ["sh", "-c", "while true; do wget -qO- http://web:8000/ >/dev/null && echo web ok; sleep 10; done"]
+    depends_on:
+      - web
+
+  # Only started with: docker compose --profile tools run --rm mailcatcher
+  mailcatcher:
+    image: mailhog/mailhog
+    profiles: ["tools"]
+    ports:
+      - "8025:8025"
