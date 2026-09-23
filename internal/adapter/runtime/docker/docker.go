@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -69,6 +70,9 @@ type Adapter struct {
 	usageMu          sync.Mutex
 	volumeSizesCache map[string]int64
 	volumeSizesAt    time.Time
+
+	// subnetMu serializes choosing an app network's address block.
+	subnetMu sync.Mutex
 }
 
 // Config is the adapter's configuration.
@@ -95,6 +99,11 @@ type Config struct {
 	// which is what Docker sets to the container ID, and what the bundled
 	// Compose topology relies on.
 	ProxyContainer string `json:"proxy_container,omitempty"`
+
+	// NetworkPool is the IPv4 range app networks take their addresses from, in
+	// /26 blocks. Empty uses 10.213.0.0/16; "off" leaves allocation to Docker's
+	// default pool, which holds about thirty networks (see subnets.go).
+	NetworkPool string `json:"network_pool,omitempty"`
 }
 
 // New builds an unconfigured adapter.
@@ -234,7 +243,12 @@ func (a *Adapter) Apply(ctx context.Context, p api.BundlePlan) (api.BundleHandle
 		}
 	}
 
+	planned := make(map[string]api.WorkloadPlan, len(p.Workloads))
+	for _, w := range p.Workloads {
+		planned[w.Name] = w
+	}
 	for _, w := range ordered(p.Workloads) {
+		a.waitForDependencies(ctx, p.BundleID, w, planned)
 		if err := a.applyWorkload(ctx, p, w, networkID); err != nil {
 			return api.BundleHandle{}, err
 		}
@@ -600,6 +614,20 @@ func (a *Adapter) Destroy(ctx context.Context, ref api.BundleRef, opts api.Destr
 		}
 	}
 
+	// The images built for this app, every one it ever had. A rebuild moves the
+	// tag and leaves the previous image untagged, so they are found by the label
+	// the builder put on them rather than by name. Without force: an image some
+	// other container still uses is kept, and one that fails to go is not a
+	// reason to fail the teardown (issue #55).
+	if images, err := a.cli.ImageList(ctx, image.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("label", api.ImageLabelBundle+"="+ref.BundleID)),
+	}); err == nil {
+		for _, img := range images {
+			_, _ = a.cli.ImageRemove(ctx, img.ID, image.RemoveOptions{PruneChildren: true})
+		}
+	}
+
 	if !opts.KeepVolumes {
 		volumes, err := a.cli.VolumeList(ctx, volume.ListOptions{
 			Filters: filters.NewArgs(filters.Arg("label", labelBundle+"="+ref.BundleID)),
@@ -652,7 +680,11 @@ func (a *Adapter) Destroy(ctx context.Context, ref api.BundleRef, opts api.Destr
 // immediately. Docker's default pool holds about thirty, so an install that
 // deletes thirty apps between restarts can still run out — better than leaking
 // them permanently, and the remedy is a restart rather than a docker command.
-func (a *Adapter) ReclaimNetworks(ctx context.Context) (int, error) {
+//
+// owns says whether a bundle belongs to this installation. A network whose
+// bundle it does not own is another install's on the same Docker host, and is
+// left alone; nil owns everything.
+func (a *Adapter) ReclaimNetworks(ctx context.Context, owns func(bundleID string) bool) (int, error) {
 	networks, err := a.cli.NetworkList(ctx, network.ListOptions{
 		Filters: filters.NewArgs(filters.Arg("label", labelManaged+"=true")),
 	})
@@ -669,11 +701,40 @@ func (a *Adapter) ReclaimNetworks(ctx context.Context) (int, error) {
 		if err != nil || len(full.Containers) > 0 {
 			continue
 		}
+		// Empty is not the same as unused. A stopped container is not an
+		// endpoint, so a stopped app's network looks empty — and removing it
+		// left the app's containers pointing at a network that no longer
+		// existed, unable to start again (issue #55). Only a network no
+		// container belongs to, running or not, is reclaimed.
+		bundle := full.Labels[labelBundle]
+		if !ownedBundle(owns, bundle) || a.bundleHasContainers(ctx, bundle) {
+			continue
+		}
 		if err := a.cli.NetworkRemove(ctx, n.ID); err == nil {
 			reclaimed++
 		}
 	}
 	return reclaimed, nil
+}
+
+// ownedBundle reports whether a network labeled with bundle is this install's to
+// manage. A network with no bundle label — a trial's, which removes its own —
+// is nobody's to reclaim or join here.
+func ownedBundle(owns func(string) bool, bundle string) bool {
+	if bundle == "" {
+		return false
+	}
+	return owns == nil || owns(bundle)
+}
+
+// bundleHasContainers reports whether any container, in any state, belongs to
+// the bundle. An error counts as yes: keeping a network is always safe.
+func (a *Adapter) bundleHasContainers(ctx context.Context, bundleID string) bool {
+	list, err := a.cli.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("label", labelBundle+"="+bundleID)),
+	})
+	return err != nil || len(list) > 0
 }
 
 // RejoinNetworks puts this Pando container back on the network of every app
@@ -697,7 +758,9 @@ func (a *Adapter) ReclaimNetworks(ctx context.Context) (int, error) {
 // apps that no longer exist, and it recognizes them by their being empty —
 // joining first would put an endpoint on every one of them and make each look
 // busy, turning a reclaim into a leak.
-func (a *Adapter) RejoinNetworks(ctx context.Context) (int, error) {
+//
+// owns is as for ReclaimNetworks: another install's app network is not joined.
+func (a *Adapter) RejoinNetworks(ctx context.Context, owns func(bundleID string) bool) (int, error) {
 	networks, err := a.cli.NetworkList(ctx, network.ListOptions{
 		Filters: filters.NewArgs(filters.Arg("label", labelManaged+"=true")),
 	})
@@ -712,7 +775,7 @@ func (a *Adapter) RejoinNetworks(ctx context.Context) (int, error) {
 		// a stopped app. An empty one is not worth an endpoint: the app's next
 		// deploy attaches us, and until then there is nothing to reach.
 		full, err := a.cli.NetworkInspect(ctx, n.ID, network.InspectOptions{})
-		if err != nil || len(full.Containers) == 0 {
+		if err != nil || len(full.Containers) == 0 || !ownedBundle(owns, full.Labels[labelBundle]) {
 			continue
 		}
 		if err := a.attachProxy(ctx, n.ID); err != nil {
@@ -927,7 +990,7 @@ func (a *Adapter) ensureNetwork(ctx context.Context, bundleID string) (string, e
 	// Internal: false would let workloads reach the internet directly, which is
 	// what EgressMode governs; the isolation that matters for R-025 is that
 	// each bundle gets its own network, so no app can reach another's.
-	created, err := a.cli.NetworkCreate(ctx, name, network.CreateOptions{
+	created, err := a.createNetwork(ctx, name, network.CreateOptions{
 		Driver: "bridge",
 		Labels: map[string]string{labelBundle: bundleID, labelManaged: "true"},
 	})
@@ -1043,13 +1106,80 @@ func (a *Adapter) ensureImage(ctx context.Context, ref string) error {
 		return nil
 	}
 
+	// Tried again when the daemon's own content store trips over a pull that
+	// ran beside another — Docker Desktop's containerd answers concurrent pulls
+	// with "lease does not exist" and failed ingest renames, and the same pull
+	// a moment later succeeds (issue #55). A registry's refusal is final.
+	var err error
+	for attempt := 1; attempt <= 3; attempt++ {
+		err = a.pullOnce(ctx, ref)
+		if err == nil || !pullTransient(err) || ctx.Err() != nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Duration(attempt) * 2 * time.Second):
+		}
+	}
+	if err != nil {
+		return errs.Wrap(errs.AdapterFailed, fmt.Sprintf("Could not fetch the image %q.", ref), err).
+			WithRemedy("Check the image name and tag, that the registry is reachable from this host, " +
+				"and that the image is published for this host's CPU architecture.")
+	}
+	return nil
+}
+
+// pullTransient reports a pull that failed inside the daemon rather than at
+// the registry.
+func pullTransient(err error) bool {
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{"lease does not exist", "failed commit on ref", "failed to extract layer", "unexpected eof",
+		"connection reset", "i/o timeout", "tls handshake timeout"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Adapter) pullOnce(ctx context.Context, ref string) error {
 	rc, err := a.cli.ImagePull(ctx, ref, image.PullOptions{})
 	if err != nil {
-		return errs.Wrap(errs.AdapterFailed, fmt.Sprintf("Could not fetch the image %q.", ref), err)
+		return err
 	}
 	defer func() { _ = rc.Close() }()
-	_, _ = io.Copy(io.Discard, rc)
-	return nil
+	return pullError(rc)
+}
+
+// pullError reads a pull's progress stream to the end and returns the error it
+// reported, if any.
+//
+// The daemon answers a pull with 200 and reports failure inside the stream —
+// an unknown tag, a denied registry, no image for this architecture. The stream
+// was drained and discarded, so a failed pull surfaced later as "No such image"
+// from the create, with the reason gone (issue #55).
+func pullError(r io.Reader) error {
+	dec := json.NewDecoder(r)
+	for {
+		var msg struct {
+			Error       string `json:"error"`
+			ErrorDetail struct {
+				Message string `json:"message"`
+			} `json:"errorDetail"`
+		}
+		if err := dec.Decode(&msg); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		if msg.ErrorDetail.Message != "" {
+			return errors.New(msg.ErrorDetail.Message)
+		}
+		if msg.Error != "" {
+			return errors.New(msg.Error)
+		}
+	}
 }
 
 type containerSummary struct {
@@ -1116,6 +1246,56 @@ func (a *Adapter) removeContainer(ctx context.Context, id string) error {
 		return errs.Wrap(errs.AdapterFailed, "Could not remove the old container.", err)
 	}
 	return nil
+}
+
+// dependencyWait bounds how long a workload waits for what it depends on to
+// report healthy. A dependency that is still not healthy after it is started
+// anyway: the deploy's own wait restarts what then stops, and a bundle that
+// never comes up is reported by that wait, not hidden here.
+const dependencyWait = 2 * time.Minute
+
+// waitForDependencies holds a workload back until every dependency that has a
+// health check reports healthy (R-096).
+//
+// Starting dependencies first was only half of it. A backend started the
+// moment its database's container existed, while the database was still
+// initializing, and crashed on a refused connection — and a proxy in front of
+// it then failed on a host that had gone. This is compose's `depends_on:
+// condition: service_healthy`, and it is also what makes the health check on a
+// provisioned database mean anything: the app waits for the database to accept
+// connections (issue #55). A dependency with no health check has nothing to
+// wait for beyond being started, which ordering already does.
+func (a *Adapter) waitForDependencies(ctx context.Context, bundleID string, w api.WorkloadPlan, planned map[string]api.WorkloadPlan) {
+	for _, dep := range w.DependsOn {
+		if d, ok := planned[dep]; !ok || d.Health == nil {
+			continue
+		}
+		deadline := time.Now().Add(dependencyWait)
+		for time.Now().Before(deadline) {
+			if a.settled(ctx, bundleID, dep) {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Second):
+			}
+		}
+	}
+}
+
+// settled reports a dependency that is healthy, or that there is no point
+// waiting for: gone, stopped, or reporting no health at all.
+func (a *Adapter) settled(ctx context.Context, bundleID, workload string) bool {
+	c, err := a.findContainer(ctx, bundleID, workload)
+	if err != nil || c == nil {
+		return true
+	}
+	inspect, err := a.cli.ContainerInspect(ctx, c.ID)
+	if err != nil || inspect.State == nil || !inspect.State.Running || inspect.State.Health == nil {
+		return true
+	}
+	return inspect.State.Health.Status == "healthy"
 }
 
 // ordered sorts workloads so dependencies start first (R-096).
@@ -1222,6 +1402,7 @@ func Info() api.KindInfo {
 			{Key: "total_cpu_millis", Label: "CPU available", Type: "int", Help: "Thousandths of a core Pando may allocate.", Default: "The whole machine"},
 			{Key: "total_memory_bytes", Label: "Memory available", Type: "int", Help: "Bytes Pando may allocate.", Default: "The whole machine"},
 			{Key: "total_disk_bytes", Label: "Disk available", Type: "int", Help: "Bytes of disk Pando may allocate."},
+			{Key: "network_pool", Label: "App network range", Type: "string", Help: "The IPv4 range each app's private network takes 64 addresses from. \"off\" uses Docker's own pool, which holds about 30 networks.", Default: defaultNetworkPool},
 		},
 	}
 }

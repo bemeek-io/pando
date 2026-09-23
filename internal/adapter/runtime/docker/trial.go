@@ -71,6 +71,7 @@ func (a *Adapter) Trial(ctx context.Context, req api.TrialRequest) (api.TrialRes
 	// only time they can be read: a container that has exited has released its
 	// sockets and its network namespace, and there is nothing left to look at.
 	result.ObservedWrites = a.observeWrites(ctx, id, req.DeclaredPaths)
+	result.ImageVolumes = a.imageVolumes(ctx, req.Image)
 
 	logs := a.trialLogs(ctx, id)
 	result.Log = logs
@@ -81,7 +82,7 @@ func (a *Adapter) Trial(ctx context.Context, req api.TrialRequest) (api.TrialRes
 }
 
 func (a *Adapter) trialNetwork(ctx context.Context, trialID string) (string, error) {
-	created, err := a.cli.NetworkCreate(ctx, "pando-trial-"+trialID, network.CreateOptions{
+	created, err := a.createNetwork(ctx, "pando-trial-"+trialID, network.CreateOptions{
 		Driver:   "bridge",
 		Internal: false, // the app may legitimately need to fetch something to start
 		Labels:   map[string]string{labelManaged: "true", labelTrial: trialID},
@@ -113,6 +114,12 @@ func (a *Adapter) startTrialContainer(ctx context.Context, req api.TrialRequest,
 			// restarting would turn "this app needs a database" into a loop.
 			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyDisabled},
 			AutoRemove:    false, // the container is inspected after it exits
+
+			// Throwaway storage wherever the image declares it, so an app that
+			// checks for its volume starts the way it will when deployed with
+			// one — Vaultwarden refuses to start without /data mounted (issue
+			// #55) — and a trial leaves no anonymous volume behind.
+			Tmpfs: tmpfsFor(a.imageVolumes(ctx, req.Image)),
 		},
 		&network.NetworkingConfig{
 			EndpointsConfig: map[string]*network.EndpointSettings{
@@ -193,6 +200,32 @@ func (a *Adapter) watch(ctx context.Context, id string, timeout time.Duration) a
 			}
 		}
 	}
+}
+
+func tmpfsFor(paths []string) map[string]string {
+	if len(paths) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(paths))
+	for _, p := range paths {
+		out[p] = ""
+	}
+	return out
+}
+
+// imageVolumes reads the paths the image declares with VOLUME. Vaultwarden
+// declares /data and refuses to start without storage there (issue #55).
+func (a *Adapter) imageVolumes(ctx context.Context, ref string) []string {
+	inspect, err := a.cli.ImageInspect(ctx, ref)
+	if err != nil || inspect.Config == nil {
+		return nil
+	}
+	paths := make([]string, 0, len(inspect.Config.Volumes))
+	for p := range inspect.Config.Volumes {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 // portPollInterval is how often a running trial is checked for listening

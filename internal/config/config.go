@@ -22,6 +22,7 @@ type Config struct {
 	Database   Database   `mapstructure:"database"`
 	Log        Log        `mapstructure:"log"`
 	Reconciler Reconciler `mapstructure:"reconciler"`
+	Apps       Apps       `mapstructure:"apps"`
 
 	// File is the config file read at startup, or empty when there was none.
 	File string `mapstructure:"-"`
@@ -56,6 +57,33 @@ type Reconciler struct {
 	// hour. Short intervals are wasteful rather than dangerous — nothing the
 	// collector does is urgent — so unlike the backoff this gets no warning.
 	GCInterval time.Duration `mapstructure:"gc_interval"`
+}
+
+// Apps holds the resource limits every new app inherits (R-240).
+//
+// R-240 says these are set at the host. They were constants: one CPU, 512 MiB
+// and 10 GiB for every app, with nothing that could change them, so a 12-CPU
+// host refused its thirteenth app however idle the first twelve were (issue
+// #55). Zero means the shipped default (spec.StandardDefaults); an app still
+// overrides its own with app.resources.override (R-241).
+type Apps struct {
+	CPUMillis   int   `mapstructure:"cpu_millis"`
+	MemoryBytes int64 `mapstructure:"memory_bytes"`
+	DiskBytes   int64 `mapstructure:"disk_bytes"`
+}
+
+// Resources lays the configured limits over the shipped ones.
+func (a Apps) Resources(shipped spec.Resources) spec.Resources {
+	if a.CPUMillis > 0 {
+		shipped.CPUMillis = a.CPUMillis
+	}
+	if a.MemoryBytes > 0 {
+		shipped.MemoryBytes = a.MemoryBytes
+	}
+	if a.DiskBytes > 0 {
+		shipped.DiskBytes = a.DiskBytes
+	}
+	return shipped
 }
 
 // BackoffSchedule parses Backoff, returning nil when it is unset.
@@ -208,6 +236,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("reconciler.failure_threshold", 0)
 	v.SetDefault("reconciler.failure_window", time.Duration(0))
 	v.SetDefault("reconciler.gc_interval", time.Duration(0))
+	v.SetDefault("apps.cpu_millis", 0)
+	v.SetDefault("apps.memory_bytes", int64(0))
+	v.SetDefault("apps.disk_bytes", int64(0))
 	v.SetDefault("bootstrap.admin_password", "")
 
 	// Every key in boundEnv is bound explicitly — see there for why that is not

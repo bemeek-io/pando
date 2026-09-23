@@ -406,6 +406,9 @@ func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
+	if s.TeardownNow != nil {
+		s.TeardownNow()
+	}
 
 	s.audit(r, audit.Event{
 		PrincipalKind: audit.PrincipalKind(PrincipalFrom(r.Context()).Kind),

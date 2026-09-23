@@ -107,6 +107,8 @@ services:
   app:
     build: .
     ports: ["8080:8080"]
+    environment:
+      DB_URL: postgres://app:pw@db:5432/app
     depends_on: [db]
   db:
     image: postgres:16-alpine

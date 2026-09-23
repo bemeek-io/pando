@@ -64,7 +64,13 @@ func (s *Server) handleSetSlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	appSpec, err := s.pinnedOrLatest(r, app)
+	// The newest revision, not the pinned one. Filling a slot writes a new
+	// revision; built from the pinned spec, the second slot filled after an
+	// accept was written over the pinned revision again and the first fill
+	// was lost — two slots answered, one reported unfilled at plan time
+	// (issue #55). Edits accumulate on the latest revision, which is the one
+	// a deploy of "the app's configuration" picks up.
+	appSpec, err := s.latestRevisionSpec(r, app)
 	if err != nil {
 		Error(w, r, err)
 		return
@@ -428,6 +434,23 @@ func inlineCredential(raw json.RawMessage) string {
 //
 // Pinned first: that is what runs (R-098). The newest is the fallback for an
 // app still in review, where there is a proposal but nothing pinned yet.
+// latestRevisionSpec is the app's newest spec revision, pinned or not.
+func (s *Server) latestRevisionSpec(r *http.Request, app state.App) (*spec.AppSpec, error) {
+	revisions, err := s.Apps.ListRevisions(r.Context(), app.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(revisions) == 0 {
+		return nil, nil
+	}
+	// The list is newest first and carries no bodies.
+	rev, found, err := s.Apps.RevisionByID(r.Context(), revisions[0].ID)
+	if err != nil || !found {
+		return nil, err
+	}
+	return rev.Body, nil
+}
+
 func (s *Server) pinnedOrLatest(r *http.Request, app state.App) (*spec.AppSpec, error) {
 	if app.PinnedSpecID != "" {
 		rev, found, err := s.Apps.RevisionByID(r.Context(), app.PinnedSpecID)

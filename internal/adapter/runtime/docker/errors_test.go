@@ -2,6 +2,7 @@ package docker
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -56,4 +57,18 @@ func TestAnyOtherCreateFailureIsUnchanged(t *testing.T) {
 	require.NotNil(t, e)
 	require.Equal(t, `Could not create "app".`, e.Message)
 	require.Empty(t, e.Remedy)
+}
+
+// A pull that fails says why. The daemon reports it inside a 200 response, and
+// the stream was discarded, so the failure surfaced later as "No such image"
+// with the reason gone (issue #55).
+func TestAFailedPullReportsTheRegistrysReason(t *testing.T) {
+	stream := `{"status":"Pulling from library/x"}
+{"errorDetail":{"message":"no matching manifest for linux/arm64/v8 in the manifest list entries"},"error":"no matching manifest"}
+`
+	err := pullError(strings.NewReader(stream))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "linux/arm64")
+
+	require.NoError(t, pullError(strings.NewReader(`{"status":"Downloaded newer image"}`+"\n")))
 }

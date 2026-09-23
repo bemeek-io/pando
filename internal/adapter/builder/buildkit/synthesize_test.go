@@ -55,6 +55,85 @@ func TestR110_AStaticSiteNeedsNoDockerfileInTheRepository(t *testing.T) {
 	require.False(t, strings.HasPrefix(gen.Dir, root), "the Dockerfile is not written into the app's source")
 }
 
+// The server configuration reaches the image exactly as written.
+//
+// It used to go through Go's %q inside a single-quoted printf, so the shell
+// expanded $uri to nothing and the newlines arrived as a literal `\n`. nginx
+// refused the file and every static site exited on start (issue #55). This runs
+// the generated line through a real shell, the way the build does.
+func TestR110_AStaticSitesServerConfigIsWrittenAsNginxReadsIt(t *testing.T) {
+	root := repo(t, "dist")
+	gen, err := synthesize(api.BuildRequest{Strategy: spec.BuildStatic, StaticDir: "dist"}, root)
+	require.NoError(t, err)
+	defer gen.Cleanup()
+
+	body, err := os.ReadFile(filepath.Join(gen.Dir, gen.Name))
+	require.NoError(t, err)
+
+	var run string
+	for _, line := range strings.Split(string(body), "\n") {
+		if strings.HasPrefix(line, "RUN ") {
+			run = strings.TrimPrefix(line, "RUN ")
+		}
+	}
+	require.NotEmpty(t, run)
+
+	out := filepath.Join(t.TempDir(), "default.conf")
+	run = strings.Replace(run, "/etc/nginx/conf.d/default.conf", out, 1)
+	require.NoError(t, exec.Command("sh", "-c", run).Run())
+
+	written, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Equal(t, staticConfig, string(written))
+}
+
+// An answered start command reaches the build plan. It used to stop at the
+// workload, and nixpacks failed with "No start command could be found" on the
+// apps whose owners had just typed one (issue #55).
+func TestR104_AnAnsweredStartCommandReachesTheBuildPlan(t *testing.T) {
+	root := repo(t)
+	args := declaredFor(api.BuildRequest{StartCommand: "gunicorn app:app"}, root).nixpacksArgs("")
+	require.Equal(t, []string{"--start-cmd", "gunicorn app:app"}, args)
+
+	require.Empty(t, declaredFor(api.BuildRequest{}, root).nixpacksArgs(""),
+		"nothing is invented when nobody said how the app starts")
+}
+
+// A Node app that names no version gets a supported one, and one that names a
+// version keeps it. nixpacks defaults to Node 18, which current frameworks
+// refuse with EBADENGINE (issue #55).
+func TestR095_ANodeAppGetsASupportedNodeUnlessItNamesOne(t *testing.T) {
+	write := func(t *testing.T, files map[string]string) string {
+		root := t.TempDir()
+		for name, body := range files {
+			require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(body), 0o644))
+		}
+		return root
+	}
+
+	silent := write(t, map[string]string{"package.json": `{"name":"a"}`})
+	require.Equal(t, []string{"--env", "NIXPACKS_NODE_VERSION=" + defaultNodeVersion}, toolchainDefaults(silent))
+
+	engines := write(t, map[string]string{"package.json": `{"engines":{"node":">=20"}}`})
+	require.Empty(t, toolchainDefaults(engines), "engines.node is the author's answer")
+
+	nvmrc := write(t, map[string]string{"package.json": `{}`, ".nvmrc": "20\n"})
+	require.Empty(t, toolchainDefaults(nvmrc), "nixpacks reads .nvmrc itself")
+
+	nodeVersion := write(t, map[string]string{"package.json": `{}`, ".node-version": "v20.11.1\n"})
+	require.Equal(t, []string{"--env", "NIXPACKS_NODE_VERSION=20.11.1"}, toolchainDefaults(nodeVersion))
+
+	require.Empty(t, toolchainDefaults(write(t, map[string]string{"go.mod": "module x"})),
+		"not a Node app")
+}
+
+func TestPrintfFormatSurvivesEveryShellSpecialCharacter(t *testing.T) {
+	text := "a 'quoted' $var \\n 100% \"done\"\nnext line\n"
+	out, err := exec.Command("sh", "-c", "printf "+printfFormat(text)).Output()
+	require.NoError(t, err)
+	require.Equal(t, text, string(out))
+}
+
 // The repository root is the default when no directory is named.
 func TestAStaticSiteWithNoDirectoryServesTheRoot(t *testing.T) {
 	root := repo(t)

@@ -415,6 +415,29 @@ func (a *Apps) SetFavorite(ctx context.Context, userID, appID string, favorite b
 // at a row that no longer exists answers fewer questions than one that does.
 // Volumes are ON DELETE RESTRICT and must be resolved first (R-204) — the caller
 // handles the keep-or-discard decision.
+// Known reports whether this installation ever created the app, deleted ones
+// included. It is how startup tells this install's app networks from another
+// install's on the same Docker host (issue #55).
+func (a *Apps) Known(ctx context.Context, appID string) (bool, error) {
+	var known bool
+	if err := a.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM apps WHERE id = $1)`, appID).Scan(&known); err != nil {
+		return false, errs.Wrap(errs.Internal, "Could not look the app up.", err)
+	}
+	return known, nil
+}
+
+// Live reports whether an app still exists and has not been deleted. A
+// question worth asking again just before acting on an app read a while ago.
+func (a *Apps) Live(ctx context.Context, appID string) (bool, error) {
+	var live bool
+	if err := a.db.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM apps WHERE id = $1 AND deleted_at IS NULL AND state <> 'archived')`,
+		appID).Scan(&live); err != nil {
+		return false, errs.Wrap(errs.Internal, "Could not look the app up.", err)
+	}
+	return live, nil
+}
+
 func (a *Apps) Archive(ctx context.Context, appID string) error {
 	_, err := a.db.Exec(ctx, `
 		UPDATE apps SET state = 'archived', desired_state = 'stopped', deleted_at = now(), updated_at = now()

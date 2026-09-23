@@ -3,6 +3,8 @@ package detect
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
@@ -146,6 +148,15 @@ const DefaultTrialTimeout = 90 * time.Second
 func (j *Job) Run(ctx context.Context, appID string, src spec.Source, view api.SourceView) (Proposal, error) {
 	if j.Auction == nil {
 		return Proposal{}, errs.New(errs.Internal, "Detection is not configured.")
+	}
+
+	// An app created from a published image has no repository to read. It went
+	// through the auction anyway, over an empty checkout, and was asked how to
+	// build and run something that is already built (issue #55). The image is
+	// the whole answer; only its port is unknown, and the trial run watches for
+	// that.
+	if src.Type == spec.SourceImage {
+		return j.runImage(ctx, appID, src), nil
 	}
 
 	// Step 7 — R-094 tier 1. An image the maintainer already publishes.
@@ -298,6 +309,40 @@ func (j *Job) checkRegistry(ctx context.Context, appID string, src spec.Source) 
 		Why: "Pando needs to know where to send traffic once the app is running.",
 	}}
 
+	return j.prebuilt(ctx, appID, src, candidate), true
+}
+
+// runImage proposes running an app's published image as it is.
+func (j *Job) runImage(ctx context.Context, appID string, src spec.Source) Proposal {
+	candidate := Candidate{
+		Detector:   "image",
+		Strategy:   spec.BuildPrebuilt,
+		Confidence: 1,
+		Evidence:   []string{"this app runs the published image " + src.Image + " as it is"},
+		Draft: Draft{
+			Build: spec.Build{Strategy: spec.BuildPrebuilt},
+			Workloads: []spec.Workload{{
+				Name: "web", Image: src.Image, Primary: true, Exposed: true,
+			}},
+		},
+		Questions: []Question{{
+			Key:      KeyPrimaryPort,
+			Kind:     api.QuestionPort,
+			Deferred: true,
+			Prompt: fmt.Sprintf(
+				"This app runs the published image %s, and Pando could not tell which port it serves "+
+					"HTTP on. Pando will start the image and watch it to work that out, but if that does "+
+					"not succeed it needs to be told. Valid answer: a port number, such as 8080.", src.Image),
+			Why: "Pando needs to know where to send traffic once the app is running.",
+		}},
+	}
+	return j.prebuilt(ctx, appID, src, candidate)
+}
+
+// prebuilt finishes a proposal for an image that already exists: the trial run
+// answers the port if it can, and the rest is the candidate as given.
+func (j *Job) prebuilt(ctx context.Context, appID string, src spec.Source, candidate Candidate) Proposal {
+	draft := candidate.Draft
 	proposal := Proposal{Winner: candidate, Questions: candidate.Questions}
 
 	trial := j.trial(ctx, draft)
@@ -307,7 +352,25 @@ func (j *Job) checkRegistry(ctx context.Context, appID string, src spec.Source) 
 	proposal.Status = StatusFor(candidate, proposal.Questions)
 	proposal.Winner.Draft = draft
 	proposal.DraftSpec = j.assemble(appID, src, draft)
-	return proposal, true
+
+	// An image that serves only a database's or a mail server's protocol has
+	// nothing for Pando's proxy to send a browser to. Redis was deployed, and
+	// answered every request with a protocol error (issue #55). Said so, the
+	// way a library is.
+	if onlyNonHTTP(trial.ObservedPorts) {
+		listed := make([]string, 0, len(trial.ObservedPorts))
+		for _, p := range trial.ObservedPorts {
+			listed = append(listed, strconv.Itoa(p))
+		}
+		proposal.Status = StatusBlocked
+		proposal.Blocked = errs.Newf(errs.PlanCapabilityUnsupported,
+			"This image listens only on port %s, which carries a protocol other than HTTP — a "+
+				"database's or a mail server's — so there is no web page for Pando to serve.",
+			strings.Join(listed, ", ")).
+			WithRemedy("To give an app a database, fill one of its slots instead: Pando runs the " +
+				"database inside that app, where nothing else can reach it.")
+	}
+	return proposal
 }
 
 // trial runs the draft once in throwaway isolation, if that is possible.

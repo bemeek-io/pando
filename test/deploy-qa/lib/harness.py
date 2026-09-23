@@ -96,6 +96,8 @@ def answer_for(q, facts, packaging):
         cand = facts.get("dockerfile_path")
     elif key == "deployable_project":
         cand = facts.get("deployable_project")
+    elif key.startswith("build_arg."):
+        cand = (facts.get("build_args") or {}).get(key.split(".", 1)[1])
     elif key in ("build_method", "build_strategy"):
         cand = facts.get("build_method") or {
             "dockerfile": "dockerfile", "compose": "compose", "static": "static",

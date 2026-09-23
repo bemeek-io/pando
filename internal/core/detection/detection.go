@@ -116,24 +116,9 @@ type PortAllocator interface {
 // source.Fetch — a check that runs after the call has already started is not
 // the same promise.
 func (r *Runner) Detect(ctx context.Context, appID string) (state.Detection, error) {
-	app, found, err := r.Apps.ByID(ctx, appID)
+	app, err := r.check(ctx, appID)
 	if err != nil {
 		return state.Detection{}, err
-	}
-	if !found {
-		return state.Detection{}, errs.New(errs.NotFound, "That app does not exist.")
-	}
-
-	if app.Source.Type == "" {
-		return state.Detection{}, errs.New(errs.StateInvalid,
-			"This app has no source to detect from.").
-			WithRemedy("Create the app with a repository URL, or write a spec for it directly.")
-	}
-
-	if r.Policy != nil {
-		if err := r.Policy.AllowsSource(ctx, app.Source.URL); err != nil {
-			return state.Detection{}, err
-		}
 	}
 
 	if err := r.Detections.Start(ctx, appID); err != nil {
@@ -167,9 +152,46 @@ func (r *Runner) Detect(ctx context.Context, appID string) (state.Detection, err
 	}
 
 	if err := r.Detections.Save(ctx, appID, proposal.Status, proposal, proposal.Commit); err != nil {
+		// Recorded as failed rather than left running: a detection whose
+		// result could not be stored is finished, and one marked running
+		// forever is a spinner nobody can clear.
+		_ = r.Detections.FailIfRunning(ctx, appID, err)
 		return state.Detection{}, err
 	}
 	return r.Detections.Get(ctx, appID)
+}
+
+// Check reports whether detection may run for an app, without starting it: the
+// app exists, has a source, and the source is allowed (R-092).
+//
+// Separate so a caller that runs detection in the background can refuse at
+// once, and write nothing, when it would be refused anyway.
+func (r *Runner) Check(ctx context.Context, appID string) error {
+	_, err := r.check(ctx, appID)
+	return err
+}
+
+func (r *Runner) check(ctx context.Context, appID string) (state.App, error) {
+	app, found, err := r.Apps.ByID(ctx, appID)
+	if err != nil {
+		return state.App{}, err
+	}
+	if !found {
+		return state.App{}, errs.New(errs.NotFound, "That app does not exist.")
+	}
+
+	if app.Source.Type == "" {
+		return state.App{}, errs.New(errs.StateInvalid,
+			"This app has no source to detect from.").
+			WithRemedy("Create the app with a repository URL, or write a spec for it directly.")
+	}
+
+	if r.Policy != nil {
+		if err := r.Policy.AllowsSource(ctx, app.Source.URL); err != nil {
+			return state.App{}, err
+		}
+	}
+	return app, nil
 }
 
 func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (detect.Proposal, error) {
@@ -187,7 +209,9 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 
 	// While the checkout exists, and after the proposal is in hand: a scan is
 	// worth having and is not worth failing a detection for.
-	if r.Scanner != nil {
+	// An app that runs a published image has no checkout: Dir is empty, and
+	// scanning "" would scan whatever directory the server runs in.
+	if r.Scanner != nil && checkout.Dir != "" {
 		r.Scanner.ScanSource(ctx, appID, checkout.Dir)
 	}
 

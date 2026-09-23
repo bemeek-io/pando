@@ -231,11 +231,13 @@ that finds the log line. Branch on the code; the message may be reworded.
 | `PLAN_NO_ADAPTER_MEETS_POLICY` | 409 | No configured adapter can satisfy this spec under host policy (R-024, R-114). |
 | `PLAN_SECURITY_BELOW_THRESHOLD` | 409 | This installation requires a security score, and this app is below it or has never been scanned (R-314). |
 | `PLAN_SLOT_UNFILLED` | 409 | A required dependency has nothing filling it, so the deploy would start an app that cannot connect (R-132). |
+| `STATE_APP_EXITED` | 409 | The app started and then stopped, so the deploy has nothing to send traffic to. |
 | `STATE_BACKUP_DECISION_REQUIRED` | 409 | The app has storage and the request did not say whether to keep a final backup of it (R-204, R-205). |
 | `STATE_INVALID` | 409 | The object is in a state this action does not apply to. |
 | `BACKUP_DECRYPT_FAILED` | 422 | The backup could not be decrypted with the key supplied. |
 | `BACKUP_INCOMPLETE` | 422 | The backup is missing part of what it claims to hold, so it was not applied (R-215). |
 | `BUILD_FAILED` | 422 | The build ran and did not succeed. Its log is the answer. |
+| `BUILD_LISTENS_ON_LOOPBACK` | 422 | The built app listens only on 127.0.0.1 inside its container, where nothing outside it can reach it. |
 | `BUILD_TIMEOUT` | 422 | The build exceeded the time allowed for it (R-119). |
 | `INTERNAL` | 500 | Pando failed in a way it did not expect. The request ID finds the log line. |
 | `RATE_LIMITED` | 500 | Too many attempts in a short time — at a passcode, for example. Wait a few minutes and try again. |

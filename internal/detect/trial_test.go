@@ -349,3 +349,52 @@ func TestADeclaredVolumeIsNotWarnedAboutWithoutATrial(t *testing.T) {
 	out, _ := detect.ApplyTrial(draft, nil, detect.Trial{Ran: false})
 	require.Empty(t, out.Warnings)
 }
+
+// TestR200_StorageAnImageDeclaresIsGiven asserts R-200. Vaultwarden declares
+// /data and refuses to start without storage there (issue #55).
+func TestR200_StorageAnImageDeclaresIsGiven(t *testing.T) {
+	draft := detect.Draft{Workloads: []spec.Workload{{Name: "web", Primary: true,
+		Mounts: []spec.Mount{{VolumeID: "config", Path: "/config"}}}},
+		Volumes: []spec.Volume{{ID: "config", Name: "config"}}}
+	out, _ := detect.ApplyTrial(draft, nil, detect.Trial{Ran: true, ImageVolumes: []string{"/config", "/data"}})
+
+	require.Len(t, out.Volumes, 2, "one new volume; the path already mounted is left alone")
+	require.Equal(t, spec.VolumeFromImage, out.Volumes[1].Declared)
+	require.Contains(t, out.Workloads[0].Mounts, spec.Mount{VolumeID: out.Volumes[1].ID, Path: "/data"})
+}
+
+// Traffic goes to the web port an image listens on, not its SSH or SMTP port
+// (issue #55).
+func TestR097_AnImagesWebPortIsTheOneRoutedTo(t *testing.T) {
+	draft := detect.Draft{Workloads: []spec.Workload{{Name: "web", Primary: true}}}
+	out, _ := detect.ApplyTrial(draft, nil, detect.Trial{Ran: true, ObservedPorts: []int{22, 3000}})
+	require.Equal(t, 3000, out.Workloads[0].Ports[0].Number)
+}
+
+// An image that serves only a non-HTTP protocol is refused, not deployed.
+func TestR021_AnImageWithNothingForABrowserIsRefused(t *testing.T) {
+	job := &detect.Job{Auction: detect.NewAuction(), Runtime: fixedTrial{ports: []int{6379}}}
+	p, err := job.Run(context.Background(), "app_1", spec.Source{Type: spec.SourceImage, Image: "redis:7"}, nil)
+	require.NoError(t, err)
+	require.Equal(t, detect.StatusBlocked, p.Status)
+	require.NotNil(t, p.Blocked)
+	require.Contains(t, p.Blocked.Message, "6379")
+}
+
+type fixedTrial struct{ ports []int }
+
+func (fixedTrial) Capabilities(context.Context) (api.RuntimeCapabilities, error) {
+	return api.RuntimeCapabilities{SupportsTrialRun: true, SupportsPortObservation: true}, nil
+}
+
+func (f fixedTrial) Trial(context.Context, api.TrialRequest) (api.TrialResult, error) {
+	return api.TrialResult{Started: true, ObservedPorts: f.ports}, nil
+}
+
+// A trial log with NUL bytes in it can still be stored. The proposal is jsonb,
+// which refuses the \u0000 a NUL encodes to; Grafana writes them, and its
+// detection could not be saved and stayed running for good (issue #55).
+func TestATrialLogIsStoredWithoutNULBytes(t *testing.T) {
+	trial := detect.FromTrialResult(api.RuntimeCapabilities{}, api.TrialResult{Log: "start\x00ed\x00"})
+	require.Equal(t, "started", trial.Log)
+}

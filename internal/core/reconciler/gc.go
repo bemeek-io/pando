@@ -59,6 +59,13 @@ type GC struct {
 	// janitor run. Nothing here is urgent, so a short interval is wasteful
 	// rather than dangerous — which is why this one gets no startup warning.
 	Interval time.Duration
+
+	// TeardownNow starts a teardown pass between ticks. Deleting an app sends
+	// on it, so the app's containers stop when it is deleted rather than at the
+	// next pass — which was up to an hour later, while a force-deleted app kept
+	// running and holding its share of the host (issue #55). Nil means ticks
+	// only.
+	TeardownNow <-chan struct{}
 }
 
 // TeardownBatch bounds how many bundles one pass destroys.
@@ -92,6 +99,10 @@ func (g *GC) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			g.Collect(ctx)
+		case <-g.TeardownNow:
+			// Teardown only. The rest of a pass is on the slow clock for a
+			// reason, and a delete is not one.
+			g.tearDownDeletedBundles(ctx)
 		}
 	}
 }

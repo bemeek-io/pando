@@ -14,6 +14,7 @@ import (
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/bemeek-io/pando/internal/errs"
 )
 
 // QuestionKindChoice is a small indirection so question.go does not import api.
@@ -26,14 +27,34 @@ type DockerfileDetector struct{}
 
 func (DockerfileDetector) Name() string { return "dockerfile" }
 
+// dockerfileNames are the names a container build file goes by. Containerfile
+// is Podman's and Buildah's, and means the same thing.
+var dockerfileNames = []string{"Dockerfile", "Containerfile"}
+
 func (d DockerfileDetector) Bid(_ context.Context, src api.SourceView) (Candidate, error) {
-	root, rootErr := src.Stat("Dockerfile")
-	found, _ := src.Glob("Dockerfile")
-	nested := deployable(found)
+	var nested []string
+	for _, name := range dockerfileNames {
+		if root, err := src.Stat(name); err == nil && !root.IsDir {
+			return d.bidForRoot(src, name)
+		}
+		found, _ := src.Glob(name)
+		for _, p := range deployable(found) {
+			if p != name {
+				nested = append(nested, p)
+			}
+		}
+	}
 
 	switch {
-	case rootErr == nil && !root.IsDir:
-		return d.bidForRoot(src)
+	case len(nested) == 1:
+		// One Dockerfile, in a subdirectory. There is nothing to choose between,
+		// and asking "which of these one files" is a question with one answer.
+		// Built from the repository root, the way `docker build -f
+		// docker/Dockerfile .` is written in nearly every README that has one.
+		c, err := d.bidForRoot(src, nested[0])
+		c.Confidence = 0.85
+		c.Evidence[0] = nested[0] + " is the only Dockerfile in the repository"
+		return c, err
 
 	case len(nested) > 0:
 		// A Dockerfile exists but not at the root. Pando does not pick one —
@@ -54,8 +75,22 @@ func (d DockerfileDetector) Bid(_ context.Context, src api.SourceView) (Candidat
 						"Valid answer: one of those paths.",
 					len(nested), strings.Join(truncate(nested, 8), ", ")),
 				Why: "Pando builds one app per repository and needs to know which Dockerfile describes it.",
+			}, {
+				Key:  KeyPrimaryPort,
+				Kind: api.QuestionPort,
+				Prompt: "This app builds from a Dockerfile, and which of its Dockerfiles is chosen decides " +
+					"which port the app listens on. Pando needs that port to send traffic to the app. " +
+					"Valid answer: a port number, such as 3000 or 8080.",
+				Why: "Pando needs to know where to send traffic once the app is running.",
 			}},
-			Draft: Draft{Build: spec.Build{Strategy: spec.BuildDockerfile}},
+			// A workload, so that answering the question produces something to
+			// run. Without one the answer was recorded and accept refused the
+			// result with "This app has no workloads" (issue #55). Which port
+			// depends on which file is chosen, so it is asked alongside.
+			Draft: Draft{
+				Build:     spec.Build{Strategy: spec.BuildDockerfile},
+				Workloads: []spec.Workload{{Name: "web", Primary: true, Exposed: true}},
+			},
 		}, nil
 
 	default:
@@ -107,15 +142,15 @@ func underNotDeployable(p string) bool {
 	return false
 }
 
-func (d DockerfileDetector) bidForRoot(src api.SourceView) (Candidate, error) {
+func (d DockerfileDetector) bidForRoot(src api.SourceView, name string) (Candidate, error) {
 	c := Candidate{
 		Strategy:   spec.BuildDockerfile,
 		Confidence: 0.92,
-		Evidence:   []string{"Dockerfile at repository root"},
-		Draft:      Draft{Build: spec.Build{Strategy: spec.BuildDockerfile, Dockerfile: "Dockerfile"}},
+		Evidence:   []string{name + " at repository root"},
+		Draft:      Draft{Build: spec.Build{Strategy: spec.BuildDockerfile, Dockerfile: name}},
 	}
 
-	ports, cmd := readDockerfile(src, "Dockerfile")
+	ports, cmd := readDockerfile(src, name)
 	workload := spec.Workload{Name: "web", Primary: true, Exposed: true}
 
 	for _, p := range ports {
@@ -146,6 +181,18 @@ func (d DockerfileDetector) bidForRoot(src api.SourceView) (Candidate, error) {
 	}
 	if cmd != "" {
 		c.Evidence = append(c.Evidence, "CMD "+cmd)
+	}
+	for _, arg := range requiredBuildArgs(src, name) {
+		c.Questions = append(c.Questions, Question{
+			Key:  BuildArgKeyPrefix + arg,
+			Kind: api.QuestionText,
+			Prompt: fmt.Sprintf(
+				"This app builds from a Dockerfile that declares a build argument named %s with no default "+
+					"value, and stops the build when it is not given one. Pando needs the value to build the "+
+					"app. Valid answer: the value to pass as %s, exactly as it would follow "+
+					"`docker build --build-arg %s=`.", arg, arg, arg),
+			Why: "The build cannot run without it.",
+		})
 	}
 
 	c.Draft.Workloads = []spec.Workload{workload}
@@ -200,6 +247,17 @@ func (d ComposeDetector) Bid(_ context.Context, src api.SourceView) (Candidate, 
 	}
 	c.Draft = draft
 
+	// A compose file of nothing but databases is not the app. It is what the
+	// app needs while somebody works on it — Spring Petclinic's runs a MySQL
+	// and a Postgres beside `./mvnw spring-boot:run` — and taking it as the
+	// app deployed two databases and nothing to open (issue #55). It still
+	// bids, low, so the review can show it was read.
+	if onlyBackingServices(draft) {
+		c.Confidence = 0.2
+		c.Evidence = append(c.Evidence,
+			"every service is a database, so this describes what the app needs rather than the app")
+	}
+
 	services := make([]string, 0, len(draft.Workloads))
 	for _, w := range draft.Workloads {
 		services = append(services, w.Name)
@@ -232,6 +290,20 @@ func (d ComposeDetector) Bid(_ context.Context, src api.SourceView) (Candidate, 
 	return c, nil
 }
 
+// onlyBackingServices reports a compose draft whose every service is one Pando
+// recognizes as a backing service.
+func onlyBackingServices(d Draft) bool {
+	if len(d.Workloads) == 0 {
+		return len(d.Slots) > 0
+	}
+	for _, w := range d.Workloads {
+		if _, ok := backingService(w.Name, w.Image); !ok || w.Build != nil {
+			return false
+		}
+	}
+	return true
+}
+
 // --- Static ----------------------------------------------------------------
 
 // StaticDetector recognizes a site with no server.
@@ -241,7 +313,9 @@ func (StaticDetector) Name() string { return "static" }
 
 func (d StaticDetector) Bid(_ context.Context, src api.SourceView) (Candidate, error) {
 	// An index.html at the root, or in one of the usual output directories.
-	candidates := []string{"index.html", "public/index.html", "dist/index.html", "site/index.html"}
+	// docs/ is where GitHub Pages serves a site from, and a repository that
+	// keeps its site there was asked how to build it (issue #55).
+	candidates := []string{"index.html", "public/index.html", "dist/index.html", "site/index.html", "docs/index.html"}
 
 	var dir string
 	for _, candidate := range candidates {
@@ -383,6 +457,17 @@ var languages = []languageSignal{
 	{"pom.xml", "Java", "java -jar", 8080},
 }
 
+// plannedOnly stands in for a language signal when no manifest Pando knows was
+// found and the planner recognized the repository anyway.
+//
+// The manifest list is eight files, and nixpacks reads far more than that: a
+// Deno module, a mix.exs, a .csproj, a Gradle build, a bare main.py or
+// index.php. Each of those fell through to the generic "Pando could not work
+// out how to build and run this app" question although the planner, asked,
+// had the answer (issue #55). The port is a placeholder the deploy checks
+// against the built image (R-097).
+var plannedOnly = languageSignal{language: "recognized", start: "the command that starts it", port: 8080}
+
 func (d BuildpackDetector) Bid(ctx context.Context, src api.SourceView) (Candidate, error) {
 	var signal *languageSignal
 	for i := range languages {
@@ -392,15 +477,150 @@ func (d BuildpackDetector) Bid(ctx context.Context, src api.SourceView) (Candida
 		}
 	}
 	if signal == nil {
+		return d.bidFromPlanOnly(ctx, src)
+	}
+	if reason := libraryReason(src, signal); reason != nil {
+		//nolint:nilerr // The reason travels on the candidate, as a refused
+		// compose file's does: returning it would make the auction drop this
+		// detector, which is right for one that broke and wrong for one that
+		// worked and found a reason.
+		return Candidate{
+			Strategy:   spec.BuildBuildpack,
+			Confidence: 0.6,
+			Evidence:   []string{signal.file + " — this looks like a " + signal.language + " library"},
+			Blocked:    reason,
+		}, nil
+	}
+	return d.bidFor(ctx, src, signal), nil
+}
+
+// libraryReason says why a repository is a library rather than an app, or nil.
+//
+// A library has nothing to run. Flask, chi and a src-layout Python package were
+// read as web apps by their manifests and deployed — as a buildpack guess that
+// either failed to build or started nothing (issue #55). Pando deploys apps; a
+// library is what apps are made from, and saying so is the honest answer.
+func libraryReason(src api.SourceView, signal *languageSignal) error {
+	switch signal.file {
+	case "go.mod":
+		if isGoApp, sawGo := hasGoMainPackage(src); isGoApp || !sawGo {
+			return nil
+		}
+		return errs.New(errs.PlanCapabilityUnsupported,
+			"This repository is a Go library: none of its Go files is `package main`, so there is no "+
+				"program in it to run. Pando deploys apps, and a library is used by other programs rather "+
+				"than run on its own.").
+			WithRemedy("If an app in this repository uses the library, set the app's subdirectory to that " +
+				"app's directory, or add a Dockerfile that builds it.")
+	case "pyproject.toml", "requirements.txt":
+		if !isPythonSrcLayoutWithoutEntryPoint(src) {
+			return nil
+		}
+		return errs.New(errs.PlanCapabilityUnsupported,
+			"This repository is a Python package meant to be installed and imported: its code is under "+
+				"src/, and there is no app.py, main.py, manage.py, Procfile or other file that starts it. "+
+				"Pando deploys apps, and a library is used by other programs rather than run on its own.").
+			WithRemedy("If this repository is an app, add a Procfile or a Dockerfile saying how it starts.")
+	}
+	return nil
+}
+
+// hasGoMainPackage reports whether any Go file that would be built declares
+// package main. Directories the go tool itself ignores — testdata, and those
+// starting with "_" or "." — are skipped, which is where chi keeps its runnable
+// examples. sawGo is false when there were no Go files to judge by, which says
+// nothing either way.
+func hasGoMainPackage(src api.SourceView) (isMain, sawGo bool) {
+	files, err := src.Glob("*.go")
+	if err != nil {
+		return true, true
+	}
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") || goIgnores(f) {
+			continue
+		}
+		sawGo = true
+		if goPackageOf(src, f) == "main" {
+			return true, true
+		}
+	}
+	return false, sawGo
+}
+
+func goIgnores(p string) bool {
+	for _, segment := range strings.Split(path.Dir(path.Clean(p)), "/") {
+		if segment == "testdata" || segment == "vendor" ||
+			(segment != "." && (strings.HasPrefix(segment, "_") || strings.HasPrefix(segment, "."))) {
+			return true
+		}
+	}
+	return false
+}
+
+var goPackageClause = regexp.MustCompile(`^package\s+([A-Za-z_][A-Za-z0-9_]*)`)
+
+func goPackageOf(src api.SourceView, name string) string {
+	f, err := src.Open(name)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	scanner := bufio.NewScanner(io.LimitReader(f, 64<<10))
+	for scanner.Scan() {
+		if m := goPackageClause.FindStringSubmatch(strings.TrimSpace(scanner.Text())); m != nil {
+			return m[1]
+		}
+	}
+	return ""
+}
+
+// pythonEntryPoints are the files a Python app is started from.
+var pythonEntryPoints = []string{
+	"main.py", "app.py", "manage.py", "wsgi.py", "asgi.py", "server.py", "run.py",
+	"streamlit_app.py", "Procfile",
+}
+
+// isPythonSrcLayoutWithoutEntryPoint reports a package under src/ with nothing
+// at the root that starts anything — the layout of a library, not of an app.
+func isPythonSrcLayoutWithoutEntryPoint(src api.SourceView) bool {
+	packages, err := src.Glob("src/*/__init__.py")
+	if err != nil || len(packages) == 0 {
+		return false
+	}
+	for _, name := range pythonEntryPoints {
+		if info, err := src.Stat(name); err == nil && !info.IsDir {
+			return false
+		}
+	}
+	return true
+}
+
+// bidFromPlanOnly bids when no manifest matched but the planner can build and
+// start the repository. A plan that cannot say how the app starts is not
+// enough: asking for a start command on a repository nobody recognized is the
+// generic question with a different label.
+func (d BuildpackDetector) bidFromPlanOnly(ctx context.Context, src api.SourceView) (Candidate, error) {
+	if d.Planner == nil {
 		return Candidate{Confidence: 0}, nil
 	}
+	c := d.bidFor(ctx, src, &plannedOnly)
+	if len(c.Draft.Build.GeneratedFiles) == 0 || len(c.Questions) > 0 {
+		return Candidate{Confidence: 0}, nil
+	}
+	return c, nil
+}
 
+func (d BuildpackDetector) bidFor(ctx context.Context, src api.SourceView, signal *languageSignal) Candidate {
+	evidence := signal.file + " — this looks like a " + signal.language + " project"
+	if signal.file == "" {
+		evidence = "no language manifest Pando reads, but the build planner recognized this repository"
+	}
 	c := Candidate{
 		Strategy: spec.BuildBuildpack,
 		// Modest on purpose. Knowing the language is not knowing how to run the
 		// app, and a confident wrong answer is worse than an honest question.
 		Confidence: 0.45,
-		Evidence:   []string{signal.file + " — this looks like a " + signal.language + " project"},
+		Evidence:   []string{evidence},
 		Draft: Draft{
 			Build: spec.Build{Strategy: spec.BuildBuildpack},
 			Workloads: []spec.Workload{{
@@ -422,7 +642,19 @@ func (d BuildpackDetector) Bid(ctx context.Context, src api.SourceView) (Candida
 			c.Evidence = append(c.Evidence, "build plan generated, and editable before it runs")
 
 			body := files[dockerfile]
-			_, planned = scanDockerfile(strings.NewReader(body))
+			var exposed []int
+			exposed, planned = scanDockerfile(strings.NewReader(body))
+
+			// A plan that says which port it serves on is better evidence than
+			// the language's usual port: a site built to static files and
+			// served by nginx listens on 80, not on Node's 3000.
+			if len(exposed) > 0 {
+				ports := make([]spec.Port, 0, len(exposed))
+				for _, p := range exposed {
+					ports = append(ports, spec.Port{Number: p, Protocol: "http", Source: spec.PortExpose})
+				}
+				c.Draft.Workloads[0].Ports = ports
+			}
 
 			// R-094 is a ladder of evidence, and this is where a bid climbs
 			// it. Convention-matching is the bottom rung: nixpacks reads a
@@ -485,12 +717,96 @@ func (d BuildpackDetector) Bid(ctx context.Context, src api.SourceView) (Candida
 	// is changeable later. The default is already in the draft above, carried as
 	// PortFramework so the review screen says where it came from, and editable
 	// there before anything is pinned.
-	c.Evidence = append(c.Evidence, fmt.Sprintf(
-		"assumed to serve HTTP on %d, the usual port for a %s app — change it below if it does not",
-		signal.port, signal.language))
+	if c.Draft.Workloads[0].Ports[0].Source == spec.PortFramework {
+		c.Evidence = append(c.Evidence, fmt.Sprintf(
+			"assumed to serve HTTP on %d until the built app is watched starting — change it below if it does not",
+			signal.port))
+	}
 
 	c.Draft.Slots, c.Draft.Workloads[0].Env = readEnvExample(src)
-	return c, nil
+	if isRailsApp(src) {
+		c.Draft = asRailsProduction(c.Draft)
+		c.Evidence = append(c.Evidence,
+			"a Rails app, run in production: SECRET_KEY_BASE is needed before it can start")
+	}
+	return c
+}
+
+// isRailsApp reports a Rails application rather than a gem that uses Rails.
+func isRailsApp(src api.SourceView) bool {
+	if info, err := src.Stat("config/application.rb"); err != nil || info.IsDir {
+		return false
+	}
+	info, err := src.Stat("bin/rails")
+	return err == nil && !info.IsDir
+}
+
+// asRailsProduction runs a Rails app the way a platform does: in production.
+//
+// Rails and the Puma config it generates listen on the loopback address in
+// development — `host = … == "production" ? "::" : "::1"` in the Heroku sample —
+// so run as it was, the app was reachable by nothing outside its container
+// (issue #55). Production also needs SECRET_KEY_BASE, and that is a secret the
+// person deploying supplies, so it is asked for as a required value (R-132)
+// rather than invented.
+func asRailsProduction(d Draft) Draft {
+	production := "production"
+	env := d.Workloads[0].Env
+	set := map[string]bool{}
+	for _, e := range env {
+		set[e.Key] = true
+	}
+	for _, key := range []string{"RAILS_ENV", "RACK_ENV"} {
+		if !set[key] {
+			env = append(env, spec.EnvEntry{Key: key, Value: &production, Source: spec.EnvFromDetection})
+		}
+	}
+	if !set["SECRET_KEY_BASE"] {
+		ref := "SECRET_KEY_BASE"
+		env = append(env, spec.EnvEntry{Key: "SECRET_KEY_BASE", SlotRef: &ref, Source: spec.EnvFromDetection})
+		d.Slots = append(d.Slots, spec.Slot{
+			Key: "SECRET_KEY_BASE", Type: spec.SlotUnknown, Required: true,
+			Evidence: []string{"a Rails app running in production signs its sessions with SECRET_KEY_BASE"},
+		})
+	}
+	d.Workloads[0].Env = env
+	return d
+}
+
+var argDeclaration = regexp.MustCompile(`(?i)^\s*ARG\s+([A-Za-z_][A-Za-z0-9_]*)\s*$`)
+
+// requiredBuildArgs are the ARGs a Dockerfile declares without a default and
+// refuses to build without — `${NAME:?…}`, or a `-z` test on it that exits.
+//
+// Only those. An ARG with no default is usually optional (a version to stamp,
+// a platform BuildKit fills in), and asking about every one would put
+// questions in front of people that the build does not need answered (R-104).
+// A Dockerfile that stops itself when one is empty has said, in as many
+// words, that it is required; the build failed on exactly that and nobody had
+// been asked (issue #55).
+func requiredBuildArgs(src api.SourceView, name string) []string {
+	f, err := src.Open(name)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = f.Close() }()
+	scanner := bufio.NewScanner(io.LimitReader(f, 256<<10))
+	lines := joinContinuations(scanner)
+	body := strings.Join(lines, "\n")
+
+	var required []string
+	for _, line := range lines {
+		m := argDeclaration.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		arg := m[1]
+		if strings.Contains(body, "${"+arg+":?") ||
+			regexp.MustCompile(`-z\s+"?\$\{?`+arg+`\}?"?`).MatchString(body) {
+			required = append(required, arg)
+		}
+	}
+	return required
 }
 
 // --- shared helpers --------------------------------------------------------
@@ -817,8 +1133,10 @@ var packageDirs = []string{"apps", "packages", "services", "cmd", "projects"}
 
 func (d MonorepoDetector) Bid(_ context.Context, src api.SourceView) (Candidate, error) {
 	// If the root says how to build the repository, there is nothing to veto.
-	if info, err := src.Stat("Dockerfile"); err == nil && !info.IsDir {
-		return Candidate{Confidence: 0}, nil
+	for _, name := range dockerfileNames {
+		if info, err := src.Stat(name); err == nil && !info.IsDir {
+			return Candidate{Confidence: 0}, nil
+		}
 	}
 	for _, name := range composeNames {
 		if info, err := src.Stat(name); err == nil && !info.IsDir {

@@ -266,10 +266,10 @@ func TestComposeAsksWhichServiceIsPrimary(t *testing.T) {
 // R-021: fill declared slots, never invent topology.
 func TestR021_SlotsComeFromWhatTheRepoDeclares(t *testing.T) {
 	withDatabase, err := auction().Run(context.Background(), memSource{
-		"docker-compose.yml": "services:\n  web:\n    image: nginx\n  db:\n    image: postgres:17\n",
+		"docker-compose.yml": "services:\n  web:\n    image: nginx\n    environment:\n      DATABASE_URL: postgres://app:pw@db:5432/app\n  db:\n    image: postgres:17\n",
 	})
 	require.NoError(t, err)
-	require.NotEmpty(t, withDatabase.Winner.Draft.Slots, "a declared postgres service becomes a slot")
+	require.NotEmpty(t, withDatabase.Winner.Draft.Slots, "a declared postgres service the app connects to by URL becomes a slot")
 	require.Equal(t, spec.SlotPostgres, withDatabase.Winner.Draft.Slots[0].Type)
 	require.NotEmpty(t, withDatabase.Winner.Draft.Slots[0].Evidence, "and says why")
 
@@ -882,10 +882,15 @@ func TestR096_AnEnvFileIsPartOfTheComposeFile(t *testing.T) {
 
 	env := map[string]string{}
 	sources := map[string]spec.EnvSource{}
+	slotRefs := map[string]bool{}
 	for _, e := range result.Winner.Draft.Workloads[0].Env {
+		sources[e.Key] = e.Source
+		if e.SlotRef != nil {
+			slotRefs[e.Key] = true
+			continue
+		}
 		require.NotNil(t, e.Value)
 		env[e.Key] = *e.Value
-		sources[e.Key] = e.Source
 	}
 
 	require.Equal(t, "true", env["TRUST_PROXY"])
@@ -897,7 +902,20 @@ func TestR096_AnEnvFileIsPartOfTheComposeFile(t *testing.T) {
 	require.Contains(t, env, "APP_BASE_URL")
 	require.Empty(t, env["APP_BASE_URL"])
 	require.Equal(t, spec.EnvFromDetection, sources["APP_BASE_URL"])
-	require.Contains(t, env, "VAPID_PUBLIC_KEY")
+
+	// A name the template leaves blank is a value the app has to be given, and
+	// compose will not start without the file, so it is asked for before the
+	// deploy rather than discovered when the app refuses to start (issue #55).
+	require.True(t, slotRefs["VAPID_PUBLIC_KEY"])
+	var vapid *spec.Slot
+	for i, s := range result.Winner.Draft.Slots {
+		if s.Key == "VAPID_PUBLIC_KEY" {
+			vapid = &result.Winner.Draft.Slots[i]
+		}
+	}
+	require.NotNil(t, vapid)
+	require.True(t, vapid.Required)
+	require.Nil(t, vapid.Resolution)
 
 	// And it says where they came from and what is left to do (R-102).
 	require.True(t, hasWarning(result.Winner.Draft.Warnings,

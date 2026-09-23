@@ -56,6 +56,49 @@ func (d *Detections) Start(ctx context.Context, appID string) error {
 	return nil
 }
 
+// AbandonRunning fails every detection still marked running, and is called at
+// startup, before anything new can start one.
+//
+// Detection runs inside the server process. One that was running when the
+// process stopped will never finish, and it stayed "running" for good: a
+// console spinning forever, and a client polling for an answer that could not
+// come (issue #55). Failing it says what happened and lets it be run again.
+func (d *Detections) AbandonRunning(ctx context.Context) (int64, error) {
+	body, err := json.Marshal(map[string]any{"error": errs.New(errs.StateInvalid,
+		"Pando restarted while it was working out how to run this app, so that work did not finish.").
+		WithRemedy("Run detection again.")})
+	if err != nil {
+		return 0, errs.Wrap(errs.Internal, "Could not record interrupted detections.", err)
+	}
+	tag, err := d.db.Exec(ctx, `
+		UPDATE detections SET status = $1, body = $2, updated_at = now()
+		WHERE status = $3`, DetectionFailed, body, DetectionRunning)
+	if err != nil {
+		return 0, errs.Wrap(errs.Internal, "Could not record interrupted detections.", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+// FailIfRunning records a failure for a detection that is still marked running,
+// and leaves one that has already recorded its own outcome alone.
+func (d *Detections) FailIfRunning(ctx context.Context, appID string, cause error) error {
+	recorded := any(map[string]any{"message": cause.Error()})
+	if e := errs.As(cause); e != nil {
+		recorded = e
+	}
+	body, err := json.Marshal(map[string]any{"error": recorded})
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not record the detection.", err)
+	}
+	_, err = d.db.Exec(ctx, `
+		UPDATE detections SET status = $2, body = $3, updated_at = now()
+		WHERE app_id = $1 AND status = $4`, appID, DetectionFailed, body, DetectionRunning)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not record the detection.", err)
+	}
+	return nil
+}
+
 // Save records the outcome of a detection run.
 func (d *Detections) Save(ctx context.Context, appID, status string, body any, commit string) error {
 	encoded, err := json.Marshal(body)

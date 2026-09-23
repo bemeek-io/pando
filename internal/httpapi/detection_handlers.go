@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"go.uber.org/zap"
+
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/spec"
@@ -61,12 +63,44 @@ func (s *Server) handleRerunDetection(w http.ResponseWriter, r *http.Request) {
 		TargetID:      app.ID,
 	})
 
-	d, err := s.Detector.Detect(r.Context(), app.ID)
+	// In the background, the way detection on create runs. A clone, a build
+	// plan and a trial run held this request open for minutes (issue #55), and
+	// every client already polls GET /detection for the outcome. Marked running
+	// first, so the first poll cannot read the previous outcome as this one's.
+	//
+	// What would refuse it is checked here, before anything is written: a
+	// source the allowlist does not permit is refused with nothing recorded
+	// and nothing cloned (R-092).
+	if err := s.Detector.Check(r.Context(), app.ID); err != nil {
+		Error(w, r, err)
+		return
+	}
+	if err := s.Detections.Start(r.Context(), app.ID); err != nil {
+		Error(w, r, err)
+		return
+	}
+	go s.redetectInBackground(context.WithoutCancel(r.Context()), app.ID)
+
+	d, err := s.Detections.Get(r.Context(), app.ID)
 	if err != nil {
 		Error(w, r, err)
 		return
 	}
-	JSON(w, http.StatusOK, detectionResponse(d))
+	JSON(w, http.StatusAccepted, detectionResponse(d))
+}
+
+// redetectInBackground runs a re-detection, and records a failure the detector
+// returned before it got as far as recording anything itself — a source the
+// allowlist no longer permits, say — which would otherwise leave the detection
+// marked running.
+func (s *Server) redetectInBackground(parent context.Context, appID string) {
+	ctx, cancel := context.WithTimeout(parent, detectionTimeout)
+	defer cancel()
+
+	if _, err := s.Detector.Detect(ctx, appID); err != nil {
+		s.Logger.Warn("detection failed", zap.String("app_id", appID), zap.Error(err))
+		_ = s.Detections.FailIfRunning(context.WithoutCancel(ctx), appID, err)
+	}
 }
 
 // handleDetectionDiff compares the proposal against the pinned spec (R-022).
@@ -176,6 +210,13 @@ func (s *Server) handleDetectionAnswers(w http.ResponseWriter, r *http.Request) 
 			"There are no outstanding questions with these keys: %v.", unknown).
 			WithDetail("outstanding", keysOf(known)).
 			WithRemedy("Use the `key` from one of the questions in GET /detection."))
+		return
+	}
+
+	// And an answer that cannot become a spec is refused now, rather than
+	// recorded and refused at accept as "This app has no workloads".
+	if err := proposal.CheckAnswers(req.Answers); err != nil {
+		Error(w, r, err)
 		return
 	}
 
@@ -374,7 +415,7 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 // --- helpers ---------------------------------------------------------------
 
 func detectionResponse(d state.Detection) map[string]any {
-	return map[string]any{
+	out := map[string]any{
 		"status":     d.Status,
 		"detection":  json.RawMessage(d.Body),
 		"answers":    d.Answers,
@@ -382,6 +423,20 @@ func detectionResponse(d state.Detection) map[string]any {
 		"started_at": d.StartedAt,
 		"updated_at": d.UpdatedAt,
 	}
+	// The keys of the questions still waiting for an answer. Status stays
+	// needs_answers until accept, because answers are applied then, so status
+	// alone could not tell "waiting for answers" from "answered, ready to
+	// accept" (issue #55). An empty list is the second.
+	if d.Status == state.DetectionNeedsAnswers {
+		keys := []string{}
+		if p, err := decodeProposal(d); err == nil {
+			if open := unanswered(p, d.Answers); open != nil {
+				keys = open
+			}
+		}
+		out["unanswered"] = keys
+	}
+	return out
 }
 
 func decodeProposal(d state.Detection) (detect.Proposal, error) {
@@ -426,4 +481,8 @@ func keysOf(m map[string]bool) []string {
 // assert what the endpoints do without a network, a builder or a daemon.
 type Detector interface {
 	Detect(ctx context.Context, appID string) (state.Detection, error)
+
+	// Check refuses what Detect would refuse before it starts, without
+	// writing anything.
+	Check(ctx context.Context, appID string) error
 }

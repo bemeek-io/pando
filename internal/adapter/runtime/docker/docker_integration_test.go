@@ -122,6 +122,51 @@ func cleanup(t *testing.T, a *dockeradapter.Adapter, bundleID string) {
 	})
 }
 
+// TestR096_ADependentStartsOnceItsDependencyIsHealthy asserts R-096.
+//
+// Dependencies were started first and never waited for: a backend started while
+// its database was still initializing and crashed on a refused connection
+// (issue #55). A dependency with a health check now holds its dependents back
+// until it reports healthy.
+func TestR096_ADependentStartsOnceItsDependencyIsHealthy(t *testing.T) {
+	ctx := context.Background()
+	a := adapter(t)
+	id := "test-depends-" + time.Now().Format("150405")
+	cleanup(t, a, id)
+
+	plan := bundle(id, nil)
+	plan.Workloads = []api.WorkloadPlan{
+		{
+			Name:    "db",
+			Image:   "alpine:3.20",
+			Command: []string{"sh", "-c", "sleep 4 && touch /tmp/ready && sleep 3600"},
+			Health:  &api.HealthPlan{Command: []string{"test", "-f", "/tmp/ready"}, IntervalSeconds: 1, TimeoutSeconds: 1, Retries: 30},
+		},
+		{
+			Name:      "web",
+			Image:     "alpine:3.20",
+			Command:   []string{"sleep", "3600"},
+			DependsOn: []string{"db"},
+			Exposed:   true,
+		},
+	}
+
+	started := time.Now()
+	_, err := a.Apply(ctx, plan)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, time.Since(started), 4*time.Second,
+		"web was held back until db reported healthy")
+
+	observed, err := a.Observe(ctx, api.BundleRef{BundleID: id})
+	require.NoError(t, err)
+	for _, w := range observed.Workloads {
+		if w.Name == "db" {
+			require.NotNil(t, w.Healthy)
+			require.True(t, *w.Healthy)
+		}
+	}
+}
+
 func TestApplyThenObserve(t *testing.T) {
 	ctx := context.Background()
 	a := adapter(t)
@@ -431,7 +476,7 @@ func TestR023_ProxyRejoinsRunningAppsNetworksAfterItIsReplaced(t *testing.T) {
 	require.NoError(t, exec.Command("docker", "network", "disconnect", networkName, proxy).Run())
 	require.NotContains(t, dockerInspect(t, proxy, "{{json .NetworkSettings.Networks}}"), networkName)
 
-	joined, err := a.RejoinNetworks(ctx)
+	joined, err := a.RejoinNetworks(ctx, nil)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, joined, 1)
 	require.Contains(t, dockerInspect(t, proxy, "{{json .NetworkSettings.Networks}}"), networkName,
@@ -466,7 +511,7 @@ func TestR023_RejoiningLeavesTheNetworksOfStoppedAppsAlone(t *testing.T) {
 	require.NoError(t, a.Destroy(ctx, api.BundleRef{BundleID: id}, api.DestroyOptions{KeepVolumes: true}))
 	_ = exec.Command("docker", "network", "disconnect", networkName, proxy).Run()
 
-	_, err = a.RejoinNetworks(ctx)
+	_, err = a.RejoinNetworks(ctx, nil)
 	require.NoError(t, err)
 	require.NotContains(t, dockerInspect(t, proxy, "{{json .NetworkSettings.Networks}}"), networkName,
 		"an empty network gets no endpoint, so the reclaimer can still see it is empty")

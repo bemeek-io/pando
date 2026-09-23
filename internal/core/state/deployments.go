@@ -120,6 +120,30 @@ func (d *Deployments) Finish(ctx context.Context, deploymentID, status, errorCod
 	return nil
 }
 
+// AbandonInFlight fails every deployment that was still under way, and is
+// called at startup, before anything new can start one.
+//
+// A deploy runs inside the server process, so one in progress when the process
+// stopped will never finish. It stayed pending or building for good, and an
+// app with a deploy in flight refuses the next one (issue #55).
+func (d *Deployments) AbandonInFlight(ctx context.Context) (int64, error) {
+	detail, err := json.Marshal(map[string]string{
+		"message": "Pando restarted while this deploy was under way, so it did not finish. Deploy again.",
+	})
+	if err != nil {
+		return 0, errs.Wrap(errs.Internal, "Could not record interrupted deploys.", err)
+	}
+	tag, err := d.db.Exec(ctx, `
+		UPDATE deployments
+		SET status = $1, error_code = $2, error_detail = $3, finished_at = now()
+		WHERE status IN ($4, $5, $6)`,
+		DeployFailed, string(errs.StateInvalid), detail, DeployPending, DeployBuilding, DeployApplying)
+	if err != nil {
+		return 0, errs.Wrap(errs.Internal, "Could not record interrupted deploys.", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // ByID returns one deployment.
 func (d *Deployments) ByID(ctx context.Context, deploymentID string) (Deployment, bool, error) {
 	var dep Deployment

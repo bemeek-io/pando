@@ -2,10 +2,12 @@ package detect
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/bemeek-io/pando/internal/errs"
 )
 
 // Question keys detection produces. Answers are matched back by these, so they
@@ -19,6 +21,10 @@ const (
 	KeyStaticSource      = "static_source"
 	KeyBuildStrategy     = "build_strategy"
 	KeyBuildMethod       = "build_method"
+
+	// BuildArgKeyPrefix, followed by an ARG's name, asks for a build argument
+	// the Dockerfile requires. The answer is passed to the build.
+	BuildArgKeyPrefix = "build_arg."
 )
 
 // answerOrder is the order answers are applied in, and it is load-bearing.
@@ -78,6 +84,24 @@ func (p Proposal) withAnswers(answers map[string]string, portSource spec.PortSou
 	// repository the rest of the answers apply to.
 	out := p.chosen(answers)
 
+	// When another reading was adopted, only answers to its own questions
+	// apply to it. A port given for the Dockerfile reading is not the compose
+	// file's port: stamped on the adopted compose app anyway, it sent traffic
+	// to 80 while the compose file had the app on 8000 (issue #55).
+	if adopted, ok := p.adoptedCandidate(answers); ok {
+		asked := map[string]bool{KeyBuildStrategy: true, KeyBuildMethod: true}
+		for _, q := range adopted.Questions {
+			asked[q.Key] = true
+		}
+		kept := make(map[string]string, len(answers))
+		for key, value := range answers {
+			if asked[key] {
+				kept[key] = value
+			}
+		}
+		answers = kept
+	}
+
 	// Copy the workload slice: a proposal is read from storage and may be
 	// applied more than once, and mutating it in place would make the second
 	// application see the first one's results.
@@ -114,6 +138,18 @@ func (p Proposal) withAnswers(answers map[string]string, portSource spec.PortSou
 			// whole draft. Setting the strategy here is what used to produce a
 			// spec describing one detector's reading under another's name.
 		}
+	}
+
+	// Build arguments, in name order so the same answers make the same spec.
+	var buildArgs []string
+	for key := range answers {
+		if strings.HasPrefix(key, BuildArgKeyPrefix) && strings.TrimSpace(answers[key]) != "" {
+			buildArgs = append(buildArgs, key)
+		}
+	}
+	sort.Strings(buildArgs)
+	for _, key := range buildArgs {
+		out.Build.Args = withArg(out.Build.Args, strings.TrimPrefix(key, BuildArgKeyPrefix), strings.TrimSpace(answers[key]))
 	}
 
 	// Last, after every answer: an answer naming the primary wins, and the
@@ -176,6 +212,73 @@ func (p Proposal) chosen(answers map[string]string) spec.AppSpec {
 	return p.DraftSpec
 }
 
+// withArg sets a build argument, replacing one of the same name. A new slice,
+// because a proposal is applied more than once.
+func withArg(args []spec.KV, key, value string) []spec.KV {
+	out := make([]spec.KV, 0, len(args)+1)
+	for _, kv := range args {
+		if kv.Key != key {
+			out = append(out, kv)
+		}
+	}
+	return append(out, spec.KV{Key: key, Value: value})
+}
+
+// CheckAnswers refuses an answer that cannot become a spec, when it is given.
+//
+// A build_method or build_strategy answer selects a reading of the repository,
+// and only a reading some detector made has anything to run. Any other answer
+// was recorded, applied to nothing, and refused at accept with "This app has no
+// workloads" — after the person had moved on (issue #55). The AI adapter's
+// prose answers ("serve the repository root with php -S …") were accepted the
+// same way.
+func (p Proposal) CheckAnswers(answers map[string]string) error {
+	for _, key := range []string{KeyBuildStrategy, KeyBuildMethod} {
+		value := strings.TrimSpace(answers[key])
+		if value == "" {
+			continue
+		}
+		var readings []string
+		for _, c := range append([]Candidate{p.Winner}, p.RunnersUp...) {
+			if c.Strategy != StrategyUnknown && c.Strategy != "" && len(c.Draft.Workloads) > 0 {
+				readings = append(readings, string(c.Strategy))
+			}
+		}
+		if containsString(readings, value) {
+			continue
+		}
+		if len(readings) == 0 {
+			return errs.New(errs.ValidInvalid,
+				"Pando found nothing in this repository it knows how to build, so no answer to how it is "+
+					"built can be turned into something Pando runs.").
+				WithRemedy("Add a Dockerfile to the repository, or a compose file, or a Procfile naming the " +
+					"command that starts the app, then run detection again.")
+		}
+		return errs.Newf(errs.ValidInvalid,
+			"%q is not one of the ways Pando found to build this app. Valid answer: one of %s.",
+			value, strings.Join(readings, ", "))
+	}
+	return nil
+}
+
+// adoptedCandidate is the runner-up the tie-break answer selects, when chosen()
+// adopts one rather than keeping the winner.
+func (p Proposal) adoptedCandidate(answers map[string]string) (Candidate, bool) {
+	want := spec.BuildStrategy(strings.TrimSpace(answers[KeyBuildStrategy]))
+	if want == "" {
+		want = spec.BuildStrategy(strings.TrimSpace(answers[KeyBuildMethod]))
+	}
+	if want == "" || want == p.Winner.Strategy {
+		return Candidate{}, false
+	}
+	for _, c := range p.RunnersUp {
+		if c.Strategy == want && len(c.Draft.Workloads) > 0 {
+			return c, true
+		}
+	}
+	return Candidate{}, false
+}
+
 func withPort(s spec.AppSpec, value string, source spec.PortSource) spec.AppSpec {
 	number, err := strconv.Atoi(value)
 	if err != nil || number <= 0 || number > 65535 {
@@ -225,6 +328,16 @@ func withStartCommand(s spec.AppSpec, command string) spec.AppSpec {
 		// whitespace breaks the first quoted argument anyone writes, and the
 		// person answering this question wrote a command line, not an argv.
 		s.Workloads[i].Command = []string{"sh", "-c", command}
+
+		// A buildpack image already starts through a shell: its entrypoint is
+		// a login shell that takes the command line as one argument, which is
+		// also what sets up the PATH its toolchain was installed on. `sh -c`
+		// handed to that became `bash -l -c sh`, a shell with no command that
+		// read an empty stdin and exited 0 (issue #55). So the line goes to it
+		// whole, the way the plan's own start command does.
+		if s.Build.Strategy == spec.BuildBuildpack {
+			s.Workloads[i].Command = []string{command}
+		}
 		break
 	}
 	return s

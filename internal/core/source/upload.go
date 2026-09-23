@@ -92,7 +92,11 @@ func fetchUpload(_ context.Context, src spec.Source) (*Checkout, error) {
 	}
 	// No commit: an upload has no revision. The deploy records the archive it
 	// came from instead, which is the honest answer to "what was deployed".
-	return &Checkout{Dir: dir, Commit: ""}, nil
+	//
+	// With the same cleanup a clone has. Without it every detection and every
+	// deploy of an uploaded app left a full copy of its source in the
+	// temporary directory for as long as the server ran (issue #55).
+	return &Checkout{Dir: dir, Commit: "", cleanup: func() { _ = os.RemoveAll(dir) }}, nil
 }
 
 // extract unpacks a gzipped tar, refusing anything that escapes the directory.

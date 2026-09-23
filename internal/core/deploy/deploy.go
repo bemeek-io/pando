@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -238,6 +239,35 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 		return err
 	}
 
+	// Step 10a: a port detection could only guess is checked against the image
+	// that was just built (R-097). Before `applying`, for the same reason as the
+	// scan: a refusal must leave the running app untouched (R-146).
+	if needsPortCheck(appSpec) && image != "" {
+		if runtime, ok := r.registry.Runtime(appSpec.Runtime.AdapterRef); ok {
+			check := checkPort(ctx, runtime, appSpec, image, "port-"+strings.ToLower(dep.ID), sink)
+			if check.Refusal != nil {
+				writeFailure(sink, messageOf(check.Refusal), check.Refusal)
+				fmt.Fprintf(sink, "   The running version of this app was not touched.\n")
+				_ = r.deploys.Finish(ctx, dep.ID, state.DeployFailed,
+					string(errs.CodeOf(check.Refusal)), messageOf(check.Refusal))
+				return check.Refusal
+			}
+			if check.Port != 0 {
+				// A new revision rather than a quiet substitution: the port
+				// traffic goes to is part of how the app runs, and the spec is
+				// the record of that (R-020). The app's history shows the
+				// assumed port was replaced by the observed one.
+				observed, err := r.apps.CreateRevision(ctx, dep.AppID,
+					withObservedPort(appSpec, check.Port), spec.OriginDetected, dep.CreatedBy)
+				if err != nil {
+					return fail("build", err)
+				}
+				rev = observed
+				appSpec = observed.Body
+			}
+		}
+	}
+
 	if err := r.deploys.SetStatus(ctx, dep.ID, state.DeployApplying); err != nil {
 		return fail("apply", err)
 	}
@@ -324,7 +354,7 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 
 	// Step 15: wait for health.
 	fmt.Fprintf(sink, "=> Waiting for the app to be ready\n")
-	healthy, err := r.waitForHealth(ctx, runtime, dep.AppID, bundle)
+	healthy, err := r.waitForHealth(ctx, runtime, dep.AppID, bundle, sink)
 	if err != nil {
 		return fail("health", err)
 	}
@@ -468,9 +498,13 @@ func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Ch
 
 	// One service of a compose app is an ordinary Dockerfile build: its own
 	// context and its own file, from the same checkout.
-	strategy, dockerfile, context := s.Build.Strategy, s.Build.Dockerfile, s.Build.Context
+	strategy, dockerfile, context, target := s.Build.Strategy, s.Build.Dockerfile, s.Build.Context, s.Build.Target
 	if wb != nil {
-		strategy, dockerfile, context = spec.BuildDockerfile, wb.Dockerfile, wb.Context
+		strategy, dockerfile, context, target = spec.BuildDockerfile, wb.Dockerfile, wb.Context, wb.Target
+		// The service's own build arguments, over the app's.
+		for _, kv := range wb.Args {
+			args[kv.Key] = kv.Value
+		}
 	} else {
 		fmt.Fprintf(sink, "=> Building\n")
 	}
@@ -482,10 +516,15 @@ func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Ch
 		Context:    context,
 		StaticDir:  s.Build.StaticDir,
 
+		// The command a person gave when detection asked for one. Only for the
+		// app-wide build: a compose service's Dockerfile says its own.
+		StartCommand: startCommand(s, wb),
+
 		// The reviewed plan, replayed. Without this the builder plans again at
 		// build time and an edit made in the console never reaches the build.
 		GeneratedFiles: s.Build.GeneratedFiles,
 		Args:           args,
+		Target:         target,
 
 		IsolationFloor: s.Build.IsolationFloor,
 		Timeout:        time.Duration(s.Build.TimeoutSeconds) * time.Second,
@@ -512,6 +551,29 @@ func (r *Runner) build(ctx context.Context, s *spec.AppSpec, checkout *source.Ch
 		return importedID, nil
 	}
 	return result.ImageRef, nil
+}
+
+// startCommand is the primary workload's command as a shell command line, for a
+// builder that plans the build itself.
+//
+// Detection stores an answered start command as `sh -c <line>`, so that shape
+// is unwrapped rather than quoted twice; any other argv is joined, which is what
+// a person reading it would type.
+func startCommand(s *spec.AppSpec, wb *spec.WorkloadBuild) string {
+	if wb != nil || s.Build.Strategy != spec.BuildBuildpack {
+		return ""
+	}
+	primary, ok := s.PrimaryWorkload()
+	if !ok || len(primary.Command) == 0 {
+		return ""
+	}
+	if len(primary.Command) == 3 && primary.Command[0] == "sh" && primary.Command[1] == "-c" {
+		return primary.Command[2]
+	}
+	if len(primary.Command) == 1 {
+		return primary.Command[0]
+	}
+	return strings.Join(primary.Command, " ")
 }
 
 // bundlePlan resolves the spec into what the runtime is asked to apply.
@@ -696,7 +758,41 @@ func resolveEnv(s *spec.AppSpec, w spec.Workload, secrets map[string]secret.Valu
 			}
 		}
 	}
+	if port, ok := defaultPort(w); ok {
+		env["PORT"] = secret.New(port)
+	}
 	return env, nil
+}
+
+// defaultPort is the PORT the primary workload is started with, when the spec
+// does not set one itself.
+//
+// PORT is the convention nearly every platform uses to tell an app where to
+// listen, and most frameworks honor it: Express and Koa apps written for a
+// platform read it, and gunicorn binds 0.0.0.0:$PORT when it is set rather than
+// its own 127.0.0.1:8000. Pando never set it, so a Procfile saying
+// `--bind 0.0.0.0:$PORT` started with an empty port, and apps that would have
+// listened wherever they were told listened on their own default instead of the
+// port Pando routes to (issue #55).
+//
+// The value is the port Pando already sends traffic to, so this changes where
+// an app listens only toward where it is reached. A PORT the spec sets, even an
+// empty one somebody typed, is left alone.
+func defaultPort(w spec.Workload) (string, bool) {
+	if !w.Primary || len(w.Ports) == 0 {
+		return "", false
+	}
+	for _, e := range w.Env {
+		if e.Key != "PORT" {
+			continue
+		}
+		// A name read out of .env.example with no value is not a choice.
+		unfilled := e.Source == spec.EnvFromDetection && e.Value != nil && *e.Value == ""
+		if !unfilled {
+			return "", false
+		}
+	}
+	return strconv.Itoa(w.Ports[0].Number), true
 }
 
 // healthPlan applies the source precedence in R-221.
@@ -730,8 +826,11 @@ func healthPlan(s *spec.AppSpec, w spec.Workload) *api.HealthPlan {
 //
 // Returns false rather than an error when health does not pass: the app is
 // degraded, which is recoverable and still being worked, not failed.
-func (r *Runner) waitForHealth(ctx context.Context, runtime api.RuntimeAdapter, appID string, bundle api.BundlePlan) (bool, error) {
-	deadline := time.Now().Add(2 * time.Minute)
+func (r *Runner) waitForHealth(ctx context.Context, runtime api.RuntimeAdapter, appID string, bundle api.BundlePlan, sink io.Writer) (bool, error) {
+	started := time.Now()
+	deadline := started.Add(2 * time.Minute)
+	settledSince := started
+	var restarted time.Time
 
 	for {
 		observed, err := runtime.Observe(ctx, api.BundleRef{BundleID: appID})
@@ -741,9 +840,13 @@ func (r *Runner) waitForHealth(ctx context.Context, runtime api.RuntimeAdapter, 
 
 		allRunning := len(observed.Workloads) >= len(bundle.Workloads)
 		healthy := true
+		anyExited := false
 		for _, w := range observed.Workloads {
 			if !w.Running {
 				allRunning = false
+			}
+			if !w.Running && !w.Restarting && w.ExitCode != nil {
+				anyExited = true
 			}
 			// nil means no signal, which is not unhealthy (R-221).
 			if w.Healthy != nil && !*w.Healthy {
@@ -751,10 +854,31 @@ func (r *Runner) waitForHealth(ctx context.Context, runtime api.RuntimeAdapter, 
 			}
 		}
 
-		if allRunning && healthy {
+		// A part that stopped while the rest came up is started again, for as
+		// long as the deploy is waiting. A backend that could not reach a
+		// database still initializing, or a proxy whose upstream was that
+		// backend, is how a compose app starts — under `docker compose up`
+		// the services' restart policy starts them again, and Pando replaces
+		// that policy with its own (issue #55). Applying the same plan starts
+		// what is stopped and touches nothing that is running.
+		if anyExited && time.Since(restarted) >= exitRestartEvery {
+			_, _ = runtime.Apply(ctx, bundle)
+			restarted = time.Now()
+			settledSince = restarted
+		}
+
+		// Up for the settle period, not merely up at the first look. An app
+		// that exits a second after it starts is running when it is first
+		// observed, and was reported deployed on that one glimpse (issue #55).
+		if allRunning && healthy && time.Since(settledSince) >= exitSettle {
 			return true, nil
 		}
 		if time.Now().After(deadline) {
+			// Still stopped after being started again for the whole window:
+			// the app does not run, and the deploy says so with its output.
+			if exited, ok := primaryExited(bundle, observed); ok {
+				return false, exitedFailure(ctx, runtime, appID, exited, sink)
+			}
 			return false, nil
 		}
 

@@ -95,8 +95,27 @@ OVERRIDE = {
     "ac-angular": "upstream", "ac-apache-php": "upstream", "ac-react-express-mongodb": "upstream",
     "ac-react-rust-postgres": "upstream", "ac-vuejs": "upstream", "gh-angular-realworld": "upstream",
     "gh-docker-getting-started": "upstream", "gh-node-realworld": "upstream",
+    # Its release Dockerfile copies ./build/, which `npm run build` makes outside
+    # the Dockerfile: "COPY ./build/ ./build/ ... not found".
+    "gh-uptime-kuma": "upstream",
+    # web/.npmrc sets ignore-scripts=true, so `npm start` exits 0 without running
+    # server.js; `docker compose up` leaves web1 and web2 exited the same way.
+    "ac-nginx-nodejs-redis": "upstream",
+    # Unpinned Flask pulls a Werkzeug the pinned app code no longer imports from.
+    "ac-nginx-flask-mysql": "upstream",
+    # `image: postgres` is now 18, which refuses a volume mounted at
+    # /var/lib/postgresql/data (its data directory moved).
+    "ac-spring-postgres": "upstream",
+    # Its Dockerfile runs `yarn global add @vue/cli` on Node 14; a dependency
+    # now requires Node >= 18.
+    "ac-vuejs": "upstream",
+    # Rust 1.79 with unlocked dependencies: block-buffer 0.12 needs edition 2024.
+    "ac-react-rust-postgres": "upstream",
     "gh-axum-hello-world": "workspace", "ctr-dockerfile-required-arg": "build_arg",
     "gh-httpbin": "arm64", "gh-node-docker-good-defaults": "arm64",
+    # Its Dockerfile installs the latest pnpm, which switches to @pnpm/exe 9.11
+    # per packageManager: "ships no native binary for linux-arm64-musl".
+    "gh-it-tools": "arm64",
     "gh-vite-template-vanilla": "static_as_node", "js-astro-static": "static_as_node",
     "ac-traefik-golang": "blocked_policy", "gh-full-stack-fastapi": "blocked_policy",
     "gh-heroku-node": "wrong_port", "js-express-no-start": "wrong_port", "js-koa": "wrong_port",
@@ -121,6 +140,10 @@ def cause(r):
     blob = json.dumps(r)
     i = r["id"]
     if "signal 9 (Killed)" in blob or "lease does not exist" in blob:
+        return "harness"
+    # Docker Hub's anonymous pull limit, and Docker Desktop's containerd failing
+    # to unpack a layer under load: the machine, not the app or Pando.
+    if "Too Many Requests" in blob or "toomanyrequests" in blob or "failed to extract layer" in blob:
         return "harness"
     if r["outcome"] == "HARNESS_ERROR" or "No such image" in blob or (
             "could not fetch this app" in blob and "deadline" in blob):
