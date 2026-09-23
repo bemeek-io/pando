@@ -1,0 +1,1021 @@
+{
+ "run": "2026-09-22",
+ "commit": "53d5939",
+ "issue": 55,
+ "apps": {
+  "ac-angular": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "upstream",
+   "cause_ai": "upstream"
+  },
+  "ac-apache-php": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "upstream",
+   "cause_ai": "upstream"
+  },
+  "ac-django": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "ac-fastapi": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "wrong_port",
+   "cause_ai": "wrong_port"
+  },
+  "ac-flask": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "ac-gitea-postgres": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "compose",
+   "cause_ai": "compose"
+  },
+  "ac-minecraft": {
+   "noai": "PASS_REFUSED",
+   "ai": "PASS_REFUSED",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "ac-nextcloud-redis-mariadb": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "ac-nginx-flask-mongo": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "compose",
+   "cause_ai": "compose"
+  },
+  "ac-nginx-flask-mysql": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "compose",
+   "cause_ai": "compose"
+  },
+  "ac-nginx-golang": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "ac-nginx-golang-mysql": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "compose",
+   "cause_ai": "compose"
+  },
+  "ac-nginx-nodejs-redis": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "compose",
+   "cause_ai": "compose"
+  },
+  "ac-prometheus-grafana": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "ac-react-express-mongodb": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "upstream",
+   "cause_ai": "upstream"
+  },
+  "ac-react-express-mysql": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "compose",
+   "cause_ai": "compose"
+  },
+  "ac-react-java-mysql": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "compose",
+   "cause_ai": "compose"
+  },
+  "ac-react-nginx": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "ac-react-rust-postgres": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "upstream",
+   "cause_ai": "upstream"
+  },
+  "ac-sparkjava": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "ac-spring-postgres": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "compose",
+   "cause_ai": "compose"
+  },
+  "ac-traefik-golang": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "blocked_policy",
+   "cause_ai": "blocked_policy"
+  },
+  "ac-vuejs": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "upstream",
+   "cause_ai": "upstream"
+  },
+  "ac-wordpress-mysql": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "needs_config",
+   "cause_ai": "needs_config"
+  },
+  "compose-env-file": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "env_missing",
+   "cause_ai": "env_missing"
+  },
+  "compose-full-stack": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "compose-images-only": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "compose-named-volume": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "compose-profiles": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "compose-web-redis": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "compose",
+   "cause_ai": "compose"
+  },
+  "compose-worker-queue": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "compose",
+   "cause_ai": "compose"
+  },
+  "ctr-containerfile": {
+   "noai": "FAIL_ACCEPT",
+   "ai": "FAIL_ACCEPT",
+   "cause_noai": "no_workloads",
+   "cause_ai": "no_workloads"
+  },
+  "ctr-dockerfile-buildarg": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "ctr-dockerfile-env-required": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "env_missing",
+   "cause_ai": "env_missing"
+  },
+  "ctr-dockerfile-expose": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "ctr-dockerfile-no-expose": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "ctr-dockerfile-prod-only": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "ctr-dockerfile-required-arg": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "build_arg",
+   "cause_ai": "build_arg"
+  },
+  "ctr-dockerfile-subdir": {
+   "noai": "FAIL_ACCEPT",
+   "ai": "FAIL_ACCEPT",
+   "cause_noai": "no_workloads",
+   "cause_ai": "no_workloads"
+  },
+  "ctr-multistage-go": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "ctr-nginx-static": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "dotnet-minimal": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "no_detector",
+   "cause_ai": "no_detector"
+  },
+  "edge-cli-tool": {
+   "noai": "FAIL_FALSE_POSITIVE",
+   "ai": "FAIL_FALSE_POSITIVE",
+   "cause_noai": "false_positive",
+   "cause_ai": "false_positive"
+  },
+  "edge-library": {
+   "noai": "FAIL_FALSE_POSITIVE",
+   "ai": "FAIL_FALSE_POSITIVE",
+   "cause_noai": "false_positive",
+   "cause_ai": "false_positive"
+  },
+  "edge-makefile-c": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "no_detector",
+   "cause_ai": "no_detector"
+  },
+  "edge-monorepo-no-compose": {
+   "noai": "PASS_REFUSED",
+   "ai": "PASS_REFUSED",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "edge-prebuilt-binary": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "no_detector",
+   "cause_ai": "no_detector"
+  },
+  "edge-procfile-web-worker": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "edge-readme-only": {
+   "noai": "PASS_REFUSED",
+   "ai": "PASS_REFUSED",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "elixir-plug": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "no_detector",
+   "cause_ai": "no_detector"
+  },
+  "gh-2048": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "static_nginx",
+   "cause_ai": "static_nginx"
+  },
+  "gh-angular-realworld": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "upstream",
+   "cause_ai": "upstream"
+  },
+  "gh-axum-hello-world": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "workspace",
+   "cause_ai": "workspace"
+  },
+  "gh-chi-library": {
+   "noai": "FAIL_FALSE_POSITIVE",
+   "ai": "FAIL_FALSE_POSITIVE",
+   "cause_noai": "false_positive",
+   "cause_ai": "false_positive"
+  },
+  "gh-dashy": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "gh-docker-getting-started": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "upstream",
+   "cause_ai": "upstream"
+  },
+  "gh-docker-getting-started-app": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "start_ignored",
+   "cause_ai": "start_ignored"
+  },
+  "gh-docker-nodejs-sample": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "start_ignored",
+   "cause_ai": "start_ignored"
+  },
+  "gh-dotnet-aspnetapp": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "gh-example-voting-app": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "compose",
+   "cause_ai": "compose"
+  },
+  "gh-excalidraw": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "gh-flask-library": {
+   "noai": "FAIL_FALSE_POSITIVE",
+   "ai": "FAIL_FALSE_POSITIVE",
+   "cause_noai": "false_positive",
+   "cause_ai": "false_positive"
+  },
+  "gh-full-stack-fastapi": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "blocked_policy",
+   "cause_ai": "blocked_policy"
+  },
+  "gh-gatsby-starter-blog": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "wrong_start",
+   "cause_ai": "wrong_start"
+  },
+  "gh-gin-realworld": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "needs_config",
+   "cause_ai": "needs_config"
+  },
+  "gh-go-httpbin": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "gh-hackathon-starter": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "needs_config",
+   "cause_ai": "needs_config"
+  },
+  "gh-hello-world-empty": {
+   "noai": "PASS_REFUSED",
+   "ai": "PASS_REFUSED",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "gh-heroku-go": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "toolchain",
+   "cause_ai": "toolchain"
+  },
+  "gh-heroku-java": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "wrong_port",
+   "cause_ai": "wrong_port"
+  },
+  "gh-heroku-node": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "wrong_port",
+   "cause_ai": "wrong_port"
+  },
+  "gh-heroku-php": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "wrong_start",
+   "cause_ai": "wrong_start"
+  },
+  "gh-heroku-python": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "localhost",
+   "cause_ai": "localhost"
+  },
+  "gh-heroku-ruby": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "toolchain",
+   "cause_ai": "toolchain"
+  },
+  "gh-homepage": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "gh-html5-boilerplate": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "start_ignored",
+   "cause_ai": "static_nginx"
+  },
+  "gh-httpbin": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "arm64",
+   "cause_ai": "arm64"
+  },
+  "gh-hugo-basic-example": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "no_detector",
+   "cause_ai": "no_detector"
+  },
+  "gh-it-tools": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "gh-jekyll-now": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "static_nginx",
+   "cause_ai": "static_nginx"
+  },
+  "gh-laravel": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "toolchain",
+   "cause_ai": "toolchain"
+  },
+  "gh-linux-tweet-app": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "gh-mdn-beginner-html": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "static_nginx",
+   "cause_ai": "static_nginx"
+  },
+  "gh-memos": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "gh-miniflux": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "wrong_start",
+   "cause_ai": "wrong_start"
+  },
+  "gh-nest-typescript-starter": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "node18",
+   "cause_ai": "node18"
+  },
+  "gh-node-docker-good-defaults": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "arm64",
+   "cause_ai": "arm64"
+  },
+  "gh-node-realworld": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "upstream",
+   "cause_ai": "upstream"
+  },
+  "gh-nuxt-starter": {
+   "noai": "FAIL_ACCEPT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "no_workloads",
+   "cause_ai": "no_workloads"
+  },
+  "gh-podinfo": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "gh-revealjs": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "node18",
+   "cause_ai": "node18"
+  },
+  "gh-spring-gs-rest-service": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "toolchain",
+   "cause_ai": "toolchain"
+  },
+  "gh-spring-petclinic": {
+   "noai": "FAIL_ACCEPT",
+   "ai": "FAIL_ACCEPT",
+   "cause_noai": "no_workloads",
+   "cause_ai": "no_workloads"
+  },
+  "gh-startbootstrap-landing": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "static_nginx",
+   "cause_ai": "static_nginx"
+  },
+  "gh-static-website-example": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "static_nginx",
+   "cause_ai": "static_nginx"
+  },
+  "gh-streamlit-example": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "start_ignored",
+   "cause_ai": "start_ignored"
+  },
+  "gh-svelte-template": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "localhost",
+   "cause_ai": "localhost"
+  },
+  "gh-uptime-kuma": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "gh-vaultwarden": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": "needs_config",
+   "cause_ai": null
+  },
+  "gh-vite-template-react": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "node18",
+   "cause_ai": "node18"
+  },
+  "gh-vite-template-svelte-ts": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "node18",
+   "cause_ai": "node18"
+  },
+  "gh-vite-template-vanilla": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "static_as_node",
+   "cause_ai": "static_as_node"
+  },
+  "gh-vite-template-vue": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "node18",
+   "cause_ai": "node18"
+  },
+  "gh-welcome-to-docker": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "gh-whoami": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "go-cmd-layout": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "go-gin": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "go-makefile": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "go-nethttp": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-adminer": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-caddy": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-code-server": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-dozzle": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "needs_config",
+   "cause_ai": "needs_config"
+  },
+  "img-excalidraw": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-filebrowser": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-ghost": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "needs_config",
+   "cause_ai": "needs_config"
+  },
+  "img-gitea": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-go-httpbin": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-grafana": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-homepage": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-httpbin": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-httpd": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-it-tools": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-mailpit": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-miniflux": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "needs_config",
+   "cause_ai": "needs_config"
+  },
+  "img-n8n": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-nginx": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-podinfo": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-postgres": {
+   "noai": "PASS_REFUSED",
+   "ai": "PASS_REFUSED",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-redis": {
+   "noai": "PASS_REFUSED",
+   "ai": "PASS_REFUSED",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-uptime-kuma": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "img-vaultwarden": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "needs_config",
+   "cause_ai": "needs_config"
+  },
+  "img-whoami": {
+   "noai": "PASS_WITH_INPUT",
+   "ai": "PASS_WITH_INPUT",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "java-plain": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "no_detector",
+   "cause_ai": "no_detector"
+  },
+  "java-spring-gradle": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "no_detector",
+   "cause_ai": "no_detector"
+  },
+  "java-spring-maven": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "toolchain",
+   "cause_ai": "toolchain"
+  },
+  "js-angular": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "node18",
+   "cause_ai": "node18"
+  },
+  "js-astro-static": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "static_as_node",
+   "cause_ai": "static_as_node"
+  },
+  "js-bun": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "toolchain",
+   "cause_ai": "toolchain"
+  },
+  "js-deno": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "no_detector",
+   "cause_ai": "no_detector"
+  },
+  "js-express": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "js-express-no-start": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "wrong_port",
+   "cause_ai": "wrong_port"
+  },
+  "js-fastify-ts": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "js-koa": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "wrong_port",
+   "cause_ai": "wrong_port"
+  },
+  "js-localhost-trap": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "localhost",
+   "cause_ai": "localhost"
+  },
+  "js-nextjs": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "node18",
+   "cause_ai": "node18"
+  },
+  "js-node-http-esm": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "js-pnpm": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "js-procfile": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": "wrong_port",
+   "cause_ai": null
+  },
+  "js-vite-react": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "node18",
+   "cause_ai": "node18"
+  },
+  "js-vite-svelte": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "node18",
+   "cause_ai": "node18"
+  },
+  "js-vite-vue": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "node18",
+   "cause_ai": "node18"
+  },
+  "js-yarn": {
+   "noai": "PASS_ZERO_TOUCH",
+   "ai": "PASS_ZERO_TOUCH",
+   "cause_noai": null,
+   "cause_ai": null
+  },
+  "php-composer-slim": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "wrong_port",
+   "cause_ai": "wrong_port"
+  },
+  "php-plain": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "no_detector",
+   "cause_ai": "no_detector"
+  },
+  "py-django": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "localhost",
+   "cause_ai": "localhost"
+  },
+  "py-fastapi": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "localhost",
+   "cause_ai": "localhost"
+  },
+  "py-flask": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "start_ignored",
+   "cause_ai": "start_ignored"
+  },
+  "py-flask-gunicorn-procfile": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "port_env",
+   "cause_ai": "port_env"
+  },
+  "py-poetry": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "start_ignored",
+   "cause_ai": "start_ignored"
+  },
+  "py-stdlib": {
+   "noai": "FAIL_DETECT",
+   "ai": "FAIL_DETECT",
+   "cause_noai": "no_detector",
+   "cause_ai": "no_detector"
+  },
+  "py-streamlit": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "start_ignored",
+   "cause_ai": "start_ignored"
+  },
+  "py-uv": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "localhost",
+   "cause_ai": "localhost"
+  },
+  "ruby-sinatra": {
+   "noai": "FAIL_DEPLOY",
+   "ai": "FAIL_DEPLOY",
+   "cause_noai": "toolchain",
+   "cause_ai": "toolchain"
+  },
+  "rust-axum": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "wrong_port",
+   "cause_ai": "wrong_port"
+  },
+  "static-docs-dir": {
+   "noai": "FAIL_ACCEPT",
+   "ai": "FAIL_ACCEPT",
+   "cause_noai": "no_workloads",
+   "cause_ai": "no_workloads"
+  },
+  "static-multipage": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "static_nginx",
+   "cause_ai": "static_nginx"
+  },
+  "static-plain": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "static_nginx",
+   "cause_ai": "static_nginx"
+  },
+  "static-public-dir": {
+   "noai": "FAIL_UNREACHABLE",
+   "ai": "FAIL_UNREACHABLE",
+   "cause_noai": "static_nginx",
+   "cause_ai": "static_nginx"
+  }
+ }
+}
