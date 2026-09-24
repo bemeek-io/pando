@@ -19,6 +19,18 @@ Unreleased above it. -->
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-24
+
+Pando is now installed from a prebuilt, signed image rather than built on the host. An existing
+installation, whether it moves to the image or keeps building from a clone, needs its data volume's
+owner changed once, because the server now runs as a different user; a clone's build also needs a
+Docker account now. Both are in the upgrade notes.
+
+### Security
+
+No new advisories. The server image is new in this release: it is built on Docker Hardened Images,
+runs the server as a non-root user, and is scanned with Trivy before it is published.
+
 ### Added
 
 - **A prebuilt server image, `trypando/pando` on Docker Hub** (#52). Installing no longer means
