@@ -721,6 +721,10 @@ func serve(ctx context.Context, configPath string) error {
 		TeardownNow: teardownNow,
 		Clock:       clock.System{},
 
+		// A deleted app's build cache and uploaded source (R-224, issue #55).
+		BuildCaches:   buildCaches{registry},
+		DiscardUpload: source.DiscardUpload,
+
 		// R-211's rolling backups, which had a column, a default and an expiry
 		// query and nothing that ever took one.
 		Backups:      backups,
@@ -1118,6 +1122,19 @@ func (a registryAdapters) Runtime(ref string) (adapterapi.RuntimeAdapter, bool) 
 
 func (a registryAdapters) Routing(ref string) (adapterapi.RoutingAdapter, bool) {
 	return a.r.Routing(ref)
+}
+
+// buildCaches resolves the builder that built a deleted app. A builder that is
+// no longer configured holds nothing Pando can reach, so there is nothing to
+// forget.
+type buildCaches struct{ r *adapterapi.Registry }
+
+func (b buildCaches) Forget(ctx context.Context, builderRef, appID string) error {
+	builder, ok := b.r.Builder(builderRef)
+	if !ok {
+		return nil
+	}
+	return builder.Forget(ctx, appID)
 }
 
 // reconcilerAuditor writes the reconciler's events to the audit log.

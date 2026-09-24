@@ -99,7 +99,7 @@ func fetchGit(ctx context.Context, src spec.Source) (*Checkout, error) {
 	for attempt := 1; attempt <= fetchAttempts; attempt++ {
 		var co *Checkout
 		co, err = fetchGitOnce(ctx, src)
-		if err == nil || !transient(err) || ctx.Err() != nil {
+		if err == nil || !transient(err) || ctx.Err() != nil || attempt == fetchAttempts {
 			return co, err
 		}
 		select {

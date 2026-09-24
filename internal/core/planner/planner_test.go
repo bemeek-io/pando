@@ -103,6 +103,7 @@ func (f *fakeBuilder) Bid(context.Context, api.SourceView) (api.Bid, error) {
 func (f *fakeBuilder) Build(context.Context, api.BuildRequest) (api.BuildResult, error) {
 	return api.BuildResult{}, nil
 }
+func (f *fakeBuilder) Forget(context.Context, string) error { return nil }
 
 type fixedAllocations struct{ alloc planner.Allocation }
 

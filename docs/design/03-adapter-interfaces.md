@@ -245,6 +245,11 @@ type BuilderAdapter interface {
     Bid(ctx context.Context, src SourceView) (Bid, error)
 
     Build(ctx context.Context, req BuildRequest) (BuildResult, error)
+
+    // Forget removes what the builder keeps for an app between builds (its
+    // build cache) once the app is deleted. Called by the GC's teardown;
+    // idempotent. R-224: a deleted app's cache had stayed on disk forever.
+    Forget(ctx context.Context, namespace string) error
 }
 
 type Bid struct {

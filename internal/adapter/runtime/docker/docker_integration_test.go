@@ -115,6 +115,78 @@ func inContainer(t *testing.T, bundleID, workload string, args ...string) string
 	return string(out)
 }
 
+// dockerCLI runs a docker command and returns its trimmed output.
+func dockerCLI(args ...string) (string, error) {
+	out, err := exec.Command("docker", args...).CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+// TestR224_AnAnonymousVolumeGoesWithItsContainer asserts R-224. An image that
+// declares VOLUME got an unnamed volume on every container, and each one
+// outlived it: one more per redeploy, and all of them after the app was
+// deleted (issue #55).
+func TestR224_AnAnonymousVolumeGoesWithItsContainer(t *testing.T) {
+	ctx := context.Background()
+	a := adapter(t)
+
+	const img = "pando-it-anonymous-volume:latest"
+	build := exec.Command("docker", "build", "-q", "-t", img, "-")
+	build.Stdin = strings.NewReader("FROM alpine:3.20\nVOLUME /data\n")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Skipf("could not build the test image: %v %s", err, out)
+	}
+	t.Cleanup(func() { _, _ = dockerCLI("rmi", img) })
+
+	id := "test-anon-" + time.Now().Format("150405")
+	plan := bundle(id, nil)
+	plan.Workloads[0].Image = img
+	_, err := a.Apply(ctx, plan)
+	require.NoError(t, err)
+
+	volume, err := dockerCLI("inspect", "pando-"+id+"-web", "--format", "{{range .Mounts}}{{.Name}}{{end}}")
+	require.NoError(t, err)
+	require.NotEmpty(t, volume, "the image's VOLUME got an anonymous volume")
+
+	require.NoError(t, a.Destroy(ctx, api.BundleRef{BundleID: id}, api.DestroyOptions{KeepVolumes: true}))
+	_, err = dockerCLI("volume", "inspect", volume)
+	require.Error(t, err, "the anonymous volume went with its container")
+}
+
+// TestR224_AnImagePandoPulledGoesWithTheLastAppThatRanIt asserts R-224. Images
+// pulled for an app stayed after it was deleted (issue #55); one another app
+// still runs must stay, and so must one that was on the host before.
+func TestR224_AnImagePandoPulledGoesWithTheLastAppThatRanIt(t *testing.T) {
+	ctx := context.Background()
+	a := adapter(t)
+
+	const img = "busybox:1.36.1-musl"
+	if _, err := dockerCLI("image", "inspect", img); err == nil {
+		t.Skipf("%s was on this host before the test, so it is not Pando's to remove", img)
+	}
+
+	stamp := time.Now().Format("150405")
+	first, second := "test-pull-a-"+stamp, "test-pull-b-"+stamp
+	for _, id := range []string{first, second} {
+		cleanup(t, a, id) // before Apply, so a failed Apply leaves nothing either
+		plan := bundle(id, nil)
+		plan.Workloads[0].Image = img
+		if _, err := a.Apply(ctx, plan); err != nil {
+			if strings.Contains(err.Error(), "429") || strings.Contains(strings.ToLower(err.Error()), "rate limit") {
+				t.Skipf("the registry is rate-limiting this host: %v", err)
+			}
+			require.NoError(t, err)
+		}
+	}
+
+	require.NoError(t, a.Destroy(ctx, api.BundleRef{BundleID: first}, api.DestroyOptions{}))
+	_, err := dockerCLI("image", "inspect", img)
+	require.NoError(t, err, "the other app still runs it")
+
+	require.NoError(t, a.Destroy(ctx, api.BundleRef{BundleID: second}, api.DestroyOptions{}))
+	_, err = dockerCLI("image", "inspect", img)
+	require.Error(t, err, "nobody runs it and Pando fetched it: removed")
+}
+
 func cleanup(t *testing.T, a *dockeradapter.Adapter, bundleID string) {
 	t.Helper()
 	t.Cleanup(func() {
@@ -463,6 +535,9 @@ func TestR023_ProxyRejoinsRunningAppsNetworksAfterItIsReplaced(t *testing.T) {
 
 	id := "test-rejoin-" + time.Now().Format("150405")
 	cleanup(t, a, id)
+	// Cleanups run last-registered first. The stand-in proxy has to leave the
+	// app's network before Destroy removes it, or the network is left behind.
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", proxy).Run() })
 	_, err := a.Apply(ctx, bundle(id, nil))
 	require.NoError(t, err)
 

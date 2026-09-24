@@ -50,7 +50,7 @@ func (a *Adapter) Trial(ctx context.Context, req api.TrialRequest) (api.TrialRes
 	}
 	defer func() { _ = a.cli.NetworkRemove(context.WithoutCancel(ctx), networkID) }()
 
-	if err := a.ensureImage(ctx, req.Image); err != nil {
+	if err := a.ensureImage(ctx, req.Image, forTrial); err != nil {
 		return api.TrialResult{}, err
 	}
 
@@ -258,7 +258,7 @@ func (a *Adapter) everStarted(ctx context.Context, id string) bool {
 // Failure here is not an error. An unobserved port turns a deferred question
 // back into one a person answers, which is worse but not broken.
 func (a *Adapter) observePorts(ctx context.Context, targetID string) (routable, loopback []int, ok bool) {
-	if err := a.ensureImage(ctx, trialImage); err != nil {
+	if err := a.ensureImage(ctx, trialImage, imageClaim{}); err != nil {
 		return nil, nil, false
 	}
 

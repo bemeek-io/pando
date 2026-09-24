@@ -311,6 +311,11 @@ func (a *Adapter) Build(ctx context.Context, req api.BuildRequest) (api.BuildRes
 			"The build failed.", err).
 			WithRemedy("Check the build logs above for the failing step.")
 	}
+
+	// The export just rewrote the cache's index; what it no longer reaches is
+	// an earlier build's, and would otherwise stay for the life of the app.
+	_, _ = pruneCacheDir(cacheDir)
+
 	return api.BuildResult{ImageRef: imageRef}, nil
 }
 

@@ -630,6 +630,12 @@ type BuilderAdapter interface {
 	Bid(ctx context.Context, src SourceView) (Bid, error)
 
 	Build(ctx context.Context, req BuildRequest) (BuildResult, error)
+
+	// Forget removes what the builder keeps for an app between builds — its
+	// build cache — once the app is deleted. The namespace is the app's ID,
+	// the prefix of every CacheNamespace it built under. Idempotent: an app
+	// that never built, or was already forgotten, is not an error.
+	Forget(ctx context.Context, namespace string) error
 }
 
 // SourceView is a read-only view of an app's source (R-020).

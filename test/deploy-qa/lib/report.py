@@ -313,6 +313,21 @@ md = [f"## Pando deploy QA — {st.get('run_started', '')} — {st.get('git_ref'
       f"- Without AI: **{a_no}/{n} ({pct(a_no, n)})** · change since baseline {H(BASE.get('run', ''))}: {a_no - b_pass:+d}"]
 if AI:
     md.append(f"- With AI: **{a_ai}/{n} ({pct(a_ai, n)})** · regressions {len(reg)} · fixes {len(fix)}")
+
+# What Pando's own delete left behind, found before the harness swept it
+# (cleanup.left_by_pando). Zero is the expectation: anything here is a leak.
+leaked = []
+for label in ("noai", "ai"):
+    if os.path.exists(state.results_file(label)):
+        for line in open(state.results_file(label)):
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if row.get("pando_left"):
+                leaked.append(f"{row['id']} ({label}: {', '.join(sorted(row['pando_left']))})")
+md.append(f"- Left behind by Pando's own delete: {len(leaked)} apps" + (f" — {'; '.join(leaked[:20])}" if leaked else ""))
+
 md += [f"- Newly passing: {', '.join(newly_pass) or 'none'}", f"- Newly failing: {', '.join(newly_fail) or 'none'}", "",
        "| Cause | Without AI" + (" | With AI |" if AI else " |"), "|---|---" + ("|---|" if AI else "|")]
 for k, l, a, b, ids in cause_rows:

@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/errs"
 )
 
 // The toolchain settings Pando supplies when the repository is silent, each of
@@ -108,4 +111,154 @@ func TestR104_APythonWebAppIsStartedUnderItsServer(t *testing.T) {
 		"main.py": "from fastapi import FastAPI\napi = FastAPI()\n", "requirements.txt": "fastapi\n",
 	})
 	require.Empty(t, pythonAppStart(noServer), "a server the app does not install is not named")
+
+	flask := writeFiles(t, map[string]string{
+		"app.py":           "from flask import Flask\nserver = Flask(__name__)\n",
+		"requirements.txt": "flask\ngunicorn\n",
+	})
+	require.Equal(t, "gunicorn app:server --bind 0.0.0.0:${PORT:-8000}", pythonAppStart(flask))
+}
+
+// A Django app's collectstatic becomes the build step when nothing else
+// declares one, and does not displace a build the repository declares.
+func TestR095_DjangosCollectstaticIsTheBuildWhenNoneIsDeclared(t *testing.T) {
+	files := map[string]string{"manage.py": "#!/usr/bin/env python"}
+	dir := writeFiles(t, files)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "site"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "site", "settings.py"), []byte("STATIC_ROOT = 'static'\n"), 0o644))
+	require.Equal(t, "python manage.py collectstatic --noinput", declaredFor(api.BuildRequest{}, dir).Build)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Makefile"), []byte("build:\n\tpython build.py\n"), 0o644))
+	require.NotEqual(t, "python manage.py collectstatic --noinput", declaredFor(api.BuildRequest{}, dir).Build,
+		"the repository's own build outranks the convention")
+}
+
+// The lockfile's Ruby is used when the Gemfile names none, and the Gemfile's
+// wins when both do: it is the declaration Bundler enforces.
+func TestARubyVersionIsReadFromTheLockfileWhenTheGemfileIsSilent(t *testing.T) {
+	lock := "GEM\n  specs:\n\nRUBY VERSION\n   ruby 3.1.6p260\n"
+	dir := writeFiles(t, map[string]string{"Gemfile": "gem 'rack'\n", "Gemfile.lock": lock})
+	ensureRubyVersion(dir)
+	body, err := os.ReadFile(filepath.Join(dir, ".ruby-version"))
+	require.NoError(t, err)
+	require.Equal(t, "3.1.6\n", string(body))
+
+	both := writeFiles(t, map[string]string{"Gemfile": "ruby '3.3.1'\n", "Gemfile.lock": lock})
+	ensureRubyVersion(both)
+	body, err = os.ReadFile(filepath.Join(both, ".ruby-version"))
+	require.NoError(t, err)
+	require.Equal(t, "3.3.1\n", string(body))
+
+	notRuby := writeFiles(t, map[string]string{"go.mod": "module x\n"})
+	ensureRubyVersion(notRuby)
+	_, err = os.Stat(filepath.Join(notRuby, ".ruby-version"))
+	require.True(t, os.IsNotExist(err), "only a Ruby project gets a Ruby version")
+}
+
+// A poetry.lock is a Poetry project even when pyproject.toml does not say so
+// in a [tool.poetry] table, which Poetry 2 projects often do not.
+func TestAPoetryLockfileMakesAPoetryProject(t *testing.T) {
+	require.True(t, poetryProject(writeFiles(t, map[string]string{"poetry.lock": ""})))
+	require.False(t, poetryProject(writeFiles(t, map[string]string{"pyproject.toml": "[project]\nname = \"x\"\n"})))
+	require.False(t, poetryProject(t.TempDir()))
+}
+
+// A Heroku launcher's options are skipped, whether or not they take a value,
+// and a launcher with no document root serves the repository root.
+func TestAHerokuPHPLaunchersOptionsAreNotTheDocumentRoot(t *testing.T) {
+	root, ok := herokuPHPRoot("heroku-php-apache2 --verbose -F fpm.conf docs/")
+	require.True(t, ok)
+	require.Equal(t, "docs", root)
+
+	root, ok = herokuPHPRoot("heroku-php-nginx")
+	require.True(t, ok)
+	require.Empty(t, root, "no argument means the repository root")
+}
+
+// A Node version is declared only by a non-empty engines.node string in a
+// package.json that parses.
+func TestANodeVersionIsDeclaredOnlyByEnginesNode(t *testing.T) {
+	require.True(t, declaresNodeVersion(writeFiles(t, map[string]string{"package.json": `{"engines":{"node":"20"}}`})))
+	require.False(t, declaresNodeVersion(writeFiles(t, map[string]string{"package.json": `{"engines":{"node":" "}}`})))
+	require.False(t, declaresNodeVersion(writeFiles(t, map[string]string{"package.json": `{"engines":`})))
+	require.False(t, declaresNodeVersion(t.TempDir()))
+}
+
+// A version file's contents reach nixpacks as a flag value, so anything that
+// is not a plain version is refused rather than passed on.
+func TestAVersionFileHoldsOnlyAVersion(t *testing.T) {
+	require.True(t, safeVersion("20.11.1"))
+	require.True(t, safeVersion("20.x"))
+	require.False(t, safeVersion("20 --inspect"))
+	require.False(t, safeVersion("lts/iron"))
+	require.False(t, safeVersion("1.2.3.4.5.6.7.8.9"))
+
+	dir := writeFiles(t, map[string]string{"package.json": `{}`, ".node-version": "lts/iron\n"})
+	require.Equal(t, []string{"--env", "NIXPACKS_NODE_VERSION=" + defaultNodeVersion}, toolchainDefaults(dir),
+		"a version file that is not a version gets the default")
+}
+
+// Every planner writes its Dockerfile to .nixpacks/Dockerfile, and a checkout
+// where that cannot be written fails as a build failure that says so, rather
+// than leaving a plan that is not there.
+func TestAPlanThatCannotBeWrittenIsABuildFailure(t *testing.T) {
+	writers := map[string]func(string) (string, error){
+		"committed program": func(dir string) (string, error) { return writeCommittedProgramPlan(dir, "./server") },
+		"dotnet": func(dir string) (string, error) {
+			return writeDotnetPlan(dir, dotnetBuild{Project: "A.csproj", Assembly: "A", Version: "8.0"})
+		},
+		"jvm": func(dir string) (string, error) { return writeJVMPlan(dir, jvmBuild{Tool: "maven", JDK: 21}) },
+		"go":  func(dir string) (string, error) { return writeGoPlan(dir, goBuild{Version: "1.24", Package: "."}) },
+		"node": func(dir string) (string, error) {
+			return writeNodeServerPlan(dir, nodeServer{Node: "22", Install: "npm ci", Start: "npm start"})
+		},
+		"static site": func(dir string) (string, error) {
+			return writeStaticSitePlan(dir, staticSite{Framework: "vite", OutDir: "dist", Install: "npm ci", Node: "22"})
+		},
+	}
+	for name, write := range writers {
+		t.Run(name, func(t *testing.T) {
+			// .nixpacks is a file, so the directory cannot be made.
+			blocked := writeFiles(t, map[string]string{".nixpacks": ""})
+			_, err := write(blocked)
+			require.Equal(t, errs.BuildFailed, errs.CodeOf(err))
+			require.Equal(t, "Could not prepare the build.", errs.As(err).Message)
+
+			// .nixpacks/Dockerfile is a directory, so the file cannot be written.
+			occupied := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(occupied, ".nixpacks", "Dockerfile"), 0o755))
+			_, err = write(occupied)
+			require.Equal(t, errs.BuildFailed, errs.CodeOf(err))
+		})
+	}
+}
+
+// A single project file is read for its target framework and assembly. One
+// that cannot be read, targets no framework, or names an assembly that could
+// not be written plainly into a Dockerfile is left to nixpacks.
+func TestADotnetProjectIsReadOnlyWhenItSaysWhatItBuilds(t *testing.T) {
+	named, ok := readDotnetBuild(writeFiles(t, map[string]string{
+		"Api.fsproj": "<TargetFramework>net8.0</TargetFramework><AssemblyName>Shop.Web</AssemblyName>",
+	}))
+	require.True(t, ok)
+	require.Equal(t, dotnetBuild{Project: "Api.fsproj", Assembly: "Shop.Web", Version: "8.0"}, named)
+
+	_, ok = readDotnetBuild(writeFiles(t, map[string]string{"Api.csproj": "<TargetFrameworks>net8.0;net9.0</TargetFrameworks>"}))
+	require.False(t, ok, "no single target framework")
+
+	_, ok = readDotnetBuild(writeFiles(t, map[string]string{"My App.csproj": "<TargetFramework>net8.0</TargetFramework>"}))
+	require.False(t, ok, "a project name with a space is not written into a command")
+
+	unreadable := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(unreadable, "Api.csproj"), 0o755))
+	_, ok = readDotnetBuild(unreadable)
+	require.False(t, ok, "a directory named like a project is not one")
+
+	planDir := t.TempDir()
+	name, err := writeDotnetPlan(planDir, named)
+	require.NoError(t, err)
+	body, err := os.ReadFile(filepath.Join(planDir, name))
+	require.NoError(t, err)
+	require.Contains(t, string(body), "RUN dotnet publish Api.fsproj -c Release -o /out")
+	require.Contains(t, string(body), `CMD ["exec dotnet Shop.Web.dll"]`)
 }

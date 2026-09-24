@@ -30,6 +30,10 @@ func TestR095_ANodeServerIsBuiltOnTheOfficialNodeImage(t *testing.T) {
 			files: map[string]string{"package.json": `{"name":"x"}`, "index.js": ""},
 			want:  nodeServer{Node: "22", Install: "npm install", Start: "node index.js"},
 		},
+		"no start script, a main that exists": {
+			files: map[string]string{"package.json": `{"main":"run.js"}`, "run.js": "", "index.js": ""},
+			want:  nodeServer{Node: "22", Install: "npm install", Start: "node run.js"},
+		},
 		"an answered start command": {
 			files:  map[string]string{"package.json": `{"name":"x"}`},
 			answer: "node src/index.js",
@@ -48,6 +52,8 @@ func TestR095_ANodeServerIsBuiltOnTheOfficialNodeImage(t *testing.T) {
 		"nothing to start": {"package.json": `{"name":"x"}`},
 		"bun":              {"package.json": `{"scripts":{"start":"bun run x"}}`, "bun.lockb": ""},
 		"workspace root":   {"package.json": `{"workspaces":["apps/*"],"scripts":{"start":"x"}}`},
+		"no package.json":  {"index.js": ""},
+		"malformed":        {"package.json": `{"scripts":`, "index.js": ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, ok := readNodeServer(writeFiles(t, files), "")

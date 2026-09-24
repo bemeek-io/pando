@@ -28,6 +28,16 @@ func TestR240_TheHostSetsWhatEveryNewAppIsGiven(t *testing.T) {
 	require.Equal(t, shipped.DiskBytes, got.DiskBytes)
 }
 
+// TestR240_TheHostSetsMemoryAndDiskForEveryNewApp asserts R-240 for the two
+// limits the CPU test leaves at their shipped values.
+func TestR240_TheHostSetsMemoryAndDiskForEveryNewApp(t *testing.T) {
+	shipped := spec.StandardDefaults().Resources
+	got := config.Apps{MemoryBytes: 2 << 30, DiskBytes: 40 << 30}.Resources(shipped)
+	require.Equal(t, shipped.CPUMillis, got.CPUMillis)
+	require.Equal(t, int64(2<<30), got.MemoryBytes)
+	require.Equal(t, int64(40<<30), got.DiskBytes)
+}
+
 func TestAppLimitsAreTheShippedOnesWhenUnset(t *testing.T) {
 	t.Setenv("PANDO_DATABASE_URL", "postgres://pando@localhost/pando")
 	cfg, err := config.Load("")

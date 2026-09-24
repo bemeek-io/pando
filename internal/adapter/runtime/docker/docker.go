@@ -282,7 +282,7 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 		}
 	}
 
-	if err := a.ensureImage(ctx, w.Image); err != nil {
+	if err := a.ensureImage(ctx, w.Image, forBundle(p.BundleID)); err != nil {
 		return err
 	}
 
@@ -613,6 +613,11 @@ func (a *Adapter) Destroy(ctx context.Context, ref api.BundleRef, opts api.Destr
 			return err
 		}
 	}
+
+	// The images it pulled, which carry no label (images.go). First, because
+	// an image carries this app's claim as a tag, and a built image with a tag
+	// besides its own cannot be removed without force.
+	a.releaseImages(ctx, ref.BundleID)
 
 	// The images built for this app, every one it ever had. A rebuild moves the
 	// tag and leaves the previous image untagged, so they are found by the label
@@ -1098,11 +1103,18 @@ func logConfig(capBytes int64) container.LogConfig {
 // reading a failure — which is the thing logs are for.
 const minDockerLogBytes = 1 << 20 // 1 MiB
 
-func (a *Adapter) ensureImage(ctx context.Context, ref string) error {
+// ensureImage makes sure an image is on the host, pulling it if not.
+//
+// The claim says who the image is for (see images.go): an app's workloads
+// claim it for their bundle, so deleting the app can release it; a trial
+// claims nothing but still marks an image it had to fetch, so the app deployed
+// after it can; Pando's own helper images pass the zero claim and are kept.
+func (a *Adapter) ensureImage(ctx context.Context, ref string, claim imageClaim) error {
 	if ref == "" {
 		return errs.New(errs.ValidInvalid, "This workload has no image to run.")
 	}
 	if _, err := a.cli.ImageInspect(ctx, ref); err == nil {
+		a.claimImage(ctx, ref, claim, false)
 		return nil
 	}
 
@@ -1113,7 +1125,7 @@ func (a *Adapter) ensureImage(ctx context.Context, ref string) error {
 	var err error
 	for attempt := 1; attempt <= 3; attempt++ {
 		err = a.pullOnce(ctx, ref)
-		if err == nil || !pullTransient(err) || ctx.Err() != nil {
+		if err == nil || !pullTransient(err) || ctx.Err() != nil || attempt == 3 {
 			break
 		}
 		select {
@@ -1126,6 +1138,7 @@ func (a *Adapter) ensureImage(ctx context.Context, ref string) error {
 			WithRemedy("Check the image name and tag, that the registry is reachable from this host, " +
 				"and that the image is published for this host's CPU architecture.")
 	}
+	a.claimImage(ctx, ref, claim, true)
 	return nil
 }
 
@@ -1240,8 +1253,16 @@ func (a *Adapter) matchesPlan(ctx context.Context, containerID string, w api.Wor
 	return true, nil
 }
 
+// removeContainer removes a container and its anonymous volumes.
+//
+// An image that declares VOLUME — redis, mysql, postgres and many more — gets
+// an unnamed volume from Docker whenever nothing is mounted there, and it
+// outlived the container: one more on every redeploy, and every one left after
+// the app was deleted (issue #55, R-224). The next container never reattached
+// it, so it held nothing anybody could reach. RemoveVolumes takes only those;
+// the named volumes Pando manages are kept (R-204).
 func (a *Adapter) removeContainer(ctx context.Context, id string) error {
-	err := a.cli.ContainerRemove(ctx, id, container.RemoveOptions{Force: true})
+	err := a.cli.ContainerRemove(ctx, id, container.RemoveOptions{Force: true, RemoveVolumes: true})
 	if err != nil && !cerrdefs.IsNotFound(err) {
 		return errs.Wrap(errs.AdapterFailed, "Could not remove the old container.", err)
 	}

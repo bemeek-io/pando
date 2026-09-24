@@ -297,3 +297,48 @@ func TestO15_AFullPortRangeBlocksTheProposalRatherThanLeavingNoPort(t *testing.T
 	require.Contains(t, proposal.Blocked.Remedy, "Delete an app")
 	require.Zero(t, proposal.DraftSpec.Routing.Port)
 }
+
+// Check refuses what Detect would refuse, without writing anything: an app
+// that is there passes, one that is not is not found, and a lookup that could
+// not be made at all is returned rather than read as either.
+func TestCheckRefusesWhatDetectWouldRefuse(t *testing.T) {
+	db := connected(t)
+	ctx := context.Background()
+
+	repo := repoWith(t, map[string]string{"Dockerfile": "FROM nginx:alpine\nEXPOSE 8080\n"})
+	appID := appFrom(t, db, spec.Source{Type: spec.SourceGit, URL: repo})
+	runner := runnerOver(t, db, corepolicy.Static(corepolicy.Default()))
+
+	require.NoError(t, runner.Check(ctx, appID))
+	require.Equal(t, errs.NotFound, errs.CodeOf(runner.Check(ctx, "app_01HQ8ZZZZZZZZZZZZZZZZZZZZZ")))
+
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	require.Error(t, runner.Check(canceled, appID))
+
+	_, err := state.NewDetections(db).Get(ctx, appID)
+	require.Equal(t, errs.NotFound, errs.CodeOf(err), "checking writes no detection")
+}
+
+// A proposal the database will not store is recorded as a failed detection
+// rather than left running for good. jsonb refuses a NUL character, and a
+// Dockerfile whose CMD carries one puts it in the proposal's evidence.
+func TestADetectionThatCannotBeStoredIsNotLeftRunning(t *testing.T) {
+	db := connected(t)
+	ctx := context.Background()
+
+	repo := repoWith(t, map[string]string{
+		"Dockerfile": "FROM nginx:alpine\nEXPOSE 8080\nCMD [\"nginx\", \"-g\", \"daemon off;\x00\"]\n",
+	})
+	appID := appFrom(t, db, spec.Source{Type: spec.SourceGit, URL: repo})
+
+	_, err := runnerOver(t, db, corepolicy.Static(corepolicy.Default())).Detect(ctx, appID)
+
+	stored, getErr := state.NewDetections(db).Get(ctx, appID)
+	require.NoError(t, getErr)
+	require.NotEqual(t, state.DetectionRunning, stored.Status, "a finished detection is never left running")
+	if err != nil {
+		require.Equal(t, state.DetectionFailed, stored.Status)
+		require.Contains(t, string(stored.Body), "Could not record the detection result.")
+	}
+}

@@ -327,3 +327,147 @@ func TestPlanArgumentsAreReadWhateverTheSpelling(t *testing.T) {
 	require.Equal(t, map[string]string{"K": "v"},
 		planArgs(map[string]string{".nixpacks/build.sh": `docker build . --build-arg=K="v"`}))
 }
+
+// A buildpack build is planned by whichever of Pando's own planners recognizes
+// the repository, in a fixed order, before nixpacks is asked. Each plan is
+// written into .nixpacks/ in the checkout, where detection collects it and the
+// build replays it (R-020).
+func TestABuildpackRepositoryIsPlannedByTheFirstPlannerThatKnowsIt(t *testing.T) {
+	cases := map[string]struct {
+		files map[string]string
+		req   api.BuildRequest
+		want  string
+	}{
+		"a site that builds to static files": {
+			files: map[string]string{"package.json": `{"scripts":{"build":"astro build"},"dependencies":{"astro":"^5"}}`},
+			want:  "COPY --from=build /app/dist/ /usr/share/nginx/html/",
+		},
+		"a site somebody chose to build, in the directory it was found": {
+			files: map[string]string{"package.json": `{"scripts":{"build":"node build.js"}}`, "yarn.lock": ""},
+			req:   api.BuildRequest{StaticDir: "site/"},
+			want:  "COPY --from=build /app/site/ /usr/share/nginx/html/",
+		},
+		"a Node server": {
+			files: map[string]string{"package.json": `{"scripts":{"start":"node server.js"}}`},
+			want:  "# A Node server, built and run on Node 22.",
+		},
+		"a Go program": {
+			files: map[string]string{"go.mod": "module x\n\ngo 1.24\n", "main.go": "package main\n"},
+			want:  "FROM golang:1.24 AS build",
+		},
+		"a .NET project": {
+			files: map[string]string{"Api.csproj": "<TargetFramework>net9.0</TargetFramework>"},
+			want:  "FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build",
+		},
+		"a JVM project": {
+			files: map[string]string{"pom.xml": "<project/>"},
+			want:  "# A Maven project, built on JDK 21.",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := writeFiles(t, tc.files)
+			name, err := buildpackDockerfile(tc.req, root)
+			require.NoError(t, err)
+			require.Equal(t, filepath.Join(".nixpacks", "Dockerfile"), name)
+			body, err := os.ReadFile(filepath.Join(root, name))
+			require.NoError(t, err)
+			require.Contains(t, string(body), tc.want)
+		})
+	}
+}
+
+// A run-build static directory is only planned as a site when there is a
+// package.json to build it with, and never when the directory would climb out
+// of the checkout. Otherwise the repository goes on to the planners after it.
+func TestARunBuildStaticDirectoryNeedsSomethingToBuildIt(t *testing.T) {
+	escaping := writeFiles(t, map[string]string{"package.json": `{"scripts":{"start":"node server.js"}}`})
+	name, err := buildpackDockerfile(api.BuildRequest{StaticDir: "../outside"}, escaping)
+	require.NoError(t, err)
+	body, err := os.ReadFile(filepath.Join(escaping, name))
+	require.NoError(t, err)
+	require.NotContains(t, string(body), "nginx", "an escaping directory is not served")
+	require.Contains(t, string(body), "A Node server")
+
+	noPackage := writeFiles(t, map[string]string{"pom.xml": "<project/>"})
+	name, err = buildpackDockerfile(api.BuildRequest{StaticDir: "dist"}, noPackage)
+	require.NoError(t, err)
+	body, err = os.ReadFile(filepath.Join(noPackage, name))
+	require.NoError(t, err)
+	require.Contains(t, string(body), "A Maven project", "without a package.json there is nothing to run the build")
+}
+
+// An answered start command means the app is run, not served as files, and a
+// Go program with one is left to nixpacks rather than compiled by Pando's plan,
+// because the command runs in nixpacks' image, which has Go on its PATH.
+func TestAnAnsweredStartCommandSkipsTheStaticAndGoPlanners(t *testing.T) {
+	site := writeFiles(t, map[string]string{"package.json": `{"scripts":{"build":"astro build"},"dependencies":{"astro":"^5"}}`})
+	name, err := buildpackDockerfile(api.BuildRequest{StartCommand: "node serve.js"}, site)
+	require.NoError(t, err)
+	body, err := os.ReadFile(filepath.Join(site, name))
+	require.NoError(t, err)
+	require.Contains(t, string(body), `CMD ["node serve.js"]`, "the answered command is the Node server's start")
+
+	if _, lookErr := exec.LookPath(nixpacksBinary); lookErr == nil {
+		t.Skip("nixpacks is on PATH, so the Go case would be planned by it")
+	}
+	program := writeFiles(t, map[string]string{"go.mod": "module x\ngo 1.24\n", "main.go": "package main\n"})
+	_, err = buildpackDockerfile(api.BuildRequest{StartCommand: "go run ."}, program)
+	require.Equal(t, errs.PlanCapabilityUnsupported, errs.CodeOf(err),
+		"without nixpacks, a Go program with a start command has no planner")
+	_, statErr := os.Stat(filepath.Join(program, ".nixpacks", "Dockerfile"))
+	require.True(t, os.IsNotExist(statErr), "Pando's Go plan was not written")
+}
+
+// When nixpacks cannot plan the repository, a start command that runs a
+// program committed in it is planned as that program, run as it is (issue
+// #55). Without nixpacks installed the generator fails at once, which reaches
+// the same fallback.
+func TestR094_ACommittedProgramIsPlannedWhenNixpacksHasNothingToSay(t *testing.T) {
+	if _, err := exec.LookPath(nixpacksBinary); err == nil {
+		t.Skip("nixpacks is on PATH and may plan this repository itself")
+	}
+	root := writeFiles(t, map[string]string{"server": "\x7fELF", "Procfile": "web: ./server --verbose\n"})
+	name, err := buildpackDockerfile(api.BuildRequest{}, root)
+	require.NoError(t, err)
+	body, err := os.ReadFile(filepath.Join(root, name))
+	require.NoError(t, err)
+	require.Contains(t, string(body), "FROM "+committedProgramImage)
+	require.Contains(t, string(body), `CMD ["./server --verbose"]`)
+
+	// An answered start command outranks the Procfile and is what runs.
+	answered := writeFiles(t, map[string]string{"server": "\x7fELF"})
+	name, err = buildpackDockerfile(api.BuildRequest{StartCommand: "./server --port $PORT"}, answered)
+	require.NoError(t, err)
+	body, err = os.ReadFile(filepath.Join(answered, name))
+	require.NoError(t, err)
+	require.Contains(t, string(body), `CMD ["./server --port $PORT"]`)
+}
+
+// A repository nothing recognizes fails with the generator's reason. Without
+// nixpacks on the host, that reason is that this installation has no planner,
+// with a remedy that names what to do instead (R-105). The generator is still
+// prepared for first: a Ruby project gets the .ruby-version nixpacks requires.
+func TestAnUnrecognizedRepositoryFailsWithTheGeneratorsReason(t *testing.T) {
+	root := writeFiles(t, map[string]string{"Gemfile": "ruby '3.2.4'\n"})
+	_, err := buildpackDockerfile(api.BuildRequest{}, root)
+	require.Error(t, err)
+	require.NotEmpty(t, errs.As(err).Remedy, "R-105 promises a way forward")
+	if _, lookErr := exec.LookPath(nixpacksBinary); lookErr != nil {
+		require.Equal(t, errs.PlanCapabilityUnsupported, errs.CodeOf(err))
+	}
+
+	body, readErr := os.ReadFile(filepath.Join(root, ".ruby-version"))
+	require.NoError(t, readErr)
+	require.Equal(t, "3.2.4\n", string(body))
+}
+
+// Plan returns every file the planner wrote, so the spec carries the plan
+// itself (R-020), and names the Dockerfile among them.
+func TestR020_PlanReturnsThePlanItWrote(t *testing.T) {
+	root := writeFiles(t, map[string]string{"pom.xml": "<project/>"})
+	files, name, _, err := New().Plan(t.Context(), view{root: root})
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(".nixpacks", "Dockerfile"), name)
+	require.Contains(t, files[".nixpacks/Dockerfile"], "A Maven project")
+}

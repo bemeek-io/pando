@@ -74,6 +74,7 @@ func (stubBuilder) Bid(context.Context, api.SourceView) (api.Bid, error) { retur
 func (stubBuilder) Build(context.Context, api.BuildRequest) (api.BuildResult, error) {
 	return api.BuildResult{}, nil
 }
+func (stubBuilder) Forget(context.Context, string) error { return nil }
 
 type stubSecrets struct{ base }
 

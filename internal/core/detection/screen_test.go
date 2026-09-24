@@ -279,3 +279,38 @@ func TestR330_ScreeningDoesNotReRankTheAuction(t *testing.T) {
 	require.Equal(t, winner.Evidence, p.Winner.Evidence)
 	require.Equal(t, runnersUp, p.RunnersUp)
 }
+
+// TestR338_AScreenedAnswerThatCannotBecomeASpecIsRefused asserts R-338. The
+// screener answered build_method in prose ("serve the repository root with
+// php -S …") and it was applied to nothing (issue #55). An answer naming no
+// reading a detector made is refused, with the reason a person would be given,
+// and the question stays asked.
+func TestR338_AScreenedAnswerThatCannotBecomeASpecIsRefused(t *testing.T) {
+	p := proposal()
+	p.Winner.Draft = detect.Draft{Workloads: p.DraftSpec.Workloads}
+	p.Questions = []detect.Question{{
+		Key: detect.KeyBuildMethod, Kind: api.QuestionChoice,
+		Options: []string{string(spec.BuildBuildpack)},
+		Prompt:  "Pando could not tell how this app is built.",
+	}}
+	p.Status = detect.StatusNeedsAnswers
+	before := p.DraftSpec
+
+	prose := "serve the repository root with php -S 0.0.0.0:8000"
+	outcome := (&Runner{Screener: &fakeScreener{result: api.ScreenResult{
+		Amendments: []api.Amendment{{
+			Kind: api.AmendAnswerQuestion, Key: detect.KeyBuildMethod, Value: prose,
+			Reason:   "The start script serves the repository root.",
+			Evidence: []string{"server.js"},
+		}},
+	}}}).screen(context.Background(), "app_x", &p, checkout)
+
+	require.True(t, outcome.Ran)
+	require.Empty(t, outcome.Answers)
+	require.Len(t, outcome.Refused, 1)
+	require.Equal(t, detect.KeyBuildMethod, outcome.Refused[0].Amendment.Key)
+	require.Equal(t, prose, outcome.Refused[0].Amendment.Value)
+	require.Contains(t, outcome.Refused[0].Reason, "is not one of the ways Pando found to build this app")
+	require.Len(t, p.Questions, 1, "the question is still asked")
+	require.Equal(t, before, p.DraftSpec)
+}

@@ -65,6 +65,42 @@ func TestR110_BuiltSitesAreRecognizedInTheShapesTheyComeIn(t *testing.T) {
 			},
 			out: "dist/shop/browser", node: "22",
 		},
+		"vite served by a static server over its own directory": {
+			files: map[string]string{"package.json": `{"scripts":{"build":"vite build","start":"serve build/"},"devDependencies":{"vite":"^6"}}`, "yarn.lock": ""},
+			out:   "build", node: "22",
+		},
+		"angular browser builder, output path as an object": {
+			files: map[string]string{
+				"package.json": `{"scripts":{"build":"ng build"},"dependencies":{"@angular/core":"^18"}}`,
+				"angular.json": `{"defaultProject":"shop","projects":{"shop":{"architect":{"build":{"options":{"outputPath":{"base":"out/shop"}}}}}}}`,
+			},
+			out: "out/shop/browser", node: "22",
+		},
+		"angular output path naming its browser directory": {
+			files: map[string]string{
+				"package.json": `{"scripts":{"build":"ng build"},"dependencies":{"@angular/core":"^18"}}`,
+				"angular.json": `{"projects":{"shop":{"architect":{"build":{"options":{"outputPath":{"base":"out","browser":""}}}}}}}`,
+			},
+			out: "out", node: "22",
+		},
+		"angular browser builder with no output path": {
+			files: map[string]string{
+				"package.json": `{"scripts":{"build":"ng build"},"dependencies":{"@angular/core":"^17"}}`,
+				"angular.json": `{"projects":{"admin":{"architect":{"build":{"builder":"@angular-devkit/build-angular:browser"}}}}}`,
+			},
+			out: "dist/admin", node: "22",
+		},
+		"angular with no angular.json": {
+			files: map[string]string{"package.json": `{"scripts":{"build":"ng build"},"dependencies":{"@angular/core":"^17"}}`},
+			out:   "dist", node: "22",
+		},
+		"angular with an unreadable angular.json": {
+			files: map[string]string{
+				"package.json": `{"scripts":{"build":"ng build"},"dependencies":{"@angular/core":"^17"}}`,
+				"angular.json": `{"projects":`,
+			},
+			out: "dist", node: "22",
+		},
 		"gatsby with a pinned node": {
 			files: map[string]string{
 				"package.json": `{"scripts":{"build":"gatsby build","start":"gatsby develop"},"dependencies":{"gatsby":"^5"}}`,
@@ -99,6 +135,33 @@ func TestAServedDirectoryCannotLeaveTheBuild(t *testing.T) {
 		"package.json": `{"scripts":{"build":"x","start":"serve ../../etc"}}`,
 	}))
 	require.False(t, ok)
+
+	// The same with a known framework, whose own output directory would
+	// otherwise have been used.
+	_, ok = readStaticSiteBuild(writeFiles(t, map[string]string{
+		"package.json": `{"scripts":{"build":"vite build","start":"serve ../../etc"},"devDependencies":{"vite":"^6"}}`,
+	}))
+	require.False(t, ok)
+}
+
+// A repository with no package.json, or one that does not parse, is not a
+// site that builds.
+func TestAStaticSiteNeedsAPackageJsonThatParses(t *testing.T) {
+	_, ok := readStaticSiteBuild(t.TempDir())
+	require.False(t, ok)
+	_, ok = readStaticSiteBuild(writeFiles(t, map[string]string{"package.json": `{"scripts":`}))
+	require.False(t, ok)
+}
+
+// safeRelative is what keeps a served or built directory inside the build
+// context and out of the shell.
+func TestASafeRelativeDirectoryStaysInsideTheContext(t *testing.T) {
+	for _, dir := range []string{"dist", "dist/", "out/site", "./build"} {
+		require.True(t, safeRelative(dir), dir)
+	}
+	for _, dir := range []string{"", ".", "..", "../x", "/abs", "a b", "x;y", "$HOME", "a/../.."} {
+		require.False(t, safeRelative(dir), dir)
+	}
 }
 
 func TestASiteWithItsOwnServerIsNotTreatedAsStatic(t *testing.T) {

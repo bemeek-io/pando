@@ -51,6 +51,10 @@ type testCase struct {
 		EvidenceContains string   `json:"evidence_contains"`
 		ExpectSlots      []string `json:"expect_slots"`
 		ExpectVolumes    bool     `json:"expect_volumes"`
+
+		// Blocked expects detection to refuse the repository with a reason — a
+		// library, which has nothing to run (R-021).
+		Blocked bool `json:"blocked"`
 	} `json:"expect"`
 }
 
@@ -129,8 +133,11 @@ func runCase(t *testing.T, auction *detect.Auction, c testCase) outcome {
 
 	// A blocked result keeps the winning strategy, so without this check a
 	// compose file Pando refused to import would look like one it imported.
-	if result.Blocked != nil {
+	switch {
+	case result.Blocked != nil && !c.Expect.Blocked:
 		out.Failures = append(out.Failures, "detection blocked: "+result.Blocked.Error())
+	case result.Blocked == nil && c.Expect.Blocked:
+		out.Failures = append(out.Failures, "expected detection to refuse this repository, and it did not")
 	}
 
 	out.Strategy = string(result.Winner.Strategy)

@@ -105,6 +105,7 @@ func (d *Detections) Save(ctx context.Context, appID, status string, body any, c
 	if err != nil {
 		return errs.Wrap(errs.Internal, "Could not record the detection result.", err)
 	}
+	encoded = withoutNUL(encoded)
 
 	_, err = d.db.Exec(ctx, `
 		INSERT INTO detections (app_id, status, body, commit, updated_at)

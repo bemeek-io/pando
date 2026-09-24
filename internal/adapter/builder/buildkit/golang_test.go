@@ -44,6 +44,19 @@ func TestR095_AGoProgramIsBuiltOnTheGoItNames(t *testing.T) {
 	require.Contains(t, string(body), "go build -o /out/app ./cmd/server")
 }
 
+// A module without a go directive names no release to build on, and a main
+// package found only in a test file is not a program. Both are left to
+// nixpacks.
+func TestAGoModuleIsPlannedOnlyWithAReleaseAndARealMain(t *testing.T) {
+	_, ok := readGoBuild(writeFiles(t, map[string]string{"go.mod": "module x\n", "main.go": "package main\n"}))
+	require.False(t, ok, "no go directive")
+
+	_, ok = readGoBuild(writeFiles(t, map[string]string{
+		"go.mod": "module x\ngo 1.24\n", "lib.go": "package x\n", "main_test.go": "package main\n",
+	}))
+	require.False(t, ok, "a test file's package clause does not make a program")
+}
+
 // Heroku's PHP launcher exists only on Heroku; its argument is the document
 // root (issue #55).
 func TestR094_AHerokuPHPProcfileServesItsDocumentRoot(t *testing.T) {

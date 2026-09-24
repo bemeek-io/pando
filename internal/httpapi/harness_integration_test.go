@@ -93,6 +93,10 @@ type install struct {
 	handler http.Handler
 	db      *state.DB
 
+	// Server is the wired API. Handlers read its fields per request, so a test
+	// can set a collaborator the harness leaves nil (a Detector, TeardownNow).
+	Server *httpapi.Server
+
 	Apps        *state.Apps
 	Users       *state.Users
 	Grants      *state.Grants
@@ -266,7 +270,7 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 	}
 
 	return &install{
-		t: t, handler: srv.Routes(), db: db, Restarts: restarts,
+		t: t, handler: srv.Routes(), db: db, Server: srv, Restarts: restarts,
 		Apps: apps, Users: users, Grants: grants, Sessions: sessions, Tokens: tokens,
 		Secrets: secrets, Volumes: volumes, Adapters: adapters, PolicyStore: policyStore,
 		AdminID: first.User.ID, adminPassword: adminPassword,

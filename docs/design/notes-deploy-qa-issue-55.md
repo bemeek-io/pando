@@ -269,9 +269,11 @@ ordered web first (Gitea's image listens on SSH and HTTP, Mailpit's on SMTP and
 HTTP). An image whose only observed ports are a database's or a mail server's
 is blocked with a reason rather than deployed. Paths the image declares with
 `VOLUME` get a volume (`Declared: "image"`) mounted on the primary workload;
-Vaultwarden refuses to start without one. A trial log's NUL bytes are dropped:
-the proposal is jsonb, which refuses `\u0000`, and Grafana's detection could
-not be saved; a detection whose result cannot be saved is now recorded failed
+Vaultwarden refuses to start without one. NUL bytes are dropped from a
+detection before it is saved: the proposal is jsonb, which refuses `\u0000`, and
+Grafana's detection (a NUL in its trial log) could not be saved, nor could any
+repository with one in text detection quotes, such as a Dockerfile's `CMD` in
+the evidence; a detection whose result cannot be saved is now recorded failed
 rather than left running.
 
 **Libraries are refused (R-021).** A Go module with Go files and no
@@ -342,6 +344,47 @@ deploy fails with `STATE_APP_EXITED` and the app's last 30 lines of output in
 the deploy log. An app that is running but not yet healthy is still reported
 `degraded`, as before.
 
+**A deleted app leaves nothing on disk but what it was asked to keep
+(R-224).** The QA harness removed whatever a delete left before checking for
+residue, so every case reported clean while Pando left, per app: its build
+cache, its uploaded source, every image pulled for it, and an anonymous volume
+for every container of an image that declares `VOLUME`. A forced delete of an
+ordinary Python app left about 364 MB. Now:
+
+- The builder has a `Forget` call (`api.BuilderAdapter`), and the GC's teardown
+  has the builder that built the app forget its cache, and removes its stored
+  upload (`source.DiscardUpload`). Both run for an app never deployed too,
+  since an upload is stored first. A restore goes to an app created again, with
+  an upload of its own (R-206), so nothing needs the old one.
+- After each build the builder prunes the cache blobs its new index no longer
+  reaches. BuildKit's local cache export adds each build's layers and never
+  removes the last build's, so a cache grew for the life of the app. Anything a
+  manifest or cache config mentions is kept, and an unreadable index prunes
+  nothing.
+- Containers are removed with their anonymous volumes. The next container never
+  reattached one, so it held nothing reachable; named volumes are untouched
+  (R-204).
+- Pulled images are owned through tags `[P]`: each app that runs an image tags
+  it `pando-pulled/<hash of the reference>:<app>`, and an image Pando had to
+  fetch is also tagged `:pulled`. Destroy removes the app's tag, and when no
+  app's tag is left on an image Pando fetched, removes the image without force,
+  so Docker refuses while any container still uses it. An image that was on the
+  host before Pando asked for it is never removed, and one another install on
+  the same host runs carries that install's tag. Pando's own helper images are
+  kept. Tags rather than a record in Pando's state because the runtime adapter
+  may not touch the state store (R-027), and because Docker then does the
+  counting across apps and installs.
+- A delete that settled the app's storage takes the volumes (R-204). R-204
+  has a delete keep a final backup or discard, and one is refused until it
+  says which. Both answers removed the volume rows and left the volumes on disk,
+  unreachable — a forced delete said "discard" and discarded nothing. The
+  decision is now recorded on the app (`apps.discard_storage`, migration 31)
+  and the GC's teardown destroys the volumes with the bundle: at once for
+  `force=true`, and after the backup for `backup=true`, which completes before
+  the delete returns. Only that recorded decision sets `KeepVolumes` false.
+- The QA harness records what Pando's own delete left before it sweeps
+  (`pando_left`), logs it as `PANDO LEFT`, and the summary counts it.
+
 **Filling a slot keeps the slots filled before it.** `PUT /apps/{id}/slots/{key}`
 wrote its new revision from the pinned spec, so the second slot filled after an
 accept replaced the first. It now builds on the newest revision.
@@ -371,6 +414,8 @@ every new app is given. The shipped values are unchanged: one core, 512 MiB and
   now fails with the app's own output instead of reporting success.
 - A CLI tool is not refused at detection; its deploy fails because the process
   exits (`edge-cli-tool`).
-- Pre-delete backups have no retention for deleted apps.
-- A deleted app's build cache directory under `/var/lib/pando/buildcache` is not
-  removed; the builder has no hook for a deleted app.
+- Pre-delete backups have no retention for deleted apps. They are kept until
+  discarded (R-204), which R-224's disk bound does not yet account for.
+- The audit log has no retention (issue #60).
+- An image a detection trial pulled for an app that is deleted before its first
+  deploy stays: no app ever claimed it, so no teardown releases it.

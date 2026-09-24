@@ -66,6 +66,16 @@ type GC struct {
 	// running and holding its share of the host (issue #55). Nil means ticks
 	// only.
 	TeardownNow <-chan struct{}
+
+	// BuildCaches and DiscardUpload remove a deleted app's build cache and
+	// uploaded source at teardown. Nil skips each.
+	BuildCaches   BuildCaches
+	DiscardUpload func(appID string) error
+}
+
+// BuildCaches has the builder that built an app forget its cache.
+type BuildCaches interface {
+	Forget(ctx context.Context, builderRef, appID string) error
 }
 
 // TeardownBatch bounds how many bundles one pass destroys.
@@ -146,9 +156,13 @@ func (g *GC) Collect(ctx context.Context) {
 // bundle standing forever if the runtime happened to be unreachable at that
 // moment, and nothing would ever come back for it.
 //
-// Volumes are never touched. R-204 says they outlive the app, the schema says
-// so with ON DELETE RESTRICT, and KeepVolumes says it a third time — this is
-// the one place a bug would silently destroy data somebody chose to keep.
+// Volumes are destroyed only when the delete said so. R-204 has a delete
+// settle the app's storage — keep a final backup or discard it — and a delete
+// of an app with storage is refused until it does; both answers end with the
+// volumes gone, the second after a backup holds the data. That decision is
+// recorded on the app (TeardownTarget.DiscardStorage) and is the only thing
+// that sets KeepVolumes false here: this is the one place a bug would
+// silently destroy data, so nothing is inferred.
 func (g *GC) tearDownDeletedBundles(ctx context.Context) {
 	if g.Registry == nil {
 		return
@@ -187,7 +201,7 @@ func (g *GC) tearDownDeletedBundles(ctx context.Context) {
 			_ = g.Auditor.Write(ctx, AuditEvent{
 				Action: "app.bundle.destroy",
 				AppID:  t.AppID,
-				Detail: map[string]any{"runtime": t.RuntimeRef, "kept_volumes": true},
+				Detail: map[string]any{"runtime": t.RuntimeRef, "kept_volumes": !t.DiscardStorage},
 			})
 		}
 	}
@@ -255,19 +269,45 @@ func (g *GC) tearDown(ctx context.Context, t state.TeardownTarget) error {
 		}
 	}
 
-	if t.RuntimeRef == "" {
-		// Never deployed, so there is nothing to destroy and the teardown is
-		// complete by definition.
-		return nil
-	}
-	runtime, ok := g.Registry.Runtime(t.RuntimeRef)
-	if !ok {
-		// The adapter that held it is no longer configured. Reported rather
-		// than marked done: something is still running and Pando can no longer
-		// reach it, which an operator needs to know.
-		return errs.Newf(errs.AdapterFailed,
-			"The runtime %q is not configured, so this app's containers cannot be removed.", t.RuntimeRef)
+	if t.RuntimeRef != "" {
+		runtime, ok := g.Registry.Runtime(t.RuntimeRef)
+		if !ok {
+			// The adapter that held it is no longer configured. Reported rather
+			// than marked done: something is still running and Pando can no
+			// longer reach it, which an operator needs to know.
+			return errs.Newf(errs.AdapterFailed,
+				"The runtime %q is not configured, so this app's containers cannot be removed.", t.RuntimeRef)
+		}
+		// Volumes are kept unless the delete settled them — discarded with
+		// force, or backed up first (R-204). A delete of an app with storage
+		// is refused until it says which, so an app whose storage was never
+		// decided on is one that had none Pando knew of, and that is kept.
+		keep := !t.DiscardStorage
+		if err := runtime.Destroy(ctx, api.BundleRef{BundleID: t.AppID}, api.DestroyOptions{KeepVolumes: keep}); err != nil {
+			return err
+		}
 	}
 
-	return runtime.Destroy(ctx, api.BundleRef{BundleID: t.AppID}, api.DestroyOptions{KeepVolumes: true})
+	return g.forgetFiles(ctx, t)
+}
+
+// forgetFiles removes what a deleted app kept on disk outside its bundle: its
+// build cache and its uploaded source. Both stayed forever, and an install
+// that adds and removes apps filled its disk with them (issue #55, R-224).
+// Neither is the app's data — volumes are, and teardown keeps those (R-204).
+//
+// It runs for an app that was never deployed too: an upload is stored before
+// the first deploy.
+func (g *GC) forgetFiles(ctx context.Context, t state.TeardownTarget) error {
+	if t.BuilderRef != "" && g.BuildCaches != nil {
+		if err := g.BuildCaches.Forget(ctx, t.BuilderRef, t.AppID); err != nil {
+			return err
+		}
+	}
+	if g.DiscardUpload != nil {
+		if err := g.DiscardUpload(t.AppID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
