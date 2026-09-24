@@ -19,11 +19,14 @@ Unreleased above it. -->
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-09-15
+## [0.2.0] - 2026-09-23
 
-Detection stops asking for things the repository already told it, and starts reading the build
-instructions an app carries rather than inferring them. If you deploy anything that builds a client
-into a Go binary, or that keeps data on disk, this release changes what Pando proposes for it.
+Detection stops asking for things the repository already told it, reads the build instructions an app
+carries rather than inferring them, and plans more kinds of app itself. This release also adds a
+security score for every app, optional AI screening of detection proposals, account, group and sharing
+management in the console, and a launcher each person can arrange. Several changes alter what Pando
+does with apps you already run — a forced delete now destroys the app's volumes, every deploy is
+scanned, and administrators can manage every app — so read the upgrade notes before upgrading.
 
 ### Security
 
@@ -40,6 +43,21 @@ module has no fixed release and will not get one.
   password, and landing on somebody else's site was a working attack. `next` is now resolved against
   the current document and accepted only when the origins match, which agrees with what the browser
   will do by construction and turns away `javascript:` and `data:` in the same breath.
+- **An app created from a published image read the Pando server's own files as its source.** Such
+  an app has no checkout, and its source view was rooted at an empty path, which resolved against the
+  filesystem root of the Pando process. Detectors read from there, so what they found could be quoted
+  in the app's proposal. The app now has an empty source, and the source scan and AI screening skip
+  it. Present in 0.1.x.
+- **Deleting an app left its data on disk.** R-204 has a delete either keep a final backup or discard
+  the app's storage, and both answers removed Pando's record of the volumes while leaving the volumes
+  themselves in place, where nothing could reach or reclaim them. The app's uploaded source was also
+  kept. A delete now destroys the volumes once the backup, if asked for, has been taken, and removes
+  the upload (R-204, R-224). Volumes left by earlier deletes are not removed by the upgrade; see the
+  upgrade notes.
+- **A custom role could carry a built-in role's name.** Role names were unique case-sensitively, and
+  the built-ins are stored lowercase and shown capitalized, so a custom role called "Administrator"
+  appeared in every role picker beside the real one, looking identical. Names are now unique ignoring
+  case and surrounding spaces, built-ins included (R-082); migration 000028 renames existing clashes.
 
 ### Added
 
@@ -53,21 +71,175 @@ module has no fixed release and will not get one.
   by the repository rather than guessed, and the client build runs ahead of the binary's. Read from
   Vite, Astro, Vue CLI, Angular, Next.js (static exports), webpack and SvelteKit, or from an
   `--outDir`-style flag in the build script.
+- **Pando plans more builds itself, on official images** (R-095). Static sites (Astro, Vite, Angular,
+  Create React App, Gatsby) are built with `node` and served with nginx; Node servers, Go programs
+  with one `main` package, Gradle and Maven projects, plain Java sources and .NET projects each get a
+  plan on their language's official image, with the version read from the repository where it is
+  stated. Other languages stay on nixpacks. Detection also reads a `Containerfile`, a Dockerfile in a
+  subdirectory and a site in `docs/`; asks for a Dockerfile `ARG` the build refuses to run without;
+  runs Rails in production with a required `SECRET_KEY_BASE`; and refuses a library with an
+  explanation rather than deploying it (R-021). All [P] defaults are recorded in
+  [`docs/design/notes-deploy-qa-issue-55.md`](docs/design/notes-deploy-qa-issue-55.md).
+- **An app created from a published image is proposed as that image**, rather than sent through
+  repository detection over an empty checkout. The trial run finds its port, paths the image declares
+  with `VOLUME` get a volume, and an image that serves only a database or mail protocol is refused with
+  the reason (R-097, R-200).
+- **A security score for every app** (R-310 – R-320). A number from 0 to 100 from scanning the image
+  an app deploys and the source it was built from, weighted by severity (25 per critical, 10 high,
+  3 medium, 1 low), shown on the app's overview and in the apps list with the findings behind it,
+  worst first. Scanning is a new adapter category; the Trivy adapter runs in a container pinned by
+  digest, with no container runtime socket. A new app is scanned when it is detected, every deploy is
+  scanned, and **Scan now** works on an app never built. Host policy can refuse deploys below a
+  minimum score (`min_security_score`, `PLAN_SECURITY_BELOW_THRESHOLD`), and for a running app that
+  falls below it, notify the owner and optionally stop it after a grace period (`insecure_action`,
+  `insecure_grace_hours`) — never delete it. `ignore_unfixable_findings` scores only what can be fixed.
+  Nothing is enforced until an administrator sets a threshold.
+- **AI screening of detection proposals** (R-106, R-330 – R-339). AI is a new adapter category; the
+  first adapter uses Anthropic's API (default model `claude-opus-5-5`). A screener reads the
+  repository and the proposal and returns amendments from a closed set — no policy, isolation,
+  routing, resources, egress, grants or secrets — and Pando refuses any without a reason or evidence
+  in the repository, any that overwrite what a person set, and a port the trial run observed. Any
+  failure leaves the proposal as detection made it. The review marks each change "Suggested by AI",
+  lists what was refused, and each run is audited as `detection.screen` with the files read. No AI
+  adapter is configured by default; host policy's `disable_ai_screening` forbids it. Configured, it
+  sends the repository files it reads to the provider.
+- **Adapter credentials are stored encrypted** (R-190). `POST /adapters` takes a write-only
+  `credentials` object, sealed by the installation's secrets adapter into its own table; the database
+  refuses a `credentials` key in an adapter's plain configuration, and `GET /adapters` names the
+  credentials set, never their values.
+- **Adapters can be added and changed from the console and the CLI**, not only the API
+  (`GET /adapters/kinds`, `pando adapter list | kinds | add`, credentials prompted rather than typed).
+  **Pando can restart itself** to load them: `POST /api/v1/restart`, `pando restart` and a button on
+  the Adapters screen finish the requests in flight and re-execute the binary in the same process.
+  Behind `install.adapters.manage` and audited as `install.restart`. `GET /adapters` says which
+  adapters are waiting for a restart.
+- **Stop, start and restart an app** from the console, the CLI (`pando app stop | start | restart`)
+  and MCP. The API had these endpoints and no client called them, so the only way to take an app down
+  was to delete it. A stopped app stays stopped across a restart of Pando.
+- **Each part of an app has its own status, logs and resource use.** `GET /apps/{id}/status` lists
+  every workload with whether it is running, restarting and how often, its health and exit code;
+  `pando app status` prints it. Logs take a workload (`pando logs --workload`), and the console's new
+  Logs tab holds the app's output and every deploy's build log. `GET /apps/{id}/usage`,
+  `pando app usage` and an **In use** section show each part's CPU, memory and disk against its
+  limits, and each volume's size — a reading, not a history (R-245).
+- **Accounts, groups and roles are managed in the console.** Each account has a page with its
+  details, groups, role, apps and audit history; an administrator can edit an account, reset its
+  password, and add it to or remove it from groups. Groups hold an installation role and app roles
+  that every member holds while in the group (R-078). Custom groups and roles can be deleted. A
+  generated password (`POST /passwords/generate`) is offered wherever an administrator sets one, and
+  by default must be changed at the next sign-in. CLI: `pando user create | update | reset-password |
+  apps`, `pando group list | add-member | remove-member | role | apps`, `pando grant role | remove`.
+- **A built-in Creator role** (R-081): one verb, `app.create`. A creator manages the apps they made,
+  as their owner, and nothing else.
+- **Administrators manage every app.** Two installation verbs, `install.apps.view` and
+  `install.apps.manage`, cover every app, and the Administrator role holds both (R-080, R-081).
+  Managing an app does not grant using it (R-087). `GET /apps/{id}` returns the caller's verbs, and the
+  console hides controls the caller cannot use rather than letting them fail.
+- **Sharing picks people and groups, and can make an app public behind a passcode** (R-075a). The
+  passcode is stored as an argon2id digest; a visitor's unlock lasts a day, rides in a `pando_` cookie
+  that never reaches the app (R-173), and ends when the passcode changes or the app is made private.
+  Host policy's `public_sharing` (`allowed`, `passcode_only` or `none`) decides what is allowed
+  (R-076). CLI: `pando grant add --group | --anyone [--passcode]`, `pando grant passcode`.
+- **Host policy can be fixed at startup** (R-271): a `policy:` section in the config file or
+  `PANDO_POLICY_<FIELD>`. A fixed field cannot be changed through the API or the console, which say
+  where it is set; an unknown field or a mistyped value stops startup. `GET /config`, `pando config`
+  and MCP's `pando_get_config` report every non-secret setting and where it came from. The Policy
+  screen now reaches every policy field, including isolation floors, the egress allowlist, token
+  lifetime, agent-disabled verbs and the log disk budget.
+- **Resource defaults for new apps are configurable** (R-240): `PANDO_APPS_CPU_MILLIS`,
+  `PANDO_APPS_MEMORY_BYTES` and `PANDO_APPS_DISK_BYTES`. Unset keeps one core, 512 MiB and 10 GiB.
+- **Tokens in the console, and service tokens** (R-058, R-060). Anyone signed in can mint, list and
+  revoke their own tokens; `POST /tokens/service` mints a service token for automation. The CLI reads
+  `PANDO_SERVER` and `PANDO_TOKEN`.
+- **A reference generated from the code.** [`docs/api.md`](docs/api.md), [`docs/cli.md`](docs/cli.md)
+  and [`docs/mcp.md`](docs/mcp.md) are built from the router, the CLI and the MCP tool list, and the
+  console's **API and tools** screen renders the same document from `GET /api/v1/reference`. The CLI
+  page says how to install the CLI.
+- **A launcher each person can arrange.** App images on square tiles (R-340; PNG, JPEG, WebP or GIF
+  up to 256 KiB, with SVG converted to PNG in the browser), a generated terrain picture for apps with
+  none, favorites (R-341) and named sections (R-342), with drag and drop and search. Each is per
+  account and grants nothing. CLI and MCP have the same (`pando app icon | favorite | unfavorite`,
+  `pando section …`).
+- **Adding an app opens an onboarding page** that fills in as detection runs. Variables can be given
+  values before accepting, as can `pando deploy --env KEY=VALUE` and MCP's `pando_accept_proposal`.
+- **A configuration file an app cannot start without travels in the spec** (R-099a). A single file a
+  compose service mounts from the repository — a `Caddyfile`, for example — is read at detection,
+  stored in the spec (text, up to 64 KB) and placed in the container before it starts; a mounted
+  directory of up to 16 text files is carried the same way. Editing the file in the repository changes
+  nothing until the app is detected again (R-020).
+- **The console:** first-run setup, dark mode, a settings page with sign out, a phone layout, search
+  and column filters on every list, and audit log filters by time range, target, kind of actor and
+  "involving" an account, kept in the address. `pando audit` takes the same filters and `--before` for
+  paging. An app can be deleted from the console, with R-204's question about its storage.
 - `WARN_NO_PERSISTENT_VOLUME` now appears for apps built from source. It previously required a trial
   run, which does not happen before an image exists — so an app that kept data on disk and declared
   no volume got no warning at all.
 
 ### Changed
 
+- **Release signatures are a single Sigstore bundle,** `checksums.txt.sigstore.json`, instead of
+  `checksums.txt.sig` and `checksums.txt.pem`. Verify with `cosign verify-blob checksums.txt --bundle
+  checksums.txt.sigstore.json …`; [`docs/releasing.md`](docs/releasing.md#verifying-a-download) has the
+  full command. cosign 3 writes this format by default and refused to sign without a bundle path,
+  which is what failed the first 0.2.0 release attempt.
+- **Package files are named like the archives:** `pando_<version>_linux_<arch>.deb`, `.rpm` and
+  `.apk`, rather than each packager's own convention.
+- **A new installation is set up in the console** (R-046). Without `PANDO_ADMIN_PASSWORD`, Pando
+  creates no account and prints no password; the first person to reach the sign-in page chooses the
+  administrator's username and password, and Pando logs a warning at every start until someone has.
+  Set it up before exposing Pando to anyone else, or supply `PANDO_ADMIN_PASSWORD` as before.
+- **Pando restarts a stopped workload, not Docker.** Containers are created with no restart policy;
+  one that exits is started by the reconciler's next pass, so R-149's backoff and R-150's give-up rule
+  actually apply. Before, Docker restarted a crashing container every two seconds underneath Pando's
+  "stopped trying" message. Giving up now stops the app, keeping its containers, storage and address,
+  and a person can stop or start a failed app (R-151).
+- **A deploy waits for the app to stay up.** Every part must stay up for ten seconds; a part that
+  stops within the two-minute wait is started again, and if the primary workload is still stopped at
+  the end the deploy fails with `STATE_APP_EXITED` and the app's last 30 lines of output. A workload
+  now waits for dependencies with a health check to report healthy. The deploy history shows
+  "Deployed, not healthy" for a deploy whose app never became healthy.
+- **`PORT` is set on an app's primary workload** to the port Pando routes to, unless the spec sets it.
+  A port detection guessed for a source build is checked against the built image and corrected if the
+  app listens elsewhere; an app that listens only on 127.0.0.1 is refused with
+  `BUILD_LISTENS_ON_LOOPBACK` before the running version is touched (R-097).
+- **Compose files import more faithfully** (R-096). A backing service the app reaches by connection
+  URL becomes a Pando-provisioned slot with that variable rewired to it; one reached by hostname is
+  imported as the file wrote it. A compose file of only databases no longer outbids the app. A
+  refused compose file is shown with its reasons instead of silently losing to the repository's
+  Dockerfile. Services behind a `profiles:` entry are left out, as `docker compose up` leaves them.
+- **Only variables that name a connection become dependencies** (R-130). A variable from
+  `.env.example` is a dependency when its name says connection (`DATABASE_URL`, `REDIS_URI`) or its
+  sample value carries a known URL scheme; everything else is a variable with no value, listed for a
+  person to fill in. A variable Pando has no value for is not set in the container at all, rather than
+  set to an empty string.
+- **Service tokens need their own verb,** `install.tokens.manage`, rather than `install.users.manage`
+  (R-060, R-080). Revoking somebody else's personal token still needs `install.users.manage`.
+- **Deleting an app takes effect at once.** Teardown runs immediately rather than at the next hourly
+  pass, the app's name can be used again, and its port returns to the range (R-204).
+- **App networks come from Pando's own address range,** a /26 each from `10.213.0.0/16` (the Docker
+  runtime's `network_pool`, `off` for Docker's pool). Docker's default pool holds about thirty
+  networks, and deploys failed after about 25 deletions.
+- **The build cache is capped** at 10 GiB after each build (the BuildKit builder's `cache_max_bytes`).
+  It had never been pruned.
+- **API:** `GET /apps/{id}/status` returns a snake_case list of workloads, where it returned the
+  adapter's struct with Go field names. `POST /apps/{id}/detection/rerun` returns 202 and detects in
+  the background; clients already poll `GET /detection`, which now lists the questions still
+  `unanswered`. `GET /roles` takes `scope` (`install`, the default, `app` or `all`).
 - **Adapter interface:** `BuildPlanner.Plan` returns an `*api.PlanDeclaration` alongside the
-  generated files, naming what in the repository dictated the plan. Nil means convention-matching
-  chose it. Only affects out-of-tree builder adapters, of which there are none; everything ships
-  compiled in (R-253).
+  generated files, naming what in the repository dictated the plan; nil means convention-matching
+  chose it. Builders gain `Forget`, and runtimes gain `Usage` and the `ReportsUsage` and
+  `SupportsCarriedFiles` capabilities. Only affects out-of-tree adapters, of which there are none;
+  everything ships compiled in (R-253).
 - Detection reports `ready` rather than `needs_answers` when it has nothing to ask. A bid below the
   confidence threshold used to force `needs_answers` on its own, which became visible — and wrong —
   once the questions below stopped being asked.
 - The console builds with TypeScript 6.0.3, and its `tsconfig.json` no longer sets `baseUrl`, which
   TypeScript 6 rejects and 7 removes.
+
+### Deprecated
+
+- Host policy's `allow_anonymous_grants` is superseded by `public_sharing`. It is still read —
+  `false` means `none` — and `public_sharing` wins when both are set.
 
 ### Fixed
 
@@ -75,6 +247,49 @@ module has no fixed release and will not get one.
   Go module was asked for a start command that the generated build plan already contained, and for a
   port that the language's framework default already supplied. Both are gone; the port rides in the
   proposal as an editable default, marked as the guess it is.
+- **Rolling backups failed for the whole installation** whenever any app had no storage. That app's
+  spec stored `"volumes": null`, the sweep's query raised an error on it, and one failing query is
+  the whole sweep (R-210).
+- **A compose app's application container was replaced with a copy of its proxy.** A deployment
+  recorded one image for the whole app, and the reconciler restored every workload from it and
+  compared every workload against one digest, so fifteen seconds after a good deploy the app was gone.
+  Each part's image and digest are now recorded and checked separately.
+- **Builds that failed on Pando's own plan.** The static-site nginx config was written with shell
+  escaping that broke it, so every static site exited on start; a generated plan lost
+  `.nixpacks/assets`; its build arguments were never passed, so a single-page app served its source
+  `index.html`; an answered start command never reached nixpacks; a mirrored workflow's `npm ci`
+  failed on nixpacks' cache mount; and adding `nodejs` to a plan broke nixpacks' npm overlay. The
+  console's plan editor now opens every file of the plan, not only the Dockerfile.
+- **Compose details that were read and dropped:** shell quoting and `$$` in commands, `CMD-SHELL`
+  health checks, `${VAR:-default}` in environment values, `env_file:`, file-backed `secrets:`,
+  `build.target` and `build.args`, and anonymous volumes, which two services now no longer share.
+  The web port is routed rather than the first one listed.
+- **An app accepted without a primary workload could not be deployed.** Accept did not validate the
+  spec. It does now, and detection picks the workload that serves HTTP and that nothing depends on,
+  saying which it picked.
+- **The health probe needed `wget`.** An image with only `curl` never came ready. The probe now uses
+  curl, wget, a TCP connection or bash's `/dev/tcp`, whichever the image has (R-221).
+- **App logs began every line with control bytes,** Docker's stream framing (R-071).
+- **Deleted apps leaked disk** (R-224): their build cache, every image pulled for them, and an
+  anonymous volume for each container of an image that declares `VOLUME`. Pulled images are removed
+  when the last app using one is deleted, unless the image was on the host before Pando pulled it.
+  After each build the cache drops what the new build no longer uses.
+- **Only one group made in Pando could exist.** The second was refused as a duplicate of the first
+  whatever its name (R-078; migration 000026).
+- **Deleting a custom role that anyone held failed** with an internal error. Its grants are now
+  removed with it, and deleting a group or role, or removing a member, is refused when it would leave
+  nobody able to manage accounts (R-088).
+- **Work interrupted by a restart stayed in progress forever,** and an app with a deploy in flight
+  refuses the next one. Such detections and deploys are marked failed at startup.
+- **Two Pando installations on one Docker host interfered:** each rejoined the other's app networks
+  and removed the other's empty ones. Startup also removed a stopped app's network.
+- Filling a second slot after accepting a proposal undid the first. The reconciler could re-apply
+  an app deleted while it was working on it. A git fetch could hang until the detection deadline; it
+  now fails fast and retries. A failed image pull now reports the registry's reason.
+- A deploy's apply and routing steps reported the adapter's headline only; they now print the cause
+  and the remedy, as the build step does (R-105).
+- `/index.html` requested by name was served with no `Cache-Control`, so a browser could keep an old
+  console after an upgrade.
 - A variable named after a target — `build := ./out` — was read as declaring that target, so the plan
   ran `make build` against something that did not exist.
 - Audit log paging stopped on any `limit` above the cap. The API applied the default page size but
@@ -88,9 +303,48 @@ module has no fixed release and will not get one.
 
 ### Upgrade notes
 
-Nothing to do. Detection does not re-run on its own (R-022), so an app pinned before this release
-keeps the spec it was pinned with. To pick up the new reading for an existing app, re-run detection
-from its page and review the proposal as usual.
+Migrations 000015 to 000031 run on first start. Most add tables and columns for the features above;
+these change behavior or need a decision:
+
+- **A delete now destroys the app's volumes** (000031). `force=true` discards them at once, and
+  `backup=true` takes the backup and then discards them, as R-204 says; before, both left the volumes
+  on disk. Volumes of apps deleted before the upgrade are still there and are not removed. Each
+  carries the label `io.pando.bundle=<app ID>`; `docker volume ls --filter label=io.pando.bundle`
+  lists them. Remove the ones you no longer need by hand.
+- **Administrators can manage every app** (000027). Everyone holding the Administrator role gains
+  `install.apps.view` and `install.apps.manage`: they see every app in the list and can deploy,
+  configure and delete any of them, though not use one without a grant. Review who holds the role.
+- **Service tokens moved to `install.tokens.manage`** (000030). The Administrator role has it. A
+  custom role that held `install.users.manage` for the sake of service tokens needs the new verb
+  added.
+- **Role names that clash ignoring case are renamed** (000028). A custom role named like a built-in
+  or an older custom role gets " (custom)" appended, or its ID if that is taken too. Update anything
+  that refers to such a role by name.
+- **Adapter credentials** (000021) are sealed with the key the local secrets adapter already uses for
+  app secrets, `/var/lib/pando/secrets.key` unless configured otherwise. Nothing new to configure;
+  that key now protects adapter credentials as well, so keep it backed up.
+- **Every deploy is now scanned.** The Trivy scanner is added to existing installations as well as new
+  ones. The first scan pulls its pinned image and downloads a vulnerability database of about 50 MB
+  into the `pando-trivy-cache` volume. The threshold starts at 0, so nothing is refused or stopped
+  until an administrator sets one.
+- **New app networks use `10.213.0.0/16`.** If that range is in use on your network, set the Docker
+  runtime's `network_pool` to another range, or to `off` for Docker's own pool. Existing networks are
+  unchanged.
+- **Existing app containers keep Docker's `unless-stopped` restart policy** until they are next
+  recreated, for example by a deploy. New containers have none.
+- **Multi-service apps deployed before this release** carry no per-part image record (000019). The
+  reconciler reports a missing part of such an app rather than recreating it from the wrong image.
+  Deploy each one again. An app accepted without a primary workload is fixed by accepting its
+  configuration again.
+- **The shipped `docker-compose.yml` passes named variables only.** To set `PANDO_APPS_*` or
+  `PANDO_POLICY_*`, take the new file or add them to the `pando` service's `environment`.
+- **Download verification** uses `checksums.txt.sigstore.json`; the `.sig` and `.pem` files are no
+  longer published. Package file names change as listed above.
+- First-run setup changes only affect new installations. An existing installation keeps its accounts.
+
+Detection does not re-run on its own (R-022), so an app pinned before this release keeps the spec it
+was pinned with. To pick up the new reading for an existing app, re-run detection from its page and
+review the proposal as usual.
 
 ## [0.1.1] - 2026-09-14
 

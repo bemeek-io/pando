@@ -60,13 +60,11 @@ Signing is keyless — there is no Pando signing key to distribute, and none to 
 short-lived certificate bound to the release workflow's identity, so what you verify is *"this was
 produced by Pando's release workflow"*.
 
-Download the tarball, `checksums.txt`, `checksums.txt.sig` and `checksums.txt.pem` from the release,
-then:
+Download the tarball, `checksums.txt` and `checksums.txt.sigstore.json` from the release, then:
 
 ```bash
 cosign verify-blob checksums.txt \
-  --signature   checksums.txt.sig \
-  --certificate checksums.txt.pem \
+  --bundle checksums.txt.sigstore.json \
   --certificate-identity-regexp '^https://github\.com/bemeek-io/pando/\.github/workflows/release\.yml@refs/(heads/main|tags/v)' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 
