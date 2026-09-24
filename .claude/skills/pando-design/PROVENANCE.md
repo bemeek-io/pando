@@ -67,6 +67,12 @@ Everything needed to build a Pando interface without network access:
   from a barrel, and the design project does not ship one
 - `readme.md` — the brand spec in full
 - `_adherence.oxlintrc.json` — the lint rules
+- `adherence.eslint.mjs`, written here — runs those rules under ESLint, because
+  oxlint implements neither rule the file uses (see
+  `docs/design/notes-console-findings.md`). It also drops the per-component prop
+  selectors, which reject props every component inherits from its HTML element;
+  TypeScript checks props correctly from the `.d.ts` files. Both are worth
+  fixing upstream: the file's name, and the prop selectors
 - `SKILL.md` — rewritten as a Claude Code skill (the original was written for a
   different skill host and pointed at `README.md`, which does not exist there)
 

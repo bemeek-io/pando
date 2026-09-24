@@ -151,6 +151,7 @@ marketing site, docs, a mockup — is built from `.claude/skills/pando-design/`.
 `pando-design` skill before writing UI code or CSS. Colors, type, spacing, radius and motion all come
 from its tokens; a raw hex value, a raw `px` value, or a font that is not Newsreader / Public Sans /
 IBM Plex Mono is a mistake, and `_adherence.oxlintrc.json` there is configured to catch each one.
+It runs under ESLint through `adherence.eslint.mjs` beside it; oxlint cannot run it.
 
 Its voice rules and this document's error standard are the same standard. R-105 says an error must be
 self-contained and pasteable into an assistant; the design system says *"Pando couldn't find a start
