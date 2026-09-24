@@ -66,15 +66,20 @@ checksum:
 #
 # Verification is in docs/releasing.md.
 signs:
+  # One Sigstore bundle, checksums.txt.sigstore.json, holding the signature,
+  # the certificate and the transparency log entry. cosign 3 (cosign-installer
+  # 4) writes this format by default and refuses to sign without a --bundle
+  # path; the separate .sig and .pem the 0.1 releases carried came from cosign
+  # 2's flags, and asking cosign 3 for them failed the 0.2.0 release with
+  # "create bundle file: open : no such file or directory".
   - id: checksums
     cmd: cosign
     artifacts: checksum
-    certificate: '${artifact}.pem'
+    signature: '${artifact}.sigstore.json'
     output: true
     args:
       - sign-blob
-      - '--output-certificate=${certificate}'
-      - '--output-signature=${signature}'
+      - '--bundle=${signature}'
       - '${artifact}'
       - '--yes'
 
