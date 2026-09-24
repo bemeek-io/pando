@@ -19,7 +19,13 @@
 # the one in package.json.
 #
 # Neither toolchain reaches the final image.
-FROM golang:1.27-alpine@sha256:4cb7ac979db5fcc41cae44b2227ba5ab8a51e8807f40d9ba4dee20a0ad960b5b AS console
+#
+# Both build stages run on the builder's own platform and cross-compile: the
+# console is JavaScript and the binary is built with cgo off, so neither needs
+# to run on the platform it is for. The release builds amd64 and arm64 in one
+# go (issue #52), and running npm and the Go toolchain under emulation for the
+# other one took the better part of an hour.
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine@sha256:4cb7ac979db5fcc41cae44b2227ba5ab8a51e8807f40d9ba4dee20a0ad960b5b AS console
 WORKDIR /src
 RUN apk add --no-cache nodejs npm
 
@@ -34,7 +40,9 @@ COPY . .
 # go:embed reads.
 RUN cd console && npm run build
 
-FROM golang:1.27-alpine@sha256:4cb7ac979db5fcc41cae44b2227ba5ab8a51e8807f40d9ba4dee20a0ad960b5b AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine@sha256:4cb7ac979db5fcc41cae44b2227ba5ab8a51e8807f40d9ba4dee20a0ad960b5b AS build
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
 
 # Dependencies first, so a source change does not re-download the module cache.
@@ -50,11 +58,20 @@ COPY --from=console /src/internal/console/dist/ ./internal/console/dist/
 RUN test -f internal/console/dist/index.html \
     || { echo "the console did not reach the build stage" >&2; exit 1; }
 
-# No version stamp. The server is installed from this image by building it
-# locally (design 00 §1.1), so this build is not a release and must not claim to
-# be one — `pando version` reports "development build" and that is accurate.
-# GoReleaser stamps the released CLI; see .goreleaser.yaml.
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pando ./cmd/pando
+# Stamped only when the release workflow says what it is building
+# (.github/workflows/image.yml), with the same three values GoReleaser stamps
+# into the released CLI. A local build passes none and `pando version` says
+# "development build", which is accurate: it is not a release and must not
+# claim to be one.
+ARG VERSION=""
+ARG COMMIT=""
+ARG BUILD_DATE=""
+RUN stamp=""; \
+    if [ -n "$VERSION" ]; then \
+      stamp="-X main.buildVersion=${VERSION} -X main.buildCommit=${COMMIT} -X main.buildDate=${BUILD_DATE}"; \
+    fi; \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+      go build -trimpath -ldflags="-s -w ${stamp}" -o /out/pando ./cmd/pando
 
 # 3.21 rather than 3.20 because that is where postgresql17-client appears, and
 # the client major version has to match the server: pg_dump refuses a server
@@ -69,7 +86,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pando ./cmd/pando
 # builds, and pinned so the same repository produces the same plan a year from
 # now. It only ever *generates* — `nixpacks build --out` writes a Dockerfile and
 # does not build, so no container runtime socket is involved anywhere (R-112).
-FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS nixpacks
+FROM --platform=$BUILDPLATFORM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS nixpacks
 ARG NIXPACKS_VERSION=1.41.0
 ARG TARGETARCH
 RUN apk add --no-cache curl tar \

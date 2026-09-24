@@ -162,3 +162,26 @@ jobs:
           files: coverage.integration.out
           flags: integration
           fail_ci_if_error: false
+
+  # The server image, built from this change and run the way an operator runs a
+  # release: from the compose file a release ships, made to deploy an app and
+  # serve it (scripts/smoke-image.py). The release runs the same test against
+  # the image it pushes; this catches an image that cannot host an app before
+  # it is released (issue #52).
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Build
+        run: |
+          docker build \
+            --build-arg VERSION=0.0.0-ci \
+            --build-arg COMMIT="$GITHUB_SHA" \
+            --build-arg BUILD_DATE="$(git log -1 --format=%cI)" \
+            -t trypando/pando:0.0.0-ci .
+
+      - name: Smoke test
+        run: |
+          scripts/release-compose.sh 0.0.0-ci > "$RUNNER_TEMP/docker-compose.yml"
+          python3 scripts/smoke-image.py "$RUNNER_TEMP/docker-compose.yml" --version 0.0.0-ci

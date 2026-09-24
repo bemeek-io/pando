@@ -17,6 +17,22 @@ make check        # vet, lint, unit tests — what CI runs on a pull request
 
 Go 1.27 and Docker. Node 22 as well if you are touching the console.
 
+To run the server you are changing, build it from this checkout rather than pulling the published
+image: `docker-compose.yml` in the repository builds the `pando` service from source, where the file a
+release ships runs `trypando/pando` instead (`scripts/release-compose.sh` writes one from the other).
+
+```bash
+docker compose up -d --build
+```
+
+Or check the image the way CI's `image` job does. The smoke test starts its own stack from the
+compose file, deploys an app, reaches it through Pando and removes everything it made. Stop any other
+Pando on the machine first: two on one Docker host step on each other's networks.
+
+```bash
+python3 scripts/smoke-image.py docker-compose.yml
+```
+
 ```bash
 make help                    # all targets
 make build                   # the pando binary

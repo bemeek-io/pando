@@ -9,6 +9,7 @@
 [trypando.ai](https://trypando.ai)
 
 [![CI](https://github.com/bemeek-io/pando/actions/workflows/ci.yml/badge.svg)](https://github.com/bemeek-io/pando/actions/workflows/ci.yml)
+[![Docker Hub](https://img.shields.io/docker/v/trypando/pando?sort=semver&label=docker%20hub&color=B23A2C)](https://hub.docker.com/r/trypando/pando)
 [![codecov](https://codecov.io/gh/bemeek-io/pando/branch/main/graph/badge.svg)](https://codecov.io/gh/bemeek-io/pando)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-B23A2C)](LICENSE)
 [![Go 1.27](https://img.shields.io/badge/go-1.27-B23A2C)](go.mod)
@@ -85,13 +86,24 @@ Two pieces, and most people need only the first.
 Requires Docker and Docker Compose. Nothing else — no Go, no Node, no Postgres of your own.
 
 ```bash
-git clone https://github.com/bemeek-io/pando.git
-cd pando
+mkdir pando && cd pando
+curl -fsSLO https://github.com/bemeek-io/pando/releases/latest/download/docker-compose.yml
 docker compose up -d
 ```
 
-Pando and Postgres start together. The first run builds the image, which takes a few minutes; after
-that it starts in seconds. Open **http://localhost:8080**.
+That starts the published image, [`trypando/pando`](https://hub.docker.com/r/trypando/pando), with
+the Postgres and BuildKit it needs beside it. Open **http://localhost:8080**.
+
+The compose file pins the image to its release. To upgrade, download the newer release's
+`docker-compose.yml` over it and run `docker compose up -d` again; your apps and data are kept in
+named volumes. Postgres is only reachable from the other containers, and its password defaults to
+`pando`; to choose your own, put `POSTGRES_PASSWORD=...` in a `.env` file beside the compose file
+before the first start.
+
+The image is built for `linux/amd64` and `linux/arm64` and signed; checking the signature is in
+[`docs/releasing.md`](docs/releasing.md#verifying-the-image). To build it from source instead, clone
+the repository and run `docker compose up -d --build`, as described in
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ### The CLI
 
