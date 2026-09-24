@@ -100,10 +100,11 @@ named volumes. Postgres is only reachable from the other containers, and its pas
 `pando`; to choose your own, put `POSTGRES_PASSWORD=...` in a `.env` file beside the compose file
 before the first start.
 
-The image is built for `linux/amd64` and `linux/arm64` and signed; checking the signature is in
-[`docs/releasing.md`](docs/releasing.md#verifying-the-image). To build it from source instead, clone
-the repository and run `docker compose up -d --build`, as described in
-[`CONTRIBUTING.md`](CONTRIBUTING.md).
+The image is built on [Docker Hardened Images](https://docs.docker.com/dhi/), for `linux/amd64` and
+`linux/arm64`, and signed; checking the signature is in
+[`docs/releasing.md`](docs/releasing.md#verifying-the-image). Its server runs as a non-root user. To
+build it from source instead, clone the repository, sign in with `docker login dhi.io`, and run
+`docker compose up -d --build`, as described in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ### The CLI
 

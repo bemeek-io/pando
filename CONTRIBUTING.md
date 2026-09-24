@@ -20,8 +20,12 @@ Go 1.27 and Docker. Node 22 as well if you are touching the console.
 To run the server you are changing, build it from this checkout rather than pulling the published
 image: `docker-compose.yml` in the repository builds the `pando` service from source, where the file a
 release ships runs `trypando/pando` instead (`scripts/release-compose.sh` writes one from the other).
+The image is built on [Docker Hardened Images](https://docs.docker.com/dhi/), which `dhi.io` serves
+only to a signed-in Docker account (a free one is enough), so sign in once first. The deploy QA run
+(`test/deploy-qa`) builds the same image and needs the same.
 
 ```bash
+docker login dhi.io
 docker compose up -d --build
 ```
 

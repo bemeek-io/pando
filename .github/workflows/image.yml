@@ -82,6 +82,15 @@ jobs:
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      # Every stage of the Dockerfile is a Docker Hardened Image, and dhi.io
+      # serves them only to a signed-in Docker account. The same account pushes
+      # the image below.
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       # Scanned before anything is pushed: an image that fails the gate is
       # never published, rather than published and then withdrawn.
       - name: Build for the scan

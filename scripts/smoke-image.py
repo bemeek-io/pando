@@ -101,6 +101,19 @@ def run(args):
         if want not in out:
             raise SystemExit(f"FAIL: `pando version` says {out.strip()!r}, expected {want!r}")
 
+    # What the hardened runtime base does not carry and the image copies in
+    # (Dockerfile, the packages stage): a library missing from that copy shows
+    # up here rather than at the first backup. And the server must not be root.
+    checks = ("set -e; pg_dump --version; pg_restore --version; test -f /usr/share/zoneinfo/UTC; "
+              "echo \"server runs as $(stat -c %U /proc/1)\"")
+    out = compose(args, "exec", "-T", "pando", "sh", "-c", checks, capture=True, check=False)
+    print(out.stdout.strip())
+    if out.returncode != 0 or "(PostgreSQL) 17" not in out.stdout:
+        raise SystemExit(f"FAIL: the image's backup tools or time zones are missing: {out.stdout} {out.stderr}")
+    if "server runs as root" in out.stdout:
+        raise SystemExit("FAIL: the server runs as root; the entrypoint did not drop privileges")
+    step("backup tools present, server not root")
+
     code, body = request("GET", "/")
     if code != 200 or "<html" not in body.lower():
         raise SystemExit(f"FAIL: the console did not load: {code} {body[:300]}")
