@@ -36,7 +36,16 @@ API version bump, and the API version changes only when `/api/v1` itself stops b
   build. A binary built any other way prints `pando (development build)`, and that is the only thing
   it can honestly say.
 - **The GitHub release** — carries the tarballs, the `.deb`, `.rpm` and `.apk` packages,
-  `checksums.txt`, and the signature over it.
+  `checksums.txt`, the signature over it, and the `docker-compose.yml` that runs the image below.
+- **The server image** — [`trypando/pando`](https://hub.docker.com/r/trypando/pando) on Docker Hub,
+  for `linux/amd64` and `linux/arm64`, with the version, commit and build date in `pando version`
+  and in its OCI labels. Tagged with the exact version (`0.3.1`) and the minor line (`0.3`); from
+  1.0 on also the major (`1`); and `latest` for a stable release. A prerelease is tagged with its
+  own version only, so nobody following `latest` or a minor line is moved onto it. The release's
+  `docker-compose.yml` pins the exact version. Published by `.github/workflows/image.yml` after the
+  release, which scans the image with Trivy first and does not push it if a fixable critical
+  vulnerability is found, then starts the pushed image from that compose file and deploys an app on
+  it.
 
 ## Before tagging
 
@@ -87,6 +96,28 @@ the case this section exists to warn about.
 
 Homebrew checks the cask's own SHA-256 on install, so `brew install bemeek-io/tap/pando` covers the
 second step but not the first — the cask is written by the same release that wrote the artifact.
+
+## Verifying the image
+
+The image is signed the same way, keyless, by digest, so the signature covers every tag that points
+at it. The certificate names `image.yml` rather than `release.yml`: the release calls it as a
+separate workflow, and a keyless certificate names the workflow that ran.
+
+```bash
+cosign verify trypando/pando:0.3.1 \
+  --certificate-identity-regexp '^https://github\.com/bemeek-io/pando/\.github/workflows/image\.yml@refs/(heads/main|tags/v)' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+```
+
+Each image also carries an SBOM and SLSA provenance, attached by the build as attestations:
+
+```bash
+docker buildx imagetools inspect trypando/pando:0.3.1 --format '{{ json .SBOM }}'
+docker buildx imagetools inspect trypando/pando:0.3.1 --format '{{ json .Provenance }}'
+```
+
+To run exactly what you verified, pin the digest `cosign verify` printed in place of the tag in
+`docker-compose.yml`: `image: trypando/pando@sha256:…`.
 
 ## Security releases
 

@@ -19,6 +19,28 @@ Unreleased above it. -->
 
 ## [Unreleased]
 
+### Added
+
+- **A prebuilt server image, `trypando/pando` on Docker Hub** (#52). Installing no longer means
+  cloning the repository and building on the host: download the release's `docker-compose.yml` and
+  run `docker compose up -d`. Built on Docker Hardened Images, with no package manager in the image
+  and the server running as the base's non-root user; for `linux/amd64` and `linux/arm64`; signed keyless with cosign,
+  with an SBOM and SLSA provenance attached, and scanned with Trivy before it is pushed. Tagged with
+  the exact version, the minor line, and `latest` for a stable release. Each release runs the
+  published image from its own compose file and deploys an app on it before it counts as done.
+  Verifying the image is in [`docs/releasing.md`](docs/releasing.md#verifying-the-image).
+- The release carries a `docker-compose.yml` that pins the image to that version.
+
+### Upgrade notes
+
+- An installation started from a clone of the repository can move to the published image: download
+  the release's `docker-compose.yml` into the same directory, so the compose project and its named
+  volumes stay the same, and run `docker compose up -d`. Keep the `POSTGRES_PASSWORD` it was started
+  with. The server now runs as UID 65532 rather than 10001, so an existing `pando-data` volume needs
+  its owner changed once: `docker compose run --rm --user 0 --entrypoint chown pando -R 65532:65532 /var/lib/pando`.
+- Building the image from source needs `docker login dhi.io` with a Docker account first, because its
+  base images are Docker Hardened Images.
+
 ## [0.2.0] - 2026-09-23
 
 Detection stops asking for things the repository already told it, reads the build instructions an app

@@ -1,10 +1,16 @@
 # Pando ships as one binary (R-253). This image is how it reaches a host —
 # the artifact is unchanged, the container is just the delivery.
 #
+# Every stage is a Docker Hardened Image (dhi.io). The published image runs on
+# the runtime variant of alpine-base: busybox, musl, CA certificates and a
+# non-root user, with no package manager. What Pando adds to it is installed in
+# the -dev variant and copied across, and the toolchains never leave the build
+# stages. Pulling from dhi.io needs a Docker account: `docker login dhi.io`.
+#
 # Base images are pinned by digest, with the tag kept as the readable half. A
-# tag moves — `alpine:3.24` is a different filesystem this month than last — so
-# a build is only reproducible against a digest. Dependabot updates these, which
-# is what keeps the pin from meaning "old".
+# tag moves — `alpine-base:3.24` is a different filesystem this month than last
+# — so a build is only reproducible against a digest. Dependabot updates these,
+# which is what keeps the pin from meaning "old".
 #
 # The console is embedded in the binary rather than served beside it (R-253),
 # so it has to exist before the Go build, not after it. Building it here rather
@@ -19,7 +25,13 @@
 # the one in package.json.
 #
 # Neither toolchain reaches the final image.
-FROM golang:1.27-alpine@sha256:4cb7ac979db5fcc41cae44b2227ba5ab8a51e8807f40d9ba4dee20a0ad960b5b AS console
+#
+# Both build stages run on the builder's own platform and cross-compile: the
+# console is JavaScript and the binary is built with cgo off, so neither needs
+# to run on the platform it is for. The release builds amd64 and arm64 in one
+# go (issue #52), and running npm and the Go toolchain under emulation for the
+# other one took the better part of an hour.
+FROM --platform=$BUILDPLATFORM dhi.io/golang:1.27-alpine3.24-dev@sha256:8690ed7def62c94fec567dcd9803922f7c77fcfbd87f51106233c3ee2c81c705 AS console
 WORKDIR /src
 RUN apk add --no-cache nodejs npm
 
@@ -34,7 +46,9 @@ COPY . .
 # go:embed reads.
 RUN cd console && npm run build
 
-FROM golang:1.27-alpine@sha256:4cb7ac979db5fcc41cae44b2227ba5ab8a51e8807f40d9ba4dee20a0ad960b5b AS build
+FROM --platform=$BUILDPLATFORM dhi.io/golang:1.27-alpine3.24-dev@sha256:8690ed7def62c94fec567dcd9803922f7c77fcfbd87f51106233c3ee2c81c705 AS build
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
 
 # Dependencies first, so a source change does not re-download the module cache.
@@ -50,17 +64,21 @@ COPY --from=console /src/internal/console/dist/ ./internal/console/dist/
 RUN test -f internal/console/dist/index.html \
     || { echo "the console did not reach the build stage" >&2; exit 1; }
 
-# No version stamp. The server is installed from this image by building it
-# locally (design 00 §1.1), so this build is not a release and must not claim to
-# be one — `pando version` reports "development build" and that is accurate.
-# GoReleaser stamps the released CLI; see .goreleaser.yaml.
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pando ./cmd/pando
+# Stamped only when the release workflow says what it is building
+# (.github/workflows/image.yml), with the same three values GoReleaser stamps
+# into the released CLI. A local build passes none and `pando version` says
+# "development build", which is accurate: it is not a release and must not
+# claim to be one.
+ARG VERSION=""
+ARG COMMIT=""
+ARG BUILD_DATE=""
+RUN stamp=""; \
+    if [ -n "$VERSION" ]; then \
+      stamp="-X main.buildVersion=${VERSION} -X main.buildCommit=${COMMIT} -X main.buildDate=${BUILD_DATE}"; \
+    fi; \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+      go build -trimpath -ldflags="-s -w ${stamp}" -o /out/pando ./cmd/pando
 
-# 3.21 rather than 3.20 because that is where postgresql17-client appears, and
-# the client major version has to match the server: pg_dump refuses a server
-# newer than itself, and discovering that during a restore is discovering it at
-# the worst possible moment. Bump this with the postgres service in
-# docker-compose.yml, never separately.
 # nixpacks turns a repository with no deployment instructions into a
 # Dockerfile, which BuildKit then builds (R-095: wrap an existing
 # implementation rather than reimplementing convention-matching).
@@ -69,7 +87,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pando ./cmd/pando
 # builds, and pinned so the same repository produces the same plan a year from
 # now. It only ever *generates* — `nixpacks build --out` writes a Dockerfile and
 # does not build, so no container runtime socket is involved anywhere (R-112).
-FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS nixpacks
+FROM --platform=$BUILDPLATFORM dhi.io/alpine-base:3.24-dev@sha256:e8ea5cd1031f302d73920e38c0c9ff4090368f5ddbbfae519de9ea24865464bd AS nixpacks
 ARG NIXPACKS_VERSION=1.41.0
 ARG TARGETARCH
 RUN apk add --no-cache curl tar \
@@ -80,14 +98,43 @@ RUN apk add --no-cache curl tar \
        esac \
     && curl -fsSL -o /tmp/nixpacks.tgz \
        "https://github.com/railwayapp/nixpacks/releases/download/v${NIXPACKS_VERSION}/nixpacks-v${NIXPACKS_VERSION}-${arch}-unknown-linux-musl.tar.gz" \
+    && mkdir -p /usr/local/bin \
     && tar xzf /tmp/nixpacks.tgz -C /usr/local/bin nixpacks \
     && chmod +x /usr/local/bin/nixpacks
 
-FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
-RUN apk add --no-cache ca-certificates tzdata su-exec postgresql17-client \
-    && adduser -D -u 10001 pando \
-    && mkdir -p /var/lib/pando /etc/traefik/dynamic \
-    && chown pando:pando /var/lib/pando /etc/traefik/dynamic
+# What the server needs beyond the runtime base, installed where there is a
+# package manager and staged for the copy below:
+#
+# - postgresql17-client for pg_dump and pg_restore (backups, R-210). The client
+#   major version has to match the server: pg_dump refuses a server newer than
+#   itself, and discovering that during a restore is discovering it at the worst
+#   possible moment. Bump this with the postgres service in docker-compose.yml,
+#   never separately.
+# - su-exec, which the entrypoint drops privileges with.
+# - tzdata, which the runtime base does not carry.
+#
+# apk-tools is removed before staging, so the package database copied below
+# lists what the image actually holds: a scanner reads it to know what is
+# installed, and an entry for a package manager that is not there is a finding
+# about nothing.
+FROM dhi.io/alpine-base:3.24-dev@sha256:e8ea5cd1031f302d73920e38c0c9ff4090368f5ddbbfae519de9ea24865464bd AS packages
+RUN apk add --no-cache postgresql17-client su-exec tzdata \
+    && apk del --no-cache apk-tools \
+    && mkdir /staging \
+    && tar -cf - /lib /usr/lib /usr/libexec /usr/bin/pg_dump /usr/bin/pg_restore /usr/bin/psql \
+         /sbin/su-exec /usr/share/zoneinfo 2>/dev/null \
+       | tar -xf - -C /staging
+
+FROM dhi.io/alpine-base:3.24@sha256:b18ee573885f54237cd93329a542d526a5aeed79463e5d1f759c4f09269f2ab9
+COPY --from=packages /staging/ /
+
+# The runtime base's own non-root user, nonroot (65532), runs the server. The
+# entrypoint needs root only to join the Docker socket's group, so the image
+# starts as root and the entrypoint drops to nonroot before Pando starts.
+# By number: the hardened base has no root entry in /etc/passwd.
+USER 0
+RUN mkdir -p /var/lib/pando /etc/traefik/dynamic \
+    && chown nonroot:nonroot /var/lib/pando /etc/traefik/dynamic
 
 WORKDIR /var/lib/pando
 
@@ -97,6 +144,6 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # The entrypoint starts as root only long enough to join the runtime socket's
 # group — whose ID differs per host and so cannot be baked in — then drops to
-# the unprivileged pando user. The server itself never runs as root.
+# the unprivileged nonroot user. The server itself never runs as root.
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh", "/usr/local/bin/pando"]

@@ -7,6 +7,17 @@
 
 version: 2
 
+# The Dockerfile's base images are Docker Hardened Images, which dhi.io serves
+# only to a signed-in Docker account. These are Dependabot secrets, stored
+# separately from the Actions secrets of the same name (Settings → Secrets →
+# Dependabot).
+registries:
+  dhi:
+    type: docker-registry
+    url: dhi.io
+    username: ${{secrets.DOCKERHUB_USERNAME}}
+    password: ${{secrets.DOCKERHUB_TOKEN}}
+
 updates:
   - package-ecosystem: gomod
     directory: /
@@ -112,5 +123,7 @@ updates:
 
   - package-ecosystem: docker
     directory: /
+    registries:
+      - dhi
     schedule:
       interval: weekly

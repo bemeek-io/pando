@@ -1,6 +1,6 @@
 #!/bin/sh
-# Grant the unprivileged pando user access to the container runtime socket, then
-# drop to it.
+# Grant the unprivileged nonroot user access to the container runtime socket,
+# then drop to it.
 #
 # The socket's group ID differs per host — it is not the same on Docker Desktop,
 # a Linux server, or a rootless install — so it cannot be baked into the image.
@@ -11,25 +11,28 @@
 # traffic never has more than it needs. If the socket is absent the drop still
 # happens — Pando starts, and the Docker adapter reports itself unhealthy, which
 # the planner turns into a readable refusal rather than a crash.
+#
+# The user is the hardened runtime base's own, nonroot (65532). The base is
+# busybox and nothing else, so the group is looked up in /etc/group directly:
+# there is no getent.
 set -e
 
+USER_NAME=nonroot
 SOCKET=/var/run/docker.sock
 
 if [ -S "$SOCKET" ]; then
     SOCKET_GID=$(stat -c '%g' "$SOCKET")
 
-    if [ "$SOCKET_GID" = "0" ]; then
-        # Root-owned socket, as on Docker Desktop. Adding a user to the root
-        # group is the narrowest way in without running the process as root.
-        addgroup pando root 2>/dev/null || true
-    else
-        EXISTING=$(getent group "$SOCKET_GID" | cut -d: -f1)
-        if [ -z "$EXISTING" ]; then
-            addgroup -g "$SOCKET_GID" dockerhost 2>/dev/null || true
-            EXISTING=dockerhost
-        fi
-        addgroup pando "$EXISTING" 2>/dev/null || true
+    # Join whichever group owns the socket, creating it under that ID if the
+    # image has none. That includes 0 — the socket is root-owned on Docker
+    # Desktop — because the hardened base has no root group to join by name.
+    # Joining the group is the narrowest way in without running as root.
+    EXISTING=$(grep -E "^[^:]*:[^:]*:${SOCKET_GID}:" /etc/group | head -n 1 | cut -d: -f1)
+    if [ -z "$EXISTING" ]; then
+        addgroup -g "$SOCKET_GID" dockerhost 2>/dev/null || true
+        EXISTING=dockerhost
     fi
+    addgroup "$USER_NAME" "$EXISTING" 2>/dev/null || true
 fi
 
-exec su-exec pando "$@"
+exec su-exec "$USER_NAME" "$@"
