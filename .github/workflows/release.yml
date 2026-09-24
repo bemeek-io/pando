@@ -165,3 +165,18 @@ jobs:
     with:
       version: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
     secrets: inherit
+
+  # trypando.ai publishes these docs from the latest release and shows its
+  # version. Tell it a release is out once the image the site's install command
+  # pulls exists. A prerelease isn't the latest release, so the site has
+  # nothing to update. The token can only dispatch to that one repository.
+  site:
+    needs: image
+    if: ${{ !contains(github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Tell trypando.ai
+        env:
+          GH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+        run: gh api repos/bemeek-io/trypando.ai/dispatches -f event_type=pando-release
