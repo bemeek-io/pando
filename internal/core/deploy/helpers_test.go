@@ -272,6 +272,29 @@ func TestR130_AVariableNobodyFilledInIsNotSetToNothing(t *testing.T) {
 	require.Equal(t, "", set.Reveal())
 }
 
+// The primary workload is told which port Pando routes to, unless the spec says
+// otherwise. A Procfile with `--bind 0.0.0.0:$PORT` started with an empty port
+// before this (issue #55).
+func TestR097_ThePrimaryWorkloadIsToldItsPort(t *testing.T) {
+	web := spec.Workload{Name: "web", Primary: true, Ports: []spec.Port{{Number: 8000}}}
+	env, err := resolveEnv(&spec.AppSpec{Workloads: []spec.Workload{web}}, web, nil, provisioned{})
+	require.NoError(t, err)
+	require.Equal(t, "8000", env["PORT"].Reveal())
+
+	worker := spec.Workload{Name: "worker", Ports: []spec.Port{{Number: 9000}}}
+	env, err = resolveEnv(&spec.AppSpec{Workloads: []spec.Workload{worker}}, worker, nil, provisioned{})
+	require.NoError(t, err)
+	_, set := env["PORT"]
+	require.False(t, set, "only the workload traffic is routed to")
+
+	chosen := "5000"
+	own := spec.Workload{Name: "web", Primary: true, Ports: []spec.Port{{Number: 8000}},
+		Env: []spec.EnvEntry{{Key: "PORT", Value: &chosen, Source: spec.EnvFromUser}}}
+	env, err = resolveEnv(&spec.AppSpec{Workloads: []spec.Workload{own}}, own, nil, provisioned{})
+	require.NoError(t, err)
+	require.Equal(t, "5000", env["PORT"].Reveal(), "a PORT the spec sets is kept")
+}
+
 // TestR148_EachPartOfAnAppRecordsItsOwnImage asserts R-148.
 //
 // The reconciler restores a missing workload from the image the deployment

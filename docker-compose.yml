@@ -59,6 +59,13 @@ services:
       PANDO_RECONCILER_FAILURE_WINDOW: ${PANDO_RECONCILER_FAILURE_WINDOW:-}
       PANDO_RECONCILER_FAILURE_THRESHOLD: ${PANDO_RECONCILER_FAILURE_THRESHOLD:-}
       PANDO_RECONCILER_GC_INTERVAL: ${PANDO_RECONCILER_GC_INTERVAL:-}
+      # The CPU (thousandths of a core), memory and disk every new app is given
+      # (R-240). Unset uses one core, 512 MiB and 10 GiB. Pando refuses a deploy
+      # that would commit more than the host has (R-242), so on a small machine
+      # running many light apps, lower the CPU: 250 fits four apps per core.
+      PANDO_APPS_CPU_MILLIS: ${PANDO_APPS_CPU_MILLIS:-}
+      PANDO_APPS_MEMORY_BYTES: ${PANDO_APPS_MEMORY_BYTES:-}
+      PANDO_APPS_DISK_BYTES: ${PANDO_APPS_DISK_BYTES:-}
       # Port-mode routing hands each app a host port and serves it at the root
       # of that port (design 03 §4.2). The range published below and the range
       # apps are allocated from have to be the same range, or apps past the end

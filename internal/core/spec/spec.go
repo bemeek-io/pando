@@ -223,6 +223,10 @@ type WorkloadBuild struct {
 	Context    string `json:"context,omitempty"`
 	Dockerfile string `json:"dockerfile,omitempty"`
 	Target     string `json:"target,omitempty"`
+
+	// Args are this service's own build arguments, from its compose `build:
+	// args:`. Stored in the clear, like the app's.
+	Args []KV `json:"args,omitempty"`
 }
 
 // EnvEntry is one environment variable. Exactly one of Value, SlotRef, or
@@ -308,6 +312,9 @@ const (
 
 	// VolumeFromScreening was added by an AI screener (design 10 §3).
 	VolumeFromScreening VolumeSource = "screened"
+
+	// VolumeFromImage is a path the app's image declares with VOLUME (R-200).
+	VolumeFromImage VolumeSource = "image"
 )
 
 // Volume is persistent storage.

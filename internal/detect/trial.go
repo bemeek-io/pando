@@ -3,6 +3,7 @@ package detect
 import (
 	"fmt"
 	"io"
+	"path"
 	"sort"
 	"strings"
 
@@ -24,6 +25,7 @@ type Trial struct {
 	ObservedPorts  []int
 	LoopbackPorts  []int
 	ObservedWrites []string
+	ImageVolumes   []string
 	Log            string
 }
 
@@ -39,7 +41,11 @@ func FromTrialResult(caps api.RuntimeCapabilities, r api.TrialResult) Trial {
 		Ran:     true,
 		Started: r.Started,
 		Crashed: r.ExitCode != nil && *r.ExitCode != 0,
-		Log:     r.Log,
+		// Without NUL bytes. Some apps write them (Grafana does), and the
+		// proposal is stored as jsonb, which refuses the \u0000 they encode
+		// to — so the proposal could not be saved and the detection stayed
+		// running for good (issue #55).
+		Log: strings.ReplaceAll(r.Log, "\x00", ""),
 	}
 	if caps.SupportsPortObservation {
 		t.ObservedPorts = r.ObservedPorts
@@ -48,6 +54,7 @@ func FromTrialResult(caps api.RuntimeCapabilities, r api.TrialResult) Trial {
 	if caps.SupportsWriteObservation {
 		t.ObservedWrites = r.ObservedWrites
 	}
+	t.ImageVolumes = r.ImageVolumes
 	return t
 }
 
@@ -80,6 +87,7 @@ func ApplyTrial(draft Draft, questions []Question, t Trial) (Draft, []Question) 
 	}
 
 	draft = applyObservedPorts(draft, t)
+	draft = applyImageVolumes(draft, t)
 	questions = resolvePortQuestions(questions, t)
 
 	draft.Slots = promoteSlots(draft.Slots, t)
@@ -105,6 +113,11 @@ func applyObservedPorts(draft Draft, t Trial) Draft {
 		ports = append(ports, spec.Port{Number: n, Protocol: "http", Source: spec.PortObserved})
 	}
 
+	// The web port first: traffic goes to the first, and Gitea's image listens
+	// on SSH as well as HTTP, and Mailpit's on SMTP. Routed to 22 or 1025,
+	// the proxy's HTTP request was a protocol error (issue #55).
+	ports = webPortsFirst(ports)
+
 	for i, w := range draft.Workloads {
 		if !w.Primary {
 			continue
@@ -113,6 +126,60 @@ func applyObservedPorts(draft Draft, t Trial) Draft {
 		break
 	}
 	return draft
+}
+
+// applyImageVolumes gives the primary workload storage wherever its image
+// declares it (R-200).
+//
+// A Dockerfile's VOLUME is the image's author saying where its data lives, the
+// same declaration a compose file's volumes are. Without it the data went into
+// the container's writable layer and was lost with the container — and
+// Vaultwarden, which checks, refused to start at all: "No persistent volume!"
+// (issue #55). A path the workload already mounts is left as it is.
+func applyImageVolumes(draft Draft, t Trial) Draft {
+	for i, w := range draft.Workloads {
+		if !w.Primary {
+			continue
+		}
+		mounted := map[string]bool{}
+		for _, m := range w.Mounts {
+			mounted[path.Clean(m.Path)] = true
+		}
+		taken := map[string]bool{}
+		for _, v := range draft.Volumes {
+			taken[v.ID] = true
+		}
+		for _, p := range t.ImageVolumes {
+			clean := path.Clean(p)
+			if !path.IsAbs(clean) || clean == "/" || mounted[clean] {
+				continue
+			}
+			name := volumeNameFor("", clean)
+			for n := 2; taken[name]; n++ {
+				name = fmt.Sprintf("%s-%d", volumeNameFor("", clean), n)
+			}
+			taken[name] = true
+			draft.Volumes = append(draft.Volumes, spec.Volume{ID: name, Name: name, Declared: spec.VolumeFromImage})
+			draft.Workloads[i].Mounts = append(draft.Workloads[i].Mounts, spec.Mount{VolumeID: name, Path: clean})
+			mounted[clean] = true
+		}
+		break
+	}
+	return draft
+}
+
+// onlyNonHTTP reports observed ports that are all ports of protocols other than
+// HTTP — a database or a mail server with nothing for a browser to open.
+func onlyNonHTTP(ports []int) bool {
+	if len(ports) == 0 {
+		return false
+	}
+	for _, p := range ports {
+		if !notHTTP[p] {
+			return false
+		}
+	}
+	return true
 }
 
 // resolvePortQuestions drops port questions the trial answered, and promotes

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -177,6 +178,132 @@ func TestPlanNeedsTheSourceOnDisk(t *testing.T) {
 	_, _, _, err := New().Plan(context.Background(), viewWithoutRoot{})
 	require.Equal(t, errs.BuildFailed, errs.CodeOf(err))
 	require.Contains(t, errs.As(err).Message, "on disk")
+}
+
+// unreachable is an adapter whose client points at an address nothing listens
+// on. Configuring it does not dial, so everything Build does before it talks to
+// the build service runs, and the build service's refusal comes back as the
+// build's own failure.
+func unreachable(t *testing.T) *Adapter {
+	t.Helper()
+	a := New()
+	require.NoError(t, a.Configure(context.Background(), json.RawMessage(`{"address":"tcp://127.0.0.1:1"}`)))
+	require.NotNil(t, a.cli)
+	t.Cleanup(func() { _ = a.cli.Close() })
+	return a
+}
+
+// A build with nowhere to put its image is refused before anything is sent to
+// the build service.
+func TestABuildWithNoImageSinkIsRefused(t *testing.T) {
+	root := writeFiles(t, map[string]string{"Dockerfile": "FROM scratch\n"})
+	_, err := unreachable(t).Build(context.Background(), api.BuildRequest{
+		Strategy: spec.BuildDockerfile, Source: view{root: root},
+	})
+	require.Equal(t, errs.BuildFailed, errs.CodeOf(err))
+	require.Contains(t, errs.As(err).Message, "nowhere to put the image")
+}
+
+// A source that is not on disk cannot be handed to BuildKit, and a generated
+// plan that cannot be made stops the build before it starts.
+func TestABuildNeedsASourceOnDiskAndAPlan(t *testing.T) {
+	a := unreachable(t)
+	_, err := a.Build(context.Background(), api.BuildRequest{Strategy: spec.BuildDockerfile, Source: viewWithoutRoot{}})
+	require.Equal(t, errs.BuildFailed, errs.CodeOf(err))
+	require.Contains(t, errs.As(err).Message, "on disk")
+
+	_, err = a.Build(context.Background(), api.BuildRequest{
+		Strategy: spec.BuildStatic, StaticDir: "missing", Source: view{root: t.TempDir()},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing")
+}
+
+// A build the build service cannot run fails as a build failure with a remedy,
+// after the cache directory for the app has been prepared on Pando's side
+// (R-117). The request's plan arguments, build arguments, target stage and
+// the app's image label are all assembled on the way; only the build service
+// can say what it did with them, so what is asserted here is that the build
+// got as far as asking it.
+func TestABuildTheBuildServiceCannotRunFailsWithARemedy(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv("PANDO_BUILD_CACHE_DIR", cache)
+
+	// A buildpack build of a Go program: the plan is made at build time and
+	// read back from the checkout for its arguments.
+	root := writeFiles(t, map[string]string{"go.mod": "module x\ngo 1.24\n", "main.go": "package main\n"})
+	var sink strings.Builder
+	_, err := unreachable(t).Build(context.Background(), api.BuildRequest{
+		Strategy:       spec.BuildBuildpack,
+		Source:         view{root: root},
+		CacheNamespace: "app_01HQ8/web",
+		Args:           map[string]string{"GOFLAGS": "-mod=mod"},
+		Target:         "build",
+		ImageSink:      &sink,
+		Timeout:        10 * time.Second,
+	})
+	require.Error(t, err)
+	code := errs.CodeOf(err)
+	require.Contains(t, []errs.Code{errs.BuildFailed, errs.BuildTimeout}, code)
+	require.NotEmpty(t, errs.As(err).Remedy, "R-105 promises a way forward")
+
+	info, statErr := os.Stat(filepath.Join(cache, "app_01HQ8", "web"))
+	require.NoError(t, statErr)
+	require.True(t, info.IsDir(), "the per-app cache directory was prepared")
+
+	_, statErr = os.Stat(filepath.Join(root, ".nixpacks", "Dockerfile"))
+	require.NoError(t, statErr, "the plan was written into the checkout it builds")
+}
+
+// A cache directory that cannot be made stops the build with a message that
+// says which step failed.
+func TestABuildCacheThatCannotBePreparedStopsTheBuild(t *testing.T) {
+	blocked := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(blocked, nil, 0o644))
+	t.Setenv("PANDO_BUILD_CACHE_DIR", blocked)
+
+	root := writeFiles(t, map[string]string{"Dockerfile": "FROM scratch\n"})
+	_, err := unreachable(t).Build(context.Background(), api.BuildRequest{
+		Strategy: spec.BuildDockerfile, Source: view{root: root}, CacheNamespace: "app_01HQ8",
+		ImageSink: io.Discard,
+	})
+	require.Equal(t, errs.BuildFailed, errs.CodeOf(err))
+	require.Equal(t, "Could not prepare the build cache.", errs.As(err).Message)
+}
+
+// The image label names the app, not the compose service: a deleted app's
+// images are found by the app's ID.
+func TestTheImageLabelNamesTheApp(t *testing.T) {
+	require.Equal(t, "app_01HQ8", bundleOf("app_01HQ8"))
+	require.Equal(t, "app_01HQ8", bundleOf("app_01HQ8/web"))
+}
+
+// Trimming the build service's cache is skipped when it is unbounded or there
+// is no client, and otherwise asks the build service to prune, ignoring a
+// failure: a cache that stays too big is not a broken build.
+func TestTrimmingTheBuildCacheIgnoresFailure(t *testing.T) {
+	New().trimCache(context.Background()) // no client: nothing to do
+
+	unbounded := unreachable(t)
+	unbounded.config.CacheMaxBytes = -1
+	unbounded.trimCache(context.Background())
+
+	a := unreachable(t)
+
+	// A canceled context makes the prune fail at once rather than wait on an
+	// address nothing listens on.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		a.trimCache(ctx)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("a failed prune held the build")
+	}
 }
 
 // viewWithoutRoot is a source view that cannot hand over a path, which is the

@@ -186,6 +186,20 @@ func TestNodeIsAddedOnlyWhenAPackageJsonExists(t *testing.T) {
 	require.Contains(t, strings.Join(flagsFor(withFiles(t, withNode)), " "), "nodejs")
 }
 
+// A Makefile over C sources needs a compiler, which no nixpacks provider brings
+// to a repository that is only a Makefile and sources (issue #55). Sources one
+// directory down count, which is where a small C program often keeps them.
+func TestACompilerIsAddedForCSources(t *testing.T) {
+	top := withFiles(t, map[string]string{"Makefile": "build:\n\tcc -o app main.c\n", "main.c": "int main(){}"})
+	require.Contains(t, strings.Join(flagsFor(top), " "), "gcc")
+
+	nested := withFiles(t, map[string]string{"Makefile": "build:\n\tmake -C src\n", "src/app.cpp": "int main(){}"})
+	require.Contains(t, strings.Join(flagsFor(nested), " "), "gcc")
+
+	none := withFiles(t, map[string]string{"Makefile": "build:\n\tgo build .\n", "main.go": "package main"})
+	require.NotContains(t, strings.Join(flagsFor(none), " "), "gcc")
+}
+
 // node_modules is somebody else's package.json, several thousand times over.
 func TestAVendoredPackageJsonDoesNotCount(t *testing.T) {
 	root := withFiles(t, map[string]string{

@@ -239,7 +239,29 @@ func toolchainPackages(contextDir string) []string {
 	if hasFileNamed(contextDir, "package.json") {
 		pkgs = append(pkgs, "nodejs")
 	}
+	// C and C++ sources are compiled by whatever `cc` the environment has, and
+	// none of nixpacks' providers brings one to a repository that is only a
+	// Makefile and sources: `make: cc: No such file or directory` (issue #55).
+	if hasFileWithSuffix(contextDir, ".c", ".cc", ".cpp") {
+		pkgs = append(pkgs, "gcc")
+	}
 	return pkgs
+}
+
+// hasFileWithSuffix reports whether a file ending in one of the suffixes exists
+// in the top two levels of the tree, where a small C program keeps its sources.
+func hasFileWithSuffix(root string, suffixes ...string) bool {
+	for _, pattern := range []string{"*", filepath.Join("*", "*")} {
+		matches, _ := filepath.Glob(filepath.Join(root, pattern))
+		for _, m := range matches {
+			for _, s := range suffixes {
+				if strings.HasSuffix(m, s) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // hasFileNamed reports whether name exists anywhere in the tree.

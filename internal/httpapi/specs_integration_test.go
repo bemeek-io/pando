@@ -347,6 +347,56 @@ func TestASlotCanBeFilledWithALiteral(t *testing.T) {
 	}
 }
 
+// TestR132_FillingTwoSlotsKeepsBoth asserts R-132.
+//
+// Each fill wrote a new revision built from the pinned spec, so the second
+// fill after an accept replaced the first, and the deploy was refused for a
+// slot that had been filled (issue #55).
+func TestR132_FillingTwoSlotsKeepsBoth(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+	id := i.createApp(admin, "notes")
+
+	withSlots := minimalSpec()
+	withSlots["slots"] = []map[string]any{
+		{"key": "SECRET_KEY", "type": "unknown", "required": true},
+		{"key": "SITE_NAME", "type": "unknown", "required": true},
+	}
+	withSlots["workloads"].([]map[string]any)[0]["env"] = []map[string]any{
+		{"key": "SECRET_KEY", "slot_ref": "SECRET_KEY"},
+		{"key": "SITE_NAME", "slot_ref": "SITE_NAME"},
+	}
+	i.pinSpec(admin, id, i.writeSpec(admin, id, withSlots))
+
+	var last float64
+	for _, key := range []string{"SECRET_KEY", "SITE_NAME"} {
+		got := i.do(admin, http.MethodPut, "/apps/"+id+"/slots/"+key, map[string]any{
+			"key": key, "mode": "literal", "value": "value-for-" + key,
+		})
+		require.Less(t, got.Code, 300, got.String())
+		var filled map[string]any
+		got.JSON(t, &filled)
+		last = filled["spec_revision"].(float64)
+	}
+
+	// The revision the second fill wrote carries both.
+	got := i.do(admin, http.MethodGet, fmt.Sprintf("/apps/%s/specs/%d", id, int(last)), nil)
+	require.Equal(t, http.StatusOK, got.Code, got.String())
+	var rev struct {
+		Body struct {
+			Slots []struct {
+				Key        string         `json:"key"`
+				Resolution map[string]any `json:"resolution"`
+			} `json:"slots"`
+		} `json:"body"`
+	}
+	got.JSON(t, &rev)
+	require.Len(t, rev.Body.Slots, 2)
+	for _, s := range rev.Body.Slots {
+		require.NotNil(t, s.Resolution, "%s was filled", s.Key)
+	}
+}
+
 func TestSettingASlotThatTheSpecDoesNotDeclare(t *testing.T) {
 	i := newInstall(t)
 	admin := i.admin()

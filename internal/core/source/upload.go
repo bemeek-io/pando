@@ -67,6 +67,25 @@ func StoreUpload(appID string, r io.Reader) (string, error) {
 	return final, nil
 }
 
+// DiscardUpload removes a deleted app's stored upload.
+//
+// The archive is kept for the app's next deploy, and a deleted app has none:
+// a restore goes to an app created again, with an upload of its own (R-206).
+// It had been kept forever (issue #55). A missing archive is not an error — an
+// app built from git never had one.
+func DiscardUpload(appID string) error {
+	if appID == "" || strings.ContainsAny(appID, `/\`) || strings.HasPrefix(appID, ".") {
+		return errs.Newf(errs.ValidInvalid, "%q does not name an app.", appID)
+	}
+	final := filepath.Join(UploadDir, appID+".tar.gz")
+	for _, p := range []string{final, final + ".partial"} {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return errs.Wrap(errs.Internal, "Pando could not remove the app's uploaded source.", err)
+		}
+	}
+	return nil
+}
+
 // fetchUpload expands a stored upload into a checkout.
 func fetchUpload(_ context.Context, src spec.Source) (*Checkout, error) {
 	archive := filepath.Join(UploadDir, src.UploadID+".tar.gz")
@@ -92,7 +111,11 @@ func fetchUpload(_ context.Context, src spec.Source) (*Checkout, error) {
 	}
 	// No commit: an upload has no revision. The deploy records the archive it
 	// came from instead, which is the honest answer to "what was deployed".
-	return &Checkout{Dir: dir, Commit: ""}, nil
+	//
+	// With the same cleanup a clone has. Without it every detection and every
+	// deploy of an uploaded app left a full copy of its source in the
+	// temporary directory for as long as the server ran (issue #55).
+	return &Checkout{Dir: dir, Commit: "", cleanup: func() { _ = os.RemoveAll(dir) }}, nil
 }
 
 // extract unpacks a gzipped tar, refusing anything that escapes the directory.

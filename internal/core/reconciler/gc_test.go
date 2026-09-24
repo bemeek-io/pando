@@ -85,6 +85,24 @@ func TestR204_TearingDownAnAppKeepsItsVolumes(t *testing.T) {
 	require.True(t, runtime.opts[0].KeepVolumes, "the data survives the app")
 }
 
+// TestR204_ADeleteThatSettledTheStorageTakesTheVolumes asserts R-204: a delete
+// says to discard the storage or back it up first, and either way it was left
+// on disk with no row to reach it by (issue #55). Only that recorded decision
+// lets the teardown take the volumes.
+func TestR204_ADeleteThatSettledTheStorageTakesTheVolumes(t *testing.T) {
+	runtime := &recordingRuntime{}
+	g := &GC{
+		Logger:   zap.NewNop(),
+		Registry: fakeRegistry{runtime: map[string]api.RuntimeAdapter{"rt_docker": runtime}},
+	}
+
+	require.NoError(t, g.tearDown(context.Background(), state.TeardownTarget{
+		AppID: "app_01HQ8", RuntimeRef: "rt_docker", DiscardStorage: true,
+	}))
+	require.Len(t, runtime.opts, 1)
+	require.False(t, runtime.opts[0].KeepVolumes, "the delete said to discard it")
+}
+
 // The route first. A route outliving its app points at a Pando that will answer
 // 404 for it, and on a file-provider edge it is a file that accumulates one per
 // deleted app.
@@ -116,6 +134,63 @@ func TestAnAppThatWasNeverDeployedTearsDownWithNothingToDo(t *testing.T) {
 	g := &GC{Logger: zap.NewNop(), Registry: fakeRegistry{}}
 
 	require.NoError(t, g.tearDown(context.Background(), state.TeardownTarget{AppID: "app_01HQ8"}))
+}
+
+// recordingCaches notes which apps' build caches it was asked to forget.
+type recordingCaches struct {
+	forgot []string
+	err    error
+}
+
+func (r *recordingCaches) Forget(_ context.Context, builderRef, appID string) error {
+	r.forgot = append(r.forgot, builderRef+":"+appID)
+	return r.err
+}
+
+// TestR224_TearingDownAnAppRemovesItsBuildCacheAndUpload asserts R-224. Both
+// stayed on disk after the app was deleted (issue #55): hundreds of megabytes
+// of cache for an ordinary app, and every archive anyone uploaded.
+func TestR224_TearingDownAnAppRemovesItsBuildCacheAndUpload(t *testing.T) {
+	runtime := &recordingRuntime{}
+	caches := &recordingCaches{}
+	var discarded []string
+	g := &GC{
+		Logger:        zap.NewNop(),
+		Registry:      fakeRegistry{runtime: map[string]api.RuntimeAdapter{"rt_docker": runtime}},
+		BuildCaches:   caches,
+		DiscardUpload: func(appID string) error { discarded = append(discarded, appID); return nil },
+	}
+
+	require.NoError(t, g.tearDown(context.Background(), state.TeardownTarget{
+		AppID: "app_01HQ8", RuntimeRef: "rt_docker", BuilderRef: "bld_buildkit",
+	}))
+	require.Len(t, runtime.destroyed, 1)
+	require.Equal(t, []string{"bld_buildkit:app_01HQ8"}, caches.forgot)
+	require.Equal(t, []string{"app_01HQ8"}, discarded)
+
+	// An upload is stored before the first deploy, so an app that never ran
+	// still has one.
+	require.NoError(t, g.tearDown(context.Background(), state.TeardownTarget{AppID: "app_01NEVER"}))
+	require.Equal(t, []string{"app_01HQ8", "app_01NEVER"}, discarded)
+	require.Len(t, caches.forgot, 1, "no builder, no cache")
+}
+
+// A cache that cannot be removed leaves the teardown for the next pass rather
+// than recording it done and forgetting the files for good.
+func TestABuildCacheThatCannotBeRemovedIsRetried(t *testing.T) {
+	g := &GC{
+		Logger:        zap.NewNop(),
+		Registry:      fakeRegistry{},
+		BuildCaches:   &recordingCaches{err: errors.New("read-only file system")},
+		DiscardUpload: func(string) error { return nil },
+	}
+	require.Error(t, g.tearDown(context.Background(), state.TeardownTarget{
+		AppID: "app_01HQ8", BuilderRef: "bld_buildkit",
+	}))
+
+	g.BuildCaches = &recordingCaches{}
+	g.DiscardUpload = func(string) error { return errors.New("permission denied") }
+	require.Error(t, g.tearDown(context.Background(), state.TeardownTarget{AppID: "app_01HQ8"}))
 }
 
 // The adapter that held it is no longer configured. Reported rather than marked

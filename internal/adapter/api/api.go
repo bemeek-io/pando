@@ -260,6 +260,11 @@ type TrialResult struct {
 	// ObservedWrites are directories written outside DeclaredPaths (R-202).
 	ObservedWrites []string
 
+	// ImageVolumes are the paths the image itself declares as persistent
+	// storage (a Dockerfile's VOLUME), sorted. The image's author saying where
+	// data lives is the same declaration a compose volume is (R-200).
+	ImageVolumes []string
+
 	// Log is captured whether or not the trial crashed, because on a crash it
 	// is the entire answer Pando has and R-107 says showing it and stopping is
 	// the correct outcome rather than a gap to close with inference.
@@ -625,6 +630,12 @@ type BuilderAdapter interface {
 	Bid(ctx context.Context, src SourceView) (Bid, error)
 
 	Build(ctx context.Context, req BuildRequest) (BuildResult, error)
+
+	// Forget removes what the builder keeps for an app between builds — its
+	// build cache — once the app is deleted. The namespace is the app's ID,
+	// the prefix of every CacheNamespace it built under. Idempotent: an app
+	// that never built, or was already forgotten, is not an error.
+	Forget(ctx context.Context, namespace string) error
 }
 
 // SourceView is a read-only view of an app's source (R-020).
@@ -688,6 +699,10 @@ type BuildRequest struct {
 	Context    string
 	Args       map[string]string
 
+	// Target is the stage of a multi-stage Dockerfile to build. Empty builds
+	// the last stage, which is what a Dockerfile with no target means.
+	Target string
+
 	// GeneratedFiles are build inputs the spec carries, keyed by path relative
 	// to the context. Written into the checkout before the build.
 	//
@@ -701,6 +716,16 @@ type BuildRequest struct {
 	// "this app is a directory of files"; the builder decides what image serves
 	// them (R-250, R-251). Empty means the repository root.
 	StaticDir string
+
+	// StartCommand is how the app starts, when the spec says so: a shell
+	// command line. A builder that plans a build from convention uses it in
+	// place of guessing one, and a builder that has no use for it ignores it.
+	//
+	// It exists because detection asks for the start command when it cannot
+	// work one out, and the answer used to stop at the workload. A buildpack
+	// plan made at build time then failed with "No start command could be
+	// found" on exactly the apps whose owners had just typed one (issue #55).
+	StartCommand string
 
 	IsolationFloor IsolationClass
 	Timeout        time.Duration
@@ -722,6 +747,16 @@ type BuildRequest struct {
 	// runtime's ImportImage.
 	ImageSink io.Writer
 }
+
+// ImageLabelBundle is the image label a builder sets to the app an image was
+// built for, and a runtime reads to remove an app's images when it is
+// destroyed. Its value is the BundleID. An image label rather than a tag,
+// because a rebuild moves the tag and leaves the previous image untagged.
+//
+// Its own key, not the one a runtime marks a bundle's containers with: a
+// container inherits its image's labels, and a throwaway trial container
+// started from the image must not look like one of the app's workloads.
+const ImageLabelBundle = "io.pando.built-for"
 
 // BuildResult is what a build produced.
 //

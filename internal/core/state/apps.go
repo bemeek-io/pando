@@ -415,6 +415,29 @@ func (a *Apps) SetFavorite(ctx context.Context, userID, appID string, favorite b
 // at a row that no longer exists answers fewer questions than one that does.
 // Volumes are ON DELETE RESTRICT and must be resolved first (R-204) — the caller
 // handles the keep-or-discard decision.
+// Known reports whether this installation ever created the app, deleted ones
+// included. It is how startup tells this install's app networks from another
+// install's on the same Docker host (issue #55).
+func (a *Apps) Known(ctx context.Context, appID string) (bool, error) {
+	var known bool
+	if err := a.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM apps WHERE id = $1)`, appID).Scan(&known); err != nil {
+		return false, errs.Wrap(errs.Internal, "Could not look the app up.", err)
+	}
+	return known, nil
+}
+
+// Live reports whether an app still exists and has not been deleted. A
+// question worth asking again just before acting on an app read a while ago.
+func (a *Apps) Live(ctx context.Context, appID string) (bool, error) {
+	var live bool
+	if err := a.db.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM apps WHERE id = $1 AND deleted_at IS NULL AND state <> 'archived')`,
+		appID).Scan(&live); err != nil {
+		return false, errs.Wrap(errs.Internal, "Could not look the app up.", err)
+	}
+	return live, nil
+}
+
 func (a *Apps) Archive(ctx context.Context, appID string) error {
 	_, err := a.db.Exec(ctx, `
 		UPDATE apps SET state = 'archived', desired_state = 'stopped', deleted_at = now(), updated_at = now()
@@ -627,7 +650,9 @@ func isForeignKeyViolation(err error) bool {
 func (a *Apps) AwaitingTeardown(ctx context.Context, limit int) ([]TeardownTarget, error) {
 	rows, err := a.db.Query(ctx, `
 		SELECT a.id, coalesce(r.body->'runtime'->>'adapter_ref', ''),
-		       coalesce(r.body->'routing'->>'adapter_ref', '')
+		       coalesce(r.body->'routing'->>'adapter_ref', ''),
+		       coalesce(r.body->'build'->>'adapter_ref', ''),
+		       a.discard_storage
 		FROM apps a
 		LEFT JOIN spec_revisions r ON r.id = a.pinned_spec_id
 		WHERE a.deleted_at IS NOT NULL AND a.bundle_destroyed_at IS NULL
@@ -641,7 +666,7 @@ func (a *Apps) AwaitingTeardown(ctx context.Context, limit int) ([]TeardownTarge
 	out := make([]TeardownTarget, 0)
 	for rows.Next() {
 		var t TeardownTarget
-		if err := rows.Scan(&t.AppID, &t.RuntimeRef, &t.RoutingRef); err != nil {
+		if err := rows.Scan(&t.AppID, &t.RuntimeRef, &t.RoutingRef, &t.BuilderRef, &t.DiscardStorage); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not find apps waiting to be torn down.", err)
 		}
 		out = append(out, t)
@@ -654,6 +679,25 @@ type TeardownTarget struct {
 	AppID      string
 	RuntimeRef string
 	RoutingRef string
+
+	// BuilderRef is the builder that holds the app's build cache, so the
+	// teardown can have it forgotten.
+	BuilderRef string
+
+	// DiscardStorage says the delete settled the app's storage — discarded,
+	// or backed up first — so its volumes go with the bundle.
+	DiscardStorage bool
+}
+
+// DiscardStorage records that a delete settled what becomes of the app's
+// storage — discarded, or backed up first — so the teardown destroys the
+// volumes with the bundle rather than leaving them on disk (R-204, R-224).
+func (a *Apps) DiscardStorage(ctx context.Context, appID string) error {
+	if _, err := a.db.Exec(ctx,
+		`UPDATE apps SET discard_storage = true, updated_at = now() WHERE id = $1`, appID); err != nil {
+		return errs.Wrap(errs.Internal, "Could not record that the app's storage is to be removed.", err)
+	}
+	return nil
 }
 
 // MarkBundleDestroyed records that the runtime confirmed the bundle is gone.
@@ -777,10 +821,10 @@ type OrphanedVolume struct {
 // them, and this does not weaken that. It stops the storage outliving the last
 // thing that could ever want it, which is a different claim.
 //
-// Volumes of a deleted app with no backup are never returned. Those were
-// deleted with force, meaning somebody said the data was not worth keeping —
-// but "not worth backing up" is not "safe for a janitor to destroy later", and
-// the difference costs a few gigabytes rather than someone's data.
+// A delete made since apps.discard_storage exists removes the volume rows and
+// records the decision on the app instead, and the teardown destroys the
+// volumes with the bundle (Apps.DiscardStorage). This pass covers volumes whose
+// rows a delete left behind before that.
 func (a *Apps) OrphanedVolumes(ctx context.Context, limit int) ([]OrphanedVolume, error) {
 	rows, err := a.db.Query(ctx, `
 		SELECT v.id, v.app_id, v.adapter_ref, coalesce(v.handle, '')

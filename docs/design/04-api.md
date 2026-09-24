@@ -104,6 +104,8 @@ GET /api/v1/apps/{id}/detection
 
 **[D]** `runners_up` is returned so the review UI can show what else bid, satisfying "ask, never guess" (R-102) transparently — the user can see the auction rather than being handed a verdict.
 
+**[P]** While `status` is `needs_answers`, the response also carries `unanswered`: the keys of the questions that still have no answer. Answers are applied at accept, so `status` stays `needs_answers` until then; an empty `unanswered` is how a client tells "answered, ready to accept" from "waiting for answers" (issue #55).
+
 **[D]** `questions[].prompt` is held to R-105. The console shows a copy button on it, because the expected workflow is pasting it into the assistant that wrote the app.
 
 ### 2.3 Specs and deployments

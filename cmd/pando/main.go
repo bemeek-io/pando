@@ -377,6 +377,8 @@ func serve(ctx context.Context, configPath string) error {
 	// spec endpoint, because a hand-written spec needs them just as much — and
 	// used to get none of them.
 	installDefaults := detection.NewInstallation(registry, cfg.Server.BaseDomain)
+	// R-240: the limits every new app inherits are the host's to set.
+	installDefaults.Fallback.Resources = cfg.Apps.Resources(installDefaults.Fallback.Resources)
 
 	detections := state.NewDetections(db)
 	detector := &detection.Runner{
@@ -479,9 +481,18 @@ func serve(ctx context.Context, configPath string) error {
 		Mode:          cfg.Server.RoutingMode,
 	}
 
+	// A delete asks for its teardown now rather than at the next GC pass.
+	teardownNow := make(chan struct{}, 1)
+
 	// Built once and used twice: as the front door, and as what a port-mode
 	// app's own listener falls back to for Pando's reserved path (R-172).
 	apiHandler := (&httpapi.Server{
+		TeardownNow: func() {
+			select {
+			case teardownNow <- struct{}{}:
+			default:
+			}
+		},
 		Logger:   logger,
 		Security: securityService,
 		DB:       db,
@@ -599,6 +610,20 @@ func serve(ctx context.Context, configPath string) error {
 		FailureThreshold: cfg.Reconciler.FailureThreshold,
 		FailureWindow:    cfg.Reconciler.FailureWindow,
 	}
+	// Work the previous process had under way will never finish, so it is
+	// recorded as interrupted rather than left running forever. Before the
+	// loops below start, since they are what start new work.
+	if n, err := detections.AbandonRunning(ctx); err != nil {
+		logger.Warn("could not record interrupted detections", zap.Error(err))
+	} else if n > 0 {
+		logger.Info("recorded detections interrupted by the restart", zap.Int64("count", n))
+	}
+	if n, err := deployments.AbandonInFlight(ctx); err != nil {
+		logger.Warn("could not record interrupted deploys", zap.Error(err))
+	} else if n > 0 {
+		logger.Info("recorded deploys interrupted by the restart", zap.Int64("count", n))
+	}
+
 	loopCtx, stopLoop := context.WithCancel(ctx)
 	defer stopLoop()
 	go loop.Run(loopCtx)
@@ -643,12 +668,21 @@ func serve(ctx context.Context, configPath string) error {
 	// it with nothing to disconnect — whereas doing this while serving would
 	// mean detaching the running container, and on Docker Desktop that drops
 	// its published ports. Measured, not assumed.
+	//
+	// Only this install's networks. Two installs on one Docker host label their
+	// networks alike, and each used to rejoin the other's apps and reclaim the
+	// other's empty networks (issue #55). An app this install ever created,
+	// deleted ones included, is in its own database.
+	owns := func(bundleID string) bool {
+		known, err := apps.Known(ctx, bundleID)
+		return err == nil && known
+	}
 	if ref, ok := registry.Default(adapterapi.CategoryRuntime); ok {
 		rt, _ := registry.Runtime(ref)
 		if reclaimer, ok := rt.(interface {
-			ReclaimNetworks(context.Context) (int, error)
+			ReclaimNetworks(context.Context, func(string) bool) (int, error)
 		}); ok {
-			if n, err := reclaimer.ReclaimNetworks(ctx); err != nil {
+			if n, err := reclaimer.ReclaimNetworks(ctx, owns); err != nil {
 				logger.Warn("could not reclaim app networks", zap.Error(err))
 			} else if n > 0 {
 				logger.Info("reclaimed app networks left by deleted apps", zap.Int("count", n))
@@ -663,9 +697,9 @@ func serve(ctx context.Context, configPath string) error {
 		// until each was deployed again by hand. After reclaim, never before:
 		// reclaim recognizes a dead app's network by its being empty.
 		if rejoiner, ok := rt.(interface {
-			RejoinNetworks(context.Context) (int, error)
+			RejoinNetworks(context.Context, func(string) bool) (int, error)
 		}); ok {
-			if n, err := rejoiner.RejoinNetworks(ctx); err != nil {
+			if n, err := rejoiner.RejoinNetworks(ctx, owns); err != nil {
 				logger.Warn("could not rejoin app networks", zap.Error(err))
 			} else if n > 0 {
 				logger.Info("rejoined the networks of running apps", zap.Int("count", n))
@@ -679,12 +713,17 @@ func serve(ctx context.Context, configPath string) error {
 	// — and the teardown is audited, because destruction is destruction whoever
 	// does it.
 	go (&reconciler.GC{
-		Apps:     apps,
-		Logger:   logger,
-		Registry: registryAdapters{registry},
-		Auditor:  reconcilerAuditor{auditor},
-		Interval: cfg.Reconciler.GCInterval,
-		Clock:    clock.System{},
+		Apps:        apps,
+		Logger:      logger,
+		Registry:    registryAdapters{registry},
+		Auditor:     reconcilerAuditor{auditor},
+		Interval:    cfg.Reconciler.GCInterval,
+		TeardownNow: teardownNow,
+		Clock:       clock.System{},
+
+		// A deleted app's build cache and uploaded source (R-224, issue #55).
+		BuildCaches:   buildCaches{registry},
+		DiscardUpload: source.DiscardUpload,
 
 		// R-211's rolling backups, which had a column, a default and an expiry
 		// query and nothing that ever took one.
@@ -1083,6 +1122,19 @@ func (a registryAdapters) Runtime(ref string) (adapterapi.RuntimeAdapter, bool) 
 
 func (a registryAdapters) Routing(ref string) (adapterapi.RoutingAdapter, bool) {
 	return a.r.Routing(ref)
+}
+
+// buildCaches resolves the builder that built a deleted app. A builder that is
+// no longer configured holds nothing Pando can reach, so there is nothing to
+// forget.
+type buildCaches struct{ r *adapterapi.Registry }
+
+func (b buildCaches) Forget(ctx context.Context, builderRef, appID string) error {
+	builder, ok := b.r.Builder(builderRef)
+	if !ok {
+		return nil
+	}
+	return builder.Forget(ctx, appID)
 }
 
 // reconcilerAuditor writes the reconciler's events to the audit log.

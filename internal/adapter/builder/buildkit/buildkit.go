@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	bkclient "github.com/moby/buildkit/client"
@@ -32,6 +33,9 @@ type Adapter struct {
 	cli     *bkclient.Client
 	config  Config
 	address string
+
+	// pruneMu keeps cache trims from piling up when builds finish together.
+	pruneMu sync.Mutex
 }
 
 // Config is the adapter's configuration.
@@ -39,7 +43,18 @@ type Config struct {
 	// Address is where buildkitd listens. The bundled Compose file supplies
 	// tcp://buildkit:1234.
 	Address string `json:"address,omitempty"`
+
+	// CacheMaxBytes caps the build service's own cache. Zero uses
+	// defaultCacheMaxBytes; a negative value leaves it unbounded.
+	CacheMaxBytes int64 `json:"cache_max_bytes,omitempty"`
 }
+
+// defaultCacheMaxBytes is how much the build service may keep between builds.
+//
+// [P]. Nothing ever pruned it: a 169-app run grew Docker's disk by about 75 GB
+// and filled the host (issue #55). 10 GiB keeps the layers a busy install
+// rebuilds from and trims the rest, oldest first.
+const defaultCacheMaxBytes int64 = 10 << 30
 
 func New() *Adapter { return &Adapter{} }
 
@@ -206,14 +221,37 @@ func (a *Adapter) Build(ctx context.Context, req api.BuildRequest) (api.BuildRes
 
 	frontendAttrs := map[string]string{
 		"filename": filepath.Base(dockerfile),
+
+		// Which app the image belongs to, on the image itself. The tag moves on
+		// every rebuild and the previous image is left untagged, so the label is
+		// the only thing that still says whose it is when the app is deleted —
+		// and deleted apps left every image they had ever built on the host
+		// (issue #55).
+		"label:" + api.ImageLabelBundle: bundleOf(req.CacheNamespace),
 	}
 	// The plan's own arguments first, then the spec's: an app that sets one
 	// itself means it.
-	for k, v := range planArgs(req.GeneratedFiles) {
+	//
+	// A plan made just now, at build time, is read from where it was written:
+	// its arguments are in its build.sh like any other plan's, and reading
+	// them only from a stored plan left a Poetry build running
+	// `pip install poetry==` with the version empty (issue #55).
+	plan := req.GeneratedFiles
+	if len(plan) == 0 && req.Strategy == spec.BuildBuildpack {
+		plan, _ = collectPlan(contextDir)
+	}
+	for k, v := range planArgs(plan) {
 		frontendAttrs["build-arg:"+k] = v
 	}
 	for k, v := range req.Args {
 		frontendAttrs["build-arg:"+k] = v
+	}
+	// The stage the spec names. It was stored and never passed, so a compose
+	// service with `target: development` was built from the Dockerfile's last
+	// stage — a production image without the dev server its command runs
+	// (`nodemon: not found`, issue #55).
+	if req.Target != "" {
+		frontendAttrs["target"] = req.Target
 	}
 
 	solveOpt := bkclient.SolveOpt{
@@ -258,6 +296,11 @@ func (a *Adapter) Build(ctx context.Context, req api.BuildRequest) (api.BuildRes
 	_, err = a.cli.Solve(ctx, nil, solveOpt, statusCh)
 	<-logsDone
 
+	// Trim the build service's cache now that this build is done with it. In
+	// the background: the image is already on its way to the runtime, and a
+	// deploy does not wait on housekeeping.
+	go a.trimCache(context.WithoutCancel(ctx))
+
 	if err != nil {
 		if ctx.Err() != nil {
 			return api.BuildResult{}, errs.Newf(errs.BuildTimeout,
@@ -268,6 +311,11 @@ func (a *Adapter) Build(ctx context.Context, req api.BuildRequest) (api.BuildRes
 			"The build failed.", err).
 			WithRemedy("Check the build logs above for the failing step.")
 	}
+
+	// The export just rewrote the cache's index; what it no longer reaches is
+	// an earlier build's, and would otherwise stay for the life of the app.
+	_, _ = pruneCacheDir(cacheDir)
+
 	return api.BuildResult{ImageRef: imageRef}, nil
 }
 
@@ -298,6 +346,32 @@ func streamStatus(statusCh chan *bkclient.SolveStatus, sink io.Writer) {
 			_, _ = sink.Write(l.Data)
 		}
 	}
+}
+
+// trimCache prunes the build service's cache down to its cap, oldest first.
+// Failures are ignored: a cache that stays too big is the state before this
+// existed, not a broken build.
+func (a *Adapter) trimCache(ctx context.Context) {
+	limit := a.config.CacheMaxBytes
+	if limit == 0 {
+		limit = defaultCacheMaxBytes
+	}
+	if limit < 0 || a.cli == nil {
+		return
+	}
+	a.pruneMu.Lock()
+	defer a.pruneMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	_ = a.cli.Prune(ctx, nil, bkclient.WithKeepOpt(0, 0, limit, 0))
+}
+
+// bundleOf is the app a cache namespace belongs to: the namespace is the app's
+// ID, or the app's ID and a compose service's name.
+func bundleOf(namespace string) string {
+	bundle, _, _ := strings.Cut(namespace, "/")
+	return bundle
 }
 
 func imageName(namespace string) string {

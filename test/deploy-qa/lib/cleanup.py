@@ -1,9 +1,12 @@
 """Complete per-app cleanup, with a residue check, plus the disk gate.
 
-Pando's own delete leaves things behind on purpose (volumes, R-204) or lazily
-(containers and networks until GC; images, build cache, uploaded-source
-checkouts and pre-delete backups never). This removes all of it for one test
-app and then checks that nothing carrying that app's ID remains.
+Pando's own delete removes the app's containers, images, anonymous volumes,
+build cache and uploaded source. It keeps some things on purpose: named
+volumes unless the delete was forced (R-204), the app's network until Pando
+restarts, and pre-delete backups until someone discards them. What it left is
+recorded first (left_by_pando), so the sweep cannot hide a leak; then this
+removes everything for one test app and checks that nothing carrying that
+app's ID remains.
 
 It only ever touches resources whose name carries a test app's ID, unnamed
 volumes no container uses, images that were not on the machine when the QA
@@ -72,8 +75,27 @@ def _remove(found, ulid):
        f"find {DATA} /tmp -iname '*{ulid}*' -prune -exec rm -rf {{}} + 2>/dev/null")
 
 
+def left_by_pando(app_id, wait=45):
+    """What Pando's own delete left, before this module removes anything.
+
+    Checked first so the sweep below cannot hide a leak: the sweep is what made
+    every case report clean while Pando left build caches, uploads, images and
+    volumes behind (issue #55). An app's network is not counted — Pando removes
+    it at its next restart, by design (docs/design/notes-deploy-qa-issue-55.md).
+    """
+    ulid = app_id.split("_", 1)[1]
+    t0 = time.time()
+    while True:
+        found = {k: _names(k, ulid) for k in ("container", "volume", "image")}
+        found["data"] = _data_files(ulid)
+        found = {k: v for k, v in found.items() if v}
+        if not found or time.time() - t0 > wait:
+            return found
+        time.sleep(5)
+
+
 def clean_app(p, app_id, wait=60):
-    """Delete through the API, then remove everything left. Returns residue (empty = clean)."""
+    """Delete through the API, then remove everything left. Returns (residue, left by Pando)."""
     ulid = app_id.split("_", 1)[1]
     protected = set(state.load().get("protected_images", []))
     used = set()
@@ -88,6 +110,7 @@ def clean_app(p, app_id, wait=60):
     t0 = time.time()  # give Pando's own teardown a chance first
     while time.time() - t0 < wait and _names("container", ulid):
         time.sleep(5)
+    pando_left = left_by_pando(app_id)
     _remove({k: _names(k, ulid) for k in ("container", "network", "volume", "image")}, ulid)
     for img in used - protected:
         sh("docker", "rmi", img)  # no -f: an image another test app still runs stays
@@ -97,7 +120,7 @@ def clean_app(p, app_id, wait=60):
         time.sleep(10)
         _remove(left, ulid)
         left = residue(app_id)
-    return left
+    return left, pando_left
 
 
 def sweep_shared(max_age_min=45):

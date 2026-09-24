@@ -489,6 +489,7 @@ export interface WorkloadBuild {
   context?: string;
   dockerfile?: string;
   target?: string;
+  args?: (KV[] | null);
 }
 
 export interface Resolution {

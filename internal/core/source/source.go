@@ -7,11 +7,13 @@ package source
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -45,6 +47,13 @@ func (c *Checkout) Close() {
 
 // View returns a read-only view rooted at the source, honoring Subdir.
 func (c *Checkout) View(subdir string) api.SourceView {
+	// A published image has no checkout. A view rooted at "" resolved every
+	// name against the filesystem root of the server itself, so anything that
+	// read "the app's source" — a detector, the scanner, a screener that sends
+	// files to a provider — read the server's own files instead.
+	if c.Dir == "" {
+		return emptyView{}
+	}
 	root := c.Dir
 	if subdir != "" {
 		root = filepath.Join(c.Dir, filepath.Clean("/"+subdir))
@@ -72,7 +81,54 @@ func Fetch(ctx context.Context, src spec.Source) (*Checkout, error) {
 	}
 }
 
+// fetchAttempts is how many times a clone is tried when the connection fails
+// under it.
+const fetchAttempts = 3
+
+// fetchGit clones, trying again when the connection rather than the repository
+// was the problem.
+//
+// A pooled connection that has died is found out by the HTTP/2 health check
+// (transport.go) and fails the request in seconds instead of hanging it for
+// ten minutes — but it still fails that request. The dead connection has left
+// the pool by then, so another attempt opens a new one. A wrong address, a
+// missing branch or a commit that is not there fails the same way every time
+// and is reported at once.
 func fetchGit(ctx context.Context, src spec.Source) (*Checkout, error) {
+	var err error
+	for attempt := 1; attempt <= fetchAttempts; attempt++ {
+		var co *Checkout
+		co, err = fetchGitOnce(ctx, src)
+		if err == nil || !transient(err) || ctx.Err() != nil || attempt == fetchAttempts {
+			return co, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-time.After(time.Duration(attempt) * time.Second):
+		}
+	}
+	return nil, err
+}
+
+// transient reports a failure of the connection rather than of the request.
+func transient(err error) bool {
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		msg := strings.ToLower(e.Error())
+		for _, s := range []string{
+			"connection lost", "connection reset", "unexpected eof", "broken pipe",
+			"timeout awaiting response headers", "i/o timeout", "tls handshake timeout",
+			"server sent goaway", "stream error",
+		} {
+			if strings.Contains(msg, s) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func fetchGitOnce(ctx context.Context, src spec.Source) (*Checkout, error) {
 	dir, err := os.MkdirTemp("", "pando-src-")
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not make room to fetch the source.", err)
@@ -138,6 +194,19 @@ func fetchGit(ctx context.Context, src spec.Source) (*Checkout, error) {
 
 	return &Checkout{Dir: dir, Commit: head.Hash().String(), cleanup: cleanup}, nil
 }
+
+// emptyView is the source of an app that has none: every name is absent.
+type emptyView struct{}
+
+func (emptyView) Open(name string) (io.ReadCloser, error) {
+	return nil, errs.Newf(errs.NotFound, "%q is not in the app's source; this app runs a published image.", name)
+}
+
+func (emptyView) Stat(name string) (api.FileInfo, error) {
+	return api.FileInfo{}, errs.Newf(errs.NotFound, "%q is not in the app's source; this app runs a published image.", name)
+}
+
+func (emptyView) Glob(string) ([]string, error) { return nil, nil }
 
 // referenceFor guesses whether a ref names a branch or a tag.
 func referenceFor(ref string) plumbing.ReferenceName {

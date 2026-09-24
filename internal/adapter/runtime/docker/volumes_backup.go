@@ -41,7 +41,7 @@ func (a *Adapter) SnapshotVolume(ctx context.Context, h api.VolumeHandle, dst io
 	if h.Handle == "" {
 		return errs.New(errs.ValidInvalid, "That volume has no handle to back up.")
 	}
-	if err := a.ensureImage(ctx, helperImage); err != nil {
+	if err := a.ensureImage(ctx, helperImage, imageClaim{}); err != nil {
 		return err
 	}
 
@@ -83,7 +83,7 @@ func (a *Adapter) RestoreVolume(ctx context.Context, h api.VolumeHandle, src io.
 	if h.Handle == "" {
 		return errs.New(errs.ValidInvalid, "That volume has no handle to restore into.")
 	}
-	if err := a.ensureImage(ctx, helperImage); err != nil {
+	if err := a.ensureImage(ctx, helperImage, imageClaim{}); err != nil {
 		return err
 	}
 

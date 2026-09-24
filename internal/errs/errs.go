@@ -65,6 +65,10 @@ const (
 	StateInvalid                Code = "STATE_INVALID"
 	StateBackupDecisionRequired Code = "STATE_BACKUP_DECISION_REQUIRED" // R-204/205
 
+	// StateAppExited: the deploy started the app and its primary workload
+	// stopped rather than serving (issue #55).
+	StateAppExited Code = "STATE_APP_EXITED"
+
 	// ADAPTER_* — adapter failed or is unavailable. 502.
 	AdapterUnavailable Code = "ADAPTER_UNAVAILABLE"
 	AdapterFailed      Code = "ADAPTER_FAILED"
@@ -72,6 +76,10 @@ const (
 	// BUILD_* — build failed. 422.
 	BuildFailed  Code = "BUILD_FAILED"
 	BuildTimeout Code = "BUILD_TIMEOUT" // R-119
+
+	// BuildListensOnLoopback: the built app listens only on 127.0.0.1 inside
+	// its container, so it cannot be reached (issue #55).
+	BuildListensOnLoopback Code = "BUILD_LISTENS_ON_LOOPBACK"
 
 	// CAPACITY_* — insufficient host resources. 409.
 	CapacityWouldOversubscribe Code = "CAPACITY_WOULD_OVERSUBSCRIBE" // R-242

@@ -25,13 +25,11 @@
     "",
     "Run: make detection-corpus"
   ],
-
   "budgets": {
     "questions_per_deploy_mean": 1.0,
     "questions_per_deploy_max": 3,
     "must_detect_strategy": 0.9
   },
-
   "cases": [
     {
       "name": "dockerfile-at-root",
@@ -76,10 +74,9 @@
         "strategy": "compose",
         "min_confidence": 0.8,
         "questions": 1,
-        "expect_slots": ["mysql"],
         "expect_volumes": true
       },
-      "why": "Multi-service, with a declared database and a volume. Exercises slot extraction and the one-primary-workload rule."
+      "why": "Multi-service, with a declared database and a volume. Exercises the one-primary-workload rule, and that a database the app reaches by hostname is imported as written rather than swapped for a provisioned one (R-096)."
     },
     {
       "name": "monorepo",
@@ -109,9 +106,10 @@
       "expect": {
         "strategy": "buildpack",
         "min_confidence": 0.4,
-        "questions": 1
+        "questions": 0,
+        "blocked": true
       },
-      "why": "The Python equivalent of the Node case."
+      "why": "The Python equivalent: Flask's own repository is a package under src/, refused as a library (R-021)."
     },
     {
       "name": "go-module",
@@ -120,9 +118,10 @@
       "expect": {
         "strategy": "buildpack",
         "min_confidence": 0.4,
-        "questions": 1
+        "questions": 0,
+        "blocked": true
       },
-      "why": "A library rather than an app — detection should be uncertain and say so, not invent an entrypoint."
+      "why": "A library rather than an app: detection refuses it and says why, rather than inventing an entrypoint (R-021)."
     },
     {
       "name": "static-with-build-step",

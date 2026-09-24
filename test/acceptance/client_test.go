@@ -339,6 +339,10 @@ func captureAdminPassword() {
 	}
 }
 
+// staleNetworkAge is how old an empty bundle network must be before the suite
+// treats it as a previous run's leftover.
+const staleNetworkAge = 10 * time.Minute
+
 func pruneStaleBundles() {
 	out, err := exec.Command("docker", "network", "ls", "-q",
 		"--filter", "label=io.pando.managed").Output()
@@ -369,6 +373,21 @@ func pruneStaleBundles() {
 		// recreated — and those have nothing attached, because the Pando that
 		// was attached is gone.
 		if len(strings.Fields(string(attached))) > 0 {
+			continue
+		}
+
+		// And only ones from an earlier run. Integration packages run side by
+		// side, and a bundle network is empty from the moment it is created
+		// until its first container starts — which, when the image has to be
+		// pulled first, is seconds. The runtime's own tests had their network
+		// removed out from under them in that gap ("network … not found").
+		created, err := exec.Command("docker", "network", "inspect", network,
+			"--format", "{{.Created.Format \"2006-01-02T15:04:05Z07:00\"}}").Output()
+		if err != nil {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, strings.TrimSpace(string(created)))
+		if err != nil || time.Since(at) < staleNetworkAge {
 			continue
 		}
 		_ = exec.Command("docker", "network", "rm", network).Run()

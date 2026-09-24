@@ -383,6 +383,22 @@ func TestR262_AnUploadIsStoredThenExpandedIntoACheckout(t *testing.T) {
 	require.FileExists(t, filepath.Join(co.Dir, "src", "app.js"))
 }
 
+// An uploaded app's checkout is removed like a clone's. It had no cleanup, so
+// every detection and deploy of an uploaded app left a copy of its source in
+// the temporary directory for as long as the server ran (issue #55).
+func TestR262_AnUploadedCheckoutIsRemovedOnClose(t *testing.T) {
+	uploadDir(t)
+	_, err := source.StoreUpload("app_01HQ8", bytes.NewReader(archive(t, map[string]string{"main.go": "package main"})))
+	require.NoError(t, err)
+
+	co, err := source.Fetch(ctx(), spec.Source{Type: spec.SourceUpload, UploadID: "app_01HQ8"})
+	require.NoError(t, err)
+	require.DirExists(t, co.Dir)
+
+	co.Close()
+	require.NoDirExists(t, co.Dir)
+}
+
 // Written to a temporary name and renamed, so a deploy running while an upload
 // is in flight reads the previous archive rather than half of the new one.
 func TestStoreUploadReplacesTheArchiveAtomically(t *testing.T) {

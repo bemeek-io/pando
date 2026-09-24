@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/google/shlex"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
@@ -72,6 +74,13 @@ func ImportCompose(src api.SourceView, name string) (Draft, error) {
 type composeFile struct {
 	Services map[string]composeService `yaml:"services"`
 	Volumes  map[string]any            `yaml:"volumes"`
+	Secrets  map[string]composeSecret  `yaml:"secrets"`
+}
+
+// composeSecret is a top-level secret. Only a file-backed one has anything in
+// the repository to carry.
+type composeSecret struct {
+	File string `yaml:"file"`
 }
 
 type composeService struct {
@@ -85,8 +94,10 @@ type composeService struct {
 	Volumes     []any          `yaml:"volumes"`
 	Environment any            `yaml:"environment"`
 	EnvFile     any            `yaml:"env_file"`
+	Secrets     []any          `yaml:"secrets"`
 	DependsOn   any            `yaml:"depends_on"`
 	Healthcheck *composeHealth `yaml:"healthcheck"`
+	Profiles    []string       `yaml:"profiles"`
 
 	// Constructs that are rejected or rewritten (R-099).
 	Restart       string         `yaml:"restart"`
@@ -122,6 +133,9 @@ type composeImport struct {
 	src api.SourceView
 
 	warnings []spec.Warning
+
+	// valueSlots are values env_file templates say the app needs.
+	valueSlots []spec.Slot
 }
 
 // isFile reports whether a relative compose path names a regular file in the
@@ -145,13 +159,42 @@ func (c *composeImport) isFile(hostPath string) bool {
 // Compose services live in a map, and Go randomizes map iteration. Without
 // this, which service Pando calls primary — and the order of the options in the
 // question asking about it — would change between runs of the same repository.
+//
+// A service behind a profile is left out, as `docker compose up` leaves it out:
+// the author made it opt-in. The voting app's `seed` ran against a vote service
+// that was not ready and exited 50 into an app that was otherwise starting
+// (issue #55). A file where every service has a profile has no default set,
+// and all of them are kept.
 func (c *composeImport) names() []string {
 	names := make([]string, 0, len(c.file.Services))
-	for name := range c.file.Services {
-		names = append(names, name)
+	for name, s := range c.file.Services {
+		if len(s.Profiles) == 0 {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		for name := range c.file.Services {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
 	return names
+}
+
+// profiled returns the services left out because they sit behind a profile.
+func (c *composeImport) profiled() []string {
+	kept := map[string]bool{}
+	for _, name := range c.names() {
+		kept[name] = true
+	}
+	var out []string
+	for name := range c.file.Services {
+		if !kept[name] {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // --- rejection (R-099) ------------------------------------------------------
@@ -211,7 +254,7 @@ func (c *composeImport) rejectIncompatible() error {
 					"orchestrator, and pretending to honor a replica count would be a lie " +
 					"about where the app is running."})
 		}
-		for _, mount := range parseMounts(s.Volumes) {
+		for _, mount := range serviceMounts(name, s.Volumes) {
 			if mount.hostPath == "" {
 				continue
 			}
@@ -330,6 +373,40 @@ func buildFields(raw any) (context, dockerfile, target string) {
 	return "", "", ""
 }
 
+// buildArgs reads a service's `build: args:`, in either of compose's shapes —
+// a list of KEY=VALUE or a map — interpolated as the rest of the file is. They
+// were not imported, so a Dockerfile told `NODE_ENV=development` built as
+// production (issue #55). An argument with no value in the file is left out:
+// compose would take it from the shell, and there is none here.
+func buildArgs(raw any) []spec.KV {
+	b, ok := raw.(map[string]any)
+	if !ok {
+		return nil
+	}
+	var args []spec.KV
+	switch a := b["args"].(type) {
+	case []any:
+		for _, entry := range a {
+			if k, v, found := strings.Cut(scalar(entry), "="); found && k != "" {
+				args = append(args, spec.KV{Key: k, Value: interpolate(v)})
+			}
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(a))
+		for k := range a {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if a[k] == nil {
+				continue
+			}
+			args = append(args, spec.KV{Key: k, Value: interpolate(scalar(a[k]))})
+		}
+	}
+	return args
+}
+
 // --- import -----------------------------------------------------------------
 
 func (c *composeImport) draft() Draft {
@@ -347,17 +424,10 @@ func (c *composeImport) draft() Draft {
 	// to the first with whatever password the compose file interpolated from a
 	// shell that does not exist here, which is how `DATABASE_URL is required`
 	// became the whole of an app's logs.
-	backing := map[string]spec.SlotType{}
+	candidates := map[string]spec.SlotType{}
 	for _, name := range names {
 		if slotType, ok := backingService(name, c.file.Services[name].Image); ok {
-			backing[name] = slotType
-		}
-	}
-
-	var running []string
-	for _, name := range names {
-		if _, provided := backing[name]; !provided {
-			running = append(running, name)
+			candidates[name] = slotType
 		}
 	}
 
@@ -366,11 +436,51 @@ func (c *composeImport) draft() Draft {
 		Warnings: nil, // filled at the end, after every rewrite is known
 	}
 
-	for _, name := range running {
-		d.Workloads = append(d.Workloads, c.workload(name, len(running) == 1))
+	for _, name := range c.profiled() {
+		c.rewrote(name, "profiles: "+strings.Join(c.file.Services[name].Profiles, ", "),
+			"Pando runs what `docker compose up` runs, which leaves out a service behind a "+
+				"profile. The service was not imported.")
 	}
 
-	d.Slots = c.wire(backing, d.Workloads)
+	var running []string
+	for _, name := range names {
+		if _, candidate := candidates[name]; !candidate {
+			running = append(running, name)
+			d.Workloads = append(d.Workloads, c.workload(name, false))
+		}
+	}
+
+	// Only a service the app reaches through a connection URL is replaced.
+	//
+	// Swapping the compose container for a provisioned one works because the
+	// variable that holds the URL is rewired to the new instance, credentials
+	// and all. An app that reaches the service any other way — `REDIS_HOST:
+	// redis`, a host written into its code, a JDBC URL — has nothing Pando can
+	// rewire: it went looking for a host called `redis` with no password and
+	// found a provisioned Redis under another name that wanted one. Rewriting
+	// the bare host into a URL was worse, and handed Python a whole DSN as a
+	// hostname ("label too long"). Those services are imported as the compose
+	// file wrote them, which is what R-096 asks for in the first place
+	// (issue #55).
+	backing := map[string]spec.SlotType{}
+	for _, name := range names {
+		slotType, candidate := candidates[name]
+		if !candidate {
+			continue
+		}
+		if reachedByURL(d.Workloads, name, slotType) {
+			backing[name] = slotType
+			continue
+		}
+		running = append(running, name)
+		d.Workloads = append(d.Workloads, c.workload(name, false))
+	}
+	if len(d.Workloads) == 1 {
+		d.Workloads[0].Primary = true
+		d.Workloads[0].Exposed = true
+	}
+
+	d.Slots = append(c.wire(backing, d.Workloads), c.valueSlots...)
 	d.Volumes = c.volumes(running)
 
 	// A service that is no longer a workload is no longer something to wait
@@ -398,10 +508,9 @@ func (c *composeImport) draft() Draft {
 // and nobody types a connection string.
 //
 // The slot takes that variable's name, because a name somebody reading the app
-// will recognize beats one Pando made up. A service nothing references keeps
-// the generated `<SERVICE>_URL` — the dependency is real either way, and an app
-// that reads it from somewhere Pando cannot see is still an app that needs a
-// database.
+// will recognize beats one Pando made up. Only services some variable reaches
+// by URL arrive here (see draft); the rest are imported as the compose file
+// wrote them.
 func (c *composeImport) wire(backing map[string]spec.SlotType, workloads []spec.Workload) []spec.Slot {
 	services := make([]string, 0, len(backing))
 	for name := range backing {
@@ -419,7 +528,9 @@ func (c *composeImport) wire(backing map[string]spec.SlotType, workloads []spec.
 		for i := range workloads {
 			for j := range workloads[i].Env {
 				e := &workloads[i].Env[j]
-				if e.Value == nil || !pointsAt(*e.Value, service) {
+				// A connection URL only. A bare `REDIS_HOST: redis` given the
+				// whole DSN is a hostname nothing can resolve.
+				if e.Value == nil || schemeType(*e.Value) != backing[service] || !pointsAt(*e.Value, service) {
 					continue
 				}
 				if len(filled) == 0 {
@@ -462,6 +573,22 @@ func (c *composeImport) wire(backing map[string]spec.SlotType, workloads []spec.
 	return slots
 }
 
+// reachedByURL reports whether some workload holds a connection URL for the
+// service, in a scheme the provisioned replacement's own URL uses.
+func reachedByURL(workloads []spec.Workload, service string, t spec.SlotType) bool {
+	for _, w := range workloads {
+		for _, e := range w.Env {
+			if e.Value == nil || !strings.Contains(*e.Value, "://") {
+				continue
+			}
+			if schemeType(*e.Value) == t && pointsAt(*e.Value, service) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // pointsAt reports whether a value names a compose service as a host.
 //
 // The shapes that matter are the ones a connection string takes:
@@ -486,8 +613,8 @@ func (c *composeImport) workload(name string, only bool) spec.Workload {
 	w := spec.Workload{
 		Name:       name,
 		Image:      s.Image,
-		Command:    stringList(s.Command),
-		Entrypoint: stringList(s.Entrypoint),
+		Command:    interpolateAll(stringList(s.Command)),
+		Entrypoint: interpolateAll(stringList(s.Entrypoint)),
 		WorkingDir: s.WorkingDir,
 		Env:        c.env(name, s),
 		Ports:      c.ports(name, s),
@@ -508,7 +635,7 @@ func (c *composeImport) workload(name string, only bool) spec.Workload {
 	// warning.
 	if s.Build != nil {
 		context, dockerfile, target := buildFields(s.Build)
-		w.Build = &spec.WorkloadBuild{Context: context, Dockerfile: dockerfile, Target: target}
+		w.Build = &spec.WorkloadBuild{Context: context, Dockerfile: dockerfile, Target: target, Args: buildArgs(s.Build)}
 	}
 
 	// Pando names containers itself, because two apps importing compose files
@@ -582,7 +709,35 @@ func (c *composeImport) ports(name string, s composeService) []spec.Port {
 	for _, raw := range s.Expose {
 		add(atoi(scalar(raw)), spec.PortCompose)
 	}
-	return ports
+	return webPortsFirst(ports)
+}
+
+// notHTTP are ports whose protocol is known and is not HTTP.
+var notHTTP = map[int]bool{
+	21: true, 22: true, 23: true, 25: true, 53: true, 110: true, 143: true,
+	465: true, 587: true, 993: true, 995: true, 1433: true, 1521: true,
+	2222: true, 3306: true, 5432: true, 5672: true, 6379: true, 9042: true,
+	11211: true, 27017: true, 1025: true, 1143: true, 2525: true,
+}
+
+// webPortsFirst orders a service's ports so the first is one a browser can use.
+//
+// The proxy sends traffic to a workload's first port, and a compose file lists
+// ports in whatever order its author wrote them. Gitea's lists SSH next to
+// HTTP, and the app was routed to port 22 (issue #55). A port whose protocol is
+// known not to be HTTP is marked as plain TCP and moved after the rest; the
+// order among the others is the author's.
+func webPortsFirst(ports []spec.Port) []spec.Port {
+	var web, other []spec.Port
+	for _, p := range ports {
+		if notHTTP[p.Number] {
+			p.Protocol = "tcp"
+			other = append(other, p)
+			continue
+		}
+		web = append(web, p)
+	}
+	return append(web, other...)
 }
 
 func (c *composeImport) rewrotePublishedPort(service, mapping string) {
@@ -602,7 +757,7 @@ func (c *composeImport) rewrotePublishedPort(service, mapping string) {
 func (c *composeImport) volumes(running []string) []spec.Volume {
 	mounted := map[string]bool{}
 	for _, service := range running {
-		for _, m := range parseMounts(c.file.Services[service].Volumes) {
+		for _, m := range serviceMounts(service, c.file.Services[service].Volumes) {
 			if m.volumeName != "" {
 				mounted[m.volumeName] = true
 			}
@@ -620,9 +775,12 @@ func (c *composeImport) volumes(running []string) []spec.Volume {
 	// author meant to keep is kept. Collected across services first so a volume
 	// used by two of them is declared once.
 	for _, service := range running {
-		for _, m := range parseMounts(c.file.Services[service].Volumes) {
+		for _, m := range serviceMounts(service, c.file.Services[service].Volumes) {
 			// A single file is carried in the spec, not stored in a volume.
 			if m.hostPath != "" && c.isFile(m.hostPath) {
+				continue
+			}
+			if k := c.dirMount(service, m); k == dirInImage || k == dirCarried {
 				continue
 			}
 			if m.volumeName != "" && !containsString(named, m.volumeName) {
@@ -646,7 +804,7 @@ func (c *composeImport) volumes(running []string) []spec.Volume {
 // was; one mounted only by a service Pando now provisions is not.
 func (c *composeImport) mountedAnywhere(volume string) bool {
 	for _, service := range c.names() {
-		for _, m := range parseMounts(c.file.Services[service].Volumes) {
+		for _, m := range serviceMounts(service, c.file.Services[service].Volumes) {
 			if m.volumeName == volume {
 				return true
 			}
@@ -672,7 +830,28 @@ func (c *composeImport) mountedAnywhere(volume string) bool {
 func (c *composeImport) files(name string, s composeService) []spec.File {
 	var files []spec.File
 
-	for _, m := range parseMounts(s.Volumes) {
+	for _, m := range serviceMounts(name, s.Volumes) {
+		switch c.dirMount(name, m) {
+		case dirInImage:
+			c.rewrote(name, "volume "+m.raw,
+				m.hostPath+" is inside this service's build context, so it is already in the "+
+					"image the build produces. The mount showed edits without rebuilding; Pando "+
+					"deploys a built image, and a deploy is how a change reaches this app.")
+			continue
+		case dirCarried:
+			for _, rel := range c.repoFiles(m.hostPath) {
+				content, _ := c.read(path.Join(m.hostPath, rel))
+				files = append(files, spec.File{
+					Path: path.Join(m.containerPath, rel), Content: content, Mode: fileMode(content),
+				})
+			}
+			c.rewrote(name, "volume "+m.raw,
+				"Pando copied the files in "+m.hostPath+" out of the repository and carries them in "+
+					"this app's configuration, placing them under "+m.containerPath+" each time the "+
+					"service starts. It is a copy taken now: editing them in the repository changes "+
+					"nothing until this app is read again.")
+			continue
+		}
 		if m.hostPath == "" || !c.isFile(m.hostPath) {
 			continue
 		}
@@ -700,14 +879,169 @@ func (c *composeImport) files(name string, s composeService) []spec.File {
 			continue
 		}
 
-		files = append(files, spec.File{Path: m.containerPath, Content: content})
+		files = append(files, spec.File{Path: m.containerPath, Content: content, Mode: fileMode(content)})
 		c.rewrote(name, "volume "+m.raw,
 			"Pando copied "+m.hostPath+" out of the repository and carries it in this app's "+
 				"configuration, placing it at "+m.containerPath+" each time the service starts. "+
 				"It is a copy taken now: editing "+m.hostPath+" in the repository changes nothing "+
 				"until this app is read again.")
 	}
+	return append(files, c.secretFiles(name, s)...)
+}
+
+// secretFiles places a service's file-backed compose secrets where compose
+// does: /run/secrets/<name>, or the target the service names.
+//
+// They were dropped, so a database told POSTGRES_PASSWORD_FILE=/run/secrets/…
+// found no file, never initialized, and every service that needed it failed
+// (issue #55). The file is in the repository, which is what the compose file
+// reads it from too; it travels in the spec like any other carried file.
+func (c *composeImport) secretFiles(service string, s composeService) []spec.File {
+	var files []spec.File
+	for _, raw := range s.Secrets {
+		source, target := scalar(raw), ""
+		if m, ok := raw.(map[string]any); ok {
+			source, target = scalar(m["source"]), scalar(m["target"])
+		}
+		if source == "" {
+			continue
+		}
+		if target == "" {
+			target = source
+		}
+		if !strings.HasPrefix(target, "/") {
+			target = "/run/secrets/" + target
+		}
+		secret, ok := c.file.Secrets[source]
+		if !ok || secret.File == "" {
+			continue
+		}
+		content, ok := c.read(secret.File)
+		if !ok {
+			continue
+		}
+		files = append(files, spec.File{Path: path.Clean(target), Content: content})
+		c.rewrote(service, "secrets: "+source,
+			"Pando copied "+secret.File+" out of the repository and places it at "+path.Clean(target)+
+				" when the service starts, as compose does. Anyone who can read this app's "+
+				"configuration can read it, as anyone who can read the repository already could.")
+	}
 	return files
+}
+
+// dirKind is what a relative bind mount of a directory imports as.
+type dirKind int
+
+const (
+	dirNone    dirKind = iota // not a repository directory
+	dirData                   // a volume Pando manages (see mounts)
+	dirInImage                // dropped: the service's build already has it
+	dirCarried                // its files travel in the spec
+)
+
+// carriedDirFiles caps how many files a mounted directory may carry. A
+// directory of health check scripts or init SQL is a handful; a source tree is
+// a build input.
+const carriedDirFiles = 16
+
+// dirMount classifies a relative bind mount of a directory.
+//
+// It became an empty volume, whatever it held. The voting app mounts
+// `./healthchecks:/healthchecks` into images it does not build, found no
+// scripts there, and its database was never healthy (issue #55). A directory
+// the repository has files in is the author's configuration or source, not
+// data — data directories are created by compose or hold only a .gitkeep — and
+// it is carried when it is small text, dropped when it is not but the service
+// builds from a context that contains it, and a volume only otherwise.
+func (c *composeImport) dirMount(service string, m mount) dirKind {
+	if m.hostPath == "" || isAbsoluteHostPath(m.hostPath) || c.isFile(m.hostPath) {
+		return dirNone
+	}
+	files := c.repoFiles(m.hostPath)
+	if len(files) == 0 {
+		return dirData
+	}
+	if c.carryable(m.hostPath, files) {
+		// Even inside the build context: a development stage often copies
+		// nothing and relies on the mount for its source. The voting app builds
+		// `target: dev`, whose stage has no `COPY . .`, and exited with "can't
+		// open file app.py". The copy is of the same commit the image is built
+		// from, so where the image does have the files, it changes nothing.
+		return dirCarried
+	}
+	if c.inBuildContext(service, path.Join(m.hostPath, files[0])) {
+		return dirInImage
+	}
+	return dirData
+}
+
+// carryable reports whether every file under a mounted directory can travel
+// in the spec.
+func (c *composeImport) carryable(hostPath string, files []string) bool {
+	if len(files) > carriedDirFiles {
+		return false
+	}
+	for _, rel := range files {
+		if _, ok := c.read(path.Join(hostPath, rel)); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// repoFiles lists the files the repository holds under a directory, relative
+// to it, up to one more than carriedDirFiles. Placeholder files that keep an
+// empty directory in git are not content.
+func (c *composeImport) repoFiles(hostPath string) []string {
+	if c.src == nil {
+		return nil
+	}
+	root := path.Clean(strings.TrimPrefix(hostPath, "./"))
+	if root == "." || strings.HasPrefix(root, "..") || strings.ContainsAny(root, `*?[\`) {
+		return nil
+	}
+	var files []string
+	var walk func(dir string, depth int)
+	walk = func(dir string, depth int) {
+		entries, err := c.src.Glob(dir + "/*")
+		if err != nil || depth > 4 {
+			return
+		}
+		sort.Strings(entries)
+		for _, entry := range entries {
+			if len(files) > carriedDirFiles {
+				return
+			}
+			entry = filepath.ToSlash(entry)
+			if path.Dir(entry) != dir {
+				continue
+			}
+			info, err := c.src.Stat(entry)
+			if err != nil {
+				continue
+			}
+			if info.IsDir {
+				walk(entry, depth+1)
+				continue
+			}
+			switch path.Base(entry) {
+			case ".gitkeep", ".keep", ".gitignore":
+				continue
+			}
+			files = append(files, strings.TrimPrefix(entry, root+"/"))
+		}
+	}
+	walk(root, 0)
+	return files
+}
+
+// fileMode marks a carried script executable. The repository's permission
+// bits do not survive the trip, and a mounted script is usually run directly.
+func fileMode(content string) int {
+	if strings.HasPrefix(content, "#!") {
+		return 0o755
+	}
+	return 0
 }
 
 // inBuildContext reports whether a path is inside the build context of the
@@ -773,7 +1107,7 @@ func (c *composeImport) uncarryable(hostPath string) (string, bool) {
 
 func (c *composeImport) mounts(name string, s composeService) []spec.Mount {
 	var mounts []spec.Mount
-	for _, m := range parseMounts(s.Volumes) {
+	for _, m := range serviceMounts(name, s.Volumes) {
 		if m.volumeName == "" {
 			continue
 		}
@@ -781,6 +1115,11 @@ func (c *composeImport) mounts(name string, s composeService) []spec.Mount {
 		// Making it a volume as well is two mechanisms for one path, and the
 		// one Docker refuses.
 		if m.hostPath != "" && c.isFile(m.hostPath) {
+			continue
+		}
+		// So is a directory of them, and one the image already has is left
+		// to the image (see files above).
+		if k := c.dirMount(name, m); k == dirInImage || k == dirCarried {
 			continue
 		}
 		mounts = append(mounts, spec.Mount{
@@ -903,12 +1242,24 @@ func (c *composeImport) fromEnvFiles(service string, s composeService) []spec.En
 			continue
 		}
 
+		// A name the template gives no value is a value the app has to be
+		// given. Compose treats an env_file as required — `docker compose up`
+		// stops without it — so these are required by the author's own file,
+		// and a required slot is how Pando asks for one before deploying rather
+		// than after the app has refused to start (R-132). They had been left
+		// as empty variables, and the app crash-looped on "Missing required
+		// environment variables" (issue #55). A name with a sample value is a
+		// setting with a default, and stays a variable.
 		var named []string
 		for _, kv := range declared {
 			empty := ""
-			entries = append(entries, spec.EnvEntry{
-				Key: kv.Key, Value: &empty, Source: spec.EnvFromDetection,
-			})
+			entry := spec.EnvEntry{Key: kv.Key, Value: &empty, Source: spec.EnvFromDetection}
+			if strings.TrimSpace(kv.Value) == "" {
+				ref := kv.Key
+				entry = spec.EnvEntry{Key: kv.Key, SlotRef: &ref, Source: spec.EnvFromDetection}
+				c.requireValue(kv.Key, template, name)
+			}
+			entries = append(entries, entry)
 			named = append(named, kv.Key)
 		}
 
@@ -919,6 +1270,21 @@ func (c *composeImport) fromEnvFiles(service string, s composeService) []spec.En
 				". Set them on this app's variables.")
 	}
 	return entries
+}
+
+// requireValue records a value an env_file template says the app needs.
+func (c *composeImport) requireValue(key, template, envFile string) {
+	for _, s := range c.valueSlots {
+		if s.Key == key {
+			return
+		}
+	}
+	c.valueSlots = append(c.valueSlots, spec.Slot{
+		Key:      key,
+		Type:     spec.SlotUnknown,
+		Required: true,
+		Evidence: []string{fmt.Sprintf("named with no value in %s, the template for %s, which the compose file requires", template, envFile)},
+	})
 }
 
 // envFileNames reads the `env_file:` shapes compose allows: one path, a list of
@@ -1023,6 +1389,24 @@ type mount struct {
 	hostPath      string // non-empty when the entry was a bind mount
 	containerPath string
 	readOnly      bool
+	anonymous     bool // a volume with no name, which compose makes per container
+}
+
+// serviceMounts is parseMounts for one service.
+//
+// An anonymous volume belongs to its container, not the project. It was named
+// by its path alone, so a frontend and a backend that each keep
+// `/usr/src/app/node_modules` in an anonymous volume shared one: the backend's
+// packages filled it first, and the frontend exited with "react-scripts: not
+// found" (issue #55). Its name now carries the service's.
+func serviceMounts(service string, entries []any) []mount {
+	mounts := parseMounts(entries)
+	for i, m := range mounts {
+		if m.anonymous {
+			mounts[i].volumeName = volumeNameFor("", service) + "-" + m.volumeName
+		}
+	}
+	return mounts
 }
 
 // parseMounts reads the short and long forms of a compose volume entry.
@@ -1047,6 +1431,9 @@ func parseMounts(entries []any) []mount {
 		if scalar(m["type"]) == "bind" || strings.HasPrefix(source, ".") || isAbsoluteHostPath(source) {
 			out.hostPath = source
 			out.volumeName = volumeNameFor(source, target)
+		} else if source == "" && scalar(m["type"]) != "tmpfs" {
+			out.volumeName = volumeNameFor("", target)
+			out.anonymous = true
 		} else {
 			out.volumeName = source
 		}
@@ -1060,7 +1447,7 @@ func parseShortMount(text string) mount {
 	switch len(parts) {
 	case 1:
 		// An anonymous volume: "/var/lib/data".
-		return mount{raw: text, containerPath: parts[0], volumeName: volumeNameFor("", parts[0])}
+		return mount{raw: text, containerPath: parts[0], volumeName: volumeNameFor("", parts[0]), anonymous: true}
 	default:
 		m := mount{raw: text, containerPath: parts[1]}
 		if len(parts) > 2 {
@@ -1123,6 +1510,15 @@ func interpolate(text string) string {
 	var out strings.Builder
 
 	for i := 0; i < len(text); {
+		// `$$` is compose's escape for a literal `$`: `--password="$$(cat
+		// /run/secrets/db-password)"` reaches the container's shell as
+		// `$(cat …)`. Passed on doubled, the shell read `$$` as its own
+		// process ID (issue #55).
+		if text[i] == '$' && i+1 < len(text) && text[i+1] == '$' {
+			out.WriteByte('$')
+			i += 2
+			continue
+		}
 		if text[i] != '$' || i+1 >= len(text) || text[i+1] != '{' {
 			out.WriteByte(text[i])
 			i++
@@ -1139,6 +1535,18 @@ func interpolate(text string) string {
 		i += end + 1
 	}
 	return out.String()
+}
+
+// interpolateAll interpolates each word of a command, as compose does.
+func interpolateAll(words []string) []string {
+	if words == nil {
+		return nil
+	}
+	out := make([]string, len(words))
+	for i, w := range words {
+		out[i] = interpolate(w)
+	}
+	return out
 }
 
 // defaultOf returns the default from a compose substitution body.
@@ -1200,8 +1608,9 @@ func dependsOn(raw any) []string {
 			}
 		}
 	case map[string]any:
-		// The long form: { db: { condition: service_healthy } }. The condition
-		// is the healthcheck's job; the ordering is what is imported here.
+		// The long form: { db: { condition: service_healthy } }. The names are
+		// imported; the runtime starts a dependent only once a dependency with
+		// a health check reports healthy, which is that condition.
 		for name := range v {
 			names = append(names, name)
 		}
@@ -1214,15 +1623,30 @@ func health(h *composeHealth) *spec.Healthcheck {
 	if h == nil {
 		return nil
 	}
-	command := stringList(h.Test)
-
-	// Compose's test is ["CMD", "curl", ...] or ["CMD-SHELL", "..."]. The first
-	// element says how to run the rest, not what to run.
-	if len(command) > 0 && (command[0] == "CMD" || command[0] == "CMD-SHELL" || command[0] == "NONE") {
-		if command[0] == "NONE" {
-			return nil
+	// Compose's test is ["CMD", "curl", ...], ["CMD-SHELL", "..."] or a
+	// string, which means the same as CMD-SHELL. The first element says how to
+	// run the rest, not what to run.
+	var command []string
+	switch t := h.Test.(type) {
+	case string:
+		if strings.TrimSpace(t) != "" {
+			command = []string{"sh", "-c", interpolate(t)}
 		}
-		command = command[1:]
+	default:
+		list := interpolateAll(stringList(t))
+		switch {
+		case len(list) == 0 || list[0] == "NONE":
+			return nil
+		case list[0] == "CMD-SHELL":
+			// A shell line, run by a shell. Passing it on as one argv element
+			// asked the runtime to execute a file named "curl -f http://…",
+			// and the workload reported unhealthy for as long as it ran.
+			command = []string{"sh", "-c", strings.Join(list[1:], " ")}
+		case list[0] == "CMD":
+			command = list[1:]
+		default:
+			command = list
+		}
 	}
 	if len(command) == 0 {
 		return nil
@@ -1284,7 +1708,15 @@ func scalar(v any) string {
 func stringList(v any) []string {
 	switch t := v.(type) {
 	case string:
-		return strings.Fields(t)
+		// Split the way a shell would, as compose does. strings.Fields broke
+		// `sh -c "npm run migrate && npm start"` into pieces and the shell
+		// reported "unexpected EOF while looking for matching" (issue #55).
+		// A string shlex cannot parse is kept whole rather than guessed at.
+		words, err := shlex.Split(t)
+		if err != nil {
+			return []string{t}
+		}
+		return words
 	case []any:
 		var out []string
 		for _, entry := range t {

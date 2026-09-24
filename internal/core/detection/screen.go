@@ -8,6 +8,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/screening"
 	"github.com/bemeek-io/pando/internal/detect"
+	"github.com/bemeek-io/pando/internal/errs"
 )
 
 // Screening: Sequence A's step 12a, after the install's defaults and before the
@@ -101,6 +102,23 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 	// where that is already known (design 10 §5, detect.WithScreenedAnswers).
 	answers, rest, refused := screening.Split(env, result.Amendments, outstanding(proposal.Questions))
 	outcome.Refused = append(outcome.Refused, refused...)
+
+	// An answer that cannot become a spec is not an answer, whoever gave it.
+	// The screener answered build_method in prose ("serve the repository root
+	// with php -S …") and it was applied to nothing (issue #55).
+	for _, key := range []string{detect.KeyBuildStrategy, detect.KeyBuildMethod} {
+		value, given := answers[key]
+		if !given {
+			continue
+		}
+		if err := proposal.CheckAnswers(map[string]string{key: value}); err != nil {
+			delete(answers, key)
+			outcome.Refused = append(outcome.Refused, screening.Refused{
+				Amendment: api.Amendment{Kind: api.AmendAnswerQuestion, Key: key, Value: value},
+				Reason:    errs.As(err).Message,
+			})
+		}
+	}
 	if len(answers) > 0 {
 		proposal.DraftSpec = proposal.WithScreenedAnswers(answers)
 		proposal.Questions = unanswered(proposal.Questions, answers)

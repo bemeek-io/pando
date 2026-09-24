@@ -400,11 +400,22 @@ func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 			Error(w, r, err)
 			return
 		}
+
+		// The storage itself goes when the bundle is torn down. The delete has
+		// settled it: discarded, or backed up first (R-204). It used to stay on
+		// disk with no row left to reach it by (issue #55).
+		if err := s.Apps.DiscardStorage(r.Context(), app.ID); err != nil {
+			Error(w, r, err)
+			return
+		}
 	}
 
 	if err := s.Apps.Archive(r.Context(), app.ID); err != nil {
 		Error(w, r, err)
 		return
+	}
+	if s.TeardownNow != nil {
+		s.TeardownNow()
 	}
 
 	s.audit(r, audit.Event{

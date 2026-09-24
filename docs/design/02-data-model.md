@@ -231,7 +231,7 @@ CREATE TABLE volumes (
 );
 ```
 
-**[D]** `ON DELETE RESTRICT`, deliberately. An app cannot be deleted out from under its volumes; the delete flow must resolve them explicitly through the keep-or-discard prompt (R-204).
+**[D]** `ON DELETE RESTRICT`, deliberately. An app cannot be deleted out from under its volumes; the delete flow must resolve them explicitly through the keep-or-discard prompt (R-204). Once it has — discarded, or backed up first — the rows go and `apps.discard_storage` is set, and the GC's teardown destroys the volumes with the bundle. Nothing else sets it, so an app whose storage no delete settled keeps its volumes.
 
 ```sql
 CREATE TABLE secrets (

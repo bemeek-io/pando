@@ -55,6 +55,10 @@ type Server struct {
 	Registry *api.Registry
 	Adapters *state.Adapters
 
+	// TeardownNow asks for a deleted app's bundle to be torn down now rather
+	// than at the collector's next pass. Nil leaves it to the pass.
+	TeardownNow func()
+
 	// AdapterKinds are the kinds of adapter this build can run, with the
 	// settings each takes (api.KindInfo), for GET /adapters/kinds.
 	AdapterKinds []api.KindInfo

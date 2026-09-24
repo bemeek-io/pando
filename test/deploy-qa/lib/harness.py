@@ -96,6 +96,8 @@ def answer_for(q, facts, packaging):
         cand = facts.get("dockerfile_path")
     elif key == "deployable_project":
         cand = facts.get("deployable_project")
+    elif key.startswith("build_arg."):
+        cand = (facts.get("build_args") or {}).get(key.split(".", 1)[1])
     elif key in ("build_method", "build_strategy"):
         cand = facts.get("build_method") or {
             "dockerfile": "dockerfile", "compose": "compose", "static": "static",
@@ -377,9 +379,15 @@ def run_case(p, c, label):
         r["total_seconds"] = round(time.time() - t0)
         if not os.environ.get("QA_KEEP"):
             t3 = time.time()
-            left = cleanup.clean_app(p, aid)
+            left, pando_left = cleanup.clean_app(p, aid)
             r["cleanup_seconds"] = round(time.time() - t3)
             r["residue"] = left
+            # What Pando's own delete left behind, before the sweep removed it.
+            # Not a stop: the sweep still cleaned it up. It is a leak in Pando,
+            # counted in the report so it cannot hide behind clean=OK again.
+            r["pando_left"] = pando_left
+            if pando_left:
+                log(f"PANDO LEFT for {c['id']} ({aid}): {json.dumps(pando_left)[:400]}")
             if left:
                 STOP.set()
                 log(f"CLEANUP RESIDUE for {c['id']} ({aid}): {json.dumps(left)} -- stopping the run")

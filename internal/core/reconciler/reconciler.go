@@ -387,6 +387,17 @@ func (r *Reconciler) correct(ctx context.Context, app state.Reconcilable, runtim
 		zap.String("drift", drift.Describe()),
 		zap.Int("previous_attempts", app.ConsecutiveFailures))
 
+	// Asked again, immediately before acting. A pass reads its apps once and
+	// works through them, and an Apply can wait minutes for a dependency to
+	// come up — long enough for an app further down the list to be deleted
+	// meanwhile. Applying it then re-created storage for an app that no
+	// longer existed, after its teardown had run (issue #55).
+	if r.Apps != nil {
+		if live, err := r.Apps.Live(ctx, app.ID); err == nil && !live {
+			return
+		}
+	}
+
 	if _, err := runtime.Apply(ctx, want); err != nil {
 		r.attempt(ctx, app, runtime, "could not start the app: "+reason(err))
 		return

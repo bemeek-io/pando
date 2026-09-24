@@ -49,13 +49,15 @@ var meanings = map[Code]string{
 	PlanSecurityBelowThreshold:   "This installation requires a security score, and this app is below it or has never been scanned (R-314).",
 
 	StateInvalid:                "The object is in a state this action does not apply to.",
+	StateAppExited:              "The app started and then stopped, so the deploy has nothing to send traffic to.",
 	StateBackupDecisionRequired: "The app has storage and the request did not say whether to keep a final backup of it (R-204, R-205).",
 
 	AdapterUnavailable: "The adapter needed for this is not configured or not reachable.",
 	AdapterFailed:      "The adapter was reached and failed.",
 
-	BuildFailed:  "The build ran and did not succeed. Its log is the answer.",
-	BuildTimeout: "The build exceeded the time allowed for it (R-119).",
+	BuildFailed:            "The build ran and did not succeed. Its log is the answer.",
+	BuildTimeout:           "The build exceeded the time allowed for it (R-119).",
+	BuildListensOnLoopback: "The built app listens only on 127.0.0.1 inside its container, where nothing outside it can reach it.",
 
 	CapacityWouldOversubscribe: "Running this would commit more of the host than is left (R-242).",
 	CapacityNoFreePort:         "Port-mode routing has no free port in the configured range.",
