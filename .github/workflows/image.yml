@@ -193,8 +193,12 @@ jobs:
           VERSION: ${{ steps.v.outputs.version }}
         run: |
           set -euo pipefail
-          scripts/release-compose.sh "$TAG" "$IMAGE" > docker-compose.yml
-          python3 scripts/smoke-image.py docker-compose.yml --pull --version "$VERSION"
+          # Written outside the checkout. The script reads docker-compose.yml
+          # from it, and a redirect onto that same file empties it before the
+          # script runs, which is how the v0.3.0 release lost its compose file.
+          mkdir -p "$RUNNER_TEMP/release"
+          scripts/release-compose.sh "$TAG" "$IMAGE" > "$RUNNER_TEMP/release/docker-compose.yml"
+          python3 scripts/smoke-image.py "$RUNNER_TEMP/release/docker-compose.yml" --pull --version "$VERSION"
 
       # The compose file is attached only once the image it names has passed,
       # so the release's install instructions never lead to a failing image.
@@ -202,7 +206,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.v.outputs.tag }}
-        run: gh release upload "$TAG" docker-compose.yml --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "$TAG" "$RUNNER_TEMP/release/docker-compose.yml" --clobber --repo "$GITHUB_REPOSITORY"
 
       # Now the moving tags: every tag metadata-action named except the exact
       # version, which is already there. They are pointed at the same digest,

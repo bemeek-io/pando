@@ -19,6 +19,10 @@ src=$(dirname "$0")/../docker-compose.yml
 # Exactly one `build: .`, the pando service's. Anything else means the file
 # changed shape and this substitution would ship something nobody reviewed.
 count=$(grep -c '^    build: \.$' "$src" || true)
+if [ ! -s "$src" ]; then
+  echo "release-compose.sh: $src is empty. Was the output redirected onto it? Write the release file somewhere else." >&2
+  exit 1
+fi
 if [ "$count" != 1 ]; then
   echo "release-compose.sh: expected one '    build: .' line in docker-compose.yml, found $count" >&2
   exit 1
