@@ -22,7 +22,12 @@ Dark theme is one attribute on the root: `<html data-theme="dark">`.
 Everything visual comes from a CSS custom property. **A raw hex color, a raw `px`
 value or a font family that is not Newsreader / Public Sans / IBM Plex Mono is a
 mistake**, and `_adherence.oxlintrc.json` is configured to flag each one. Run it
-against UI code before calling that code done.
+against UI code before calling that code done — **under ESLint, not oxlint.**
+oxlint implements neither rule the file uses: older versions pass a raw hex value
+clean, and current ones refuse to load the file. `adherence.eslint.mjs` loads the
+rules into an ESLint flat config at error severity; its header shows the three
+lines a consumer's `eslint.config.mjs` needs, and `console/eslint.config.mjs` is
+a working example.
 
 Import components from `index.js`, not from a component's own file — the same
 adherence config enforces that, so that a later refactor of a component's
@@ -97,7 +102,8 @@ assistant that wrote their app. The two should read as one product.
 | `components/` | 24 React components, grouped by concern. No npm dependencies, no CSS-in-JS. |
 | `index.js` | The barrel every consumer imports from. |
 | `readme.md` | The brand spec in full. Read this first. |
-| `_adherence.oxlintrc.json` | Lint rules that catch raw hex, raw px, wrong fonts and wrong props. |
+| `_adherence.oxlintrc.json` | Lint rules that catch raw hex, raw px, wrong fonts and deep imports. The name is upstream's; the contents are ESLint rules. |
+| `adherence.eslint.mjs` | Loads those rules into ESLint. How every consumer runs them. |
 | `PROVENANCE.md` | Where this came from, what was left behind, and how to fetch it. |
 
 Not here, fetched on demand — see `PROVENANCE.md` for each path:
