@@ -43,9 +43,15 @@ API version bump, and the API version changes only when `/api/v1` itself stops b
   1.0 on also the major (`1`); and `latest` for a stable release. A prerelease is tagged with its
   own version only, so nobody following `latest` or a minor line is moved onto it. The release's
   `docker-compose.yml` pins the exact version. Published by `.github/workflows/image.yml` after the
-  release, which scans the image with Trivy first and does not push it if a fixable critical
-  vulnerability is found, then starts the pushed image from that compose file and deploys an app on
-  it.
+  release, in an order that keeps a failing image away from anyone following a moving tag:
+  1. Scan the image with Trivy, and smoke test it: start it from a compose file and deploy an app.
+     A fixable critical vulnerability or a failed test stops it here, before anything is pushed.
+  2. Push and sign it under its exact version only.
+  3. Pull that back from Docker Hub and smoke test it again, from the compose file the release ships.
+  4. Only then attach that compose file to the release, and point the minor line, the major and
+     `latest` at the same digest.
+
+  A failure at any step leaves the moving tags where they were.
 
 ## Before tagging
 
