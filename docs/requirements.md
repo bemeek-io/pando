@@ -356,16 +356,17 @@ itself, to a registry or a daemon, and the daemon is forbidden.
 
 **R-105 [D]** **Every question must be self-contained and pasteable.** It states what is being asked, why, what a valid answer looks like, and enough context that a model which cannot see the repo can answer it. The expected workflow for a non-technical user is to paste the question into the assistant that wrote the app and paste the answer back. This is a hard requirement on question text, and it is what makes AI support useful without making it required.
 
-**R-106 [D]** AI assistance is optional supporting functionality, never required. It may be applied to reading README prose, disambiguating monorepo entrypoints, and proposing repairs from a failed build log. It emits the same spec object and passes the same review gate. With no model configured, each tap degrades to a question, not a dead end.
+**R-106 [D]** AI assistance is optional supporting functionality, never required. It may be applied to reading README prose, disambiguating monorepo entrypoints, proposing repairs from a failed build log or a failed detection, and answering the questions detection could not. It emits the same spec object and passes the same review gate. With no model configured, each tap degrades to a question, not a dead end.
 
 **R-107 [D]** The correct failure: a repo needs Postgres and never mentions it anywhere — no compose service, no `DATABASE_URL` in any sample. The trial run crashes. Pando shows the log and stops. That is the right outcome, not a gap to close with inference.
 
 ### 7.4 Screening a deployment plan
 
-R-106 says AI assistance is optional supporting functionality and names three places it may be
-applied. This section specifies the first of them to be built: a screening pass over the proposal the
-deterministic pipeline has already produced. Its purpose is to raise the share of repositories that
-deploy on the first attempt without anyone being asked a question.
+R-106 says AI assistance is optional supporting functionality and names the places it may be
+applied. This section specifies the first built: a screening pass over the proposal the deterministic
+pipeline has already produced, run in two cases only — when that proposal failed, to repair it, and
+when it asked questions, to answer them (R-336). Its purpose is to raise the share of repositories
+that deploy on the first attempt without anyone being asked a question.
 
 **R-330 [D]** **Screening reviews Pando's own answer; it is not a second detector.** An AI adapter
 does not bid in the auction (R-093) and does not rank against one. It is given the repository and the
@@ -397,9 +398,15 @@ unreachable provider, an expired budget, a timeout, an answer that does not pars
 deterministic proposal exactly as it was (R-106). Screening runs after the proposal is complete, so
 when it fails the proposal is the one Pando would have produced without it.
 
-**R-336 [P]** **Screening is on when an AI adapter is configured.** Configuring one means supplying a
-credential, which is the deliberate act; asking a second time would charge the setup cost twice
-(R-002). Host policy may forbid screening install-wide, and an install may turn it off per adapter.
+**R-336 [P]** **Screening runs only when detection needs it, and is on when an AI adapter is
+configured.** Detection needs it in two cases. When the proposal failed — the trial run crashed, or no
+detector could read the repository — the adapter is asked to repair it. Otherwise, when detection has
+questions for a person, the adapter is asked to answer them, and may change nothing else. A detection
+that produced a plan without failing or asking anything makes no call at all: no latency, no cost, and
+no repository contents leaving the host on the common path. At most one call is made per detection; a
+repair is handed the questions too. Configuring an adapter means supplying a credential, which is the
+deliberate act; asking a second time would charge the setup cost twice (R-002). Host policy may forbid
+screening install-wide, and an install may turn it off per adapter.
 
 **R-337 [D]** **Screening sends repository contents to the adapter's provider, and records that it did.**
 Every screening writes an audit event naming the adapter, the model, and the files that were read. The
@@ -410,6 +417,8 @@ the person who decided that, which is why R-336 makes configuring it the opt-in.
 **R-338 [D]** **A screener may answer Pando's own questions.** An answer is an amendment like any
 other: evidenced, attributed, shown in the review, and refused if it does not match an outstanding
 question. Each question answered this way is one fewer for a person to answer (R-103, R-105).
+Outstanding questions are one of R-336's two triggers on their own, not only something a repair may
+settle in passing.
 
 **R-339 [P]** Screening is bounded by files read, bytes read, and wall clock, declared per adapter and
 capped by the install. An exhausted budget ends the screening and keeps what it produced, under R-335.
@@ -695,9 +704,10 @@ assertion. The vocabulary half: models, context windows, tokens, tool calls and 
 provider's vocabulary and a large one, and R-251 says core never learns it. Core says "screen this
 proposal against this source"; what that costs and how it is asked is the adapter's business.
 
-**R-259 [D]** An AI adapter declares which **functions** it performs as capabilities data. Screening a
-deployment plan (§7.4) is the first. Reading README prose, disambiguating monorepo entrypoints and
-proposing repairs from a failed build log are the others R-106 already names, and an adapter that
+**R-259 [D]** An AI adapter declares which **functions** it performs as capabilities data. Repairing a
+failed detection (`repair_plan`) and answering detection's questions (`answer_questions`) are the
+first two, and together they are §7.4's screening. Reading README prose, disambiguating monorepo
+entrypoints and repairing a failed deploy-time build are the others R-106 names, and an adapter that
 cannot do one of them says so rather than failing when asked.
 
 **R-257 [D]** A runtime adapter may be swapped under an existing app, and it is **neither a migration nor a plain redeploy**: it is a destructive spec change requiring explicit confirmation, with volumes resolved through the keep-or-discard flow (R-204). Pando does not move volume contents between adapters — it cannot know what is inside a volume (R-206), and relocating running workloads is one step from the scheduling R-010 forbids.

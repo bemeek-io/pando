@@ -9,7 +9,7 @@ const (
 	StageFetching  = "fetching"  // cloning the repository
 	StageDetecting = "detecting" // detectors bidding on what the app is
 	StageTrying    = "trying"    // a trial run of the winning draft (R-097)
-	StageScreening = "screening" // an AI adapter reviewing the plan (R-330)
+	StageScreening = "screening" // an AI adapter repairing the plan or answering its questions (R-336)
 )
 
 // ProgressFunc hears each stage as detection reaches it, with the proposal as

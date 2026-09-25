@@ -429,7 +429,7 @@ func serve(ctx context.Context, configPath string) error {
 		detector.ScreenerRef = ref
 		detector.ScreenPolicy = hostPolicy
 		detector.Auditor = detectionAuditor{auditor}
-		logger.Info("detection proposals will be screened", zap.String("adapter", ref))
+		logger.Info("an AI adapter will repair failed detections and answer their questions", zap.String("adapter", ref))
 	}
 
 	// Assertions are what an app can actually trust about a caller (R-051).

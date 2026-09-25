@@ -2,9 +2,11 @@ package anthropic
 
 import (
 	"github.com/anthropics/anthropic-sdk-go"
+
+	"github.com/bemeek-io/pando/internal/adapter/api"
 )
 
-// The three tools a screening gets: two to read the repository, one to answer.
+// The three tools a repair or an answering call gets: two to read the repository, one to answer.
 //
 // Answering through a tool rather than in prose is deliberate. The schema is
 // the closed set from design 10 §3, so a malformed amendment is rejected before
@@ -17,7 +19,7 @@ const (
 	toolSubmitFindings = "submit_findings"
 )
 
-func tools() []anthropic.ToolUnionParam {
+func tools(fn api.AIFunction) []anthropic.ToolUnionParam {
 	list := anthropic.ToolParam{
 		Name: toolListFiles,
 		Description: anthropic.String(
@@ -55,15 +57,15 @@ func tools() []anthropic.ToolUnionParam {
 	submit := anthropic.ToolParam{
 		Name: toolSubmitFindings,
 		Description: anthropic.String(
-			"Submit the result of the screening. Call this exactly once, at the end. Submit an " +
-				"empty amendments list if the plan is already correct — that is a good outcome, " +
-				"not a failure."),
+			"Submit your result. Call this exactly once, at the end. Submit an empty " +
+				"amendments list when there is nothing the repository supports changing — that is " +
+				"a good outcome, not a failure."),
 		InputSchema: anthropic.ToolInputSchemaParam{
 			Properties: map[string]any{
 				"amendments": map[string]any{
 					"type":        "array",
 					"description": "Changes to the deployment plan. Empty if none are needed.",
-					"items":       amendmentSchema(),
+					"items":       amendmentSchema(kindsFor(fn)),
 				},
 				"notes": map[string]any{
 					"type": "array",
@@ -86,24 +88,36 @@ func tools() []anthropic.ToolUnionParam {
 	}
 }
 
+// kindsFor is which amendments fn may submit.
+//
+// Answering questions gets one kind. Core refuses anything else from that call
+// regardless, but a kind the schema does not offer is one the model does not
+// spend its budget writing (R-336).
+func kindsFor(fn api.AIFunction) []string {
+	if fn == api.AIFunctionAnswerQuestions {
+		return []string{string(api.AmendAnswerQuestion)}
+	}
+	return []string{
+		"set_command", "set_env", "set_port", "set_health", "add_slot",
+		"set_build_context", "set_dockerfile", "set_static_dir",
+		"add_volume", "answer_question", "add_warning",
+	}
+}
+
 // amendmentSchema is the closed set, as JSON Schema.
 //
 // It mirrors api.Amendment, and the mirroring is the point: a kind that is not
 // in this enum cannot be asked for, which is R-332 arriving one layer earlier
 // than core's validation rather than instead of it.
-func amendmentSchema() map[string]any {
+func amendmentSchema(kinds []string) map[string]any {
 	return map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
 		"required":             []string{"kind", "reason", "evidence"},
 		"properties": map[string]any{
 			"kind": map[string]any{
-				"type": "string",
-				"enum": []string{
-					"set_command", "set_env", "set_port", "set_health", "add_slot",
-					"set_build_context", "set_dockerfile", "set_static_dir",
-					"add_volume", "answer_question", "add_warning",
-				},
+				"type":        "string",
+				"enum":        kinds,
 				"description": "Which change this is.",
 			},
 			"workload": map[string]any{

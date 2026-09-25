@@ -5,10 +5,11 @@ optional supporting functionality, names three places it may be applied, and set
 matters: it emits the same spec object and passes the same review gate, and with nothing configured
 each tap degrades to a question rather than a dead end.
 
-This document designs the tenth adapter category (R-258) and the first function it performs:
-**screening a deployment plan** (§7.4, R-330 through R-339). The other two functions R-106 names —
-reading README prose and proposing repairs from a failed build log — are not built here. The
-capabilities struct is shaped so they arrive without changing the interface.
+This document designs the tenth adapter category (R-258) and **screening a deployment plan** (§7.4,
+R-330 through R-339), which is two functions: **repairing a detection that failed** and **answering
+the questions detection could not**. Screening runs only in those two cases (R-336, §4.2). The
+remaining uses R-106 names — reading README prose, and repairing a failed build at deploy time — are
+not built here. The capabilities struct is shaped so they arrive without changing the interface.
 
 ---
 
@@ -18,8 +19,10 @@ Detection produces a proposal: a draft spec, the evidence behind it, the questio
 answer, and the trial run's log. It is deterministic — the auction is a pure function of the source,
 and §07 A is the sequence it follows.
 
-Screening runs **after** that, on the finished proposal, and asks one question: *given this repository,
-what did that proposal get wrong or leave out?* The answer comes back as amendments to the spec.
+Screening runs **after** that, on the finished proposal, and only when the proposal failed or asked
+something (§4.2). It asks one question: *given this repository, what did that proposal get wrong or
+leave out?* — narrowed, when the proposal only asked something, to *which of these questions does the
+repository answer?* The answer comes back as amendments to the spec.
 
 **[D] It is not a detector and does not bid** (R-330). The tempting design is a tenth detector that
 bids in the auction alongside the Dockerfile and compose ones, and it is wrong in two directions. A
@@ -68,19 +71,24 @@ Package `internal/adapter/api`, alongside the other nine.
 type AIAdapter interface {
     Adapter
     Capabilities(ctx context.Context) (AICapabilities, error)
-    ScreenPlan(ctx context.Context, req ScreenRequest) (ScreenResult, error)
+    RepairPlan(ctx context.Context, req ScreenRequest) (ScreenResult, error)      // repair_plan
+    AnswerQuestions(ctx context.Context, req ScreenRequest) (ScreenResult, error) // answer_questions
 }
 
 type AICapabilities struct {
-    Functions []AIFunction // screen_plan, and R-106's other two when they exist
+    Functions []AIFunction // repair_plan, answer_questions; read_readme when it exists
     Model     string       // shown in the review: which model read this code
     MaxFiles  int
     MaxBytes  int64
 }
 ```
 
-**[D]** `Functions` is data, not a type assertion (R-254, R-259). An adapter that does not screen is
-skipped with a reason in the proposal rather than by a failed assertion nobody can plan around.
+**[D]** `Functions` is data, not a type assertion (R-254, R-259). An adapter that does not perform the
+function detection needs is skipped with a reason in the proposal rather than by a failed assertion
+nobody can plan around. Both functions take the same `ScreenRequest` and return the same
+`ScreenResult`; what differs is the job the adapter is given and the amendments core will accept from
+it (§4.2). `screen_plan`, the single function this replaced, is gone, and the unbuilt `repair_build`
+became `repair_plan`.
 
 **[D]** `Model` is on the capabilities rather than only in the adapter's config because the review
 shows it, for example "Anthropic (`claude-opus-5-5`) read 7 files and changed 3 things". Core cannot show
@@ -221,8 +229,9 @@ core/detection.Runner.Detect
   ├─ source.Fetch                     → checkout
   ├─ detect.Job.Run                   → proposal   ← deterministic, unchanged
   ├─ applyDefaults                    → the install's answers
-  ├─ screening.Run                    → amendments, applied and refused   ← this document
-  ├─ audit: detection.screen (R-337)
+  ├─ needed?                          → repair_plan | answer_questions | nothing (§4.2)
+  ├─ screening.Run                    → amendments, applied and refused   ← only when needed
+  ├─ audit: detection.screen (R-337)  ← only when a call was attempted
   └─ Detections.Save
 ```
 
@@ -242,7 +251,8 @@ turns the second into the first.
 **[D]** R-335. Every one of these leaves the proposal untouched and records why in `Outcome.Skipped`:
 
 - no AI adapter configured
-- the adapter does not advertise `screen_plan`
+- detection did not need one (§4.2) — the common case, `not_needed`
+- the adapter does not advertise the function detection needed
 - host policy forbids screening
 - the adapter's `HealthCheck` fails, or `ScreenPlan` returns an error
 - the budget's timeout expires
@@ -251,6 +261,46 @@ turns the second into the first.
 None of them is an error returned from `Detect`. Everything the auction produced is still in the
 proposal, including any questions, so failing the detection would discard a usable result because an
 optional step did not run.
+
+### 4.2 When it runs
+
+**[D] Only when detection failed or asked something** (R-336). `core/detection.needed` decides, from
+the finished proposal:
+
+| The proposal | Function | What core accepts from it |
+|---|---|---|
+| the trial run crashed | `repair_plan` | the whole closed set (§3) |
+| no detector could read the repository (`unknown` strategy) | `repair_plan` | the whole closed set (§3) |
+| neither, but it has questions a person would be asked | `answer_questions` | `answer_question` only; anything else is refused with a reason |
+| blocked (R-099) | nothing | — |
+| anything else | nothing | — |
+
+A plan that worked and asked nothing is the common case, and it makes no call: no latency, no cost, no
+repository contents sent anywhere, and no audit event because nothing left the host. The outcome is
+recorded as `not_needed` and the console shows nothing for it. The "Checking with AI" progress stage
+is reported only when a call is made.
+
+Questions deferred to the trial run are not asked of anyone, so they are not a trigger. A repair is
+handed the questions as well and may answer them, so a detection that both failed and asked is one
+call, never two.
+
+**[D] Answering changes nothing else.** The call was made because of the questions, and the plan did
+not fail, so an amendment other than `answer_question` from `answer_questions` is refused and listed
+with the other refusals. The Anthropic adapter narrows its `submit_findings` schema to that one kind
+for the same call, so the model does not spend its budget writing changes core would discard.
+
+**[D] The failure stays visible** (R-107). A repair amends the draft spec; it does not touch
+`trial_log`, so the log that showed the failure is still on the proposal next to what was changed and
+why. `Outcome.Why` states what made the call necessary in one sentence.
+
+**[P] One attempt.** A repair is not retried, and the repaired plan is not trial-run again before it is
+offered. A second trial of a repaired image-based plan would tell the person whether the repair worked
+before they accept it, and is the obvious next step; it is left out because a trial takes up to 90
+seconds and the value is not yet measured.
+
+**[P] Detection only.** A build that fails at deploy time is R-106's other repair case and is not
+wired here. It would take the build log rather than the trial log, and would amend a pinned spec,
+which means a new revision rather than a draft — a different review gate from this one.
 
 ---
 
@@ -281,7 +331,9 @@ between two values of a field the spec already has.
 type Outcome struct {
     Ran        bool
     Skipped    string            // why nothing ran (§4.1); empty when it did
-    SkipCode   SkipCode          // the same, as a stable value: not_configured | policy | unsupported | unavailable | blocked
+    SkipCode   SkipCode          // the same, as a stable value: not_configured | not_needed | policy | unsupported | unavailable | blocked
+    Function   AIFunction        // repair_plan | answer_questions; empty when not needed (§4.2)
+    Why        string            // what made the call necessary, in one sentence
     AdapterRef string
     Model      string
     FilesRead  []string
@@ -296,8 +348,11 @@ type Outcome struct {
 The console renders it as a section of the review, directly under the winning bid: the model, each
 change with its reason and the files it cites, the files read, and what it asked for that Pando would
 not do. An answered question is listed among the changes with its reason, so the review shows why the
-question stopped being asked. When `skip_code` is `not_configured` the section is absent, because an
-install without an AI adapter is not degraded; any other skip is shown as one line with its reason.
+question stopped being asked. When `skip_code` is `not_configured`, `not_needed` or `blocked` the
+section is absent: an install without an AI adapter is not degraded, a detection that needed none is
+the ordinary case, and a blocked proposal already says why it stopped. Any other skip is shown as one
+line with its reason. The onboarding page's layout around this is to be reworked for the
+exception-only model (issue #69); until then it renders the same outcome as before.
 
 ---
 
@@ -310,9 +365,9 @@ was shaped against.
 avoid a dependency and would mean owning the request shape, the retry policy, the streaming envelope
 and the error taxonomy for a provider whose API is not ours to keep up with.
 
-**[P] `claude-opus-5-5` is the default model**, overridable per install. Screening runs once per
-detection, on a repository somebody is about to deploy, and the thing being optimized is whether the
-app comes up on the first try — this is not a high-volume path where a cheaper model pays for itself.
+**[P] `claude-opus-5-5` is the default model**, overridable per install. Screening runs at most once per
+detection, and only on one that failed or asked something (§4.2), on a repository somebody is about to
+deploy; the thing being optimized is whether the app comes up without a person stepping in — this is not a high-volume path where a cheaper model pays for itself.
 It replaced `claude-opus-5` as the default because it is newer and costs less per token. An install
 that disagrees sets `model` in the adapter's config.
 
@@ -323,7 +378,14 @@ Both tools refuse a path that escapes the checkout and stop returning content on
 
 **[P] Amendments come back through a `submit_findings` tool with `strict: true`** rather than as prose
 to be parsed. The schema is the closed set from §3, so a malformed amendment is rejected by the API
-before it reaches Pando, and the shape core validates is the shape the model was given.
+before it reaches Pando, and the shape core validates is the shape the model was given. For
+`answer_questions` the enum is narrowed to `answer_question`.
+
+**[P] One loop, two system prompts.** `repair_plan` tells the model the plan did not work and that
+changing nothing is right when the failure is real (R-107); `answer_questions` tells it the plan works
+and only the questions are open. The rules both are held to — evidence, the closed set, observations
+win, no invented dependencies — are shared text. Each prompt is identical across calls of its
+function, so the cache breakpoint on it still pays.
 
 **[D] The API key is a `secret.Value`** (§00 3.3), so it renders `[redacted]` in every marshaler and
 cannot reach a log line (R-194).
@@ -363,7 +425,8 @@ environment can instead set `api_key_env`, or `ANTHROPIC_API_KEY`, which the ada
 credential is stored.
 
 **[P] `screen_plans` defaults to true** (R-336). Configuring the adapter required a credential; that
-was the decision.
+was the decision. False turns off both functions. The key kept its name when screening split into
+two functions, so existing configurations read unchanged.
 
 **[P] Host policy carries `DisableAIScreening`**, install-wide, evaluated in `core/detection` beside
 the source allowlist. It can only deny, like everything else in the document (R-272).

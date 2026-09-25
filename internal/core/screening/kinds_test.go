@@ -153,13 +153,24 @@ type screener struct {
 	result  api.ScreenResult
 	err     error
 	got     api.ScreenRequest
+	fn      api.AIFunction
 }
 
 func (s *screener) Capabilities(context.Context) (api.AICapabilities, error) {
 	return s.caps, s.capsErr
 }
 
-func (s *screener) ScreenPlan(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error) {
+func (s *screener) RepairPlan(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error) {
+	s.fn = api.AIFunctionRepairPlan
+	return s.call(ctx, req)
+}
+
+func (s *screener) AnswerQuestions(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error) {
+	s.fn = api.AIFunctionAnswerQuestions
+	return s.call(ctx, req)
+}
+
+func (s *screener) call(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error) {
 	s.got = req
 	if _, ok := ctx.Deadline(); !ok {
 		return api.ScreenResult{}, errors.New("no deadline")
@@ -168,7 +179,27 @@ func (s *screener) ScreenPlan(ctx context.Context, req api.ScreenRequest) (api.S
 }
 
 func screens() api.AICapabilities {
-	return api.AICapabilities{Functions: []api.AIFunction{api.AIFunctionScreenPlan}, Model: "m-caps"}
+	return api.AICapabilities{Functions: []api.AIFunction{api.AIFunctionRepairPlan, api.AIFunctionAnswerQuestions}, Model: "m-caps"}
+}
+
+// TestR259_RunCallsTheFunctionItWasAskedFor asserts R-259: which function runs
+// is decided by the caller and checked against capabilities as data.
+func TestR259_RunCallsTheFunctionItWasAskedFor(t *testing.T) {
+	for _, fn := range []api.AIFunction{api.AIFunctionRepairPlan, api.AIFunctionAnswerQuestions} {
+		s := &screener{caps: screens()}
+		_, outcome := screening.Run(context.Background(), s, "ai_x", fn, api.ScreenRequest{})
+		require.True(t, outcome.Ran)
+		require.Equal(t, fn, s.fn)
+		require.Equal(t, fn, outcome.Function)
+	}
+
+	// An adapter that repairs but does not answer is skipped for answering.
+	s := &screener{caps: api.AICapabilities{Functions: []api.AIFunction{api.AIFunctionRepairPlan}}}
+	_, outcome := screening.Run(context.Background(), s, "ai_x", api.AIFunctionAnswerQuestions, api.ScreenRequest{})
+	require.False(t, outcome.Ran)
+	require.Equal(t, screening.SkipUnsupported, outcome.SkipCode)
+	require.Contains(t, outcome.Skipped, "answer detection questions")
+	require.Empty(t, s.fn, "never called")
 }
 
 // TestR335_EveryWayRunCanFailIsASkipWithAReason asserts R-335 for Run itself.
@@ -183,7 +214,7 @@ func TestR335_EveryWayRunCanFailIsASkipWithAReason(t *testing.T) {
 		"unsupported": {&screener{caps: api.AICapabilities{}}, screening.SkipUnsupported},
 		"screen fail": {&screener{caps: screens(), err: errors.New("timeout")}, screening.SkipUnavailable},
 	} {
-		_, outcome := screening.Run(ctx, tc.s, "ai_x", api.ScreenRequest{})
+		_, outcome := screening.Run(ctx, tc.s, "ai_x", api.AIFunctionRepairPlan, api.ScreenRequest{})
 		require.False(t, outcome.Ran, name)
 		require.Equal(t, tc.code, outcome.SkipCode, name)
 		require.NotEmpty(t, outcome.Skipped, name)
@@ -197,7 +228,7 @@ func TestR339_RunLowersTheBudgetToTheAdaptersAndSetsADeadline(t *testing.T) {
 	caps.MaxFiles, caps.MaxBytes = 5, 1000
 	s := &screener{caps: caps, result: api.ScreenResult{FilesRead: []string{"a"}, Notes: []string{"n"}}}
 
-	_, outcome := screening.Run(context.Background(), s, "ai_x", api.ScreenRequest{})
+	_, outcome := screening.Run(context.Background(), s, "ai_x", api.AIFunctionRepairPlan, api.ScreenRequest{})
 	require.True(t, outcome.Ran)
 	require.Equal(t, "ai_x", outcome.AdapterRef)
 	require.Equal(t, "m-caps", outcome.Model, "the capabilities' model when the result names none")
@@ -207,7 +238,7 @@ func TestR339_RunLowersTheBudgetToTheAdaptersAndSetsADeadline(t *testing.T) {
 	require.Equal(t, screening.DefaultTimeout, s.got.Budget.Timeout)
 
 	s2 := &screener{caps: screens(), result: api.ScreenResult{Model: "m-result"}}
-	_, outcome = screening.Run(context.Background(), s2, "ai_x", api.ScreenRequest{
+	_, outcome = screening.Run(context.Background(), s2, "ai_x", api.AIFunctionRepairPlan, api.ScreenRequest{
 		Budget: api.ScreenBudget{MaxFiles: 3, MaxBytes: 10, Timeout: time.Second},
 	})
 	require.Equal(t, "m-result", outcome.Model)
