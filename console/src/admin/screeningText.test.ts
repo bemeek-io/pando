@@ -29,6 +29,11 @@ describe('screeningVisible', () => {
       .toBe(false);
   });
 
+  it('stays silent when detection did not need an AI adapter', () => {
+    expect(screeningVisible({ ran: false, skip_code: 'not_needed', skipped: 'Detection produced a plan.' }))
+      .toBe(false);
+  });
+
   it('shows a screening that ran, and one that was skipped for another reason', () => {
     expect(screeningVisible({ ran: true })).toBe(true);
     expect(screeningVisible({

@@ -9,19 +9,28 @@ import (
 	"github.com/bemeek-io/pando/internal/core/spec"
 )
 
-// systemPrompt states the job and the rules core will enforce anyway.
+// systemPrompt returns the job for fn, and the rules core will enforce anyway.
 //
-// Stating them twice is not redundancy. Core refuses an amendment that breaks
-// one of these (design 10 §3), so a model that has not been told is a model
-// whose work is thrown away — the refusal is correct and the screening is
+// Stating the rules twice is not redundancy. Core refuses an amendment that
+// breaks one of these (design 10 §3), so a model that has not been told is a
+// model whose work is thrown away — the refusal is correct and the call is
 // wasted. Telling it here is what turns a refusal into a rarity.
-const systemPrompt = `You are screening a deployment plan for Pando, a self-hosted platform that builds
+func systemPrompt(fn api.AIFunction) string {
+	if fn == api.AIFunctionAnswerQuestions {
+		return answerPrompt + "\n\n" + rulesPrompt + "\n\n" + answerClosing
+	}
+	return repairPrompt + "\n\n" + rulesPrompt + "\n\n" + repairClosing
+}
+
+const repairPrompt = `You are repairing a deployment plan for Pando, a self-hosted platform that builds
 and runs applications from their source repositories.
 
-Pando has already analyzed this repository with deterministic detectors and produced a plan. Your job
-is not to produce a plan of your own. It is to read the repository and find what those detectors
-missed or got wrong, so that this application starts successfully on the first deploy without anyone
-having to be asked a question.
+Pando analyzed this repository with deterministic detectors, and the result did not work: either
+Pando started the application and it exited with an error, or none of the detectors could work out
+how to build it. You are only called when that happens. Your job is not to produce a plan of your
+own. It is to read the repository, and the log if there is one, and decide whether the failure can
+be fixed with the changes below — or whether it is real, in which case you change nothing and a person
+is shown the log.
 
 The most valuable things you can find, roughly in order:
 
@@ -36,9 +45,18 @@ The most valuable things you can find, roughly in order:
 - In a monorepo, the wrong directory or the wrong Dockerfile being built.
 - A directory the application writes to that is not backed by a volume, so its contents are lost on
   the next deploy.
-- A question Pando could not answer that the repository in fact answers.
+- A question Pando could not answer that the repository in fact answers.`
 
-Rules that are enforced, not advisory. An amendment breaking one of these is discarded:
+const answerPrompt = `You are answering questions for Pando, a self-hosted platform that builds and runs
+applications from their source repositories.
+
+Pando analyzed this repository with deterministic detectors and produced a plan, but could not settle
+everything: it has questions that would otherwise go to a person. You are only called when that
+happens. Your job is to answer each question the repository actually answers, so that nobody has to,
+and to leave the rest for a person. You may only answer questions — the plan is otherwise working, and
+any other change you propose is discarded.`
+
+const rulesPrompt = `Rules that are enforced, not advisory. An amendment breaking one of these is discarded:
 
 1. Every amendment must cite at least one repository path in "evidence", and those paths are checked
    to exist. Cite files you actually read. An amendment resting on what you know about a framework
@@ -60,14 +78,27 @@ with no apology, no "Error:" prefix and no exclamation mark. "The start command 
 server; package.json defines a start script that serves the built output" is right. "Fixed the
 command" is not.
 
-Read what you need, then call submit_findings exactly once. Submitting no amendments is a good
-outcome when the plan is already correct — do not invent work.`
+An answer to a question must be one of its valid answers when it lists them, and must be something a
+person could type into the question's field as-is: a port number, a path, a command. Not a
+description of one.`
+
+const repairClosing = `Read what you need, then call submit_findings exactly once. Submitting no amendments
+is the right outcome when the failure is real — an application that needs something the repository
+never mentions — or when you cannot tell what went wrong. Do not guess.`
+
+const answerClosing = `Read what you need, then call submit_findings exactly once, with an answer_question
+amendment for each question the repository answers. Submitting none is the right outcome when the
+repository does not settle any of them — a person will answer instead. Do not guess.`
 
 // userPrompt is the proposal, rendered.
-func userPrompt(req api.ScreenRequest) string {
+func userPrompt(fn api.AIFunction, req api.ScreenRequest) string {
 	var b strings.Builder
 
-	b.WriteString("Here is the plan Pando produced for this repository.\n\n")
+	if fn == api.AIFunctionAnswerQuestions {
+		b.WriteString("Here is the plan Pando produced for this repository, and the questions it could not answer.\n\n")
+	} else {
+		b.WriteString("Here is the plan Pando produced for this repository, which did not work.\n\n")
+	}
 	b.WriteString("## How Pando read this repository\n\n")
 	if len(req.Evidence) == 0 {
 		b.WriteString("(no evidence recorded)\n")

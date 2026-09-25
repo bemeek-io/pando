@@ -49,7 +49,8 @@ type AuditEvent struct {
 // ActionScreen is R-337's event.
 const ActionScreen = "detection.screen"
 
-// screen reviews the proposal and folds in what it may.
+// screen calls the AI adapter when detection needs it, and folds in what it
+// may. When detection does not need it, nothing is called (R-336).
 //
 // It mutates proposal and returns the outcome. It never returns an error:
 // R-335 makes every failure here leave the deterministic proposal exactly as it
@@ -57,11 +58,6 @@ const ActionScreen = "detection.screen"
 func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Proposal, view api.SourceView) screening.Outcome {
 	if r.Screener == nil {
 		return screening.SkippedOutcome(screening.SkipNotConfigured, "No AI adapter is configured.")
-	}
-	if r.ScreenPolicy != nil {
-		if reason := r.ScreenPolicy.AllowsScreening(ctx); reason != "" {
-			return screening.SkippedOutcome(screening.SkipPolicy, reason)
-		}
 	}
 
 	// A blocked proposal is not screened. There is nothing useful to amend in a
@@ -72,8 +68,30 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 		return screening.SkippedOutcome(screening.SkipBlocked, "This repository cannot be imported as written, so there was nothing to screen.")
 	}
 
+	fn, why := needed(*proposal)
+	if fn == "" {
+		// The common case, and the point of R-336's amendment: a plan that
+		// worked and asked nothing is not sent anywhere. No latency, no cost,
+		// no repository contents leaving the host, and no audit event because
+		// nothing happened.
+		return screening.SkippedOutcome(screening.SkipNotNeeded,
+			"Detection produced a plan without failing or asking anything, so no AI adapter was called.")
+	}
+
+	if r.ScreenPolicy != nil {
+		if reason := r.ScreenPolicy.AllowsScreening(ctx); reason != "" {
+			o := screening.SkippedOutcome(screening.SkipPolicy, reason).For(fn)
+			o.Why = why
+			return o
+		}
+	}
+
+	// Only now, so the console's "Checking with AI" step appears on the
+	// detections that call one and on no others.
+	detect.Report(ctx, detect.StageScreening, proposal)
+
 	trial := proposal.TrialSummary()
-	result, outcome := screening.Run(ctx, r.Screener, r.ScreenerRef, api.ScreenRequest{
+	result, outcome := screening.Run(ctx, r.Screener, r.ScreenerRef, fn, api.ScreenRequest{
 		Source:    view,
 		Spec:      proposal.DraftSpec,
 		Evidence:  proposal.Winner.Evidence,
@@ -85,6 +103,8 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 			Timeout:  r.ScreenTimeout,
 		},
 	})
+
+	outcome.Why = why
 
 	// Audited whether or not anything was applied, and before the amendments
 	// are folded in: the event records that a repository was read, which
@@ -102,6 +122,17 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 	// where that is already known (design 10 §5, detect.WithScreenedAnswers).
 	answers, rest, refused := screening.Split(env, result.Amendments, outstanding(proposal.Questions))
 	outcome.Refused = append(outcome.Refused, refused...)
+
+	// Asked for answers, it may give answers. A plan that worked needs no
+	// repairing, and the only reason this call was made is the questions
+	// (R-336). Refused rather than dropped, so the review shows what was asked.
+	if fn == api.AIFunctionAnswerQuestions {
+		for _, a := range rest {
+			outcome.Refused = append(outcome.Refused, screening.Refused{Amendment: a,
+				Reason: "Pando asked the AI adapter only to answer detection's questions; this plan did not fail, so it was not changed."})
+		}
+		rest = nil
+	}
 
 	// An answer that cannot become a spec is not an answer, whoever gave it.
 	// The screener answered build_method in prose ("serve the repository root
@@ -163,7 +194,7 @@ func (r *Runner) auditScreen(ctx context.Context, appID string, o screening.Outc
 		return
 	}
 
-	detail := map[string]any{"ran": o.Ran}
+	detail := map[string]any{"ran": o.Ran, "function": string(o.Function), "why": o.Why}
 	if o.Skipped != "" {
 		detail["skipped"] = o.Skipped
 	}
@@ -177,6 +208,31 @@ func (r *Runner) auditScreen(ctx context.Context, appID string, o screening.Outc
 	// A failure to audit does not fail the detection, and it does not fail the
 	// screening either — which already happened. R-335 holds here too.
 	_ = r.Auditor.Write(ctx, AuditEvent{Action: ActionScreen, AppID: appID, Detail: detail})
+}
+
+// needed decides whether detection needs an AI adapter, and for what (R-336).
+//
+// Two triggers and no others. A plan that failed is repaired: the trial run
+// crashed, or no detector could read the repository at all. Otherwise a plan
+// that asks something has its questions answered. A repair is handed the
+// questions too and may answer them, so one call covers a detection that both
+// failed and asked — there is never a second.
+//
+// An empty function means nothing is needed.
+func needed(p detect.Proposal) (api.AIFunction, string) {
+	switch {
+	case p.Trial.Crashed:
+		return api.AIFunctionRepairPlan, "Pando started this app to watch it, and it exited with an error."
+	case p.Winner.Strategy == detect.StrategyUnknown:
+		return api.AIFunctionRepairPlan, "None of Pando's detectors could work out how to build this repository."
+	}
+	if n := len(detect.Asked(p.Questions)); n > 0 {
+		if n == 1 {
+			return api.AIFunctionAnswerQuestions, "Detection asked one question."
+		}
+		return api.AIFunctionAnswerQuestions, fmt.Sprintf("Detection asked %d questions.", n)
+	}
+	return "", ""
 }
 
 // questionsFor converts detection's questions to the adapter vocabulary.
