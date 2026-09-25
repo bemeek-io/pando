@@ -19,7 +19,7 @@ const (
 	toolSubmitFindings = "submit_findings"
 )
 
-func tools(fn api.AIFunction) []anthropic.ToolUnionParam {
+func tools(fn api.AIFunction, questions []api.Question) []anthropic.ToolUnionParam {
 	list := anthropic.ToolParam{
 		Name: toolListFiles,
 		Description: anthropic.String(
@@ -65,7 +65,7 @@ func tools(fn api.AIFunction) []anthropic.ToolUnionParam {
 				"amendments": map[string]any{
 					"type":        "array",
 					"description": "Changes to the deployment plan. Empty if none are needed.",
-					"items":       amendmentSchema(kindsFor(fn)),
+					"items":       itemSchema(fn, questions),
 				},
 				"notes": map[string]any{
 					"type": "array",
@@ -88,19 +88,60 @@ func tools(fn api.AIFunction) []anthropic.ToolUnionParam {
 	}
 }
 
-// kindsFor is which amendments fn may submit.
+// itemSchema is what one submitted amendment may look like for fn.
 //
-// Answering questions gets one kind. Core refuses anything else from that call
-// regardless, but a kind the schema does not offer is one the model does not
-// spend its budget writing (R-336).
-func kindsFor(fn api.AIFunction) []string {
-	if fn == api.AIFunctionAnswerQuestions {
-		return []string{string(api.AmendAnswerQuestion)}
+// A repair gets the whole closed set. Answering questions gets a schema of its
+// own: one kind, and a key that must be one of the questions actually asked,
+// with every field required. Core refuses anything else from that call
+// regardless (R-336), but the answer schema used to be the general one, where
+// "key" is optional because most kinds have none — and a model answered the
+// build_strategy question correctly with no key at all, so the answer was
+// refused and the person was asked anyway.
+func itemSchema(fn api.AIFunction, questions []api.Question) map[string]any {
+	if fn != api.AIFunctionAnswerQuestions {
+		return amendmentSchema([]string{
+			"set_command", "set_env", "set_port", "set_health", "add_slot",
+			"set_build_context", "set_dockerfile", "set_static_dir",
+			"add_volume", "answer_question", "add_warning",
+		})
 	}
-	return []string{
-		"set_command", "set_env", "set_port", "set_health", "add_slot",
-		"set_build_context", "set_dockerfile", "set_static_dir",
-		"add_volume", "answer_question", "add_warning",
+
+	keys := make([]string, 0, len(questions))
+	for _, q := range questions {
+		keys = append(keys, q.Key)
+	}
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"kind", "key", "value", "reason", "evidence"},
+		"properties": map[string]any{
+			"kind": map[string]any{
+				"type": "string",
+				"enum": []string{string(api.AmendAnswerQuestion)},
+			},
+			"key": map[string]any{
+				"type":        "string",
+				"enum":        keys,
+				"description": "The key of the question this answers, exactly as listed.",
+			},
+			"value": map[string]any{
+				"type": "string",
+				"description": "The answer, as a person would type it into the question's field: " +
+					"one of its valid answers when it lists them.",
+			},
+			"reason": map[string]any{
+				"type": "string",
+				"description": "Why the repository answers the question this way, written so that " +
+					"someone who cannot see the repository understands it. One or two sentences.",
+			},
+			"evidence": map[string]any{
+				"type":     "array",
+				"items":    map[string]any{"type": "string"},
+				"minItems": 1,
+				"description": "The repository paths you read that settle this, such as " +
+					"\"docker-compose.yml\". Each is checked to exist; an empty path is not evidence.",
+			},
+		},
 	}
 }
 

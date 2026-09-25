@@ -208,6 +208,14 @@ func TestR338_AnsweringQuestionsOffersOnlyAnswers(t *testing.T) {
 	tools, _ := json.Marshal(fake.bodies[0]["tools"])
 	require.Contains(t, string(tools), `"enum":["answer_question"]`)
 	require.NotContains(t, string(tools), `"set_command"`)
+
+	// The key is required and can only name a question that was asked. A
+	// model once answered build_strategy correctly with no key, and the answer
+	// was refused because nothing said which question it was for.
+	item := fake.bodies[0]["tools"].([]any)[2].(map[string]any)["input_schema"].(map[string]any)["properties"].(map[string]any)["amendments"].(map[string]any)["items"].(map[string]any)
+	require.ElementsMatch(t, []any{"kind", "key", "value", "reason", "evidence"}, item["required"])
+	key := item["properties"].(map[string]any)["key"].(map[string]any)
+	require.Equal(t, []any{"start_command"}, key["enum"])
 }
 
 // TestR335_AModelThatStopsWithoutFindingsIsAFailureNotACleanBill asserts R-335:

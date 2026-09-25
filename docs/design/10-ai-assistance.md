@@ -379,7 +379,10 @@ Both tools refuse a path that escapes the checkout and stop returning content on
 **[P] Amendments come back through a `submit_findings` tool with `strict: true`** rather than as prose
 to be parsed. The schema is the closed set from §3, so a malformed amendment is rejected by the API
 before it reaches Pando, and the shape core validates is the shape the model was given. For
-`answer_questions` the enum is narrowed to `answer_question`.
+`answer_questions` the item schema is its own: one kind, `answer_question`, with `key`, `value`,
+`reason` and `evidence` all required and `key` an enum of the questions actually asked. The general
+schema leaves `key` optional because most kinds have none, and a model answered a question correctly
+with no key, which core then had to refuse.
 
 **[P] One loop, two system prompts.** `repair_plan` tells the model the plan did not work and that
 changing nothing is right when the failure is real (R-107); `answer_questions` tells it the plan works

@@ -56,7 +56,7 @@ func (a *Adapter) run(ctx context.Context, fn api.AIFunction, req api.ScreenRequ
 			// one breakpoint here is cached across every app an install onboards.
 			CacheControl: anthropic.NewCacheControlEphemeralParam(),
 		}},
-		Tools: tools(fn),
+		Tools: tools(fn, req.Questions),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(userPrompt(fn, req))),
 		},

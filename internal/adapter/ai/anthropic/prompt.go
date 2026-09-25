@@ -87,7 +87,8 @@ is the right outcome when the failure is real — an application that needs some
 never mentions — or when you cannot tell what went wrong. Do not guess.`
 
 const answerClosing = `Read what you need, then call submit_findings exactly once, with an answer_question
-amendment for each question the repository answers. Submitting none is the right outcome when the
+amendment for each question the repository answers: "key" is the question's key exactly as listed,
+"value" is the answer, and "evidence" names the files you read that settle it. Submitting none is the right outcome when the
 repository does not settle any of them — a person will answer instead. Do not guess.`
 
 // userPrompt is the proposal, rendered.
