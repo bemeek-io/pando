@@ -199,13 +199,13 @@ var _ api.AIAdapter = (*Adapter)(nil)
 // (api.KindInfo, R-261).
 func Info() api.KindInfo {
 	return api.KindInfo{
-		Category:    api.CategoryAI,
-		Kind:        Kind,
-		Name:        "OpenAI",
+		Category: api.CategoryAI,
+		Kind:     Kind,
+		Name:     "OpenAI",
 		Description: "Performs the AI functions assigned to it with OpenAI's models. Uses OpenAI's Responses API, " +
 			"which stores each conversation on OpenAI's servers under OpenAI's retention terms; Pando does not store it. " +
 			"Needs an OpenAI API key.",
-		IDPrefix:    "ai_",
+		IDPrefix: "ai_",
 		Fields: []api.Field{
 			{Key: "api_key", Label: "API key", Type: "string", Help: "An OpenAI API key. Stored encrypted and never shown again. Leave empty to use OPENAI_API_KEY from Pando’s environment.", Credential: true, Placeholder: "sk-…"},
 			{Key: "model", Label: "Model", Type: "string", Help: "The model each function uses unless its assignment names another.", Default: DefaultModel},
