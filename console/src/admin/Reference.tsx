@@ -29,6 +29,7 @@ import { relative } from '../ui/time';
 import { Table } from '../ui/Table';
 import { LineSkeleton, Loading } from '../ui/Loading';
 import { AIButton, AIDialog, AIPrompt, AnsweredBy } from '../ui/AskAI';
+import { AI_PHRASES, AiThinking } from '../ui/AiThinking';
 import { useAIFunctionState } from '../install/AIFunctions';
 
 /** What POST /ai/reference/answer answers (R-346). */
@@ -72,6 +73,7 @@ function AskHow({ onClose }: { onClose: () => void }) {
           ask.mutate(q);
         }}
       />
+      {ask.isPending && <AiThinking phrases={AI_PHRASES.reference} />}
       {a && (
         <>
           <Quiet>{question}</Quiet>

@@ -14,6 +14,7 @@ import { Banner, Button, Checkbox } from '@design';
 
 import { api } from '@api/client';
 import { AIDialog, AIHeading, AIPrompt, AnsweredBy } from '../ui/AskAI';
+import { AI_PHRASES, AiThinking } from '../ui/AiThinking';
 import { Quiet, refusal } from './Accounts';
 
 type Doc = Record<string, unknown>;
@@ -104,6 +105,7 @@ export function PolicyAI({ onClose }: { onClose: () => void }) {
         error={ask.error}
         onAsk={(text) => ask.mutate(text)}
       />
+      {ask.isPending && <AiThinking phrases={AI_PHRASES.policy} />}
 
       {proposal && (
         <>

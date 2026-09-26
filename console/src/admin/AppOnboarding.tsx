@@ -44,6 +44,7 @@ import {
   Tooltip,
 } from '@design';
 import { AiStar } from '../ui/AiStar';
+import { AiGlyph, AiThinking, useReducedMotion } from '../ui/AiThinking';
 
 import { api, RequestFailed } from '@api/client';
 import type { Amendment, AppSpec, Question, Report, Source, Turn } from '@api/types.gen';
@@ -96,7 +97,7 @@ import {
   type Suggestions,
   type VariableRow,
 } from './onboarding';
-import { AI_GLYPHS, AI_GLYPH_MS, PHRASE_MS, phrasesFor } from './onboardingPhrases';
+import { PHRASE_MS, phrasesFor } from './onboardingPhrases';
 import { describeAmendment } from './screeningText';
 import { Terrain } from './Terrain';
 import { AppVerb, can, type AppWithVerbs } from './verbs';
@@ -2075,78 +2076,6 @@ function AskAI({ appID, conversation, canAsk }: { appID: string; conversation: T
   );
 }
 
-/**
- * AI at work: the AI mark turning, a phrase that changes every couple of
- * seconds, and the time so far. Announced politely; under reduced motion the
- * mark holds still and the first phrase stays.
- */
-function AiThinking({ phrases }: { phrases: string[] }) {
-  const reduced = useReducedMotion();
-  const [tick, setTick] = useState(0);
-  const [started] = useState(() => Date.now());
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const clock = window.setInterval(() => setNow(Date.now()), 1_000);
-    if (reduced) return () => window.clearInterval(clock);
-    const turn = window.setInterval(() => setTick((n) => n + 1), THINKING_MS);
-    return () => {
-      window.clearInterval(clock);
-      window.clearInterval(turn);
-    };
-  }, [reduced]);
-  // Holds on the last phrase rather than cycling back to "Reading what you
-  // said" after a minute, which would read as starting over.
-  const phrase = phrases[Math.min(reduced ? 0 : tick, phrases.length - 1)];
-  return (
-    <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-      <AiGlyph />
-      <span key={phrase} className="pando-onboard-enter" style={{ font: 'var(--type-body-ui)', color: 'var(--water)' }}>
-        {phrase}
-        <span className="pando-dots" aria-hidden="true">
-          <span>.</span>
-          <span>.</span>
-          <span>.</span>
-        </span>
-      </span>
-      <span style={{ font: 'var(--type-code-sm)', color: 'var(--ink-muted)' }}>
-        {Math.max(0, Math.floor((now - started) / 1_000))}s
-      </span>
-    </div>
-  );
-}
-
-/** How often AI's working phrase changes. */
-const THINKING_MS = 2_600;
-
-/**
- * AI at work: a glyph turning through the asterisk-flower sequence, in water
- * blue. Hidden from assistive technology (the phrase beside it is announced);
- * under reduced motion it holds on the first glyph.
- */
-function AiGlyph() {
-  const reduced = useReducedMotion();
-  const [frame, setFrame] = useState(0);
-  useEffect(() => {
-    if (reduced) return;
-    const timer = window.setInterval(() => setFrame((n) => (n + 1) % AI_GLYPHS.length), AI_GLYPH_MS);
-    return () => window.clearInterval(timer);
-  }, [reduced]);
-  return (
-    <span
-      aria-hidden="true"
-      style={{
-        display: 'inline-block',
-        width: '1em',
-        textAlign: 'center',
-        font: 'var(--type-body-ui)',
-        color: 'var(--water)',
-      }}
-    >
-      {AI_GLYPHS[frame]}
-    </span>
-  );
-}
-
 function TurnRow({ turn }: { turn: Turn }) {
   const ai = turn.from === 'ai';
   return (
@@ -2542,9 +2471,3 @@ function ActionBar({
 
 // --- Pieces ------------------------------------------------------------------------
 
-function useReducedMotion(): boolean {
-  const [reduced] = useState(
-    () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches),
-  );
-  return reduced;
-}

@@ -13,6 +13,7 @@ import { Button, Checkbox, Input, Select } from '@design';
 
 import { api } from '@api/client';
 import { AIDialog, AIHeading, AIPrompt, AnsweredBy } from '../ui/AskAI';
+import { AI_PHRASES, AiThinking } from '../ui/AiThinking';
 import { Quiet, refusal } from './Accounts';
 
 interface RoleDraft {
@@ -117,6 +118,7 @@ export function AccessAI({ onClose }: { onClose: () => void }) {
         error={ask.error}
         onAsk={(text) => ask.mutate(text)}
       />
+      {ask.isPending && <AiThinking phrases={AI_PHRASES.access} />}
 
       {draft && (
         <>

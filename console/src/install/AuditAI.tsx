@@ -12,6 +12,7 @@ import { Button } from '@design';
 
 import { api } from '@api/client';
 import { AIDialog, AIPrompt, AnsweredBy } from '../ui/AskAI';
+import { AI_PHRASES, AiThinking } from '../ui/AiThinking';
 import { Quiet } from './Accounts';
 import type { SearchFilter } from './audit';
 
@@ -66,6 +67,7 @@ export function AuditAI({ onClose, onShow }: { onClose: () => void; onShow: (f: 
           search.mutate(q);
         }}
       />
+      {search.isPending && <AiThinking phrases={AI_PHRASES.audit} />}
       {found && (
         <>
           <Quiet>{question}</Quiet>
