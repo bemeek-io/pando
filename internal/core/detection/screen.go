@@ -151,12 +151,14 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 		}
 	}
 	if len(answers) > 0 {
-		proposal.DraftSpec = proposal.WithScreenedAnswers(answers)
-		proposal.Questions = unanswered(proposal.Questions, answers)
 		outcome.Answers = answers
 
-		// Listed with the other changes, reason and evidence included, so the
-		// review shows why a question stopped being asked — not only that it did.
+		// Each answer is carried on its question as a suggestion, not folded
+		// into the draft: the question stays on the page with the answer
+		// filled in, and a person changes it with the same request that answers
+		// any question. Accepting applies it unless a person answered instead
+		// (detect.Proposal.WithAnswers). Listed with the other changes too,
+		// reason and evidence included.
 		pending := make(map[string]string, len(answers))
 		for k, v := range answers {
 			pending[k] = v
@@ -166,6 +168,9 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 			if a.Kind != api.AmendAnswerQuestion || pending[key] != value || value == "" {
 				continue
 			}
+			suggest(proposal.Questions, key, detect.Suggestion{
+				Value: value, Reason: a.Reason, Evidence: nonEmpty(a.Evidence),
+			})
 			outcome.Applied = append(outcome.Applied, screening.Applied{
 				Amendment: a, Summary: fmt.Sprintf("answered %s: %s", key, value),
 			})
@@ -258,13 +263,22 @@ func outstanding(qs []detect.Question) map[string]bool {
 	return keys
 }
 
-func unanswered(qs []detect.Question, answers map[string]string) []detect.Question {
-	var out []detect.Question
-	for _, q := range qs {
-		if _, done := answers[q.Key]; done {
-			continue
+// suggest records s on the question with key, in place.
+func suggest(qs []detect.Question, key string, s detect.Suggestion) {
+	for i := range qs {
+		if qs[i].Key == key {
+			qs[i].Suggested = &s
+			return
 		}
-		out = append(out, q)
+	}
+}
+
+func nonEmpty(paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		if strings.TrimSpace(p) != "" {
+			out = append(out, p)
+		}
 	}
 	return out
 }

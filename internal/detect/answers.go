@@ -57,26 +57,44 @@ var answerOrder = []string{
 	KeyBuildMethod,
 }
 
-// WithAnswers folds a user's answers into the draft spec.
+// WithAnswers folds a person's answers, and any AI adapter's suggestions they
+// did not override, into the draft spec.
 //
 // An answer is worth more than anything Pando worked out for itself, so it
 // overwrites rather than merges — and a port supplied by a person is recorded
 // with Source "user", which is what the review UI shows beside it (design 01
-// §2.3). Where the value came from is part of the value.
+// §2.3). Where the value came from is part of the value, so a port that came
+// from a suggestion is recorded as screened instead: the review shows which it
+// was, and spec.Carry does not keep it across a re-detection as though
+// somebody had chosen it.
+//
+// Suggestions go through the same machinery as a person's answers,
+// deliberately: an answer that changes which workload the other answers mean
+// does so whoever supplied it, and two ways to apply an answer is how the two
+// would drift.
 func (p Proposal) WithAnswers(answers map[string]string) spec.AppSpec {
-	return p.withAnswers(answers, spec.PortUser)
+	source := spec.PortUser
+	if strings.TrimSpace(answers[KeyPrimaryPort]) == "" {
+		source = spec.PortScreened // only matters if a suggestion supplies it
+	}
+	return p.withAnswers(p.Answers(answers), source)
 }
 
-// WithScreenedAnswers folds in answers an AI screener produced (R-338).
-//
-// The same machinery, deliberately: an answer that changes which workload the
-// other answers mean does so whoever supplied it, and two ways to apply an
-// answer is how the two would drift. What differs is provenance — a port a
-// screener supplied is recorded as screened, not as a person's, so the review
-// shows which it was and spec.Carry does not preserve it across a re-detection
-// as though somebody had chosen it.
-func (p Proposal) WithScreenedAnswers(answers map[string]string) spec.AppSpec {
-	return p.withAnswers(answers, spec.PortScreened)
+// Answers is every answer in effect: an AI adapter's suggestions, overridden
+// by whatever a person answered (R-338).
+func (p Proposal) Answers(answers map[string]string) map[string]string {
+	out := make(map[string]string, len(answers))
+	for _, q := range p.Questions {
+		if q.Suggested != nil && strings.TrimSpace(q.Suggested.Value) != "" {
+			out[q.Key] = q.Suggested.Value
+		}
+	}
+	for key, value := range answers {
+		if strings.TrimSpace(value) != "" {
+			out[key] = value
+		}
+	}
+	return out
 }
 
 func (p Proposal) withAnswers(answers map[string]string, portSource spec.PortSource) spec.AppSpec {

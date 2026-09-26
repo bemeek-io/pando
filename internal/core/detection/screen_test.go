@@ -190,7 +190,7 @@ func TestR338_AnsweringQuestionsChangesNothingElse(t *testing.T) {
 	require.Equal(t, api.AmendSetEnv, outcome.Refused[0].Amendment.Kind)
 	require.Contains(t, outcome.Refused[0].Reason, "only to answer")
 	require.Empty(t, p.DraftSpec.Workloads[0].Env, "the plan is otherwise untouched")
-	require.Empty(t, p.Questions)
+	require.Empty(t, detect.Open(p.Questions, nil), "answered, by suggestion")
 }
 
 // TestR336_AFailedPlanThatAlsoAskedIsOneCall asserts R-336: a repair is handed
@@ -345,11 +345,35 @@ func TestR338_AnAnsweredQuestionStopsBeingAsked(t *testing.T) {
 	require.Equal(t, map[string]string{detect.KeyPrimaryPort: "3000"}, outcome.Answers)
 	require.Len(t, outcome.Applied, 1, "the review lists it with the other changes")
 	require.Equal(t, "server.js calls listen(3000).", outcome.Applied[0].Amendment.Reason)
-	require.Empty(t, p.Questions, "nobody is asked this now")
-	require.Equal(t, 3000, p.DraftSpec.Workloads[0].Ports[0].Number)
-	require.Equal(t, spec.PortScreened, p.DraftSpec.Workloads[0].Ports[0].Source,
-		"a screener is not a person, and the review says which it was")
+
+	// The question stays, carrying the answer, so a person can see and change
+	// it; nobody has to answer it.
+	require.Len(t, p.Questions, 1)
+	require.Equal(t, &detect.Suggestion{Value: "3000", Reason: "server.js calls listen(3000).",
+		Evidence: []string{"server.js"}}, p.Questions[0].Suggested)
+	require.Empty(t, detect.Open(p.Questions, nil), "nobody is asked this now")
 	require.Equal(t, detect.StatusReady, detect.StatusFor(p.Winner, p.Questions))
+
+	// Accepting with no answer of a person's applies the suggestion, recorded
+	// as screened: a screener is not a person, and the review says which.
+	accepted := p.WithAnswers(nil)
+	require.Equal(t, 3000, accepted.Workloads[0].Ports[0].Number)
+	require.Equal(t, spec.PortScreened, accepted.Workloads[0].Ports[0].Source)
+}
+
+// TestR338_APersonCanOverrideAnAIAnswer asserts R-338's review gate: an AI
+// adapter's answer is a suggestion a person can replace, and theirs wins.
+func TestR338_APersonCanOverrideAnAIAnswer(t *testing.T) {
+	p := proposal()
+	p.DraftSpec.Workloads[0].Ports = nil
+	p.Questions = []detect.Question{{Key: detect.KeyPrimaryPort, Kind: api.QuestionPort,
+		Suggested: &detect.Suggestion{Value: "3000"}}}
+
+	overridden := p.WithAnswers(map[string]string{detect.KeyPrimaryPort: "8080"})
+	require.Equal(t, 8080, overridden.Workloads[0].Ports[0].Number)
+	require.Equal(t, spec.PortUser, overridden.Workloads[0].Ports[0].Source)
+	require.Equal(t, map[string]string{detect.KeyPrimaryPort: "8080"},
+		p.Answers(map[string]string{detect.KeyPrimaryPort: "8080"}))
 }
 
 // TestR099_ABlockedProposalIsNotScreened asserts R-099.

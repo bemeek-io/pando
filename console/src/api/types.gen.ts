@@ -122,6 +122,7 @@ export interface Question {
   kind: string;
   options?: (string[] | null);
   deferred?: boolean;
+  suggested?: Suggestion;
 }
 
 export interface AppSpec {
@@ -253,6 +254,12 @@ export interface Draft {
   build: Build;
   health?: Health;
   warnings?: (Warning[] | null);
+}
+
+export interface Suggestion {
+  value: string;
+  reason?: string;
+  evidence?: (string[] | null);
 }
 
 export interface Build {

@@ -457,11 +457,10 @@ func decodeProposal(d state.Detection) (detect.Proposal, error) {
 // one still marked deferred by the time a proposal is accepted was resolved by
 // observation rather than left hanging.
 func unanswered(p detect.Proposal, answers map[string]string) []string {
+	// An AI adapter's suggestion counts as an answer (R-338).
 	var out []string
-	for _, q := range detect.Asked(p.Questions) {
-		if answers[q.Key] == "" {
-			out = append(out, q.Key)
-		}
+	for _, q := range detect.Open(p.Questions, answers) {
+		out = append(out, q.Key)
 	}
 	return out
 }

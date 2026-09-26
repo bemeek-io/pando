@@ -289,6 +289,15 @@ not fail, so an amendment other than `answer_question` from `answer_questions` i
 with the other refusals. The Anthropic adapter narrows its `submit_findings` schema to that one kind
 for the same call, so the model does not spend its budget writing changes core would discard.
 
+**[D] An AI answer is a suggestion on its question, not a rewrite of the draft** (R-338). The
+question stays in `questions` with `suggested: {value, reason, evidence}`, and counts as answered
+(`detect.Open`, `StatusFor`, the accept check) until a person answers it. Accepting applies the
+suggestions a person did not override (`detect.Proposal.WithAnswers`, a port from one recorded as
+`screened`). A person changes an AI answer with the ordinary `POST /detection/answers`, and restores
+it by sending the suggested value. Folding answers into the draft at screening time, as first built,
+made the question vanish and the answer impossible to change; the review gate R-331 requires was a
+page that could only show it.
+
 **[D] The failure stays visible** (R-107). A repair amends the draft spec; it does not touch
 `trial_log`, so the log that showed the failure is still on the proposal next to what was changed and
 why. `Outcome.Why` states what made the call necessary in one sentence.

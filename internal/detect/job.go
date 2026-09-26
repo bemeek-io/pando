@@ -250,7 +250,9 @@ func StatusFor(winner Candidate, questions []Question) string {
 	switch {
 	case winner.Strategy == StrategyUnknown:
 		return StatusNeedsAnswers
-	case len(Asked(questions)) > 0:
+	case len(Open(questions, nil)) > 0:
+		// An AI adapter's suggestion counts as an answer until a person gives
+		// one (R-338), so a question it answered does not hold the status.
 		return StatusNeedsAnswers
 	default:
 		return StatusReady
