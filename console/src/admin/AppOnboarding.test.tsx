@@ -148,9 +148,13 @@ describe('AppOnboarding', () => {
     expect(variables).toContain('Filled in by Pando');
     expect(variables).toContain('Use your own PostgreSQL');
     expect(variables).not.toContain('runs one inside this app');
-    // A slot's value is always kept as a secret: said, not a locked checkbox.
-    expect(variables).toContain('Kept as a secret');
-    expect(variables).not.toContain('>Secret<');
+    // Secret is a default on every value, never a lock.
+    expect(variables).toContain('>Secret<');
+    expect(variables).not.toMatch(/Secret<\/span><\/label>[^]*?disabled=""/);
+    // A required value still empty is marked in red, with a way to say the
+    // app runs without it.
+    expect(variables).toContain('var(--marker-deep)');
+    expect(variables).toContain('Not required?');
 
     // The repository opens in a new tab.
     expect(html).toContain('href="https://github.com/acme/crewmate"');

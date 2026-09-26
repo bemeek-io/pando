@@ -114,7 +114,7 @@ func TestR132_AValueSetDuringReviewFillsItsSlot(t *testing.T) {
 	require.NoError(t, state.NewDetections(i.db).Save(ctx, appID, "ready", proposal, "abc123"))
 
 	accepted := i.do(admin, http.MethodPost, "/apps/"+appID+"/detection/accept", map[string]any{
-		"values": []map[string]any{{"key": slot, "value": "enc-key-value", "workload": "app"}},
+		"values": []map[string]any{{"key": slot, "value": "enc-key-value", "workload": "app", "secret": true}},
 	})
 	require.Contains(t, []int{http.StatusOK, http.StatusCreated}, accepted.Code, accepted.String())
 
@@ -134,4 +134,56 @@ func TestR132_AValueSetDuringReviewFillsItsSlot(t *testing.T) {
 	value, err := i.Secrets.Get(ctx, appID, spec.SlotSecretKey(slot))
 	require.NoError(t, err)
 	require.Equal(t, "enc-key-value", value.Reveal())
+}
+
+// TestR132_ReviewCanKeepASlotValuePlainOrMarkASlotOptional asserts the two
+// choices review gives a slot besides a secret value: a value somebody chose
+// not to keep secret is stored as the slot's target, readable, and a slot they
+// judged the app runs without is no longer required, so it cannot block the
+// deploy (R-132).
+func TestR132_ReviewCanKeepASlotValuePlainOrMarkASlotOptional(t *testing.T) {
+	ctx := context.Background()
+	i := newInstall(t)
+	admin := i.admin()
+	appID := i.createApp(admin, "crew")
+
+	domain, subject := "APP_DOMAIN", "VAPID_SUBJECT"
+	proposal := detect.Proposal{
+		Status: "ready",
+		Winner: detect.Candidate{Detector: "compose", Strategy: "compose"},
+		DraftSpec: spec.AppSpec{
+			SchemaVersion: 1,
+			AppID:         appID,
+			Source:        spec.Source{Type: "git", URL: "https://github.com/acme/crew"},
+			Build:         spec.Build{Strategy: "dockerfile", Dockerfile: "Dockerfile"},
+			Workloads: []spec.Workload{{
+				Name:    "app",
+				Primary: true,
+				Env:     []spec.EnvEntry{{Key: domain, SlotRef: &domain}, {Key: subject, SlotRef: &subject}},
+			}},
+			Slots: []spec.Slot{
+				{Key: domain, Type: spec.SlotUnknown, Required: true},
+				{Key: subject, Type: spec.SlotUnknown, Required: true},
+			},
+		},
+	}
+	require.NoError(t, state.NewDetections(i.db).Save(ctx, appID, "ready", proposal, "abc123"))
+
+	accepted := i.do(admin, http.MethodPost, "/apps/"+appID+"/detection/accept", map[string]any{
+		"values":   []map[string]any{{"key": domain, "value": "crew.example.com", "workload": "app"}},
+		"optional": []string{subject},
+	})
+	require.Contains(t, []int{http.StatusOK, http.StatusCreated}, accepted.Code, accepted.String())
+
+	var rev struct {
+		Body spec.AppSpec `json:"body"`
+	}
+	require.NoError(t, json.Unmarshal(i.do(admin, http.MethodGet, "/apps/"+appID+"/specs/1", nil).Body, &rev))
+
+	d, _ := rev.Body.Slot(domain)
+	require.Equal(t, &spec.Resolution{Mode: spec.ResolutionBound, Target: "crew.example.com"}, d.Resolution)
+
+	s, _ := rev.Body.Slot(subject)
+	require.False(t, s.Required, "marked optional")
+	require.Nil(t, s.Resolution)
 }

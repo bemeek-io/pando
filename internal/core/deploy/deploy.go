@@ -723,6 +723,14 @@ func resolveEnv(s *spec.AppSpec, w spec.Workload, secrets map[string]secret.Valu
 
 		case e.SlotRef != nil:
 			slot, ok := s.Slot(*e.SlotRef)
+			// An optional slot nobody filled leaves its variable unset. It was
+			// refused here like a required one, so a slot marked optional —
+			// by detection, or by a person who judged the app runs without it
+			// — still failed the deploy, and "optional" meant nothing past the
+			// planner (R-132 blocks only a required one).
+			if ok && slot.Resolution == nil && !slot.Required {
+				continue
+			}
 			if !ok || slot.Resolution == nil {
 				return nil, errs.Newf(errs.PlanSlotUnfilled,
 					"%s comes from a slot that has not been filled.", e.Key).

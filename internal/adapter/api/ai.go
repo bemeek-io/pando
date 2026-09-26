@@ -154,6 +154,13 @@ type ScreenRequest struct {
 	// Instruction, oldest first, so "no, the other one" means something.
 	Conversation []Turn
 
+	// Known are files an adapter already read about this proposal, in an
+	// earlier call. Each call is a new conversation with the model, so it
+	// starts knowing nothing; an adapter may hand these over at the start
+	// rather than have the model find and read them again, one round trip at
+	// a time. They count against Budget like any other read.
+	Known []string
+
 	Budget ScreenBudget
 }
 

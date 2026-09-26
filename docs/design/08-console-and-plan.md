@@ -221,7 +221,7 @@ row says Pando fills it then, and a value typed there points the app at a databa
 runs instead. *Accept and deploy* waits for required values; *Accept plan* does not.
 
 **[D] Ask AI about this plan.** When an AI adapter is available for the app, the review ends with a
-conversation: the person says what is wrong, AI checks the repository and changes what it can show
+conversation: the person says what is wrong, AI checks the repository and changes what it can
 (design 10 §4.3), and each reply lists what changed and what Pando would not do. Without an adapter the
 section does not exist — not disabled, absent. Someone who may read but not change the plan sees the
 conversation and no box to type in.
@@ -231,8 +231,13 @@ one line each — service, construct, the first sentence of why — with the imp
 hover. Eight paragraphs of it was a wall nobody read.
 
 A value Pando fills (a created database's URL) shows *Filled in by Pando* and no field until the person
-chooses *Use your own*; required values carry a *Required* tag; a slot's value is always kept as a
-secret, which is said in words rather than shown as a locked checkbox. The action bar is two columns so
+chooses *Use your own*. A required value carries a *Required* tag, in marker red while it is empty,
+with *Not required?* beside it: detection marks slots required from a template or a crash and can be
+wrong, so the person may say the app runs without one, after a confirmation that a wrong call breaks
+the deploy (`optional` on accept, `spec.MarkSlotOptional`; an optional slot left empty leaves its
+variable unset at deploy). *Secret* is a default on every value, never a lock: a service's address or
+a key-like name starts secret, and a value left plain is stored as the slot's target where it can be
+read back (`spec.FillSlotValue`). Notices sit after the variables, just above AI's notes. The action bar is two columns so
 its buttons stay put as the status beside them changes length. The repository tag opens the repository
 in a new tab. The security dialog lists every finding and scrolls.
 

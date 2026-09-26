@@ -303,6 +303,11 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 			// reference in the spec, as the Environment tab does.
 			Secret bool `json:"secret"`
 		} `json:"values"`
+
+		// Optional names slots the person judged the app runs without, so an
+		// empty one leaves its variable unset instead of refusing the deploy
+		// (spec.MarkSlotOptional).
+		Optional []string `json:"optional"`
 	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
@@ -390,6 +395,10 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 		// secret, so the slot is filled and the deploy is not refused for it
 		// (R-132, spec.FillSlotLiteral).
 		if slot, ok := spec.EnvSlot(&draft, v.Workload, v.Key); ok {
+			if !v.Secret {
+				spec.FillSlotValue(&draft, slot, v.Value)
+				continue
+			}
 			ref := spec.SlotSecretKey(slot)
 			if err := s.Secrets.Put(r.Context(), app.ID, ref, secret.New(v.Value)); err != nil {
 				Error(w, r, err)
@@ -412,6 +421,9 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 			entry.Value = &value
 		}
 		spec.SetEnv(&draft, v.Workload, v.Key, entry)
+	}
+	for _, key := range req.Optional {
+		spec.MarkSlotOptional(&draft, key)
 	}
 
 	// Refused here rather than pinned and found at deploy. A spec that cannot

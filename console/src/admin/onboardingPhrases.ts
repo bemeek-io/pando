@@ -19,6 +19,14 @@ const PHRASES: Record<string, string[]> = {
   scan: ['Scanning for known vulnerabilities', 'Reading the lockfiles', 'Matching packages against known CVEs'],
   repair: ['Reading the trial run’s output', 'Looking for what went wrong', 'Checking the start command'],
   answer: ['Reading the questions', 'Looking for the answers in the repo', 'Leaving what it can’t settle for you'],
+  // A person asked AI to change the plan.
+  ask: [
+    'Reading what you said',
+    'Opening the files it needs',
+    'Checking that against the repo',
+    'Weighing the change',
+    'Writing a reply',
+  ],
 };
 
 /**

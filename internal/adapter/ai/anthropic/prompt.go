@@ -35,7 +35,11 @@ database the plan left out. Your job is to check what they said against the repo
 repository supports it, change the plan with the amendments below. They know their app; the repository
 is still the evidence. If what they said is true of the repository, make the change and cite the files
 that show it. If the repository contradicts it or says nothing either way, change nothing and say so
-plainly in your reply — they can still set it themselves in the plan's variables and settings.`
+plainly in your reply — they can still set it themselves in the plan's variables and settings.
+
+If the message is not about the plan at all — a joke, a greeting, a question about something else —
+change nothing and reply in a sentence or two. A light, dry touch suits it if it comes naturally; then
+steer back to what the plan still needs before it can deploy, naming it.`
 
 const repairPrompt = `You are repairing a deployment plan for Pando, a self-hosted platform that builds
 and runs applications from their source repositories.

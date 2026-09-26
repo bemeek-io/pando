@@ -336,7 +336,16 @@ A provider that fails leaves the proposal and the conversation as they were and 
 person is waiting on the reply — unlike a re-run, which clones and builds in the background.
 
 **[D] `reply` is required** on the tool the adapter submits with, for this function only: a person who
-asked is never met with silence. It is one to three sentences, held to R-105 like any reason.
+asked is never met with silence. It is one to three sentences, held to R-105 like any reason. A
+message that is not about the plan — a joke, a greeting — changes nothing and gets a short reply that
+steers back to what the plan still needs; a light touch is allowed there.
+
+**[D] What was read before is handed over, not read again.** Each call is a new conversation with the
+model, which starts knowing nothing. Each AI turn records its `files_read`; the next revision passes
+every file read about this proposal so far (screening's and earlier turns', once each) as `Known`, and
+the adapter puts their contents in the first message. Same commit, same contents; still read through
+the budgeted reader, so they count against R-339 and are recorded as sent (R-337). It saves the round
+trips of finding them again, not the tokens of sending them.
 
 **[P] The conversation lives on the proposal.** It is about this reading of this commit; detecting
 again starts a new one. The console shows it only when an AI adapter is available for this app (the

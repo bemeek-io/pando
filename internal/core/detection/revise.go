@@ -132,6 +132,7 @@ func (r *Runner) revise(
 		Trial:        trial,
 		Instruction:  message,
 		Conversation: history,
+		Known:        knownFiles(proposal),
 		Budget: api.ScreenBudget{
 			MaxFiles: r.ScreenMaxFiles,
 			MaxBytes: r.ScreenMaxBytes,
@@ -151,7 +152,7 @@ func (r *Runner) revise(
 	}
 
 	env := screening.Env{Source: view, Trial: trial}
-	turn := detect.Turn{From: detect.TurnAI, Text: strings.TrimSpace(result.Reply), At: now}
+	turn := detect.Turn{From: detect.TurnAI, Text: strings.TrimSpace(result.Reply), At: now, FilesRead: outcome.FilesRead}
 
 	// Answers land as suggestions on their questions, as screening's do, so
 	// the person can still see and change them (design 10 §4.2).
@@ -201,6 +202,29 @@ func (r *Runner) revise(
 		detect.Turn{From: detect.TurnPerson, Text: message, At: now}, turn)
 	proposal.Status = detect.StatusFor(proposal.Winner, proposal.Questions)
 	return nil
+}
+
+// knownFiles is every file an AI adapter has already read about this
+// proposal — when detection called it, and on each earlier turn — once each,
+// in the order first read. The same commit, so the same contents.
+func knownFiles(p *detect.Proposal) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(files []string) {
+		for _, f := range files {
+			if f != "" && !seen[f] {
+				seen[f] = true
+				out = append(out, f)
+			}
+		}
+	}
+	if p.Screening != nil && p.Screening.Ran {
+		add(p.Screening.FilesRead)
+	}
+	for _, t := range p.Conversation {
+		add(t.FilesRead)
+	}
+	return out
 }
 
 // revisionTarget is the spec accepting would pin, and the evidence for that

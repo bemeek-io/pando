@@ -134,6 +134,33 @@ describe('neededValues', () => {
       slotted('ANTHROPIC_API_KEY', {}, 'sk-ant-set'),
     ];
     expect(neededValues(rows).map((r) => r.key)).toEqual(['CREW_TOKEN_ENC_KEY']);
+    expect(neededValues(rows, new Set(['CREW_TOKEN_ENC_KEY']))).toEqual([]); // marked not required by the person
+  });
+});
+
+describe('slot values are secret by default, never by force', () => {
+  it('starts a plain-named value readable and a service address or key-like name secret', () => {
+    const domain = 'APP_DOMAIN';
+    const token = 'CREW_TOKEN_ENC_KEY';
+    const rows = variableRows({
+      workloads: [
+        {
+          name: 'app',
+          primary: true,
+          exposed: true,
+          env: [
+            { key: domain, slot_ref: domain },
+            { key: token, slot_ref: token },
+          ],
+        },
+      ],
+      slots: [
+        { key: domain, type: 'unknown', required: true },
+        { key: token, type: 'unknown', required: true },
+      ],
+    } as unknown as AppSpec);
+    expect(rows.find((r) => r.key === domain)?.secret).toBe(false);
+    expect(rows.find((r) => r.key === token)?.secret).toBe(true);
   });
 });
 

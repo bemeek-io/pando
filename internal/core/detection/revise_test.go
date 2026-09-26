@@ -10,6 +10,7 @@ import (
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/clock"
+	"github.com/bemeek-io/pando/internal/core/screening"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/detect"
 	"github.com/bemeek-io/pando/internal/errs"
@@ -22,8 +23,12 @@ var when = time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 // their words and the conversation so far, and what it proposes lands in the
 // plan with the exchange recorded.
 func TestR336_APersonsRequestIsCheckedAndApplied(t *testing.T) {
-	p := proposal()
-	p.Conversation = []detect.Turn{{From: detect.TurnPerson, Text: "earlier"}, {From: detect.TurnAI, Text: "reply"}}
+	p := failed()
+	p.Screening = &screening.Outcome{Ran: true, FilesRead: []string{"package.json"}}
+	p.Conversation = []detect.Turn{
+		{From: detect.TurnPerson, Text: "earlier"},
+		{From: detect.TurnAI, Text: "reply", FilesRead: []string{"server.js", "package.json"}},
+	}
 	screener, audit := &fakeScreener{result: api.ScreenResult{
 		Reply: "server.js binds 127.0.0.1, so I set HOST to 0.0.0.0.",
 		Amendments: []api.Amendment{{
@@ -39,6 +44,8 @@ func TestR336_APersonsRequestIsCheckedAndApplied(t *testing.T) {
 	require.Equal(t, api.AIFunctionRevisePlan, screener.fn)
 	require.Equal(t, "It's unreachable once deployed.", screener.got.Instruction)
 	require.Len(t, screener.got.Conversation, 2, "the adapter hears what was said before")
+	require.Equal(t, []string{"package.json", "server.js"}, screener.got.Known,
+		"and starts from what it already read, once each, rather than reading it all again")
 
 	require.Len(t, p.DraftSpec.Workloads[0].Env, 1)
 	require.Equal(t, "HOST", p.DraftSpec.Workloads[0].Env[0].Key)

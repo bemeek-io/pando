@@ -212,3 +212,23 @@ func TestAComposeWorkloadWithNoBuildAndNoImageIsRefused(t *testing.T) {
 	err := spec.Validate(s)
 	require.Error(t, err, "a workload with nothing to run is caught before it deploys")
 }
+
+// TestR132_AnOptionalSlotLeftEmptyLeavesItsVariableUnset asserts R-132's
+// other half: only a required slot blocks a deploy. An optional one nobody
+// filled — one a person marked optional during review — leaves the variable
+// out of the environment rather than refusing the deploy.
+func TestR132_AnOptionalSlotLeftEmptyLeavesItsVariableUnset(t *testing.T) {
+	key := "VAPID_SUBJECT"
+	s := specWithProvisionedSlot()
+	s.Workloads[0].Env = append(s.Workloads[0].Env, spec.EnvEntry{Key: key, SlotRef: &key})
+	s.Slots = append(s.Slots, spec.Slot{Key: key, Type: spec.SlotUnknown, Required: false})
+
+	env, err := resolveEnv(s, s.Workloads[0], nil, provisionedPostgres())
+	require.NoError(t, err)
+	require.NotContains(t, env, key, "unset, not empty")
+	require.Contains(t, env, "DATABASE_URL")
+
+	s.Slots[1].Required = true
+	_, err = resolveEnv(s, s.Workloads[0], nil, provisionedPostgres())
+	require.Error(t, err, "a required one still refuses")
+}

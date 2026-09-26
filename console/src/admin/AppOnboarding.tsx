@@ -47,7 +47,6 @@ import { api, RequestFailed } from '@api/client';
 import type { Amendment, AppSpec, Question, Report, Source, Turn } from '@api/types.gen';
 import { Loading } from '../ui/Loading';
 import { ScoreBadge } from '../ui/ScoreBadge';
-import { looksSensitive } from './sensitive';
 import { Security } from './Security';
 import { deletePath } from './delete-app';
 import { Blocked, DetectionFailed, Failure, type DetectionResponse } from './DetectionReview';
@@ -150,6 +149,19 @@ export function AppOnboarding({
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   const [added, setAdded] = useState<VariableRow[]>([]);
   const nextRow = useRef(0);
+
+  // Slots the person said the app runs without, by slot key. Sent with the
+  // accept (spec.MarkSlotOptional); asked about first, because if they are
+  // wrong the deploy breaks.
+  const [optional, setOptional] = useState<Set<string>>(() => new Set());
+  const [confirmingOptional, setConfirmingOptional] = useState<VariableRow | null>(null);
+  const setOptionalKey = (key: string, on: boolean) =>
+    setOptional((all) => {
+      const next = new Set(all);
+      if (on) next.add(key);
+      else next.delete(key);
+      return next;
+    });
 
   // Answers typed but not yet saved, by question key.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -352,7 +364,7 @@ export function AppOnboarding({
       if (Object.keys(pending).length > 0) {
         await api.post(`/apps/${appID}/detection/answers`, { answers: pending });
       }
-      await api.post(`/apps/${appID}/detection/accept`, { values: valuesPayload(rows) });
+      await api.post(`/apps/${appID}/detection/accept`, { values: valuesPayload(rows), optional: [...optional] });
       if (!andDeploy) return;
       // Accepting pins a spec and does not deploy it (Sequence A). The deploy is
       // its own request, made only once the accept has gone through, so a
@@ -534,9 +546,6 @@ export function AppOnboarding({
             className="pando-onboard-enter"
             style={{ '--stagger': 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-7)' } as React.CSSProperties}
           >
-            {/* The plan's warnings, not the winner's: a warning about the
-                reading nobody picked describes an app that won't be deployed. */}
-            <Notices proposal={proposal} spec={plan} marks={marks} />
 
             {(['needs', 'ai'] as const).map((group) => {
               const items = asked.filter((q) => groupOf(q) === group);
@@ -594,8 +603,17 @@ export function AppOnboarding({
                   ]);
                 }}
                 onRemove={(row) => setAdded((list) => list.filter((r) => r.id !== row.id))}
+                optional={optional}
+                onOptional={setOptionalKey}
+                onAskOptional={(row) => setConfirmingOptional(row)}
               />
             )}
+
+            {/* After the questions and variables, which are what somebody acts
+                on first, and just before AI's notes, which say the same kind of
+                thing. The plan's warnings, not the winner's: a warning about the
+                reading nobody picked describes an app that won't be deployed. */}
+            <Notices proposal={proposal} spec={plan} marks={marks} />
 
             {outcome?.ran && <AiNotes notes={outcome.notes ?? []} />}
 
@@ -619,7 +637,7 @@ export function AppOnboarding({
 
       {done && !failed && !blocked && (canEdit || canDelete) && (
         <ActionBar
-          {...barStatus(missing, Object.keys(problems).length, neededValues(rows), canDeploy, canEdit)}
+          {...barStatus(missing, Object.keys(problems).length, neededValues(rows, optional), canDeploy, canEdit)}
           error={accept.isError ? accept.error : undefined}
         >
           {canDelete && rejectButton}
@@ -640,7 +658,7 @@ export function AppOnboarding({
               disabled={
                 missing.length > 0 ||
                 Object.keys(problems).length > 0 ||
-                neededValues(rows).length > 0 ||
+                neededValues(rows, optional).length > 0 ||
                 accept.isPending
               }
               onClick={() => accept.mutate(true)}
@@ -662,6 +680,31 @@ export function AppOnboarding({
       )}
 
       {rejectDialog}
+
+      {/* Marking a required value optional is the person's call — detection
+          can be wrong — but a wrong call breaks the deploy, so it is asked. */}
+      <Dialog
+        open={confirmingOptional !== null}
+        title={`Mark ${confirmingOptional?.key ?? 'this'} as not required?`}
+        description={`Pando found ${confirmingOptional?.key ?? 'this variable'} as something the app needs. If the app does need it, deploying without a value will fail, or the app will start and not work. Mark it not required only if you know the app runs without it.`}
+        onClose={() => setConfirmingOptional(null)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmingOptional(null)}>
+              Keep it required
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (confirmingOptional?.slot) setOptionalKey(confirmingOptional.slot.key, true);
+                setConfirmingOptional(null);
+              }}
+            >
+              Mark not required
+            </Button>
+          </>
+        }
+      />
 
       {/* The findings, on this page: a draft app has no overview tab to send
           anybody to. The same panel the overview shows, so they read alike. */}
@@ -727,7 +770,7 @@ function SourceTags({ source, commit }: { source: Source | undefined; commit?: s
     </Tag>
   );
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2)' }}>
       {source.type === 'image' && source.image && <Tag mono>{source.image}</Tag>}
       {source.type === 'upload' && <Tag>An uploaded archive</Tag>}
       {repoTag &&
@@ -737,7 +780,7 @@ function SourceTags({ source, commit }: { source: Source | undefined; commit?: s
             target="_blank"
             rel="noopener noreferrer"
             title={`Open ${repo} in a new tab`}
-            style={{ textDecoration: 'none', color: 'inherit' }}
+            style={{ display: 'inline-flex', lineHeight: 0, textDecoration: 'none', color: 'inherit' }}
           >
             {repoTag}
           </a>
@@ -810,12 +853,19 @@ function WorkingLine({
 
   return (
     <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-      <span className="pando-ripple" data-ai={Boolean(step?.ai)} aria-hidden="true">
-        <span />
-        <span />
-        <span />
-        <i />
-      </span>
+      {step?.ai ? (
+        // AI at work looks the same wherever it is: the mark, turning.
+        <span className="pando-ai-thinking" aria-hidden="true">
+          <AiStar size={14} />
+        </span>
+      ) : (
+        <span className="pando-ripple" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <i />
+        </span>
+      )}
       <span key={phrase} className="pando-onboard-enter" style={{ font: 'var(--type-body-ui)', color }}>
         {phrase}
         <span className="pando-dots" aria-hidden="true">
@@ -1458,6 +1508,9 @@ function Variables({
   onEdit,
   onAdd,
   onRemove,
+  optional,
+  onOptional,
+  onAskOptional,
 }: {
   rows: VariableRow[];
   spec: AppSpec;
@@ -1468,6 +1521,11 @@ function Variables({
   onEdit: (row: VariableRow, patch: RowEdit & { key?: string }) => void;
   onAdd: () => void;
   onRemove: (row: VariableRow) => void;
+  /** Slots the person marked not required, by slot key. */
+  optional: Set<string>;
+  onOptional: (slot: string, optional: boolean) => void;
+  /** Ask before marking a required value optional: it may break the deploy. */
+  onAskOptional: (row: VariableRow) => void;
 }) {
   const workloads = spec.workloads ?? [];
   const many = workloads.length > 1;
@@ -1529,12 +1587,22 @@ function Variables({
                 </>
               );
             } else if (slot) {
-              placeholder = slot.required ? 'Needed before this app can deploy' : 'Optional';
+              const markedOptional = slot.required && optional.has(slot.key);
+              placeholder = slot.required && !markedOptional ? 'Needed before this app can deploy' : 'Optional';
               source = changed ? (
-                <span>Your value. Kept as a secret.</span>
+                <span>Your value</span>
+              ) : markedOptional ? (
+                <>
+                  <span>Optional — you marked it. It stays unset if empty.</span>
+                  {canEdit && (
+                    <button type="button" className="pando-link" onClick={() => onOptional(slot.key, false)}>
+                      Mark required again
+                    </button>
+                  )}
+                </>
               ) : (
                 <span style={{ color: slot.required ? 'var(--ink)' : undefined }}>
-                  {slot.required ? 'Needs a value. Kept as a secret.' : 'No value yet. Kept as a secret.'}
+                  {slot.required ? 'Needs a value' : 'Optional, no value yet'}
                 </span>
               );
             } else if (isNew) source = <span>Added by you</span>;
@@ -1578,7 +1646,14 @@ function Variables({
                   )
                 }
                 workload={many && !isNew ? row.workload : undefined}
-                required={Boolean(slot?.required) && !pandoFills}
+                required={
+                  slot?.required && !pandoFills && !optional.has(slot.key)
+                    ? {
+                        filled: row.value.trim() !== '',
+                        onNotRequired: canEdit ? () => onAskOptional(row) : undefined,
+                      }
+                    : undefined
+                }
                 source={source}
               >
                 {pandoFills ? (
@@ -1600,9 +1675,7 @@ function Variables({
                       <Input
                         aria-label={`Value of ${row.key || 'the new variable'}`}
                         mono
-                        // A slot's value is kept as a secret whatever is shown;
-                        // hidden as typed only when the name reads like one.
-                        type={(slot ? looksSensitive(row.key) : row.secret) ? 'password' : 'text'}
+                        type={row.secret ? 'password' : 'text'}
                         autoComplete="off"
                         placeholder={placeholder}
                         value={row.value}
@@ -1610,17 +1683,14 @@ function Variables({
                         onChange={(e) => onEdit(row, { value: e.target.value })}
                       />
                     </div>
-                    {/* A slot's value is always stored as a secret (the server
-                        writes it to the secrets adapter), so there is no
-                        choice to offer — the line above says so instead. */}
-                    {!slot && (
-                      <Checkbox
-                        label="Secret"
-                        checked={row.secret}
-                        disabled={!canEdit || !canSecrets}
-                        onChange={(e) => onEdit(row, { secret: e.target.checked })}
-                      />
-                    )}
+                    {/* A default, never a lock: every value can be kept as a
+                        secret or left readable. */}
+                    <Checkbox
+                      label="Secret"
+                      checked={row.secret}
+                      disabled={!canEdit || !canSecrets}
+                      onChange={(e) => onEdit(row, { secret: e.target.checked })}
+                    />
                     {isNew && canEdit && (
                       <IconButton label="Remove this variable" onClick={() => onRemove(row)}>
                         <Icon name="x" size={16} />
@@ -1650,6 +1720,32 @@ function Variables({
   );
 }
 
+/**
+ * "Required", as a tag. Marker red while the value is missing — it blocks the
+ * deploy, one of the few things on this page that should catch the eye —
+ * and the ordinary tag once it is set. Shaped like Tag (2px radius, 1px
+ * border), which has no red tone of its own.
+ */
+function RequiredBadge({ filled }: { filled: boolean }) {
+  if (filled) return <Tag>Required</Tag>;
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        font: 'var(--type-caption)',
+        color: 'var(--marker-deep)',
+        border: 'var(--border-width) solid var(--marker)',
+        borderRadius: 'var(--radius-xs)',
+        padding: '0 var(--space-1)',
+        lineHeight: 'var(--space-5)',
+      }}
+    >
+      Required
+    </span>
+  );
+}
+
 function VariableLine({
   first,
   name,
@@ -1661,8 +1757,12 @@ function VariableLine({
   first: boolean;
   name: React.ReactNode;
   workload?: string;
-  /** The app can't deploy without a value (R-132): said beside the name. */
-  required?: boolean;
+  /**
+   * The app can't deploy without a value (R-132): said beside the name, in
+   * marker red while it is empty so it is not missed, with a way to say the
+   * app runs without it.
+   */
+  required?: { filled: boolean; onNotRequired?: () => void };
   source: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -1680,7 +1780,21 @@ function VariableLine({
       <div style={{ flex: '1 1 15rem', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'calc(var(--space-1) / 2)' }}>
         <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2)', font: 'var(--type-code-sm)', color: 'var(--ink)', overflowWrap: 'anywhere' }}>
           {name}
-          {required && <Tag>Required</Tag>}
+          {required && (
+            <>
+              <RequiredBadge filled={required.filled} />
+              {required.onNotRequired && !required.filled && (
+                <button
+                  type="button"
+                  className="pando-link"
+                  style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}
+                  onClick={required.onNotRequired}
+                >
+                  Not required?
+                </button>
+              )}
+            </>
+          )}
           {workload && <Tag mono>{workload}</Tag>}
         </span>
         <span
@@ -1776,7 +1890,7 @@ function AskAI({ appID, conversation, canAsk }: { appID: string; conversation: T
         </div>
         <span style={{ color: 'var(--ink-secondary)', textWrap: 'pretty' } as React.CSSProperties}>
           Say what’s wrong — a missing variable, the right port, a database it missed. AI checks the
-          repository and changes what it can show.
+          repository and changes what it can.
         </span>
       </div>
 
@@ -1789,22 +1903,7 @@ function AskAI({ appID, conversation, canAsk }: { appID: string; conversation: T
             <>
               <TurnRow turn={{ from: 'person', text: ask.variables ?? '', at: '' }} />
               <li style={{ padding: 'var(--space-3) 0', borderTop: 'var(--border-width) solid var(--rule)' }}>
-                <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                  <span className="pando-ripple" data-ai="true" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
-                    <i />
-                  </span>
-                  <span style={{ font: 'var(--type-body-ui)', color: 'var(--water)' }}>
-                    AI is reading the repo
-                    <span className="pando-dots" aria-hidden="true">
-                      <span>.</span>
-                      <span>.</span>
-                      <span>.</span>
-                    </span>
-                  </span>
-                </div>
+                <AiThinking phrases={phrasesFor('ask')} />
               </li>
             </>
           )}
@@ -1843,6 +1942,51 @@ function AskAI({ appID, conversation, canAsk }: { appID: string; conversation: T
     </section>
   );
 }
+
+/**
+ * AI at work: the AI mark turning, a phrase that changes every couple of
+ * seconds, and the time so far. Announced politely; under reduced motion the
+ * mark holds still and the first phrase stays.
+ */
+function AiThinking({ phrases }: { phrases: string[] }) {
+  const reduced = useReducedMotion();
+  const [tick, setTick] = useState(0);
+  const [started] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const clock = window.setInterval(() => setNow(Date.now()), 1_000);
+    if (reduced) return () => window.clearInterval(clock);
+    const turn = window.setInterval(() => setTick((n) => n + 1), THINKING_MS);
+    return () => {
+      window.clearInterval(clock);
+      window.clearInterval(turn);
+    };
+  }, [reduced]);
+  // Holds on the last phrase rather than cycling back to "Reading what you
+  // said" after a minute, which would read as starting over.
+  const phrase = phrases[Math.min(reduced ? 0 : tick, phrases.length - 1)];
+  return (
+    <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+      <span className="pando-ai-thinking" aria-hidden="true">
+        <AiStar size={16} />
+      </span>
+      <span key={phrase} className="pando-onboard-enter" style={{ font: 'var(--type-body-ui)', color: 'var(--water)' }}>
+        {phrase}
+        <span className="pando-dots" aria-hidden="true">
+          <span>.</span>
+          <span>.</span>
+          <span>.</span>
+        </span>
+      </span>
+      <span style={{ font: 'var(--type-code-sm)', color: 'var(--ink-muted)' }}>
+        {Math.max(0, Math.floor((now - started) / 1_000))}s
+      </span>
+    </div>
+  );
+}
+
+/** How often AI's working phrase changes. */
+const THINKING_MS = 2_600;
 
 function TurnRow({ turn }: { turn: Turn }) {
   const ai = turn.from === 'ai';

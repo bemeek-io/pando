@@ -82,6 +82,10 @@ type Turn struct {
 	// reason (R-334).
 	Changes []string `json:"changes,omitempty"`
 	Refused []string `json:"refused,omitempty"`
+
+	// FilesRead is what an AI turn read (R-337), so the next one can start
+	// from it rather than read it all again (api.ScreenRequest.Known).
+	FilesRead []string `json:"files_read,omitempty"`
 }
 
 // Who a Turn is from.

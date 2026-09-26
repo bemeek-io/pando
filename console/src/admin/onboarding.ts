@@ -142,7 +142,8 @@ export interface VariableRow {
   original?: string;
   /**
    * The slot this variable is filled from, when it is one. A value typed for
-   * it fills the slot at accept (spec.FillSlotLiteral), always as a secret.
+   * it fills the slot at accept: as a secret (spec.FillSlotLiteral) or, left
+   * plain, in the spec (spec.FillSlotValue).
    */
   slot?: RowSlot;
 }
@@ -194,9 +195,11 @@ export function variableRows(spec: AppSpec | undefined): VariableRow[] {
             service,
             provisioned: slot?.resolution?.mode === 'provisioned',
           };
-          // Stored as a secret whatever the checkbox says (the server writes
-          // a slot's value to the secrets adapter), so it is shown as one.
-          row.secret = true;
+          // A default, not a lock: a service's address carries its password,
+          // so it starts secret; anything else starts secret when its name
+          // reads like a credential. A value left plain is stored in the spec
+          // where it can be read back (spec.FillSlotValue).
+          row.secret = service || row.secret;
         }
         return row;
       }),
@@ -205,10 +208,12 @@ export function variableRows(spec: AppSpec | undefined): VariableRow[] {
 
 /**
  * Slot-filled values a deploy would be refused without (R-132): required, not
- * created by Pando, and empty.
+ * created by Pando, not marked optional by the person, and empty.
  */
-export function neededValues(rows: VariableRow[]): VariableRow[] {
-  return rows.filter((r) => r.slot && r.slot.required && !r.slot.provisioned && !r.value.trim());
+export function neededValues(rows: VariableRow[], optional: Set<string> = new Set()): VariableRow[] {
+  return rows.filter(
+    (r) => r.slot && r.slot.required && !optional.has(r.slot.key) && !r.slot.provisioned && !r.value.trim(),
+  );
 }
 
 /** What the person changed on a detected row, kept apart from the rows. */

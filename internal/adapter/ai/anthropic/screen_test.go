@@ -243,9 +243,32 @@ func TestR336_ARevisionHearsThePersonAndReplies(t *testing.T) {
 	require.Contains(t, string(prompt), quoted, "quoted as theirs")
 	require.Contains(t, string(prompt), "Is the port right?")
 
+	system2, _ := json.Marshal(fake.bodies[0]["system"])
+	require.Contains(t, string(system2), "not about the plan at all", "off-topic messages are steered back")
+
 	tools, _ := json.Marshal(fake.bodies[0]["tools"])
 	require.Contains(t, string(tools), `"reply"`)
 	require.Contains(t, string(tools), `"required":["amendments","reply"]`)
+}
+
+// TestR339_FilesReadBeforeAreHandedOverNotReadAgain asserts R-339's budget
+// with R-337's record: files an earlier call on the proposal read are given to
+// the model at the start, counted as reads and recorded as sent, so it does
+// not spend round trips finding them again.
+func TestR339_FilesReadBeforeAreHandedOverNotReadAgain(t *testing.T) {
+	a, fake := withFake(t, message("tool_use", toolUse("t1", "submit_findings", `{"amendments":[],"reply":"ok"}`)))
+
+	req := request()
+	req.Instruction = "Is the port right?"
+	req.Known = []string{"server.js", "missing.txt"}
+	result, err := a.RevisePlan(context.Background(), req)
+	require.NoError(t, err)
+
+	prompt, _ := json.Marshal(fake.bodies[0]["messages"])
+	require.Contains(t, string(prompt), "Files you read about this plan before")
+	require.Contains(t, string(prompt), "app.listen(3000")
+	require.Equal(t, []string{"server.js"}, result.FilesRead, "sent, and recorded; a missing one is left out")
+	require.Len(t, fake.bodies, 1, "no round trip spent reading it again")
 }
 
 // TestR335_AModelThatStopsWithoutFindingsIsAFailureNotACleanBill asserts R-335:

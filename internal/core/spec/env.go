@@ -89,9 +89,36 @@ func EnvSlot(s *AppSpec, workload, key string) (string, bool) {
 // A service slot filled this way stops being provisioned: the person has said
 // what the app should connect to.
 func FillSlotLiteral(s *AppSpec, slot, secretRef string) bool {
+	return resolveSlot(s, slot, &Resolution{Mode: ResolutionLiteral, SecretRef: secretRef})
+}
+
+// FillSlotValue fills a slot with a value somebody chose not to keep secret:
+// it is stored in the spec as the slot's target, which is what the variable
+// is set to at deploy (a bound resolution). A URL or a domain name is not a
+// secret, and forcing every slot value into one hid a value somebody wanted
+// to read back.
+func FillSlotValue(s *AppSpec, slot, value string) bool {
+	return resolveSlot(s, slot, &Resolution{Mode: ResolutionBound, Target: value})
+}
+
+// MarkSlotOptional records that the app runs without a slot, because a person
+// reviewing it said so: an optional slot nobody fills leaves its variable
+// unset rather than refusing the deploy (R-132). Detection marks slots
+// required from a crash or a template, and it can be wrong.
+func MarkSlotOptional(s *AppSpec, slot string) bool {
 	for i := range s.Slots {
 		if s.Slots[i].Key == slot {
-			s.Slots[i].Resolution = &Resolution{Mode: ResolutionLiteral, SecretRef: secretRef}
+			s.Slots[i].Required = false
+			return true
+		}
+	}
+	return false
+}
+
+func resolveSlot(s *AppSpec, slot string, r *Resolution) bool {
+	for i := range s.Slots {
+		if s.Slots[i].Key == slot {
+			s.Slots[i].Resolution = r
 			return true
 		}
 	}

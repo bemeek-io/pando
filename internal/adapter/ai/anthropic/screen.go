@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 
@@ -64,7 +65,7 @@ func (a *Adapter) run(ctx context.Context, fn api.AIFunction, req api.ScreenRequ
 		}},
 		Tools: tools(fn, req.Questions),
 		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(userPrompt(fn, req))),
+			anthropic.NewUserMessage(anthropic.NewTextBlock(userPrompt(fn, req) + preloaded(src, req.Known))),
 		},
 	}
 
@@ -191,6 +192,31 @@ func (a *Adapter) findings(use anthropic.ToolUseBlock, src *reader) (api.ScreenR
 		FilesRead:  src.files(),
 		Model:      a.cfg.Model,
 	}, nil
+}
+
+// preloaded reads the files an earlier call on this proposal read, and hands
+// them over at the start: the model begins knowing what it knew last time,
+// rather than listing and reading its way back there one round trip at a time.
+// Read through the budgeted reader, so they count as reads and are recorded
+// as sent (R-337); one the budget refuses, or that is gone, is left out.
+func preloaded(src *reader, known []string) string {
+	if len(known) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, name := range known {
+		body, err := src.open(name)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(&b, "\n### %s\n\n```\n%s\n```\n", name, body)
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return "\n## Files you read about this plan before\n\nYou read these in an earlier look at this " +
+		"repository, at this same commit. Their contents are below, so there is no need to read them " +
+		"again; read anything else you need.\n" + b.String()
 }
 
 // limit takes the lower of what core asked for and what this adapter will do.
