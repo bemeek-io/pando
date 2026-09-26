@@ -19,6 +19,13 @@ Unreleased above it. -->
 
 ## [Unreleased]
 
+### Added
+
+- A security scan now shows while it runs: in the app's Security section and in the app list's
+  Security column, wherever the scan was started (a deploy, detection, the CLI, MCP or **Scan
+  now**). The API reports it as `scanning_since` on `GET /apps/{id}/security` and
+  `security_scanning` on each app in `GET /apps`.
+
 ## [0.3.0] - 2026-09-24
 
 Pando is now installed from a prebuilt, signed image rather than built on the host. An existing
