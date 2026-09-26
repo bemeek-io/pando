@@ -62,7 +62,37 @@ type Proposal struct {
 	// Nil means no screening ran, which is the ordinary case for an install
 	// with no AI adapter configured — and not a degraded one (R-335).
 	Screening *screening.Outcome `json:"screening,omitempty"`
+
+	// Conversation is what a person reviewing this proposal asked an AI adapter
+	// to change, and what it replied and did (R-336's third trigger), oldest
+	// first. On the proposal because it is about this reading of this commit:
+	// detecting again starts a new one.
+	Conversation []Turn `json:"conversation,omitempty"`
 }
+
+// Turn is one message about a proposal.
+type Turn struct {
+	// From is TurnPerson or TurnAI.
+	From string    `json:"from"`
+	Text string    `json:"text"`
+	At   time.Time `json:"at"`
+
+	// Changes and Refused are what an AI turn did to the plan, one line each:
+	// the applied amendments' summaries, and what Pando would not do with its
+	// reason (R-334).
+	Changes []string `json:"changes,omitempty"`
+	Refused []string `json:"refused,omitempty"`
+
+	// FilesRead is what an AI turn read (R-337), so the next one can start
+	// from it rather than read it all again (api.ScreenRequest.Known).
+	FilesRead []string `json:"files_read,omitempty"`
+}
+
+// Who a Turn is from.
+const (
+	TurnPerson = "person"
+	TurnAI     = "ai"
+)
 
 // TrialObservation is Trial without the log.
 type TrialObservation struct {
@@ -250,7 +280,9 @@ func StatusFor(winner Candidate, questions []Question) string {
 	switch {
 	case winner.Strategy == StrategyUnknown:
 		return StatusNeedsAnswers
-	case len(Asked(questions)) > 0:
+	case len(Open(questions, nil)) > 0:
+		// An AI adapter's suggestion counts as an answer until a person gives
+		// one (R-338), so a question it answered does not hold the status.
 		return StatusNeedsAnswers
 	default:
 		return StatusReady

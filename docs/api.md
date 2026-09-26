@@ -82,6 +82,7 @@ one verb says nothing about another (R-082).
 | `POST /api/v1/apps/{appID}/detection/rerun` | `app.spec.edit` | Run detection again, against the current commit. |
 | `GET /api/v1/apps/{appID}/detection/diff` | `app.view` | What accepting the proposal would change about the running app. |
 | `POST /api/v1/apps/{appID}/detection/answers` | `app.spec.edit` | Answer detection's questions. Each answer is a fact detection could not find, not a preference. |
+| `POST /api/v1/apps/{appID}/detection/revise` | `app.spec.edit` | Tell the AI adapter what is wrong with the plan (`message`). It checks the repository, changes what it can show, replies, and records the exchange on the proposal. Needs an AI adapter. |
 | `POST /api/v1/apps/{appID}/detection/accept` | `app.spec.edit` | Accept the proposal, writing a spec revision and pinning it. `values` sets variables in the same step — `{key, value, secret?, workload?}` each; a secret goes to the secrets adapter and needs app.secrets.write. Accepting over a configured app needs `confirm`. |
 | `POST /api/v1/apps/{appID}/source` | `app.spec.edit` | Upload a source archive for an app that has no reachable repository. |
 

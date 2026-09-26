@@ -23,6 +23,10 @@ type fakeDetector struct {
 	checkErr  error
 	detectErr error
 	detected  atomic.Int32
+
+	// What Revise was asked, and what it answers with.
+	message string
+	revised state.Detection
 }
 
 func (f *fakeDetector) Check(context.Context, string) error { return f.checkErr }
@@ -30,6 +34,11 @@ func (f *fakeDetector) Check(context.Context, string) error { return f.checkErr 
 func (f *fakeDetector) Detect(context.Context, string) (state.Detection, error) {
 	f.detected.Add(1)
 	return state.Detection{}, f.detectErr
+}
+
+func (f *fakeDetector) Revise(_ context.Context, _, message string) (state.Detection, error) {
+	f.message = message
+	return f.revised, f.detectErr
 }
 
 // TestR092_ARefusedRerunWritesNothing asserts R-092. A source the allowlist no

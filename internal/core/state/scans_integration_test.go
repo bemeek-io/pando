@@ -76,3 +76,40 @@ func TestR312_AcceptingAProposalDoesNotHideTheScanTakenAtDiscovery(t *testing.T)
 	require.True(t, ok)
 	require.Equal(t, ofRevision.ID, found.ID, "a score for a spec this app is not running is not its score")
 }
+
+// TestR312_ADeployOfAScannedCommitUsesThatScan asserts the lookup a deploy
+// makes before scanning: a successful scan of the commit it is deploying is
+// found, whoever took it; a failed one, another commit's, or one of no known
+// commit is not — so the source is scanned once, not once per deploy.
+func TestR312_ADeployOfAScannedCommitUsesThatScan(t *testing.T) {
+	ctx := context.Background()
+	db := connected(t)
+	alice := seedUser(t, db, "alice")
+	app, err := state.NewApps(db).Create(ctx, "crew", "crew", alice.ID, alice.ID,
+		spec.Source{Type: spec.SourceGit, URL: "https://example.test/crew"})
+	require.NoError(t, err)
+	scans := state.NewScans(db)
+
+	_, found, err := scans.ForCommit(ctx, app.ID, "abc123")
+	require.NoError(t, err)
+	require.False(t, found, "never scanned")
+
+	_, err = scans.Record(ctx, state.Scan{AppID: app.ID, Commit: "abc123", ScannerRef: "scn", Error: "trivy is not installed"})
+	require.NoError(t, err)
+	_, err = scans.Record(ctx, state.Scan{AppID: app.ID, ScannerRef: "scn", Score: score(90)})
+	require.NoError(t, err)
+	_, found, err = scans.ForCommit(ctx, app.ID, "abc123")
+	require.NoError(t, err)
+	require.False(t, found, "a failed scan, and one of no known commit, cover nothing")
+
+	atDiscovery, err := scans.Record(ctx, state.Scan{AppID: app.ID, Commit: "abc123", ScannerRef: "scn", Score: score(72)})
+	require.NoError(t, err)
+	got, found, err := scans.ForCommit(ctx, app.ID, "abc123")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, atDiscovery.ID, got.ID)
+
+	_, found, err = scans.ForCommit(ctx, app.ID, "def456")
+	require.NoError(t, err)
+	require.False(t, found, "a new commit is scanned")
+}

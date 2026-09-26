@@ -72,26 +72,29 @@ func TestR259_CapabilitiesAreDataNotATypeAssertion(t *testing.T) {
 
 	caps, err := a.Capabilities(context.Background())
 	require.NoError(t, err)
-	require.True(t, caps.Does(api.AIFunctionScreenPlan))
-	require.False(t, caps.Does(api.AIFunctionRepairBuild), "not built, and it says so")
+	require.True(t, caps.Does(api.AIFunctionRepairPlan))
+	require.True(t, caps.Does(api.AIFunctionAnswerQuestions))
+	require.True(t, caps.Does(api.AIFunctionRevisePlan))
+	require.False(t, caps.Does(api.AIFunctionReadReadme), "not built, and it says so")
 	require.Equal(t, anthropicadapter.DefaultModel, caps.Model)
 }
 
-// TestR336_ScreeningIsOnWhenTheAdapterIsConfigured asserts R-336.
+// TestR336_BothFunctionsAreOnWhenTheAdapterIsConfigured asserts R-336.
 //
 // Configuring the adapter meant supplying a credential, and that was the
 // decision. Asking a second time would charge the setup cost twice (R-002).
-func TestR336_ScreeningIsOnWhenTheAdapterIsConfigured(t *testing.T) {
+// When each function is called is core's business, not the adapter's.
+func TestR336_BothFunctionsAreOnWhenTheAdapterIsConfigured(t *testing.T) {
 	on := configured(t, `{"credentials":{"api_key":"sk-ant-test"}}`)
 	caps, err := on.Capabilities(context.Background())
 	require.NoError(t, err)
-	require.True(t, caps.Does(api.AIFunctionScreenPlan))
+	require.True(t, caps.Does(api.AIFunctionRepairPlan))
+	require.True(t, caps.Does(api.AIFunctionAnswerQuestions))
 
 	off := configured(t, `{"credentials":{"api_key":"sk-ant-test"},"screen_plans":false}`)
 	caps, err = off.Capabilities(context.Background())
 	require.NoError(t, err)
-	require.False(t, caps.Does(api.AIFunctionScreenPlan),
-		"an install may keep the adapter and turn this function off")
+	require.Empty(t, caps.Functions, "an install may keep the adapter and turn both functions off")
 }
 
 // TestAnAdapterWithNoCredentialRefusesToConfigure asserts design 10 §7.
@@ -123,7 +126,7 @@ func TestO20_AKeyInTheStoredConfigurationIsRefused(t *testing.T) {
 // The failure is an error the caller turns into a skipped screening, which
 // leaves the deterministic proposal exactly as it was.
 func TestR335_AnUnconfiguredAdapterFailsRatherThanPretends(t *testing.T) {
-	_, err := anthropicadapter.New().ScreenPlan(context.Background(), api.ScreenRequest{
+	_, err := anthropicadapter.New().RepairPlan(context.Background(), api.ScreenRequest{
 		Source: memSource{"a.txt": "x"},
 	})
 	require.Error(t, err)
@@ -132,7 +135,7 @@ func TestR335_AnUnconfiguredAdapterFailsRatherThanPretends(t *testing.T) {
 // TestR020_ScreeningNeedsAReadableRepository asserts R-020.
 func TestR020_ScreeningNeedsAReadableRepository(t *testing.T) {
 	a := configured(t, `{"credentials":{"api_key":"sk-ant-test"}}`)
-	_, err := a.ScreenPlan(context.Background(), api.ScreenRequest{Source: nil})
+	_, err := a.RepairPlan(context.Background(), api.ScreenRequest{Source: nil})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "repository")
 }

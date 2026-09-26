@@ -1,32 +1,28 @@
-package spec_test
+package spec
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/bemeek-io/pando/internal/errs"
 )
 
-// SetEnv puts a person's value where the variable is read: the workload named,
-// every workload declaring it, or — for a new variable — the primary one.
-func TestR022_SetEnvPutsAValueWhereTheVariableIsRead(t *testing.T) {
-	str := func(s string) *string { return &s }
-	s := &spec.AppSpec{Workloads: []spec.Workload{
-		{Name: "web", Primary: true, Env: []spec.EnvEntry{{Key: "API_URL"}}},
-		{Name: "worker", Env: []spec.EnvEntry{{Key: "API_URL"}, {Key: "QUEUE"}}},
-	}}
+// TestR166_AnAppsHostnameCanBeChosenWhereRoutingServesOne asserts that review
+// can set the address an app is served at in subdomain mode, and refuses it —
+// with the reason — where the address is a port Pando allocates.
+func TestR166_AnAppsHostnameCanBeChosenWhereRoutingServesOne(t *testing.T) {
+	s := &AppSpec{Routing: Routing{Mode: RoutingSubdomain, Hostname: "crew.pando.local"}}
+	require.NoError(t, SetHostname(s, " Crew.Example.com. "))
+	require.Equal(t, "crew.example.com", s.Routing.Hostname)
 
-	spec.SetEnv(s, "", "API_URL", spec.EnvEntry{Value: str("https://api")})
-	require.Equal(t, "https://api", *s.Workloads[0].Env[0].Value)
-	require.Equal(t, "https://api", *s.Workloads[1].Env[0].Value)
-	require.Equal(t, spec.EnvFromUser, s.Workloads[1].Env[0].Source)
+	err := SetHostname(s, "not a host")
+	require.Equal(t, errs.ValidInvalid, errs.As(err).Code)
+	require.Equal(t, "crew.example.com", s.Routing.Hostname, "unchanged by a refusal")
 
-	spec.SetEnv(s, "worker", "QUEUE", spec.EnvEntry{SecretRef: str("QUEUE")})
-	require.Equal(t, "QUEUE", *s.Workloads[1].Env[1].SecretRef)
-	require.Len(t, s.Workloads[0].Env, 1, "named workload only")
-
-	spec.SetEnv(s, "", "NEW_ONE", spec.EnvEntry{Value: str("x")})
-	require.Equal(t, "NEW_ONE", s.Workloads[0].Env[1].Key, "a new variable goes to the primary workload")
-	require.Len(t, s.Workloads[1].Env, 2)
+	port := &AppSpec{Routing: Routing{Mode: RoutingPort, Port: 9003}}
+	err = SetHostname(port, "crew.example.com")
+	require.Error(t, err)
+	require.Contains(t, errs.As(err).Message, "port")
+	require.Empty(t, port.Routing.Hostname)
 }

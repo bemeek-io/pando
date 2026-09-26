@@ -19,33 +19,50 @@ const (
 
 // Screener is the half of api.AIAdapter this package needs.
 //
-// Narrowed so a test can supply one in four lines, and so the dependency reads
-// as what it is: something that reviews a proposal, not an adapter registry.
+// Narrowed so a test can supply one in a few lines, and so the dependency reads
+// as what it is: something that repairs a plan or answers questions, not an
+// adapter registry.
 type Screener interface {
 	Capabilities(ctx context.Context) (api.AICapabilities, error)
-	ScreenPlan(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error)
+	RepairPlan(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error)
+	AnswerQuestions(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error)
+	RevisePlan(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error)
 }
 
-// Run calls the screener under the budget and returns what it said.
+// Run calls fn on the screener under the budget and returns what it said.
 //
 // It never returns an error. Every failure becomes a skipped Outcome carrying
 // its reason, because R-335 is that a screening which cannot run leaves the
 // deterministic proposal exactly as it was — and a caller that has to remember
 // to ignore an error is a caller that will one day not.
-func Run(ctx context.Context, s Screener, ref string, req api.ScreenRequest) (api.ScreenResult, Outcome) {
+func Run(ctx context.Context, s Screener, ref string, fn api.AIFunction, req api.ScreenRequest) (api.ScreenResult, Outcome) {
 	if s == nil {
 		return api.ScreenResult{}, SkippedOutcome(SkipNotConfigured, "No AI adapter is configured.")
+	}
+
+	var call func(context.Context, api.ScreenRequest) (api.ScreenResult, error)
+	var doing string
+	switch fn {
+	case api.AIFunctionRepairPlan:
+		call, doing = s.RepairPlan, "repair deployment plans"
+	case api.AIFunctionAnswerQuestions:
+		call, doing = s.AnswerQuestions, "answer detection questions"
+	case api.AIFunctionRevisePlan:
+		call, doing = s.RevisePlan, "revise a plan when asked"
+	default:
+		return api.ScreenResult{}, SkippedOutcome(SkipUnsupported, fmt.Sprintf(
+			"Pando does not call an AI adapter for %q.", fn))
 	}
 
 	started := time.Now()
 	caps, err := s.Capabilities(ctx)
 	if err != nil {
 		return api.ScreenResult{}, SkippedOutcome(SkipUnavailable,
-			"Pando could not reach the configured AI adapter: "+err.Error()).Elapsed(time.Since(started))
+			"Pando could not reach the configured AI adapter: "+err.Error()).For(fn).Elapsed(time.Since(started))
 	}
-	if !caps.Does(api.AIFunctionScreenPlan) {
+	if !caps.Does(fn) {
 		return api.ScreenResult{}, SkippedOutcome(SkipUnsupported, fmt.Sprintf(
-			"The configured AI adapter (%s) does not screen deployment plans.", ref)).Elapsed(time.Since(started))
+			"The configured AI adapter (%s) does not %s.", ref, doing)).For(fn).Elapsed(time.Since(started))
 	}
 
 	req.Budget = budget(req.Budget, caps)
@@ -57,11 +74,11 @@ func Run(ctx context.Context, s Screener, ref string, req api.ScreenRequest) (ap
 	callCtx, cancel := context.WithTimeout(ctx, req.Budget.Timeout)
 	defer cancel()
 
-	result, err := s.ScreenPlan(callCtx, req)
+	result, err := call(callCtx, req)
 	elapsed := time.Since(started)
 	if err != nil {
 		return api.ScreenResult{}, SkippedOutcome(SkipUnavailable,
-			"The AI adapter could not screen this plan: "+err.Error()).Elapsed(elapsed)
+			"The AI adapter did not finish: "+err.Error()).For(fn).Elapsed(elapsed)
 	}
 
 	model := result.Model
@@ -70,6 +87,7 @@ func Run(ctx context.Context, s Screener, ref string, req api.ScreenRequest) (ap
 	}
 	return result, Outcome{
 		Ran:        true,
+		Function:   fn,
 		AdapterRef: ref,
 		Model:      model,
 		FilesRead:  result.FilesRead,

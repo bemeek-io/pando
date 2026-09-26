@@ -103,6 +103,7 @@ export interface Proposal {
   commit?: string;
   trial: TrialObservation;
   screening?: Outcome;
+  conversation?: (Turn[] | null);
 }
 
 export interface Candidate {
@@ -122,6 +123,7 @@ export interface Question {
   kind: string;
   options?: (string[] | null);
   deferred?: boolean;
+  suggested?: Suggestion;
 }
 
 export interface AppSpec {
@@ -234,6 +236,8 @@ export interface Outcome {
   ran: boolean;
   skipped?: string;
   skip_code?: string;
+  function?: string;
+  why?: string;
   adapter_ref?: string;
   model?: string;
   files_read?: (string[] | null);
@@ -244,6 +248,15 @@ export interface Outcome {
   duration_ms?: number;
 }
 
+export interface Turn {
+  from: string;
+  text: string;
+  at: string;
+  changes?: (string[] | null);
+  refused?: (string[] | null);
+  files_read?: (string[] | null);
+}
+
 export interface Draft {
   workloads?: (Workload[] | null);
   volumes?: (Volume[] | null);
@@ -251,6 +264,12 @@ export interface Draft {
   build: Build;
   health?: Health;
   warnings?: (Warning[] | null);
+}
+
+export interface Suggestion {
+  value: string;
+  reason?: string;
+  evidence?: (string[] | null);
 }
 
 export interface Build {
@@ -405,6 +424,7 @@ export interface Scan {
   id: string;
   app_id: string;
   spec_id?: string;
+  commit?: string;
   scanner_ref: string;
   scanner?: string;
   score?: number;

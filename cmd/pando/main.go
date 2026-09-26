@@ -429,7 +429,7 @@ func serve(ctx context.Context, configPath string) error {
 		detector.ScreenerRef = ref
 		detector.ScreenPolicy = hostPolicy
 		detector.Auditor = detectionAuditor{auditor}
-		logger.Info("detection proposals will be screened", zap.String("adapter", ref))
+		logger.Info("an AI adapter will repair failed detections and answer their questions", zap.String("adapter", ref))
 	}
 
 	// Assertions are what an app can actually trust about a caller (R-051).
@@ -1212,7 +1212,7 @@ type sourceScanner struct {
 	logger  *zap.Logger
 }
 
-func (s sourceScanner) ScanSource(ctx context.Context, appID, dir string) {
+func (s sourceScanner) ScanSource(ctx context.Context, appID, dir, commit string) {
 	if s.service == nil {
 		return
 	}
@@ -1223,7 +1223,9 @@ func (s sourceScanner) ScanSource(ctx context.Context, appID, dir string) {
 	// No spec ID: there is no revision yet, and there may never be one — this
 	// is a scan of what was proposed, which is exactly the thing somebody is
 	// deciding about.
-	if _, err := s.service.Scan(ctx, adapterapi.ScanRequest{AppID: appID, SourceDir: dir},
+	// The commit, so a deploy of this same source uses this scan rather than
+	// scanning it again.
+	if _, err := s.service.Scan(ctx, adapterapi.ScanRequest{AppID: appID, SourceDir: dir, Commit: commit},
 		audit.Event{PrincipalKind: audit.KindSystem, PrincipalID: "detection"}); err != nil {
 		// Never fatal. The proposal is what this run is producing, and a
 		// scanner that could not read a checkout is recorded as a failed scan

@@ -27,7 +27,17 @@ import { Table } from '../ui/Table';
 import { LineSkeleton, Loading } from '../ui/Loading';
 import { AppVerb, useCan } from './verbs';
 
-export function Security({ appID }: { appID: string }) {
+export function Security({
+  appID,
+  everything = false,
+}: {
+  appID: string;
+  /**
+   * Every finding, with no toggle: for a dialog opened to read them, where a
+   * scrolling list is the point rather than a hazard to the Deploy button.
+   */
+  everything?: boolean;
+}) {
   const queries = useQueryClient();
   // POST /security/scan is app.deploy, not app.view (see above).
   const canScan = useCan(AppVerb.Deploy);
@@ -53,13 +63,13 @@ export function Security({ appID }: { appID: string }) {
   // deploys from is a list nobody reads and a Deploy button nobody can find.
   // The rest are one click away, in a box with a bottom to it.
   const worst = report.data?.worst ?? findings.slice(0, 5);
-  const shown = all ? findings : worst;
-  const hidden = findings.length - worst.length;
+  const shown = all || everything ? findings : worst;
+  const hidden = everything ? 0 : findings.length - worst.length;
 
   return (
-    <section style={{ maxWidth: MEASURE }}>
+    <section style={{ maxWidth: everything ? undefined : MEASURE }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-        <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Security</h4>
+        {!everything && <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Security</h4>}
         {canScan && (
           <Button onClick={() => scan.mutate()} disabled={scan.isPending}>
             {scan.isPending ? 'Scanning' : 'Scan now'}

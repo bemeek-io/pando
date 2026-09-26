@@ -109,7 +109,7 @@ func (s *Server) handleSetSlot(w http.ResponseWriter, r *http.Request) {
 			// The value is stored as a secret, not inline. That is what keeps
 			// "an exported spec is safe to hand to someone" true without a
 			// special case for this one field.
-			secretKey := "slot_" + key
+			secretKey := spec.SlotSecretKey(key)
 			if err := s.Secrets.Put(r.Context(), app.ID, secretKey, secret.New(req.Value)); err != nil {
 				Error(w, r, err)
 				return

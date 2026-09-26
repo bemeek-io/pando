@@ -21,9 +21,12 @@ import (
 
 // Scan is one scanner's answer about one revision.
 type Scan struct {
-	ID         string `json:"id"`
-	AppID      string `json:"app_id"`
-	SpecID     string `json:"spec_id,omitempty"`
+	ID     string `json:"id"`
+	AppID  string `json:"app_id"`
+	SpecID string `json:"spec_id,omitempty"`
+	// Commit is the source commit the scan read, when it read one. A deploy
+	// of that commit uses this scan rather than scanning again (ForCommit).
+	Commit     string `json:"commit,omitempty"`
 	ScannerRef string `json:"scanner_ref"`
 	Scanner    string `json:"scanner,omitempty"`
 	Score      *int   `json:"score"`
@@ -63,10 +66,10 @@ func (s *Scans) Record(ctx context.Context, scan Scan) (Scan, error) {
 
 	_, err = s.db.Exec(ctx, `
 		INSERT INTO app_scans (id, app_id, spec_id, scanner_ref, scanner, score, score_fixable,
-		                       findings, error, ran_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		                       findings, error, ran_at, commit)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		scan.ID, scan.AppID, nullable(scan.SpecID), scan.ScannerRef, scan.Scanner,
-		scan.Score, scan.ScoreFixable, body, scan.Error, scan.RanAt)
+		scan.Score, scan.ScoreFixable, body, scan.Error, scan.RanAt, nullable(scan.Commit))
 	if err != nil {
 		return Scan{}, errs.Wrap(errs.Internal, "Could not record the scan.", err)
 	}
@@ -107,6 +110,30 @@ func (s *Scans) Latest(ctx context.Context, appID, specID string) (Scan, bool, e
 	if len(findings) > 0 {
 		_ = json.Unmarshal(findings, &scan.Findings)
 	}
+	return scan, true, nil
+}
+
+// ForCommit returns the newest scan of an app's source at a commit that ran —
+// a scanner that failed produced no finding worth reusing. Found is false for
+// an empty commit, which names no source.
+func (s *Scans) ForCommit(ctx context.Context, appID, commit string) (Scan, bool, error) {
+	if commit == "" {
+		return Scan{}, false, nil
+	}
+	var scan Scan
+	err := s.db.QueryRow(ctx, `
+		SELECT id, coalesce(spec_id, ''), ran_at
+		FROM app_scans
+		WHERE app_id = $1 AND commit = $2 AND error = '' AND score IS NOT NULL
+		ORDER BY ran_at DESC
+		LIMIT 1`, appID, commit).Scan(&scan.ID, &scan.SpecID, &scan.RanAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Scan{}, false, nil
+	}
+	if err != nil {
+		return Scan{}, false, errs.Wrap(errs.Internal, "Could not read the app's scans.", err)
+	}
+	scan.AppID, scan.Commit = appID, commit
 	return scan, true, nil
 }
 

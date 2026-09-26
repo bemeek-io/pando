@@ -8,7 +8,7 @@
 // volume marked "screened"), but only the amendment carries the reason and the
 // files it rests on, and those are what somebody checking the suggestion needs.
 
-import type { Amendment, AppSpec, Outcome, Proposal, Question, TrialObservation } from '@api/types.gen';
+import type { Amendment, AppSpec, Outcome } from '@api/types.gen';
 import { looksSensitive } from './sensitive';
 
 /** The warning code an AI screener's notes carry (design 01 §2.8). */
@@ -128,22 +128,6 @@ export function volumePath(p: string): string {
   return cleanPath(p);
 }
 
-/**
- * The prompt a question was asked with, for one the screening answered.
- *
- * Detection drops an answered question from `questions`, so its wording is
- * looked for among the candidates' own questions. The key is the fallback: it
- * is what the screening answered, and a made-up sentence would not be.
- */
-export function answeredPrompt(proposal: Proposal, key: string): Question | undefined {
-  const candidates = [proposal.winning_bid, ...(proposal.runners_up ?? [])];
-  for (const candidate of candidates) {
-    const q = (candidate?.questions ?? []).find((question) => question.key === key);
-    if (q) return q;
-  }
-  return undefined;
-}
-
 /** One row of the variables form. */
 export interface VariableRow {
   /** Stable across edits, for React. */
@@ -156,24 +140,49 @@ export interface VariableRow {
   secret: boolean;
   /** What detection put there. Absent for a row added during review. */
   original?: string;
+  /**
+   * The slot this variable is filled from, when it is one. A value typed for
+   * it fills the slot at accept: as a secret (spec.FillSlotLiteral) or, left
+   * plain, in the spec (spec.FillSlotValue).
+   */
+  slot?: RowSlot;
+  /** The value came from the app's address (valueFromAddress), not the repo. */
+  fromAddress?: boolean;
+}
+
+export interface RowSlot {
+  key: string;
+  type: string;
+  required: boolean;
+  /** A service Pando runs — a database, a cache — rather than a bare value. */
+  service: boolean;
+  /** Pando creates it at the first deploy, and fills the variable then. */
+  provisioned: boolean;
 }
 
 /**
  * The rows the form starts with: every variable the proposal declares that
- * Pando fills with a plain value or nothing.
+ * a person could give a value — plain ones, and ones filled from a slot.
  *
- * A variable filled from a dependency (`slot_ref`) belongs to that dependency
- * and is shown there; one already filled from a secret is not something
- * detection produces. A name that reads like a credential starts as a secret
- * when it has no value yet — the same default the Environment tab takes.
+ * A slot-filled variable is a row too. A key named with no value in
+ * .env.example is a slot the deploy is refused without (R-132), and the
+ * review is where somebody has the value to hand; a database's URL can be
+ * pointed at one they already run instead of the one Pando would create. One
+ * already filled from a secret is not something detection produces. A name
+ * that reads like a credential starts as a secret when it has no value yet —
+ * the same default the Environment tab takes.
  */
-export function variableRows(spec: AppSpec | undefined): VariableRow[] {
+export function variableRows(spec: AppSpec | undefined, address?: string): VariableRow[] {
+  const slots = spec?.slots ?? [];
   return (spec?.workloads ?? []).flatMap((w) =>
     (w.env ?? [])
-      .filter((e) => !e.slot_ref && !e.secret_ref)
+      .filter((e) => !e.secret_ref)
       .map((e) => {
-        const value = e.value ?? '';
-        return {
+        // A slot already filled with a readable value — by an AI adapter,
+        // most often — shows it; one filled with a secret cannot.
+        const slotOf = e.slot_ref ? slots.find((s) => s.key === e.slot_ref) : undefined;
+        const value = e.value ?? (slotOf?.resolution?.mode === 'bound' ? (slotOf.resolution.target ?? '') : '');
+        const row: VariableRow = {
           id: envKey(w.name, e.key),
           workload: w.name,
           key: e.key,
@@ -181,7 +190,94 @@ export function variableRows(spec: AppSpec | undefined): VariableRow[] {
           secret: value === '' && looksSensitive(e.key),
           original: value,
         };
+        if (e.slot_ref) {
+          const slot = slots.find((s) => s.key === e.slot_ref);
+          const service = Boolean(slot && slot.type && slot.type !== 'unknown');
+          row.slot = {
+            key: e.slot_ref,
+            type: slot?.type ?? 'unknown',
+            required: Boolean(slot?.required),
+            service,
+            provisioned: slot?.resolution?.mode === 'provisioned',
+          };
+          // A default, not a lock: a service's address carries its password,
+          // so it starts secret; anything else starts secret when its name
+          // reads like a credential. A value left plain is stored in the spec
+          // where it can be read back (spec.FillSlotValue).
+          row.secret = service || row.secret;
+        }
+        // The app's own URL or domain, from where Pando will serve it: a
+        // default the person can change, sent with the accept like any value
+        // they set (its original stays empty).
+        const fromAddress = row.value === '' && !row.slot?.service ? valueFromAddress(row.key, address) : undefined;
+        if (fromAddress) {
+          row.value = fromAddress;
+          row.secret = false;
+          row.fromAddress = true;
+        }
+        return row;
       }),
+  );
+}
+
+/**
+ * The app's address as a full URL with no trailing slash. The server writes a
+ * port-mode address protocol-relative ("//localhost:9003/"), because it cannot
+ * know how the browser reached it; the browser can.
+ */
+export function absoluteAddress(address: string | undefined, protocol = 'http:'): string | undefined {
+  if (!address) return undefined;
+  const full = address.startsWith('//') ? `${protocol}${address}` : address;
+  if (!/^https?:\/\//.test(full)) return undefined;
+  return full.replace(/\/+$/, '');
+}
+
+// Names that mean "this app's own public URL" or "its own domain". Matched on
+// the last part of the name, so APP_BASE_URL and NEXTAUTH_URL are URLs and
+// APP_DOMAIN is a domain. HOST is not here: it is the address an app binds to.
+const OWN_URL = /(^|_)(BASE_URL|PUBLIC_URL|APP_URL|SITE_URL|EXTERNAL_URL|ROOT_URL|ORIGIN|NEXTAUTH_URL)$/;
+const OWN_DOMAIN = /(^|_)(DOMAIN|HOSTNAME|PUBLIC_HOST|SERVER_NAME)$/;
+
+/**
+ * What a variable should hold when its name says it is the app's own URL or
+ * domain, from the address Pando will serve the app at — undefined for any
+ * other name. A person deploying a generated app rarely knows what "domain"
+ * means here, and Pando does.
+ */
+export function valueFromAddress(key: string, address: string | undefined): string | undefined {
+  if (!address) return undefined;
+  if (OWN_URL.test(key)) return address;
+  if (OWN_DOMAIN.test(key)) {
+    try {
+      return new URL(address).hostname;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * A random value for a variable that just needs one: an encryption key, a
+ * session secret, a password nobody types. 32 bytes from the browser's
+ * cryptographic generator, as URL-safe base64 with no padding — 43 characters
+ * that survive a shell, a URL and a .env file unquoted.
+ */
+export function randomSecret(bytes = 32): string {
+  const raw = new Uint8Array(bytes);
+  crypto.getRandomValues(raw);
+  let binary = '';
+  for (const b of raw) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Slot-filled values a deploy would be refused without (R-132): required, not
+ * created by Pando, not marked optional by the person, and empty.
+ */
+export function neededValues(rows: VariableRow[], optional: Set<string> = new Set()): VariableRow[] {
+  return rows.filter(
+    (r) => r.slot && r.slot.required && !optional.has(r.slot.key) && !r.slot.provisioned && !r.value.trim(),
   );
 }
 
@@ -211,75 +307,12 @@ export function mergeRows(detected: VariableRow[], edits: Record<string, RowEdit
         ...row,
         value: edit.value ?? row.value,
         secret: edit.secret ?? row.secret,
+        // A value the person typed over is theirs, not the address's.
+        fromAddress: row.fromAddress && (edit.value === undefined || edit.value === row.value),
       };
     }),
     ...added,
   ];
-}
-
-/** Where detection is while it runs. `stage` is set only on a running one. */
-export type Stage = 'fetching' | 'detecting' | 'trying' | 'screening';
-
-export type StepState = 'done' | 'active' | 'pending';
-
-export interface Step {
-  label: string;
-  state: StepState;
-}
-
-const ORDER: Stage[] = ['fetching', 'detecting', 'trying', 'screening'];
-
-/**
- * The steps at the top of a running detection, each ticking over as the stage
- * advances.
- *
- * The AI step is listed only once Pando is known to be taking it: a stage of
- * `screening`, or a finished screening that ran. An install without an AI
- * adapter is not a degraded one (R-335), so it is not shown a step it will
- * never reach.
- */
-export function detectionSteps(status: string, stage: string | undefined, screened: boolean): Step[] {
-  const running = status === 'running';
-  // A stage this console does not know is read as the first: under-claiming
-  // progress is harmless, claiming a step finished that is not is not.
-  const at = running ? Math.max(0, ORDER.indexOf((stage ?? 'fetching') as Stage)) : ORDER.length;
-  const withAI = stage === 'screening' || screened;
-  const labels: Array<[Stage, string]> = [
-    ['fetching', 'Reading the repository'],
-    ['detecting', 'Working out what it is'],
-    ['trying', 'Trying a run'],
-  ];
-  if (withAI) labels.push(['screening', 'Checking with AI']);
-  return labels.map(([name, label]) => {
-    const index = ORDER.indexOf(name);
-    const state: StepState = index < at ? 'done' : index === at ? 'active' : 'pending';
-    return { label, state };
-  });
-}
-
-/**
- * How many rings the header's contour map shows. The map builds as detection
- * advances: two while fetching, and two more for each stage after. `finished`
- * is the full figure; `reached` is the last stage seen, so a detection that
- * failed stops at the rings it had drawn rather than growing or emptying.
- */
-export function ringsFor(reached: string | undefined, finished: boolean): number {
-  if (finished) return 8;
-  const index = Math.max(0, ORDER.indexOf((reached ?? 'fetching') as Stage));
-  return 2 + index * 2;
-}
-
-/** What the trial run showed, in one sentence, or nothing if there was none. */
-export function trialSentence(trial: TrialObservation | undefined): string | undefined {
-  if (!trial?.ran) return undefined;
-  if (trial.crashed) return 'Pando tried a run, and the app exited on its own.';
-  if (!trial.started) return 'Pando tried a run, and the app did not start.';
-  const ports = trial.observed_ports ?? [];
-  if (ports.length === 0) return 'Pando tried a run: the app started and opened no ports.';
-  const list = ports.join(', ');
-  return ports.length === 1
-    ? `Pando tried a run: the app started and opened port ${list}.`
-    : `Pando tried a run: the app started and opened ports ${list}.`;
 }
 
 /** What accept sends for each variable (POST /apps/{id}/detection/accept). */

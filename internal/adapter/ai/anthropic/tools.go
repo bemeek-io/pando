@@ -2,9 +2,11 @@ package anthropic
 
 import (
 	"github.com/anthropics/anthropic-sdk-go"
+
+	"github.com/bemeek-io/pando/internal/adapter/api"
 )
 
-// The three tools a screening gets: two to read the repository, one to answer.
+// The three tools a repair or an answering call gets: two to read the repository, one to answer.
 //
 // Answering through a tool rather than in prose is deliberate. The schema is
 // the closed set from design 10 §3, so a malformed amendment is rejected before
@@ -17,7 +19,7 @@ const (
 	toolSubmitFindings = "submit_findings"
 )
 
-func tools() []anthropic.ToolUnionParam {
+func tools(fn api.AIFunction, questions []api.Question, values []string) []anthropic.ToolUnionParam {
 	list := anthropic.ToolParam{
 		Name: toolListFiles,
 		Description: anthropic.String(
@@ -55,15 +57,15 @@ func tools() []anthropic.ToolUnionParam {
 	submit := anthropic.ToolParam{
 		Name: toolSubmitFindings,
 		Description: anthropic.String(
-			"Submit the result of the screening. Call this exactly once, at the end. Submit an " +
-				"empty amendments list if the plan is already correct — that is a good outcome, " +
-				"not a failure."),
+			"Submit your result. Call this exactly once, at the end. Submit an empty " +
+				"amendments list when there is nothing the repository supports changing — that is " +
+				"a good outcome, not a failure."),
 		InputSchema: anthropic.ToolInputSchemaParam{
 			Properties: map[string]any{
 				"amendments": map[string]any{
 					"type":        "array",
 					"description": "Changes to the deployment plan. Empty if none are needed.",
-					"items":       amendmentSchema(),
+					"items":       itemSchema(fn, questions, values),
 				},
 				"notes": map[string]any{
 					"type": "array",
@@ -76,6 +78,18 @@ func tools() []anthropic.ToolUnionParam {
 		},
 	}
 
+	// A revision answers a person, so it says something back — required, so a
+	// person who asked is never met with silence.
+	if fn == api.AIFunctionRevisePlan {
+		submit.InputSchema.Properties.(map[string]any)["reply"] = map[string]any{
+			"type": "string",
+			"description": "Your answer to the person, in one to three plain sentences: what you changed " +
+				"and the file that shows it, or why the repository does not support what they asked. " +
+				"No apology, no exclamation mark.",
+		}
+		submit.InputSchema.Required = []string{"amendments", "reply"}
+	}
+
 	// strict: true, so the API validates against the schema before Pando sees
 	// the call. additionalProperties and required are what make that possible.
 	submit.Strict = anthropic.Bool(true)
@@ -86,24 +100,102 @@ func tools() []anthropic.ToolUnionParam {
 	}
 }
 
+// itemSchema is what one submitted amendment may look like for fn.
+//
+// A repair gets the whole closed set. Answering questions gets a schema of its
+// own: one kind, and a key that must be one of the questions actually asked,
+// with every field required. Core refuses anything else from that call
+// regardless (R-336), but the answer schema used to be the general one, where
+// "key" is optional because most kinds have none — and a model answered the
+// build_strategy question correctly with no key at all, so the answer was
+// refused and the person was asked anyway.
+//
+// Answering also fills the values the deploy waits on (api.ScreenRequest.
+// Values): a second shape, set_env, whose key must be one of those. Each shape
+// is offered only when it has keys, so an empty enum never reaches the API.
+func itemSchema(fn api.AIFunction, questions []api.Question, values []string) map[string]any {
+	if fn != api.AIFunctionAnswerQuestions {
+		return amendmentSchema([]string{
+			"set_command", "set_env", "set_port", "set_health", "add_slot",
+			"set_build_context", "set_dockerfile", "set_static_dir",
+			"add_volume", "answer_question", "add_warning",
+		})
+	}
+
+	keys := make([]string, 0, len(questions))
+	for _, q := range questions {
+		keys = append(keys, q.Key)
+	}
+	var shapes []any
+	if len(keys) > 0 {
+		shapes = append(shapes, keyedItem(api.AmendAnswerQuestion, keys,
+			"The key of the question this answers, exactly as listed.",
+			"The answer, as a person would type it into the question's field: one of its valid answers when it lists them.",
+			"Why the repository answers the question this way"))
+	}
+	if len(values) > 0 {
+		shapes = append(shapes, keyedItem(api.AmendSetEnv, values,
+			"The variable this fills, exactly as listed.",
+			"The value, exactly as the app should read it. Never a secret, key, token or password you made up.",
+			"Why the repository, or the address the plan gives the app, settles this value"))
+	}
+	if len(shapes) == 1 {
+		return shapes[0].(map[string]any)
+	}
+	return map[string]any{"anyOf": shapes}
+}
+
+// keyedItem is one strict amendment shape: a fixed kind, a key from a list,
+// and every field required.
+func keyedItem(kind api.AmendmentKind, keys []string, keyHelp, valueHelp, reasonHelp string) map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"kind", "key", "value", "reason", "evidence"},
+		"properties": map[string]any{
+			"kind": map[string]any{
+				"type": "string",
+				"enum": []string{string(kind)},
+			},
+			"key": map[string]any{
+				"type":        "string",
+				"enum":        keys,
+				"description": keyHelp,
+			},
+			"value": map[string]any{
+				"type":        "string",
+				"description": valueHelp,
+			},
+			"reason": map[string]any{
+				"type": "string",
+				"description": reasonHelp + ", written so that someone who cannot see the repository " +
+					"understands it. One or two sentences.",
+			},
+			"evidence": map[string]any{
+				"type":     "array",
+				"items":    map[string]any{"type": "string"},
+				"minItems": 1,
+				"description": "The repository paths you read that settle this, such as " +
+					"\"docker-compose.yml\". Each is checked to exist; an empty path is not evidence.",
+			},
+		},
+	}
+}
+
 // amendmentSchema is the closed set, as JSON Schema.
 //
 // It mirrors api.Amendment, and the mirroring is the point: a kind that is not
 // in this enum cannot be asked for, which is R-332 arriving one layer earlier
 // than core's validation rather than instead of it.
-func amendmentSchema() map[string]any {
+func amendmentSchema(kinds []string) map[string]any {
 	return map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
 		"required":             []string{"kind", "reason", "evidence"},
 		"properties": map[string]any{
 			"kind": map[string]any{
-				"type": "string",
-				"enum": []string{
-					"set_command", "set_env", "set_port", "set_health", "add_slot",
-					"set_build_context", "set_dockerfile", "set_static_dir",
-					"add_volume", "answer_question", "add_warning",
-				},
+				"type":        "string",
+				"enum":        kinds,
 				"description": "Which change this is.",
 			},
 			"workload": map[string]any{

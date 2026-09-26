@@ -7,7 +7,10 @@ import (
 	"github.com/bemeek-io/pando/internal/core/spec"
 )
 
-// The AI category (R-258), and the screening function (R-330 … R-339).
+// The AI category (R-258), and the two functions it performs (R-330 … R-339):
+// repairing a plan detection could not make work, and answering the questions
+// detection could not answer. Nothing else calls a model (R-336). A detection
+// that produced a working plan and asked nothing is never sent anywhere.
 //
 // Design 10 is the whole argument; two things from it are worth repeating where
 // an implementer will see them.
@@ -30,14 +33,33 @@ import (
 type AIFunction string
 
 const (
-	// AIFunctionScreenPlan reviews a detection proposal against its source.
-	AIFunctionScreenPlan AIFunction = "screen_plan"
+	// AIFunctionRepairPlan reads a proposal that failed (a trial run that
+	// crashed, or a repository no detector could read) and proposes amendments
+	// that might make it work. R-106's "proposing repairs from a failed build
+	// log", applied to detection.
+	AIFunctionRepairPlan AIFunction = "repair_plan"
 
-	// The other two R-106 names. Declared so an adapter can advertise them and
-	// so the reason this is a list is visible; neither is built.
-	AIFunctionReadReadme  AIFunction = "read_readme"
-	AIFunctionRepairBuild AIFunction = "repair_build"
+	// AIFunctionAnswerQuestions answers detection's outstanding questions from
+	// the repository (R-338). Answers only: nothing else in the plan changes.
+	AIFunctionAnswerQuestions AIFunction = "answer_questions"
+
+	// AIFunctionRevisePlan changes a plan because a person reviewing it asked:
+	// "you missed the database", "it serves on 8080". It reads the repository
+	// again to check, and replies (R-336's third trigger).
+	AIFunctionRevisePlan AIFunction = "revise_plan"
+
+	// AIFunctionReadReadme is R-106's remaining name. Declared so the reason
+	// this is a list is visible; not built.
+	AIFunctionReadReadme AIFunction = "read_readme"
 )
+
+// Turn is one message in a conversation about a plan, from a person or from
+// the AI adapter.
+type Turn struct {
+	// From is "person" or "ai".
+	From string `json:"from"`
+	Text string `json:"text"`
+}
 
 // AICapabilities is what an AI adapter can do, as data.
 type AICapabilities struct {
@@ -73,14 +95,27 @@ type AIAdapter interface {
 	Adapter
 	Capabilities(ctx context.Context) (AICapabilities, error)
 
-	// ScreenPlan reviews a proposal against its source and returns amendments.
+	// RepairPlan reads a proposal that failed and returns amendments that might
+	// make it work. Any kind in the closed set may be proposed.
 	//
 	// It must honor ctx cancellation and the budget in req. Returning an error
-	// is legitimate and costs nothing but the screening.
-	ScreenPlan(ctx context.Context, req ScreenRequest) (ScreenResult, error)
+	// is legitimate and costs nothing but the repair: the failure is shown as
+	// it was (R-107).
+	RepairPlan(ctx context.Context, req ScreenRequest) (ScreenResult, error)
+
+	// AnswerQuestions answers what it can of req.Questions from the repository.
+	// Only AmendAnswerQuestion is accepted from it; core refuses anything else.
+	AnswerQuestions(ctx context.Context, req ScreenRequest) (ScreenResult, error)
+
+	// RevisePlan acts on req.Instruction, what a person reviewing the plan
+	// asked for, checking it against the repository. Any kind in the closed
+	// set may be proposed, and ScreenResult.Reply says what it did and why —
+	// including that the repository does not support what was asked.
+	RevisePlan(ctx context.Context, req ScreenRequest) (ScreenResult, error)
 }
 
-// ScreenRequest is a finished proposal, and the repository it came from.
+// ScreenRequest is a finished proposal, and the repository it came from. Both
+// functions take it; which one is called is the whole difference.
 type ScreenRequest struct {
 	// Source is read-only, structurally (R-020). Handing it over grants reading
 	// and nothing else — there is no write method to withhold.
@@ -110,6 +145,27 @@ type ScreenRequest struct {
 	// positioned to read it would be withholding it for no reason. What it may
 	// produce is bounded by the amendment set, not by keeping it secret.
 	Trial TrialSummary
+
+	// Instruction is what a person reviewing the plan asked for, for
+	// RevisePlan. Empty for the other functions.
+	Instruction string
+
+	// Conversation is what the person and the adapter said before
+	// Instruction, oldest first, so "no, the other one" means something.
+	Conversation []Turn
+
+	// Values are variables the deploy waits on that nobody has set (R-132),
+	// in any reading of the repository. An adapter may fill one with
+	// AmendSetEnv where the repository or the plan's own address settles it —
+	// the app's domain, a mailto: contact — and never with a secret it made up.
+	Values []string
+
+	// Known are files an adapter already read about this proposal, in an
+	// earlier call. Each call is a new conversation with the model, so it
+	// starts knowing nothing; an adapter may hand these over at the start
+	// rather than have the model find and read them again, one round trip at
+	// a time. They count against Budget like any other read.
+	Known []string
 
 	Budget ScreenBudget
 }
@@ -147,6 +203,11 @@ type ScreenResult struct {
 	FilesRead []string
 
 	Model string
+
+	// Reply is the adapter's answer to a person, for RevisePlan: what it
+	// changed and why, or why it changed nothing. Held to R-105 like any
+	// reason.
+	Reply string
 }
 
 // AmendmentKind is the closed set (R-332, design 10 §3).

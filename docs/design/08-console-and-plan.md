@@ -170,13 +170,105 @@ Most screens are ordinary CRUD. These four are where requirements are either hon
 Shows the winning bid with its evidence, the runners-up, and every outstanding question. **Each question has a copy button**, because the intended workflow is pasting it into the assistant that wrote the app. Question text is rendered verbatim from the API; the console does not paraphrase it, or the R-105 guarantee is lost in the UI layer.
 
 **[D] Onboarding a new app** — the detection review for an app with no configuration yet is its own
-page, not a one-tab app screen. It builds as detection runs: detection records each stage
-(fetching, detecting, trying, screening) with the proposal as far as it has got, and each section
-appears as soon as its data exists. Variables can be filled in before accepting — `values` on
-accept writes them into the accepted spec in one step. An AI screener's changes are shown inline
-where they apply, marked as suggested by AI, rather than as a separate section. Reject deletes the
-app; Accept and Accept and deploy finish it. It is the second orchestrated moment the design system
-allows motion for: the contour map draws in as detection advances.
+page, not a one-tab app screen (`AppOnboarding.tsx`, from the repo-discovery design handoff, issue
+#69). One page in three phases that morphs rather than cuts:
+
+1. **Discovering.** A terrain profile draws across the top as detection advances. The headline is
+   what Pando is doing ("Reading the code"), with a working line under it: a ripple, a phrase that
+   turns over every 1.5s, and elapsed seconds. A segmented bar, four tallies (processes, services,
+   variables, questions for you) and a step list, newest on top, each step with what it found.
+2. **Ready.** The headline becomes "Plan ready" at display size and the red summit mark lands on the
+   terrain. Held 2.4s, and only when the page watched detection finish.
+3. **Done.** The column widens from 45 to 55rem, the steps fold behind "How Pando got here", and the
+   review rises: notices, questions, variables, *Notes from AI* (only when an adapter ran and left
+   notes), the plan, and a sticky bar with **Reject plan**,
+   **Accept plan** and **Accept and deploy** (disabled while a question is unanswered). Opening an
+   app whose detection already finished lands here directly.
+
+**[D] Steps are real events, not a script.** The handoff's prototype ran on canned steps; the page
+derives them from the detection response (`discovery.ts`): *Read the repo* (source, branch, commit),
+*Work out how it's built* (strategy and evidence), *Find processes and services* and *Collect
+variables* (the draft's workloads, slots, mounts and env), then *Try running it* only if a trial ran,
+and an AI step only if an adapter was called (R-336) — *Review the failed plan* or *Answer what it
+can*. No per-step durations are shown, because detection does not record them.
+
+**[D] Paced, so a fast detection does not teleport.** A small repository is read in a second or two
+and the three auction steps finish on one server event, so the list, tallies and terrain used to jump
+to the end at once. While the page is watching, steps are revealed one at a time, each held as under
+way for 1.4–3.6s (longer the more it found) while its findings rise in, and "Plan ready" waits for
+the last. A step is never shown done before the server says it is, only later. Tallies fill in as
+the step that found them is shown. The terrain eases through the current step and never draws faster
+than about a fifth of its width per second, so a step completing moves the ridge on rather than
+snapping it.
+
+**[D] The security scan is a step of the plan** (R-310). Detection reports a `scanning` stage while
+the source scan runs, and the step shows the score, the counts by severity and the worst findings.
+Beside "Plan ready" sit the score badge (`ScoreBadge`, number first, color second — R-320) and a link
+to the findings, which open the overview's security panel in a dialog, because a draft app has no
+overview to send anybody to. An install with no scanner shows neither.
+
+**[D] Tallies count what a person thinks of as the app's parts:** *Services* is everything that runs
+(the app's own services and the ones Pando runs beside it — app, proxy and PostgreSQL are three),
+then *Variables*, *Storage*, and *Questions* — every question detection asked, with how many AI
+answered, because an answered question is still one Pando could not settle alone.
+
+**[D] Every slot-filled variable is a value somebody can set here.** A key named with no value in
+`.env.example` is a slot the deploy is refused without (R-132); a value typed for it during review is
+stored as the slot's secret at accept (`spec.FillSlotLiteral`), the same place `PUT /slots/{key}`
+writes, so the slot is filled rather than the variable overwritten and the slot left empty. A
+database's URL cannot be prefilled — its host and password are generated at the first deploy — so its
+row says Pando fills it then, and a value typed there points the app at a database the person already
+runs instead. *Accept and deploy* waits for required values; *Accept plan* does not.
+
+**[D] Ask AI about this plan.** When an AI adapter is available for the app, the review ends with a
+conversation: the person says what is wrong, AI checks the repository and changes what it can
+(design 10 §4.3), and each reply lists what changed and what Pando would not do. Without an adapter the
+section does not exist — not disabled, absent. Someone who may read but not change the plan sees the
+conversation and no box to type in.
+
+**[D] Compose rewrites are one notice**, "Pando adapted N settings from the compose file", opening to
+one line each — service, construct, the first sentence of why — with the importer's full paragraph on
+hover. Eight paragraphs of it was a wall nobody read.
+
+A value Pando fills (a created database's URL) shows *Filled in by Pando* and no field until the person
+chooses *Use your own*. A required value carries a *Required* tag, in marker red while it is empty,
+with *Not required?* beside it: detection marks slots required from a template or a crash and can be
+wrong, so the person may say the app runs without one, after a confirmation that a wrong call breaks
+the deploy (`optional` on accept, `spec.MarkSlotOptional`; an optional slot left empty leaves its
+variable unset at deploy). *Secret* is a default on every value, never a lock: a service's address or
+a key-like name starts secret, and a value left plain is stored as the slot's target where it can be
+read back (`spec.FillSlotValue`). Notices sit after the variables, just above AI's notes. The action bar is two columns so
+its buttons stay put as the status beside them changes length. The repository tag opens the repository
+in a new tab. The security dialog lists every finding and scrolls.
+
+No back button: the sidebar is the way back. *Reject plan* is a ghost button in `--marker-deep`, the
+destructive text color.
+
+**[D] The plan shows what runs, and only services as services.** The variables, tallies and plan all
+describe the spec accepting would pin — the reading the build-method answer picks — not the winner's
+draft. A workload with no command that builds from the Dockerfile the Dockerfile reading parsed shows
+that Dockerfile's CMD. A slot of type `unknown` (a key named with no value in `.env.example`) is a value
+to set after accepting, listed under Variables as *Needs a value*; only typed slots are services, shown
+by what they are, the image they run, and how Pando provides them.
+
+**[D] AI appears only where it did something.** An AI step is tinted `--status-info-tint` with a water
+border; questions it answered are grouped under *Check what AI filled in* with its reason and files,
+and changing one offers *Use suggestion* back (R-338 — AI answers are suggestions on the question,
+design 10 §4.2); anything else it changed carries the AI mark in the plan; what Pando refused of it is
+a notice with its reasons (R-334). A plain successful detection shows none of this. A failed trial
+run's output stays reachable from its notice whatever a repair did (R-107).
+
+**[D] Two brand exceptions, approved in the handoff and confined to this page:** the AI mark (Lucide
+`sparkle` in `--water` with a small solid four-point star at its lower right — the readme's
+avoid-list otherwise rules out sparkle icons) and the animated terrain strip, outside the contour
+system's usual placements. The console's `TopoBackground` still sits behind the page, so the strip
+has a solid `--paper` fill: one terrain in view, not two.
+
+**[P] Kept from the previous page though the handoff omits them:** the copy button on each question
+(R-105), the *Secret* checkbox on variables, adding a variable, and the reject confirmation dialog.
+Accepting leaves the page for the configured app screen, so the handoff's post-decision bar states
+and toasts are not built. It is the second orchestrated moment the design system allows motion for,
+and under `prefers-reduced-motion` every phase shows its final state.
 
 **Warnings** — R-201, R-168, R-028.
 Rendered inline where they apply, dismissible, never blocking. The persistence warning uses the observed directory when available: *"Your app wrote to `/app/data` during setup. That data won't survive a redeploy unless you add a volume here."* Warnings and blockers are visually distinct — a warning must never look like an error, or people learn to ignore both.

@@ -41,6 +41,10 @@ type ScanRequest struct {
 	AppID  string
 	SpecID string
 
+	// Commit is the source commit SourceDir holds, recorded with the scan so
+	// a deploy of the same commit uses it rather than scanning again.
+	Commit string
+
 	// Image is what the build produced, in the local runtime. Empty for an app
 	// that has never been built.
 	Image string
