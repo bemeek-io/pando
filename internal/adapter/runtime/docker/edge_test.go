@@ -66,6 +66,15 @@ func edgeDaemon(t *testing.T) (*fakeDaemon, *Adapter, *createRequest, *map[strin
 		},
 	}))
 	f.on("GET /containers/json", respond(http.StatusOK, []any{}))
+	f.on("POST /volumes/create", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Name   string
+			Labels map[string]string
+		}
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		require.Equal(t, "rte_traefik", req.Labels[labelEdge], "labeled, so the backup can find it")
+		writeJSON(w, http.StatusCreated, map[string]string{"Name": req.Name})
+	})
 	f.on("GET /images/*", respond(http.StatusOK, map[string]any{"Id": "sha256:abc"}))
 	f.on("POST /containers/create", func(w http.ResponseWriter, r *http.Request) {
 		require.NoError(t, json.NewDecoder(r.Body).Decode(got))

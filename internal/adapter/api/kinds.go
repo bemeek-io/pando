@@ -25,9 +25,25 @@ type Field struct {
 	Label string `json:"label"`
 	Help  string `json:"help,omitempty"`
 
-	// Type is "string", "int" or "bool": how a form should ask for it and how
-	// the value goes into the configuration's JSON.
+	// Type is "string", "int", "bool" or "select": how a form should ask for
+	// it and how the value goes into the configuration's JSON. A select's value
+	// is a string.
 	Type string `json:"type"`
+
+	// Options are what a "select" offers.
+	Options []Option `json:"options,omitempty"`
+
+	// Other lets a "select" take a value not among Options, typed in — a DNS
+	// provider Pando does not name, say.
+	Other bool `json:"other,omitempty"`
+
+	// Multiline asks for a text area: a credential given as KEY=value lines.
+	Multiline bool `json:"multiline,omitempty"`
+
+	// ShownWhen hides the setting unless another setting has one of the
+	// given values — DNS provider fields only when certificates use DNS. A
+	// form that ignores it still works; it only shows more than it needs to.
+	ShownWhen *Condition `json:"shown_when,omitempty"`
 
 	Required bool `json:"required,omitempty"`
 
@@ -43,4 +59,16 @@ type Field struct {
 
 	// Placeholder is an example value, for a setting with no default.
 	Placeholder string `json:"placeholder,omitempty"`
+}
+
+// Option is one choice a "select" offers.
+type Option struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// Condition is a setting's value a form checks before showing another.
+type Condition struct {
+	Key    string   `json:"key"`
+	Values []string `json:"values"`
 }

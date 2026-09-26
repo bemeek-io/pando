@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/go-connections/nat"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
@@ -226,6 +227,22 @@ func (a *Adapter) Edges(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
+// EdgeVolumes is every volume an edge owns, for the full-host backup.
+func (a *Adapter) EdgeVolumes(ctx context.Context) ([]api.VolumeHandle, error) {
+	list, err := a.cli.VolumeList(ctx, volume.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("label", labelEdge)),
+	})
+	if err != nil {
+		return nil, errs.Wrap(errs.AdapterUnavailable, "Could not list the edge's storage.", err)
+	}
+	out := make([]api.VolumeHandle, 0, len(list.Volumes))
+	for _, v := range list.Volumes {
+		out = append(out, api.VolumeHandle{Handle: v.Name})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Handle < out[j].Handle })
+	return out, nil
+}
+
 func (a *Adapter) findEdge(ctx context.Context, name string) (*containerSummary, error) {
 	list, err := a.cli.ContainerList(ctx, container.ListOptions{
 		All:     true,
@@ -308,6 +325,15 @@ func (a *Adapter) edgeBinds(ctx context.Context, p api.EdgePlan) ([]string, erro
 		switch {
 		case m.Volume != "":
 			source = edgeVolumeName(p.Name, m.Volume)
+			// Created explicitly, with labels, rather than left to Docker to
+			// make on first mount: the label is how EdgeVolumes finds it for
+			// the full-host backup (R-212). Idempotent.
+			if _, err := a.cli.VolumeCreate(ctx, volume.CreateOptions{
+				Name:   source,
+				Labels: map[string]string{labelEdge: p.Name, labelManaged: "true"},
+			}); err != nil {
+				return nil, errs.Wrap(errs.AdapterFailed, fmt.Sprintf("Could not create storage for the %s edge.", p.Name), err)
+			}
 		case m.SharedWithPando != "":
 			if !selfLoaded {
 				self = a.inspectSelf(ctx)

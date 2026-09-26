@@ -156,12 +156,19 @@ func TestR162_CapabilitiesAreHonestAboutTLS(t *testing.T) {
 	require.Equal(t, spec.RoutingSubdomain, caps.DefaultMode)
 	require.True(t, caps.RequiresPublicReachability)
 
-	withACME, _ := adapter(t, `{"dir":"DIR","cert_resolver":"letsencrypt"}`)
+	// Somebody else's Traefik, with a resolver it says it has.
+	withACME, _ := adapter(t, `{"dir":"DIR","managed":false,"cert_resolver":"letsencrypt"}`)
 	caps, err = withACME.Capabilities(context.Background())
 	require.NoError(t, err)
 	require.True(t, caps.SupportsTLS)
 	require.False(t, caps.SupportsWildcardTLS,
-		"a wildcard needs DNS-01 and provider credentials this adapter does not hold")
+		"a wildcard needs DNS-01 credentials, which Pando cannot see another Traefik holding")
+
+	// A resolver name means nothing to the Traefik Pando runs: it has its own.
+	ignored, _ := adapter(t, `{"dir":"DIR","cert_resolver":"letsencrypt"}`)
+	caps, err = ignored.Capabilities(context.Background())
+	require.NoError(t, err)
+	require.False(t, caps.SupportsTLS)
 }
 
 // TestPortModeIsRefusedRatherThanIgnored — a port-mode app reaches Pando's proxy

@@ -310,3 +310,6 @@ func (stubRuntime) ObserveEdge(context.Context, string) (api.EdgeState, error) {
 }
 func (stubRuntime) RemoveEdge(context.Context, string) error { return nil }
 func (stubRuntime) Edges(context.Context) ([]string, error)  { return nil, nil }
+func (stubRuntime) EdgeVolumes(context.Context) ([]api.VolumeHandle, error) {
+	return nil, nil
+}

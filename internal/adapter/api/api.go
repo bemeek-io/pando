@@ -220,6 +220,11 @@ type RuntimeAdapter interface {
 	// Edges names every edge that exists, so one no routing adapter asks for
 	// any more can be removed.
 	Edges(ctx context.Context) ([]string, error)
+
+	// EdgeVolumes is the storage edges own — a certificate store — for the
+	// full-host backup (R-212). Each handle works with SnapshotVolume and
+	// RestoreVolume, and restoring into one that does not exist yet creates it.
+	EdgeVolumes(ctx context.Context) ([]VolumeHandle, error)
 }
 
 // TrialRequest asks a runtime to start something once and watch it.

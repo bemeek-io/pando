@@ -29,36 +29,89 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/bemeek-io/pando/internal/secret"
 )
 
 // Kind is the adapter's kind string.
 const Kind = "traefik"
 
-// Adapter writes Traefik file-provider configuration.
+// Adapter writes Traefik file-provider configuration, and by default describes
+// the Traefik Pando runs to read it (R-174, managed.go).
 type Adapter struct {
 	config Config
+
+	// dnsEnv is the DNS provider's credentials, as the environment Traefik
+	// reads them from. Held as secret.Value so it cannot reach a log (R-194).
+	dnsEnv map[string]secret.Value
 }
 
 // Config is the adapter's configuration.
 type Config struct {
+	// Managed means Pando runs Traefik itself (R-174): the default. False is
+	// a Traefik somebody else runs, which Pando only writes route files for —
+	// an install that already has Traefik on :80 and :443 for other things.
+	// A pointer so an unset value is the default rather than false.
+	Managed *bool `json:"managed,omitempty"`
+
 	// Dir is the directory Traefik's file provider watches. Pando writes one
 	// file per app here and Traefik picks them up; there is no API call and no
-	// reload signal, which is why this adapter has no credentials.
+	// reload signal.
 	Dir string `json:"dir"`
-
-	// EntryPoint is the Traefik entrypoint routers attach to.
-	EntryPoint string `json:"entrypoint,omitempty"`
-
-	// CertResolver is Traefik's ACME resolver name, if the edge has one
-	// configured. Empty means Pando asks for no certificate and Traefik serves
-	// whatever it already has — which is the honest behavior when issuance is
-	// the edge's business (O-5).
-	CertResolver string `json:"cert_resolver,omitempty"`
 
 	// BaseDomain is what a subdomain app's hostname is carved out of, when the
 	// route request does not carry one.
 	BaseDomain string `json:"base_domain,omitempty"`
+
+	// For a Traefik somebody else runs: the entrypoint routers attach to and
+	// the ACME resolver it has configured. Empty CertResolver means Pando asks
+	// for no certificate and Traefik serves whatever it already has — the
+	// honest behavior when issuance is the edge's business (O-5). A Traefik
+	// Pando runs has its own entrypoints and resolver, and ignores both.
+	EntryPoint   string `json:"entrypoint,omitempty"`
+	CertResolver string `json:"cert_resolver,omitempty"`
+
+	// For the Traefik Pando runs.
+
+	// Image is the Traefik image. Pinned by Pando's release; set to override.
+	Image string `json:"image,omitempty"`
+
+	// HTTPPort and HTTPSPort are the host ports Traefik takes.
+	HTTPPort  int `json:"http_port,omitempty"`
+	HTTPSPort int `json:"https_port,omitempty"`
+
+	// ConsoleHostname is the hostname the console is served on over HTTPS.
+	// Every hostname that is not an app's reaches the console anyway; this is
+	// the one a certificate is asked for on its behalf.
+	ConsoleHostname string `json:"console_hostname,omitempty"`
+
+	// Certificates is how Traefik gets them (R-169): "http" (HTTP-01, per
+	// hostname), "dns" (DNS-01, a wildcard for the base domain), or "none".
+	// Neither challenge is a silent default: none serves plain HTTP on :80,
+	// and the adapter says so.
+	Certificates string `json:"certificates,omitempty"`
+
+	// ACMEEmail is the address Let's Encrypt registers the account to.
+	ACMEEmail string `json:"acme_email,omitempty"`
+
+	// DNSProvider is the DNS-01 provider's code, as Traefik names it.
+	DNSProvider string `json:"dns_provider,omitempty"`
+
+	// Credentials arrive from encrypted storage (R-190), never from config.
+	Credentials struct {
+		// DNS is the provider's credentials as KEY=value lines, one per line.
+		DNS string `json:"dns_credentials,omitempty"`
+	} `json:"credentials,omitempty"`
 }
+
+// Certificate modes.
+const (
+	CertsNone = "none"
+	CertsHTTP = "http"
+	CertsDNS  = "dns"
+)
+
+// DefaultImage is the Traefik this release of Pando runs.
+const DefaultImage = "traefik:v3.2"
 
 func New() *Adapter { return &Adapter{} }
 
@@ -76,9 +129,22 @@ func (a *Adapter) Configure(_ context.Context, raw json.RawMessage) error {
 		return errs.New(errs.ValidInvalid, "Traefik routing needs a directory to write its configuration to.").
 			WithRemedy("Set dir to the directory Traefik's file provider watches.")
 	}
+
+	dnsEnv, err := validateManaged(&cfg)
+	if err != nil {
+		return err
+	}
+	// Not kept in the config once parsed: the plain text lives only as long
+	// as this call.
+	cfg.Credentials.DNS = ""
+
 	a.config = cfg
+	a.dnsEnv = dnsEnv
 	return nil
 }
+
+// managed reports whether Pando runs this Traefik.
+func (a *Adapter) managed() bool { return a.config.Managed == nil || *a.config.Managed }
 
 // HealthCheck verifies the configuration directory is writable.
 //
@@ -106,13 +172,19 @@ func (a *Adapter) HealthCheck(context.Context) error {
 	return os.Remove(probe)
 }
 
-// Capabilities: subdomain and path, with TLS when a resolver is configured.
+// Capabilities: subdomain and path, with TLS when certificates are configured.
 //
-// SupportsWildcardTLS follows CertResolver because a wildcard needs a DNS-01
-// challenge, which needs provider credentials this adapter does not hold. Saying
-// yes without them would produce a plan that succeeds and an app nobody can
-// reach over HTTPS.
+// SupportsWildcardTLS is true only for a Traefik Pando runs with DNS-01: a
+// wildcard needs a DNS provider's credentials, and a Traefik somebody else runs
+// may or may not have them — this adapter cannot see. Saying yes without them
+// would produce a plan that succeeds and an app nobody can reach over HTTPS.
 func (a *Adapter) Capabilities(context.Context) (api.RoutingCapabilities, error) {
+	tls := a.config.CertResolver != ""
+	wildcard := false
+	if a.managed() {
+		tls = a.config.Certificates == CertsHTTP || a.config.Certificates == CertsDNS
+		wildcard = a.config.Certificates == CertsDNS
+	}
 	return api.RoutingCapabilities{
 		Modes: []api.RoutingMode{spec.RoutingSubdomain, spec.RoutingPath},
 
@@ -122,8 +194,8 @@ func (a *Adapter) Capabilities(context.Context) (api.RoutingCapabilities, error)
 		// default is gated by app.routing.override.
 		DefaultMode: spec.RoutingSubdomain,
 
-		SupportsTLS:         a.config.CertResolver != "",
-		SupportsWildcardTLS: false,
+		SupportsTLS:         tls,
+		SupportsWildcardTLS: wildcard,
 
 		// Traefik is an inbound edge: something has to reach it.
 		RequiresPublicReachability: true,
@@ -258,12 +330,19 @@ func (a *Adapter) render(r api.RouteRequest, rule string) string {
 	fmt.Fprintf(&b, "    %s:\n", name)
 	fmt.Fprintf(&b, "      rule: %q\n", rule)
 	fmt.Fprintf(&b, "      service: %s\n", name)
-	if a.config.EntryPoint != "" {
-		fmt.Fprintf(&b, "      entryPoints:\n        - %s\n", a.config.EntryPoint)
+	if ep := a.entryPoint(); ep != "" {
+		fmt.Fprintf(&b, "      entryPoints:\n        - %s\n", ep)
 	}
-	if r.TLS.Enabled && a.config.CertResolver != "" {
+	if resolver := a.resolver(); r.TLS.Enabled && resolver != "" {
 		b.WriteString("      tls:\n")
-		fmt.Fprintf(&b, "        certResolver: %s\n", a.config.CertResolver)
+		fmt.Fprintf(&b, "        certResolver: %s\n", resolver)
+		// One wildcard for every app under the base domain, issued before the
+		// first app exists, rather than one certificate per app (R-166).
+		if main, ok := a.wildcardFor(r.Hostname); ok {
+			b.WriteString("        domains:\n")
+			fmt.Fprintf(&b, "          - main: %q\n", main)
+			fmt.Fprintf(&b, "            sans:\n              - %q\n", "*."+main)
+		}
 	}
 	b.WriteString("  services:\n")
 	fmt.Fprintf(&b, "    %s:\n", name)
@@ -320,18 +399,32 @@ func Info() api.KindInfo {
 		Category:    api.CategoryRouting,
 		Kind:        Kind,
 		Name:        "Traefik",
-		Description: "Gives apps their own hostnames through a Traefik edge Pando runs, with certificates.",
+		Description: "Gives apps their own hostnames through a Traefik Pando runs on ports 80 and 443, with certificates.",
 		IDPrefix:    "rte_",
 		Fields: []api.Field{
-			{Key: "dir", Label: "Configuration directory", Type: "string", Help: "Where Pando writes Traefik’s dynamic configuration.", Default: "/etc/traefik/dynamic"},
-			{Key: "base_domain", Label: "Base domain", Type: "string", Help: "Apps are served at <app>.<base domain>.", Placeholder: "apps.example.com"},
-			{Key: "entrypoint", Label: "Entry point", Type: "string", Help: "The Traefik entry point apps are served on.", Default: "websecure"},
-			{Key: "cert_resolver", Label: "Certificate resolver", Type: "string", Help: "The Traefik certificate resolver to use.", Placeholder: "letsencrypt"},
+			{Key: "base_domain", Label: "Base domain", Type: "string", Help: "Apps are served at <app>.<base domain>. Point this domain and *.<base domain> at this machine.", Placeholder: "apps.example.com"},
+			{Key: "console_hostname", Label: "Console hostname", Type: "string", Help: "Where the console is served over HTTPS. Any hostname pointed at this machine that is not an app's shows the console; this is the one a certificate is issued for.", Placeholder: "pando.example.com"},
+			{Key: "certificates", Label: "Certificates", Type: "select", Default: CertsNone,
+				Help: "HTTP: one certificate per hostname, needing port 80 reachable from the internet. DNS: one wildcard for the base domain, needing your DNS provider's credentials. None: plain HTTP on port 80.",
+				Options: []api.Option{
+					{Value: CertsHTTP, Label: "HTTP (per hostname)"},
+					{Value: CertsDNS, Label: "DNS (wildcard)"},
+					{Value: CertsNone, Label: "None"},
+				}},
+			{Key: "acme_email", Label: "Certificate email", Type: "string", Help: "The address Let's Encrypt registers the certificates to.", Placeholder: "ops@example.com",
+				ShownWhen: &api.Condition{Key: "certificates", Values: []string{CertsHTTP, CertsDNS}}},
+			{Key: "dns_provider", Label: "DNS provider", Type: "select", Other: true, Options: providerOptions(),
+				Help: "Who hosts the base domain's DNS. Choose Other for any provider Traefik supports, and enter its code, such as gcloud or ovh.",
+				ShownWhen: &api.Condition{Key: "certificates", Values: []string{CertsDNS}}},
+			{Key: "dns_credentials", Label: "DNS provider credentials", Type: "string", Credential: true, Multiline: true, Help: credentialsHelp(),
+				ShownWhen: &api.Condition{Key: "certificates", Values: []string{CertsDNS}}},
+			{Key: "managed", Label: "Pando runs Traefik", Type: "bool", Default: "true", Help: "Off if this machine already runs a Traefik that should serve Pando's apps. Pando then only writes route files into the directory that Traefik watches."},
+			{Key: "http_port", Label: "HTTP port", Type: "int", Default: "80", ShownWhen: &api.Condition{Key: "managed", Values: []string{"true"}}},
+			{Key: "https_port", Label: "HTTPS port", Type: "int", Default: "443", ShownWhen: &api.Condition{Key: "managed", Values: []string{"true"}}},
+			{Key: "image", Label: "Traefik image", Type: "string", Default: DefaultImage, Help: "Set to run a different Traefik release than this Pando ships with.", ShownWhen: &api.Condition{Key: "managed", Values: []string{"true"}}},
+			{Key: "dir", Label: "Configuration directory", Type: "string", Help: "Where Pando writes Traefik's route files.", Default: "/etc/traefik/dynamic"},
+			{Key: "entrypoint", Label: "Entry point", Type: "string", Help: "The entry point of your Traefik that apps are served on.", Default: "websecure", ShownWhen: &api.Condition{Key: "managed", Values: []string{"false"}}},
+			{Key: "cert_resolver", Label: "Certificate resolver", Type: "string", Help: "The certificate resolver your Traefik has configured.", Placeholder: "letsencrypt", ShownWhen: &api.Condition{Key: "managed", Values: []string{"false"}}},
 		},
 	}
-}
-
-// Edge: replaced by the managed edge in this change.
-func (a *Adapter) Edge(context.Context, api.EdgeRequest) (api.EdgePlan, bool, error) {
-	return api.EdgePlan{}, false, nil
 }

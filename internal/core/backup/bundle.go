@@ -74,6 +74,12 @@ const (
 	// for the adapter that provisions somewhere Pando can only reach over the
 	// wire, where Snapshot is the only way the data gets into the bundle.
 	ServicesPrefix = "services/"
+
+	// EdgesPrefix holds the storage of what Pando runs in front of itself —
+	// Traefik's certificate store (R-174, design 03 §4.4). Restoring it means
+	// a rebuilt host does not ask Let's Encrypt for every certificate again
+	// at once and meet its rate limits. Named by the runtime's own handle.
+	EdgesPrefix = "edges/"
 )
 
 // Writer assembles a bundle.
