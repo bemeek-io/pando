@@ -55,12 +55,19 @@ import {
   askedQuestions,
   currentStep,
   discoverySteps,
+  dwellFor,
+  finishedCount,
   groupOf,
+  isService,
   listNames,
+  paced,
   planSpec,
   progress,
   questionName,
+  serviceImage,
+  serviceProvision,
   slotLabel,
+  startCommand,
   stillNeeded,
   stops,
   strategyLabel,
@@ -197,42 +204,66 @@ export function AppOnboarding({
 
   // --- Phase ---------------------------------------------------------------
   // "Ready" is held only when this page watched detection finish. Opening an
-  // app that finished earlier goes straight to the review.
-  const [holding, setHolding] = useState(false);
-  const wasRunning = useRef(false);
+  // app that finished earlier goes straight to the review, and so does one
+  // under reduced motion.
+  const [watching, setWatching] = useState(false);
   useEffect(() => {
-    if (!data) return;
-    if (running) {
-      wasRunning.current = true;
-      return;
-    }
-    if (wasRunning.current) {
-      wasRunning.current = false;
-      if (reduced || failed || blocked) return;
-      setHolding(true);
-      const timer = window.setTimeout(() => setHolding(false), READY_HOLD_MS);
-      return () => window.clearTimeout(timer);
-    }
-  }, [data, running, failed, blocked, reduced]);
-  const phase: Phase = !data || running ? 'discovering' : holding ? 'ready' : 'done';
+    if (data && running && !reduced) setWatching(true);
+  }, [data, running, reduced]);
 
   // --- Steps -----------------------------------------------------------------
-  const steps = useMemo(
+  const real = useMemo(
     () =>
       proposal
         ? discoverySteps({ status, stage: proposal.stage, proposal, source: app.source, commit: data?.commit })
         : [],
     [proposal, status, app.source, data?.commit],
   );
+
+  // Paced while watching: one step at a time, each held long enough to read
+  // even when the server finished it in a blink (discovery.ts paced). Never
+  // ahead of the server — only a step it has finished is revealed.
+  const [revealed, setRevealed] = useState(0);
+  const finished = finishedCount(real);
+  const pacing = watching && revealed < real.length;
+  const steps = watching ? paced(real, Math.min(revealed, finished)) : real;
   const current = currentStep(steps);
 
-  // When the current step was first seen, for easing the terrain forward.
+  // When the shown step became the current one, for its dwell and for easing
+  // the terrain forward.
   const since = useRef<{ id: string; at: number }>({ id: '', at: Date.now() });
   if (current && since.current.id !== current.id) since.current = { id: current.id, at: Date.now() };
-  const fraction = useCallback(
-    () => (running ? progress(steps, Date.now() - since.current.at) : failed ? progress(steps, 0) : 1),
-    [running, failed, steps],
-  );
+
+  useEffect(() => {
+    if (!watching || revealed >= finished) return;
+    const step = real[revealed];
+    if (!step) return;
+    const wait = Math.max(0, dwellFor(step) - (Date.now() - since.current.at));
+    const timer = window.setTimeout(() => setRevealed((n) => n + 1), wait);
+    return () => window.clearTimeout(timer);
+  }, [watching, revealed, finished, real]);
+
+  // "Plan ready" is held once the last step has been shown, then the review.
+  const discovering = !data || running || pacing;
+  const [holding, setHolding] = useState(false);
+  const held = useRef(false);
+  useEffect(() => {
+    if (!watching || discovering || held.current || failed || blocked) return;
+    held.current = true;
+    setHolding(true);
+    const timer = window.setTimeout(() => setHolding(false), READY_HOLD_MS);
+    return () => window.clearTimeout(timer);
+  }, [watching, discovering, failed, blocked]);
+  const phase: Phase = discovering ? 'discovering' : holding ? 'ready' : 'done';
+
+  const fraction = useCallback(() => {
+    if (!discovering) return failed ? progress(steps, 0) : 1;
+    // A step the server already finished eases across its dwell; one still
+    // running eases by how long that stage usually takes.
+    const paceStep = current && real.find((s) => s.id === current.id);
+    const expected = paceStep?.state === 'done' ? dwellFor(paceStep) / 2 : undefined;
+    return progress(steps, Date.now() - since.current.at, expected);
+  }, [discovering, failed, steps, current, real]);
 
   const edit = (row: VariableRow, patch: RowEdit & { key?: string }) => {
     if (row.original === undefined) {
@@ -243,11 +274,21 @@ export function AppOnboarding({
   };
 
   const spec = proposal?.draft_spec as AppSpec | undefined;
-  const detected = variableRows(spec).map((row) => (canSecrets ? row : { ...row, secret: false }));
-  const rows = mergeRows(detected, edits, added);
-  const problems = rowProblems(rows);
   const asked = proposal ? askedQuestions(proposal) : [];
   const missing = stillNeeded(asked, saved, drafts);
+
+  // The spec accepting would pin: the reading the build-method answer picks.
+  // Variables, tallies and the plan all describe this one. The variables form
+  // was built from the winner's draft while the plan showed the adopted
+  // reading, so a value typed for the winner's workload was sent with a name
+  // the accepted spec did not have, and dropped.
+  const effective: Record<string, string> = {};
+  for (const q of asked) effective[q.key] = answerFor(q, saved, drafts[q.key]);
+  const plan = (proposal && planSpec(proposal, effective)) ?? spec;
+
+  const detected = variableRows(plan).map((row) => (canSecrets ? row : { ...row, secret: false }));
+  const rows = mergeRows(detected, edits, added);
+  const problems = rowProblems(rows);
 
   // Answers typed and not yet saved go with the accept, so nobody has to know
   // that a text answer saves when the field loses focus.
@@ -369,9 +410,7 @@ export function AppOnboarding({
         ? (current?.active ?? 'Reading the repo')
         : 'Plan ready';
 
-  const effective: Record<string, string> = {};
-  for (const q of asked) effective[q.key] = answerFor(q, saved, drafts[q.key]);
-  const plan = planSpec(proposal, effective) ?? spec;
+  const shownDone = (id: string) => steps.some((s) => s.id === id && s.state === 'done');
 
   return (
     <div>
@@ -380,8 +419,8 @@ export function AppOnboarding({
         fraction={fraction}
         aiFrom={aiFrom(steps)}
         stops={stops(steps)}
-        summit={!running && !failed && !blocked}
-        moving={running}
+        summit={!discovering && !failed && !blocked}
+        moving={discovering}
       />
 
       <div className="pando-onboard-column" data-phase={done ? 'done' : 'working'}>
@@ -389,13 +428,13 @@ export function AppOnboarding({
           {back}
           <SourceTags source={app.source} commit={data.commit || proposal.commit} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            {running && current?.ai && <AiStar size={18} />}
-            <h2 className="pando-onboard-headline" data-big={!running && !failed && !blocked}>
+            {discovering && current?.ai && <AiStar size={18} />}
+            <h2 className="pando-onboard-headline" data-big={!discovering && !failed && !blocked}>
               {headline}
             </h2>
           </div>
-          {running && <WorkingLine step={current} startedAt={data.started_at} reduced={reduced} />}
-          {!running && !failed && !blocked && (
+          {discovering && <WorkingLine step={current} startedAt={data.started_at} reduced={reduced} />}
+          {!discovering && !failed && !blocked && (
             <p
               className="pando-onboard-enter"
               style={{ margin: 0, font: 'var(--type-body)', color: 'var(--ink-secondary)', maxWidth: '60ch' }}
@@ -407,7 +446,15 @@ export function AppOnboarding({
 
         <Segments steps={steps} hidden={done} failedFixed={Boolean(outcome?.ran && outcome.function === 'repair_plan')} />
 
-        <Tallies spec={spec} running={running} steps={steps} open={missing.length} reached={Boolean(spec)} />
+        <Tallies
+          spec={done ? plan : spec}
+          discovering={discovering}
+          steps={steps}
+          open={missing.length}
+          runs={shownDone('runs')}
+          vars={shownDone('vars')}
+          questions={!discovering}
+        />
 
         <section style={{ display: 'flex', flexDirection: 'column' }}>
           {done ? (
@@ -478,10 +525,10 @@ export function AppOnboarding({
               );
             })}
 
-            {spec && (
+            {plan && (
               <Variables
                 rows={rows}
-                spec={spec}
+                spec={plan}
                 problems={problems}
                 marks={marks}
                 canEdit={canEdit}
@@ -500,7 +547,16 @@ export function AppOnboarding({
 
             {outcome?.ran && <AiNotes notes={outcome.notes ?? []} />}
 
-            {plan && <ThePlan spec={plan} marks={marks} answers={effective} source={app.source} commit={data.commit} />}
+            {plan && (
+              <ThePlan
+                proposal={proposal}
+                spec={plan}
+                marks={marks}
+                answers={effective}
+                source={app.source}
+                commit={data.commit}
+              />
+            )}
           </div>
         )}
       </div>
@@ -694,31 +750,41 @@ function Segments({ steps, hidden, failedFixed }: { steps: DiscoveryStep[]; hidd
   );
 }
 
+/**
+ * Four counts between rules. Each fills in when the step that found it is
+ * shown, so they climb with the list rather than arriving before it.
+ */
 function Tallies({
   spec,
-  running,
+  discovering,
   steps,
   open,
-  reached,
+  runs,
+  vars,
+  questions,
 }: {
   spec: AppSpec | undefined;
-  running: boolean;
+  discovering: boolean;
   steps: DiscoveryStep[];
   open: number;
-  reached: boolean;
+  runs: boolean;
+  vars: boolean;
+  questions: boolean;
 }) {
-  const workloads = reached ? (spec?.workloads ?? []).length : 0;
-  const services = reached ? (spec?.slots ?? []).length : 0;
-  const variables = reached
+  const workloads = runs ? (spec?.workloads ?? []).length : 0;
+  const services = runs ? (spec?.slots ?? []).filter(isService).length : 0;
+  const variables = vars
     ? new Set((spec?.workloads ?? []).flatMap((w) => (w.env ?? []).map((e) => e.key))).size
     : 0;
   const trial = steps.find((s) => s.id === 'trial');
-  const broken = running && trial?.failed;
+  const broken = discovering && trial?.state === 'done' && trial.failed;
   const tallies: Array<{ label: string; value: number; hot?: boolean }> = [
     { label: workloads === 1 ? 'Process' : 'Processes', value: workloads },
     { label: services === 1 ? 'Service' : 'Services', value: services },
     { label: variables === 1 ? 'Variable' : 'Variables', value: variables },
-    broken ? { label: 'Run failed', value: 1, hot: true } : { label: 'Questions for you', value: open },
+    broken
+      ? { label: 'Run failed', value: 1, hot: true }
+      : { label: 'Questions for you', value: questions ? open : 0 },
   ];
   return (
     <div
@@ -1241,12 +1307,27 @@ function Variables({
         <Card tone="paper" padding="none">
           {filled.map((f, i) => {
             const slot = slots.find((s) => s.key === f.slot);
+            const service = slot && isService(slot);
             return (
-              <VariableLine key={`slot-${f.workload}-${f.key}`} first={i === 0} name={f.key} workload={many ? f.workload : undefined}
-                source={<span>From {slot ? slotLabel(slot.type) : 'a service'}</span>}
+              <VariableLine
+                key={`slot-${f.workload}-${f.key}`}
+                first={i === 0}
+                name={f.key}
+                workload={many ? f.workload : undefined}
+                source={
+                  service ? (
+                    <span>{`From ${slotLabel(slot.type)}`}</span>
+                  ) : (
+                    <span style={{ color: 'var(--ink)' }}>{slot?.required ? 'Needs a value' : 'Optional'}</span>
+                  )
+                }
               >
                 <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
-                  {slot ? fills(slot) : 'Pando fills this when it sets up the service.'}
+                  {service
+                    ? fills(slot)
+                    : slot?.required
+                      ? 'You set this after accepting, under Settings. The app can’t deploy until it has a value.'
+                      : 'You can set this after accepting, under Settings.'}
                 </span>
               </VariableLine>
             );
@@ -1428,12 +1509,14 @@ function AiNotes({ notes }: { notes: string[] }) {
 
 /** How the app will be built and run, and what runs beside it. */
 function ThePlan({
+  proposal,
   spec,
   marks,
   answers,
   source,
   commit,
 }: {
+  proposal: DetectionResponse['detection'];
   spec: AppSpec;
   marks: Suggestions;
   answers: Record<string, string>;
@@ -1443,7 +1526,11 @@ function ThePlan({
   const workloads = spec.workloads ?? [];
   const primaryName = primaryWorkload(spec);
   const primary = workloads.find((w) => w.name === primaryName) ?? workloads[0];
-  const command = answers.start_command || (primary?.command ?? []).join(' ');
+  const start = answers.start_command
+    ? { value: answers.start_command }
+    : primary
+      ? startCommand(proposal, spec, primary)
+      : undefined;
   const port = answers.primary_port || (primary?.ports ?? [])[0]?.number?.toString();
   const build = spec.build;
   const health = spec.health;
@@ -1455,12 +1542,14 @@ function ThePlan({
   if (build?.dockerfile) buildRows.push({ k: 'Built from', v: build.dockerfile, ai: marks.build.dockerfile });
   if (build?.context && build.context !== '.') buildRows.push({ k: 'Build context', v: build.context, ai: marks.build.context });
   if (build?.static_dir) buildRows.push({ k: 'Serves', v: build.static_dir, ai: marks.build.static_dir });
-  buildRows.push({
-    k: 'Start',
-    v: command || 'The image’s own command',
-    text: !command,
-    ai: primary ? marks.command[primary.name] : undefined,
-  });
+  if (start) {
+    buildRows.push({
+      k: workloads.length > 1 ? `Start ${primary!.name}` : 'Start',
+      v: start.value,
+      text: start.text,
+      ai: primary ? marks.command[primary.name] : undefined,
+    });
+  }
   if (port) buildRows.push({ k: 'Port', v: port, ai: primary ? marks.port[primary.name] : undefined });
   if (health?.source === 'http' && health.path) {
     buildRows.push({ k: 'Health check', v: `GET ${health.path} on :${health.port}`, ai: marks.health });
@@ -1473,7 +1562,9 @@ function ThePlan({
     });
   }
 
-  const slots = (spec.slots ?? []) as Slot[];
+  // Services only. A slot of type `unknown` is a value somebody sets, and is
+  // listed with the variables (discovery.ts isService).
+  const services = (spec.slots ?? []).filter(isService);
   const mounts = workloads.flatMap((w) => (w.mounts ?? []).map((m) => ({ workload: w.name, path: m.path })));
 
   return (
@@ -1508,25 +1599,32 @@ function ThePlan({
           <span style={{ font: 'var(--type-label)', color: 'var(--ink-secondary)', paddingBottom: 'var(--space-2)' }}>
             Processes and services
           </span>
-          {workloads.map((w) => (
-            <ProcessRow
-              key={w.name}
-              name={w.name}
-              detail={(w.command ?? []).join(' ') || 'image command'}
-              status="running"
-              state={workloads.length > 1 && w.primary ? 'Runs, serves the app' : 'Runs'}
-            />
-          ))}
-          {slots.map((s) => (
-            <ProcessRow
-              key={s.key}
-              name={slotLabel(s.type)}
-              detail={s.key}
-              status="info"
-              state={s.required ? 'Required' : 'Optional'}
-              ai={Boolean(marks.slots[s.key])}
-            />
-          ))}
+          {workloads.map((w) => {
+            const runs = startCommand(proposal, spec, w);
+            return (
+              <ProcessRow
+                key={w.name}
+                name={w.name}
+                detail={w.image && !(w.command ?? []).length ? w.image : runs.value}
+                text={Boolean(runs.text) && !w.image}
+                status="running"
+                state={workloads.length > 1 && w.name === primaryName ? 'Runs, serves the app' : 'Runs'}
+              />
+            );
+          })}
+          {services.map((s) => {
+            const provision = serviceProvision(s);
+            return (
+              <ProcessRow
+                key={s.key}
+                name={slotLabel(s.type)}
+                detail={serviceImage(s) ?? `Reached at ${s.key}`}
+                status={provision.status}
+                state={provision.label}
+                ai={Boolean(marks.slots[s.key])}
+              />
+            );
+          })}
           {mounts.map((m) => (
             <ProcessRow
               key={m.workload + m.path}
@@ -1564,13 +1662,16 @@ function PlanRow({ label, children }: { label: string; children: React.ReactNode
 function ProcessRow({
   name,
   detail,
+  text,
   status,
   state,
   ai,
 }: {
   name: string;
   detail: string;
-  status: 'running' | 'info' | 'stopped';
+  /** A description rather than a command or an image: the UI face, not mono. */
+  text?: boolean;
+  status: 'running' | 'info' | 'building' | 'stopped';
   state: string;
   ai?: boolean;
 }) {
@@ -1589,7 +1690,15 @@ function ProcessRow({
         {name}
         {ai && <AiStar size={12} />}
       </span>
-      <span style={{ font: 'var(--type-code-sm)', color: 'var(--ink-secondary)', overflowWrap: 'anywhere' }}>{detail}</span>
+      <span
+        style={{
+          font: text ? 'var(--type-caption)' : 'var(--type-code-sm)',
+          color: 'var(--ink-secondary)',
+          overflowWrap: 'anywhere',
+        }}
+      >
+        {detail}
+      </span>
       <StatusIndicator status={status} label={state} />
     </div>
   );

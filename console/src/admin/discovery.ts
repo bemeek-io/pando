@@ -72,6 +72,105 @@ export function slotLabel(type: string): string {
   return SLOT_LABEL[type] ?? 'A service';
 }
 
+type SpecSlot = NonNullable<AppSpec['slots']>[number];
+type SpecWorkload = NonNullable<AppSpec['workloads']>[number];
+
+/**
+ * Whether a slot is a service the app talks to — a database, a cache — rather
+ * than a value somebody has to supply. The compose importer declares a
+ * variable named with no value in `.env.example` as a slot of type `unknown`:
+ * it blocks the deploy until it is set (R-132), but it is not a service, and
+ * listing it beside PostgreSQL made a key read like a database.
+ */
+export function isService(slot: Pick<SpecSlot, 'type'>): boolean {
+  return Boolean(slot.type) && slot.type !== 'unknown';
+}
+
+/**
+ * The image a service runs, when detection read one: the compose importer's
+ * evidence names it ("compose service "db" runs docker.io/library/postgres:16-alpine").
+ */
+export function serviceImage(slot: SpecSlot): string | undefined {
+  for (const line of slot.evidence ?? []) {
+    const match = /\bruns (\S+)/.exec(line);
+    if (match) return match[1]!.replace(/^docker\.io\/library\//, '').replace(/^docker\.io\//, '');
+  }
+  return undefined;
+}
+
+/** How a service will be provided, in the words the settings screen uses. */
+export function serviceProvision(slot: SpecSlot): { status: 'info' | 'building' | 'stopped'; label: string } {
+  switch (slot.resolution?.mode) {
+    case 'provisioned':
+      return { status: 'info', label: 'Pando creates it' };
+    case 'bound':
+      return { status: 'info', label: 'Connects to one you have' };
+    case 'literal':
+      return { status: 'info', label: 'You set it' };
+    default:
+      return slot.required
+        ? { status: 'building', label: 'Choose after accepting' }
+        : { status: 'stopped', label: 'Optional' };
+  }
+}
+
+function cleanPath(path: string): string {
+  return path
+    .split('/')
+    .filter((part) => part !== '' && part !== '.')
+    .join('/');
+}
+
+/** A Dockerfile's CMD as detection recorded it, exec form unwrapped. */
+function commandText(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('[')) {
+    try {
+      const parts = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parts) && parts.every((p) => typeof p === 'string')) return parts.join(' ');
+    } catch {
+      // Not JSON after all: shown as written.
+    }
+  }
+  return trimmed;
+}
+
+/**
+ * What a workload runs when it starts.
+ *
+ * A workload built from a Dockerfile usually has no command in the spec: the
+ * Dockerfile's own CMD runs, and "the image's own command" said nothing about
+ * what that is. The Dockerfile detector reads the CMD and records it in its
+ * evidence, naming the Dockerfile it read, so the command is shown when the
+ * workload builds from that same file. `text` marks a description rather than
+ * a command.
+ */
+export function startCommand(
+  proposal: Partial<Proposal>,
+  spec: AppSpec | undefined,
+  workload: SpecWorkload,
+): { value: string; text?: boolean } {
+  const own = (workload.command ?? []).join(' ');
+  if (own) return { value: own };
+  if (workload.image) return { value: 'The image’s default command', text: true };
+
+  const built = workload.build
+    ? cleanPath(`${workload.build.context ?? ''}/${workload.build.dockerfile || 'Dockerfile'}`)
+    : cleanPath(spec?.build?.dockerfile ?? '');
+  if (built) {
+    const readings: Array<{ candidate: Candidate | undefined; dockerfile?: string }> = [
+      { candidate: proposal.winning_bid, dockerfile: proposal.draft_spec?.build?.dockerfile },
+      ...(proposal.runners_up ?? []).map((c) => ({ candidate: c, dockerfile: c.spec?.build?.dockerfile })),
+    ];
+    for (const { candidate, dockerfile } of readings) {
+      if (candidate?.strategy !== 'dockerfile' || cleanPath(dockerfile ?? '') !== built) continue;
+      const cmd = (candidate.evidence ?? []).find((line) => line.startsWith('CMD '));
+      if (cmd) return { value: commandText(cmd.slice(4)) };
+    }
+  }
+  return { value: 'From its Dockerfile', text: true };
+}
+
 /** How far a detection has got: 0 fetching … 3 screening, 4 finished. */
 export function stageIndex(status: string, stage: string | undefined): number {
   if (status !== 'running') return ORDER.length;
@@ -165,21 +264,24 @@ function stackStep(bid: Candidate | undefined, at: number): DiscoveryStep {
   };
 }
 
-function runsStep(spec: AppSpec | undefined, at: number): DiscoveryStep {
+function runsStep(proposal: Partial<Proposal>, spec: AppSpec | undefined, at: number): DiscoveryStep {
   const done = at > 1;
   const workloads = spec?.workloads ?? [];
-  const slots = spec?.slots ?? [];
+  const slots = (spec?.slots ?? []).filter(isService);
   const findings: Finding[] = [];
   for (const w of workloads) {
-    const command = (w.command ?? []).join(' ');
+    const start = startCommand(proposal, spec, w);
     const port = (w.ports ?? [])[0]?.number;
     findings.push({
       key: w.name,
-      value: [command || 'The image’s own command', port ? `on :${port}` : ''].filter(Boolean).join(' '),
-      text: !command,
+      value: [start.value, port ? `on :${port}` : ''].filter(Boolean).join(' '),
+      text: start.text,
     });
   }
-  for (const s of slots) findings.push({ key: s.key, value: slotLabel(s.type), text: true });
+  for (const s of slots) {
+    const image = serviceImage(s);
+    findings.push({ key: slotLabel(s.type), value: image ?? `Reached at ${s.key}`, text: !image });
+  }
   for (const w of workloads) {
     for (const m of w.mounts ?? []) findings.push({ key: 'Keeps data in', value: m.path });
   }
@@ -196,11 +298,17 @@ function runsStep(spec: AppSpec | undefined, at: number): DiscoveryStep {
 
 function varsStep(spec: AppSpec | undefined, at: number): DiscoveryStep {
   const done = at > 1;
-  const { own, filled } = envNames(spec);
+  const { own, filled: slotted } = envNames(spec);
+  // A slot-backed variable is filled by Pando only when the slot is a
+  // service; one of type `unknown` is a value somebody has to set.
+  const services = new Set((spec?.slots ?? []).filter(isService).map((s) => s.key));
+  const filled = slotted.filter((key) => services.has(key));
+  const needed = slotted.filter((key) => !services.has(key));
   const findings: Finding[] = [];
   if (own.length) findings.push({ key: 'Reads', value: own.join(' ') });
   if (filled.length) findings.push({ key: 'Pando fills', value: filled.join(' ') });
-  const total = own.length + filled.length;
+  if (needed.length) findings.push({ key: 'You set', value: needed.join(' ') });
+  const total = own.length + slotted.length;
   return {
     id: 'vars',
     name: 'Collect variables',
@@ -296,7 +404,7 @@ export function discoverySteps(input: DiscoveryInput): DiscoveryStep[] {
   const steps: DiscoveryStep[] = [
     readStep(input, at),
     stackStep(proposal.winning_bid, at),
-    runsStep(spec, at),
+    runsStep(proposal, spec, at),
     varsStep(spec, at),
   ];
   const trial = trialStep(proposal, at);
@@ -304,6 +412,40 @@ export function discoverySteps(input: DiscoveryInput): DiscoveryStep[] {
   const ai = aiStep(proposal, input.stage, at);
   if (ai) steps.push(ai);
   return steps;
+}
+
+/**
+ * The steps as shown, when the page paces them.
+ *
+ * A small repository is read in a second or two, and the auction's three steps
+ * finish on one server event, so the list, the tallies and the terrain all
+ * jumped to the end at once. The page reveals steps one at a time instead:
+ * `revealed` steps are shown done, the next is shown under way with its
+ * findings rising in, and the rest are not shown yet. Nothing is invented — a
+ * step is never shown done before the server says it is, only later.
+ */
+export function paced(steps: DiscoveryStep[], revealed: number): DiscoveryStep[] {
+  return steps.map((step, i) => {
+    if (i < revealed) return step;
+    if (i === revealed) return { ...step, state: 'current', result: undefined, failed: false };
+    return { ...step, state: 'pending', result: undefined, failed: false, findings: [] };
+  });
+}
+
+/** How many steps the server has finished, in order from the first. */
+export function finishedCount(steps: DiscoveryStep[]): number {
+  const i = steps.findIndex((s) => s.state !== 'done');
+  return i < 0 ? steps.length : i;
+}
+
+/** The least time a step stays under way on screen: long enough to read. */
+export const MIN_STEP_MS = 1_400;
+const PER_FINDING_MS = 280;
+const MAX_STEP_MS = 3_600;
+
+/** How long a finished step is held as under way while its findings rise in. */
+export function dwellFor(step: DiscoveryStep): number {
+  return Math.min(MAX_STEP_MS, MIN_STEP_MS + step.findings.length * PER_FINDING_MS);
 }
 
 /** The step under way, or undefined when every step is done. */
@@ -330,13 +472,13 @@ const CAP = 0.9;
  * How much of the terrain is drawn, 0 to 1: the finished steps, plus an eased
  * share of the current one by how long it has been running.
  */
-export function progress(steps: DiscoveryStep[], currentForMs: number): number {
+export function progress(steps: DiscoveryStep[], currentForMs: number, expectedMs?: number): number {
   if (steps.length === 0) return 0;
   let done = 0;
   for (const step of steps) {
     if (step.state === 'done') done += 1;
     else if (step.state === 'current') {
-      const expected = EXPECTED_MS[step.id] ?? 5_000;
+      const expected = expectedMs ?? EXPECTED_MS[step.id] ?? 5_000;
       done += CAP * (1 - Math.exp(-Math.max(0, currentForMs) / expected));
     }
   }

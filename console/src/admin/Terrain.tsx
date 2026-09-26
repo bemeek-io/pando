@@ -20,6 +20,9 @@ const H = 150;
 const SCALES = [1, 0.8, 0.6, 0.4, 0.2];
 const SAMPLES = 400;
 
+/** The fastest the ridge draws, in widths per second. */
+const MAX_RATE = 0.22;
+
 export interface TerrainStop {
   x: number;
   reached: boolean;
@@ -48,7 +51,10 @@ export function Terrain({
   const id = useId().replace(/:/g, '');
   const grow = useRef<SVGRectElement>(null);
   const tip = useRef<SVGSVGElement>(null);
-  const shown = useRef(0);
+  // Where the ridge is drawn to. Unset until the first frame: opened on a
+  // detection that already finished, it starts where that detection ended —
+  // there is nothing to watch.
+  const shown = useRef<number | null>(null);
   // Read through a ref, so a re-render (the page polls) does not restart the
   // animation loop.
   const read = useRef(fraction);
@@ -70,11 +76,18 @@ export function Terrain({
 
   useEffect(() => {
     let frame = 0;
-    const draw = () => {
+    let last = performance.now();
+    const draw = (now: number) => {
+      const dt = Math.min(0.1, Math.max(0, (now - last) / 1_000));
+      last = now;
       // Never backwards: a step appearing mid-run (the trial run, the AI
       // step) re-divides the width, and a ridge that retracts reads as Pando
-      // undoing work.
-      const x = Math.max(shown.current, Math.min(1, Math.max(0, read.current())));
+      // undoing work. And never faster than MAX_RATE: a step finishing moves
+      // the target on by a whole step at once, and the ridge walks there
+      // rather than jumping.
+      const target = Math.min(1, Math.max(0, read.current()));
+      const from = shown.current ?? (moving ? 0 : target);
+      const x = target <= from ? from : Math.min(target, from + MAX_RATE * dt);
       shown.current = x;
       grow.current?.setAttribute('transform', `scale(${x.toFixed(5)} 1)`);
       const t = tip.current;
@@ -92,7 +105,7 @@ export function Terrain({
     return () => cancelAnimationFrame(frame);
   }, [moving, yAt]);
 
-  const tipColor = shown.current > aiFrom ? 'var(--water)' : 'var(--ink-secondary)';
+  const tipColor = (shown.current ?? 0) > aiFrom ? 'var(--water)' : 'var(--ink-secondary)';
 
   return (
     <div className="pando-terrain" aria-hidden="true">

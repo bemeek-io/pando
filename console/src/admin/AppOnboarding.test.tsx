@@ -99,6 +99,52 @@ describe('AppOnboarding', () => {
     expect(plan).toBeGreaterThan(notes);
   });
 
+  it('shows the compose reading AI picked: its real command, its database, and values as variables', () => {
+    const compose = {
+      build: { strategy: 'compose', compose_file: 'docker-compose.yml' },
+      workloads: [
+        {
+          name: 'app',
+          build: { context: '.' },
+          env: [
+            { key: 'DATABASE_URL', slot_ref: 'DATABASE_URL' },
+            { key: 'CREW_TOKEN_ENC_KEY', slot_ref: 'CREW_TOKEN_ENC_KEY' },
+          ],
+        },
+      ],
+      slots: [
+        {
+          key: 'DATABASE_URL',
+          type: 'postgres',
+          required: true,
+          evidence: ['compose service "db" runs docker.io/library/postgres:16-alpine'],
+          resolution: { mode: 'provisioned' },
+        },
+        { key: 'CREW_TOKEN_ENC_KEY', type: 'unknown', required: true },
+      ],
+    };
+    const crewmate = {
+      ...detection,
+      winning_bid: { ...detection.winning_bid, evidence: ['Dockerfile at repository root', 'CMD ["/crewmate"]'] },
+      runners_up: [{ detector: 'compose', strategy: 'compose', confidence: 0.8, spec: compose }],
+      questions: [detection.questions[0]],
+    };
+    const html = render({ status: 'ready', answers: {}, commit: '3f9a2c1d0000', detection: crewmate } as never);
+
+    const plan = html.slice(html.indexOf('The plan'));
+    expect(plan).toContain('/crewmate');
+    expect(plan).not.toContain('The image’s own command');
+    expect(plan).toContain('PostgreSQL');
+    expect(plan).toContain('postgres:16-alpine');
+    expect(plan).toContain('Pando creates it');
+    expect(plan).not.toContain('CREW_TOKEN_ENC_KEY');
+
+    const variables = html.slice(html.indexOf('>Variables<'), html.indexOf('The plan'));
+    expect(variables).toContain('CREW_TOKEN_ENC_KEY');
+    expect(variables).toContain('Needs a value');
+    expect(variables).toContain('From PostgreSQL');
+  });
+
   it('renders the discovery view while detection runs, with no review', () => {
     const html = render({
       status: 'running',

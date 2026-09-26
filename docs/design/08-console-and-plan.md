@@ -190,10 +190,23 @@ derives them from the detection response (`discovery.ts`): *Read the repo* (sour
 *Work out how it's built* (strategy and evidence), *Find processes and services* and *Collect
 variables* (the draft's workloads, slots, mounts and env), then *Try running it* only if a trial ran,
 and an AI step only if an adapter was called (R-336) — *Review the failed plan* or *Answer what it
-can*. The three auction steps finish on one server event and reveal their findings on a short
-stagger. No per-step durations are shown, because detection does not record them. The terrain eases
-through the current step by elapsed time but never past it; a boundary is drawn only when the server
-reports it.
+can*. No per-step durations are shown, because detection does not record them.
+
+**[D] Paced, so a fast detection does not teleport.** A small repository is read in a second or two
+and the three auction steps finish on one server event, so the list, tallies and terrain used to jump
+to the end at once. While the page is watching, steps are revealed one at a time, each held as under
+way for 1.4–3.6s (longer the more it found) while its findings rise in, and "Plan ready" waits for
+the last. A step is never shown done before the server says it is, only later. Tallies fill in as
+the step that found them is shown. The terrain eases through the current step and never draws faster
+than about a fifth of its width per second, so a step completing moves the ridge on rather than
+snapping it.
+
+**[D] The plan shows what runs, and only services as services.** The variables, tallies and plan all
+describe the spec accepting would pin — the reading the build-method answer picks — not the winner's
+draft. A workload with no command that builds from the Dockerfile the Dockerfile reading parsed shows
+that Dockerfile's CMD. A slot of type `unknown` (a key named with no value in `.env.example`) is a value
+to set after accepting, listed under Variables as *Needs a value*; only typed slots are services, shown
+by what they are, the image they run, and how Pando provides them.
 
 **[D] AI appears only where it did something.** An AI step is tinted `--status-info-tint` with a water
 border; questions it answered are grouped under *Check what AI filled in* with its reason and files,

@@ -2,17 +2,25 @@ import { describe, expect, it } from 'vitest';
 
 import type { Proposal, Question } from '@api/types.gen';
 import {
+  MIN_STEP_MS,
   aiFrom,
   answerFor,
   answerState,
   discoverySteps,
+  dwellFor,
   elevation,
+  finishedCount,
   groupOf,
+  isService,
   neededFunction,
+  paced,
   peakOf,
   planSpec,
   progress,
   questionName,
+  serviceImage,
+  serviceProvision,
+  startCommand,
   stillNeeded,
   stops,
 } from './discovery';
@@ -50,7 +58,7 @@ describe('discoverySteps', () => {
     expect(steps.every((s) => s.state === 'done')).toBe(true);
     expect(steps[0]!.result).toBe('At 3f9a2c1');
     expect(steps[1]!.result).toBe('Dockerfile');
-    expect(steps[2]!.findings).toContainEqual({ key: 'web', value: 'npm start on :3000', text: false });
+    expect(steps[2]!.findings).toContainEqual({ key: 'web', value: 'npm start on :3000', text: undefined });
     expect(steps[3]!.result).toBe('2 found, Pando fills 1');
   });
 
@@ -82,6 +90,111 @@ describe('discoverySteps', () => {
     const steps = discoverySteps({ status: 'running', stage: 'screening', proposal: crashed, source });
     expect(steps.at(-1)?.name).toBe('Review the failed plan');
     expect(steps.at(-1)?.state).toBe('current');
+  });
+});
+
+// Crewmate's shape: a Dockerfile winner whose CMD is only in its evidence, and
+// a compose runner-up building that same Dockerfile beside a Postgres service,
+// with keys from .env.example declared as slots of type unknown.
+const crewmate: Partial<Proposal> = {
+  winning_bid: {
+    detector: 'dockerfile',
+    strategy: 'dockerfile',
+    confidence: 0.9,
+    evidence: ['Dockerfile at repository root', 'EXPOSE 8080', 'CMD ["/crewmate"]'],
+  },
+  draft_spec: {
+    build: { strategy: 'dockerfile', dockerfile: 'Dockerfile' },
+    workloads: [{ name: 'web', primary: true, exposed: true }],
+  } as unknown as Proposal['draft_spec'],
+  runners_up: [
+    {
+      detector: 'compose',
+      strategy: 'compose',
+      confidence: 0.8,
+      spec: {
+        build: { strategy: 'compose', compose_file: 'docker-compose.yml' },
+        workloads: [
+          {
+            name: 'app',
+            build: { context: '.' },
+            env: [
+              { key: 'DATABASE_URL', slot_ref: 'DATABASE_URL' },
+              { key: 'CREW_TOKEN_ENC_KEY', slot_ref: 'CREW_TOKEN_ENC_KEY' },
+            ],
+          },
+          { name: 'proxy', image: 'docker.io/library/caddy:2-alpine' },
+        ],
+        slots: [
+          {
+            key: 'DATABASE_URL',
+            type: 'postgres',
+            required: true,
+            evidence: ['compose service "db" runs docker.io/library/postgres:16-alpine'],
+            resolution: { mode: 'provisioned' },
+          },
+          { key: 'CREW_TOKEN_ENC_KEY', type: 'unknown', required: true },
+        ],
+      } as unknown as Proposal['draft_spec'],
+    },
+  ],
+};
+
+describe('services and commands', () => {
+  const compose = crewmate.runners_up![0]!.spec!;
+
+  it('treats a slot of type unknown as a value, not a service', () => {
+    expect(isService({ type: 'postgres' })).toBe(true);
+    expect(isService({ type: 'unknown' })).toBe(false);
+  });
+
+  it('names the image a service runs, and how Pando provides it', () => {
+    const [postgres] = compose.slots!;
+    expect(serviceImage(postgres!)).toBe('postgres:16-alpine');
+    expect(serviceProvision(postgres!)).toEqual({ status: 'info', label: 'Pando creates it' });
+  });
+
+  it('shows the Dockerfile’s CMD for a workload that builds from it', () => {
+    const [app, proxy] = compose.workloads!;
+    expect(startCommand(crewmate, compose, app!)).toEqual({ value: '/crewmate' });
+    expect(startCommand(crewmate, crewmate.draft_spec, crewmate.draft_spec!.workloads![0]!)).toEqual({
+      value: '/crewmate',
+    });
+    expect(startCommand(crewmate, compose, proxy!).text).toBe(true);
+  });
+
+  it('says so plainly when the command is not known', () => {
+    const other = { ...compose.workloads![0]!, build: { context: 'worker' } };
+    expect(startCommand(crewmate, compose, other)).toEqual({ value: 'From its Dockerfile', text: true });
+  });
+
+  it('keeps required values out of the services a step reports', () => {
+    const steps = discoverySteps({ status: 'ready', proposal: { ...crewmate, draft_spec: compose }, source });
+    const runs = steps.find((s) => s.id === 'runs')!;
+    expect(runs.findings).toContainEqual({ key: 'PostgreSQL', value: 'postgres:16-alpine', text: false });
+    expect(runs.findings.some((f) => f.key === 'CREW_TOKEN_ENC_KEY')).toBe(false);
+    const vars = steps.find((s) => s.id === 'vars')!;
+    expect(vars.findings).toContainEqual({ key: 'Pando fills', value: 'DATABASE_URL' });
+    expect(vars.findings).toContainEqual({ key: 'You set', value: 'CREW_TOKEN_ENC_KEY' });
+  });
+});
+
+describe('pacing', () => {
+  const steps = discoverySteps({ status: 'ready', proposal: found, source });
+
+  it('shows steps done one at a time, never ahead of the server', () => {
+    const shown = paced(steps, 1);
+    expect(shown.map((s) => s.state)).toEqual(['done', 'current', 'pending', 'pending']);
+    expect(shown[1]!.result).toBeUndefined();
+    expect(shown[2]!.findings).toEqual([]);
+    expect(finishedCount(steps)).toBe(4);
+    expect(finishedCount(discoverySteps({ status: 'running', stage: 'detecting', proposal: {}, source }))).toBe(1);
+  });
+
+  it('holds a step longer the more it found, within bounds', () => {
+    expect(dwellFor({ ...steps[0]!, findings: [] })).toBe(MIN_STEP_MS);
+    expect(dwellFor(steps[2]!)).toBeGreaterThan(MIN_STEP_MS);
+    expect(dwellFor({ ...steps[0]!, findings: Array(50).fill({ key: '', value: '' }) })).toBeLessThanOrEqual(3_600);
   });
 });
 
