@@ -134,3 +134,38 @@ func TestR114_AppCodeRunsUnderTheConfiguredRuntime(t *testing.T) {
 	require.NoError(t, plain.applyWorkload(ctx, plan, api.WorkloadPlan{Name: "web", Image: "nginx:1"}, "net1"))
 	require.Equal(t, []string{""}, *got)
 }
+
+// TestR114_ChangingTheRuntimeMovesAppsOnTheirNextDeploy asserts that a
+// container under a runtime other than the configured one does not match its
+// plan, however unchanged its image and environment are. The reported class
+// changes the moment the setting does; without this, a redeploy after switching
+// to runsc would have left the app on runc while the adapter called it
+// sandboxed.
+func TestR114_ChangingTheRuntimeMovesAppsOnTheirNextDeploy(t *testing.T) {
+	w := api.WorkloadPlan{Name: "web", Image: "nginx:1"}
+
+	matches := func(configured, running string) bool {
+		t.Helper()
+		config := map[string]any{}
+		if configured != "" {
+			config["oci_runtime"] = configured
+		}
+		f, a := newFakeDaemon(t, config)
+		f.on("GET /containers/c1/json", respond(http.StatusOK, map[string]any{
+			"Id":         "c1",
+			"Config":     map[string]any{"Image": "nginx:1", "Labels": map[string]string{}},
+			"HostConfig": map[string]any{"Runtime": running},
+		}))
+		ok, err := a.matchesPlan(context.Background(), "c1", w)
+		require.NoError(t, err)
+		return ok
+	}
+
+	require.True(t, matches("", "runc"), "nothing changed")
+	require.True(t, matches("", "crun"), "a daemon whose default is crun is not a reason to recreate")
+	require.True(t, matches("runsc", "runsc"), "already in the sandbox")
+
+	require.False(t, matches("runsc", "runc"), "switched on: into the sandbox on the next deploy")
+	require.False(t, matches("", "runsc"), "switched off: out of it on the next deploy")
+	require.False(t, matches("kata", "runsc"), "one sandbox for another is still a change")
+}

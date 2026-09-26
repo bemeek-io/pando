@@ -181,6 +181,27 @@ func (a *Adapter) observes() bool {
 	return isolationOf(a.config.OCIRuntime) == spec.IsolationContainer
 }
 
+// runsUnder reports whether a container created under ociRuntime is under the
+// runtime this adapter is configured for.
+//
+// Part of matchesPlan because the class Capabilities reports changes the moment
+// the setting does, and the containers do not. Without it, switching to runsc
+// and redeploying an app compared image and environment, found them unchanged,
+// and left the app on runc while the adapter called it sandboxed — which a
+// policy floor would then have believed (R-114).
+//
+// Docker records a container created with no runtime under its default's name,
+// usually "runc", so an unset setting matches any runtime that shares the
+// kernel and refuses only a sandbox: switching the setting off moves apps out
+// of the sandbox on their next deploy, and a daemon whose default is crun is
+// not a reason to recreate anything.
+func (a *Adapter) runsUnder(ociRuntime string) bool {
+	if a.config.OCIRuntime == "" {
+		return isolationOf(ociRuntime) == spec.IsolationContainer
+	}
+	return ociRuntime == a.config.OCIRuntime
+}
+
 // isolationOf is the class an OCI runtime provides (R-115).
 //
 // Only runtimes known to put a boundary between the app and the host kernel
@@ -1322,6 +1343,9 @@ func (a *Adapter) matchesPlan(ctx context.Context, containerID string, w api.Wor
 		return false, nil
 	}
 	if inspect.Config.Labels[labelFiles] != fileDigest(w.Files) {
+		return false, nil
+	}
+	if inspect.HostConfig != nil && !a.runsUnder(inspect.HostConfig.Runtime) {
 		return false, nil
 	}
 
