@@ -9,10 +9,10 @@
 [trypando.ai](https://trypando.ai)
 
 [![CI](https://github.com/bemeek-io/pando/actions/workflows/ci.yml/badge.svg)](https://github.com/bemeek-io/pando/actions/workflows/ci.yml)
-[![Docker Hub](https://img.shields.io/docker/v/trypando/pando?sort=semver&label=docker%20hub&color=B23A2C)](https://hub.docker.com/r/trypando/pando)
+[![Docker Hub](https://img.shields.io/docker/v/trypando/pando?sort=semver&label=docker%20hub&color=1D63ED)](https://hub.docker.com/r/trypando/pando)
 [![codecov](https://codecov.io/gh/bemeek-io/pando/branch/main/graph/badge.svg)](https://codecov.io/gh/bemeek-io/pando)
-[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-B23A2C)](LICENSE)
-[![Go 1.27](https://img.shields.io/badge/go-1.27-B23A2C)](go.mod)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![Go 1.27](https://img.shields.io/badge/go-1.27-00ADD8)](go.mod)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/bemeek-io/pando/badge)](https://scorecard.dev/viewer/?uri=github.com/bemeek-io/pando)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14626/badge)](https://www.bestpractices.dev/projects/14626)
 
