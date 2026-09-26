@@ -219,8 +219,14 @@ func (a *Adapter) AnswerReference(ctx context.Context, req api.ReferenceRequest)
 	return out, nil
 }
 
-// submit makes one request whose answer is a call to the submit tool, and
-// decodes that call's input into out.
+// submit asks for an answer that is a call to the submit tool, and decodes
+// that call's input into out.
+//
+// The call is asked for, not forced. Forced tool use (tool_choice "tool" or
+// "any") is refused with a 400 by current models, Opus 5.5 among them, so
+// tool_choice is auto with parallel calls off, and the system prompt says to
+// answer through the tool. A model that answers in prose instead is asked once
+// more, in the same conversation, before that counts as a failure.
 func (a *Adapter) submit(ctx context.Context, model, system, user string, properties map[string]any, required []string, out any) error {
 	if !a.ready {
 		return errors.New("anthropic: not configured")
@@ -228,36 +234,46 @@ func (a *Adapter) submit(ctx context.Context, model, system, user string, proper
 
 	tool := anthropic.ToolParam{
 		Name:        toolSubmit,
-		Description: anthropic.String("Submit your answer. Call this exactly once."),
+		Description: anthropic.String("Submit your answer. Call this exactly once; it is the only way to answer."),
 		InputSchema: anthropic.ToolInputSchemaParam{Properties: properties, Required: required},
 	}
 
-	resp, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
+	params := anthropic.MessageNewParams{
 		Model:     anthropic.Model(model),
 		MaxTokens: maxTokens,
 		System: []anthropic.TextBlockParam{{
-			Text:         system,
+			Text:         system + " Answer only by calling the submit tool, once. Do not answer in prose.",
 			CacheControl: anthropic.NewCacheControlEphemeralParam(),
 		}},
-		Tools:      []anthropic.ToolUnionParam{{OfTool: &tool}},
-		ToolChoice: anthropic.ToolChoiceParamOfTool(toolSubmit),
-		Messages:   []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(user))},
-	})
-	if err != nil {
-		return fmt.Errorf("anthropic: %w", err)
+		Tools: []anthropic.ToolUnionParam{{OfTool: &tool}},
+		ToolChoice: anthropic.ToolChoiceUnionParam{
+			OfAuto: &anthropic.ToolChoiceAutoParam{DisableParallelToolUse: anthropic.Bool(true)},
+		},
+		Messages: []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(user))},
 	}
-	if resp.StopReason == anthropic.StopReasonRefusal {
-		return fmt.Errorf("anthropic: the model declined to answer (%s)", resp.StopDetails.Category)
-	}
-	for _, block := range resp.Content {
-		use, ok := block.AsAny().(anthropic.ToolUseBlock)
-		if !ok || use.Name != toolSubmit {
-			continue
+
+	for attempt := 0; attempt < 2; attempt++ {
+		resp, err := a.client.Messages.New(ctx, params)
+		if err != nil {
+			return fmt.Errorf("anthropic: %w", err)
 		}
-		if err := json.Unmarshal([]byte(use.JSON.Input.Raw()), out); err != nil {
-			return fmt.Errorf("anthropic: the answer could not be read: %w", err)
+		if resp.StopReason == anthropic.StopReasonRefusal {
+			return fmt.Errorf("anthropic: the model declined to answer (%s)", resp.StopDetails.Category)
 		}
-		return nil
+		for _, block := range resp.Content {
+			use, ok := block.AsAny().(anthropic.ToolUseBlock)
+			if !ok || use.Name != toolSubmit {
+				continue
+			}
+			if err := json.Unmarshal([]byte(use.JSON.Input.Raw()), out); err != nil {
+				return fmt.Errorf("anthropic: the answer could not be read: %w", err)
+			}
+			return nil
+		}
+		// Answered in prose. Asked again, appending rather than editing the
+		// conversation, so nothing the model already produced is rewritten.
+		params.Messages = append(params.Messages, resp.ToParam(),
+			anthropic.NewUserMessage(anthropic.NewTextBlock("Submit that answer now by calling the submit tool.")))
 	}
 	return errors.New("anthropic: the model finished without submitting an answer")
 }

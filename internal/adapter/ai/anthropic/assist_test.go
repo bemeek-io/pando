@@ -26,9 +26,24 @@ func TestR259_AnAssignedModelIsTheModelThatRuns(t *testing.T) {
 
 	require.Len(t, fake.bodies, 1)
 	require.Equal(t, "claude-haiku-4-5", fake.bodies[0]["model"])
+	// Asked, never forced: current models refuse forced tool use with a 400.
 	choice := fake.bodies[0]["tool_choice"].(map[string]any)
-	require.Equal(t, "tool", choice["type"])
-	require.Equal(t, "submit", choice["name"], "one answer, through the tool")
+	require.Equal(t, "auto", choice["type"])
+	require.Equal(t, true, choice["disable_parallel_tool_use"], "one answer, through the tool")
+}
+
+// A model that answers in prose is asked once more to use the tool, in the
+// same conversation, and its second answer is read.
+func TestAnAnswerInProseIsAskedForAgainThroughTheTool(t *testing.T) {
+	a, fake := withFake(t,
+		message("end_turn", `{"type":"text","text":"Use POST /api/v1/groups."}`),
+		message("tool_use", toolUse("t1", "submit", `{"answer":"Use POST /api/v1/groups.","cites":[],"covered":true}`)))
+
+	got, err := a.AnswerReference(context.Background(), api.ReferenceRequest{Question: "groups?", Reference: "POST /api/v1/groups"})
+	require.NoError(t, err)
+	require.Equal(t, "Use POST /api/v1/groups.", got.Answer)
+	require.Len(t, fake.bodies, 2)
+	require.Len(t, fake.bodies[1]["messages"].([]any), 3, "the first answer and the nudge were appended")
 }
 
 // TestR343_AccessDraftIsReadFromTheSubmittedTool asserts R-343 at the
@@ -72,7 +87,9 @@ func TestR345_AuditSearchIsGivenTheTimeAndReturnsAFilter(t *testing.T) {
 }
 
 func TestAnAnswerWithoutTheToolIsAnError(t *testing.T) {
-	a, _ := withFake(t, message("end_turn", `{"type":"text","text":"Sure!"}`))
+	a, _ := withFake(t,
+		message("end_turn", `{"type":"text","text":"Sure!"}`),
+		message("end_turn", `{"type":"text","text":"Sure!"}`))
 	_, err := a.DraftPolicy(context.Background(), api.PolicyRequest{Description: "x"})
 	require.ErrorContains(t, err, "without submitting")
 }
