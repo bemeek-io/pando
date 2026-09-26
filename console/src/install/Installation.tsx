@@ -23,7 +23,7 @@ import {
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb } from '../app/principal';
 import { AdapterDialog } from './AdapterDialog';
-import { AIFunctions, useAIFunctionOn } from './AIFunctions';
+import { useAIFunctionOn } from './AIFunctions';
 import { RestartButton } from './Restart';
 import { categoryLabel, orderCategories } from './adapters';
 import type { AdapterKind } from './adapters';
@@ -177,8 +177,6 @@ export function Installation() {
           }}
         />
       )}
-
-      <AIFunctions canManage={canManage} adapters={rows.filter((r) => r.category === 'ai' && r.status !== 'overridden')} />
 
       <h4 style={{ font: 'var(--type-h4)', margin: 'var(--space-6) 0 var(--space-3)' }}>
         Capacity

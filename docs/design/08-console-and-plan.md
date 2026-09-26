@@ -86,6 +86,33 @@ action (prefix), actor (typed: username, email or ID, with suggestions — an in
 combine, and which the CLI (`pando audit`) and MCP (`pando_list_audit`) take too. Its labels use the
 audit vocabulary as is; whoever reads an audit log knows what an actor and a target are.
 
+**[D] AI functions are chosen on the adapter.** Opening an AI adapter from the Adapters screen
+shows *What this adapter handles*: a checkbox per AI function (design 10 §9), and for each ticked
+one an optional model for that function alone. Open the Anthropic adapter and tick what it does,
+then the OpenAI adapter and tick what it does; there is no separate list of functions to manage.
+A function another adapter handles is shown unticked and unavailable, with *Handled by ai_openai.
+Remove it there to handle it here.* — the API refuses a second adapter for a function (R-259), so
+the console states the fix rather than offering a box that would fail. A function the config file
+assigns says where it is set and cannot be changed (R-271). Function choices take effect on save
+without a restart; the adapter's own settings are saved, and need a restart, only when they
+changed. A new AI adapter is not running until Pando restarts, so its dialog says to open it again
+then to choose what it handles. An AI adapter has no default checkbox.
+
+**[D] Asking AI on an admin screen.** Four screens carry one labeled field and a secondary button
+(`ui/AskAI.tsx`), above the screen's own content and never as its primary action: *Audit log* ("Ask
+the audit log", R-345), *Policy* ("Describe a change", R-344), *Groups and roles* ("Describe who
+should be able to do what", R-343), and *API and tools* ("Ask how to do something", R-346). Each is
+shown only when its function is on, because a field that could only answer "not assigned" is noise;
+*API and tools* is the exception, shown to anyone signed in unless the function is known to be off,
+since reading the list of functions needs `install.view` and that screen does not. The result lands
+in the screen's own form, so it is checked and applied the ordinary way: the audit search's filter
+fills the audit log's filter fields and the table below is the ordinary table; a policy proposal
+becomes the unsaved policy draft, saved only with *Save policy*, with declined fields listed and where
+each is set; an access draft is shown as a role with its verbs and a group with its size, and
+*Create* makes them through the same endpoints *Add role* and *Add group* use. Under each result one
+caption names the adapter and model and says to check it. Policy's field is offered only to someone
+who can edit policy.
+
 **[D] Phone width.** At 48em and below (`ui/narrow.css`, `ui/narrow.ts`): the page padding token
 drops to `--space-4`; headings and their actions wrap; the admin sidebar becomes a menu behind a
 button in a top bar that keeps the way home and settings; the launcher's search takes its own line;

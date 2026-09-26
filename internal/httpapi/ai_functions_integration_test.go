@@ -154,6 +154,37 @@ func TestR271_AIPolicyDraftRefusesConfigFixedField(t *testing.T) {
 	require.Equal(t, http.StatusOK, saved.Code, saved.String())
 }
 
+// TestR344_PolicyDraftRefusesWhatWouldNotReadAndSavesNothing asserts R-344:
+// a verb list naming a verb Pando does not have, or a value of the wrong type,
+// is refused rather than proposed, and asking changes nothing that is stored.
+func TestR344_PolicyDraftRefusesWhatWouldNotReadAndSavesNothing(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+	ai := withAI(t, i, "ai_anthropic", everything("anthropic"))
+	assignAll(t, i, admin, "ai_anthropic")
+	before := i.do(admin, http.MethodGet, "/policy", nil).String()
+
+	ai.policy = adapterapi.PolicyDraft{Changes: map[string]json.RawMessage{
+		"disabled_verbs":         json.RawMessage(`["app.teleport"]`),
+		"allow_anonymous_grants": json.RawMessage(`"sometimes"`),
+	}}
+	got := i.do(admin, http.MethodPost, "/ai/policy/draft", map[string]any{"description": "lock it down"})
+	require.Equal(t, http.StatusOK, got.Code, got.String())
+	var draft struct {
+		Changes []any    `json:"changes"`
+		Refused []string `json:"refused"`
+	}
+	got.JSON(t, &draft)
+	require.Empty(t, draft.Changes)
+	require.Len(t, draft.Refused, 2, got.String())
+	require.Contains(t, got.String(), `\"app.teleport\" is not a permission Pando has`)
+
+	require.Equal(t, before, i.do(admin, http.MethodGet, "/policy", nil).String(), "nothing was saved")
+	someone := i.user("someone")
+	require.Equal(t, http.StatusForbidden,
+		i.do(someone, http.MethodPost, "/ai/policy/draft", map[string]any{"description": "x"}).Code)
+}
+
 // TestR345_AuditSearchRunsTheFilterInCore asserts R-345 and R-027: the
 // adapter returns a filter, core runs it with the caller's authority, and
 // the summary is written from the records core found.

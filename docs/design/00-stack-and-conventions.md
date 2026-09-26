@@ -75,7 +75,7 @@ functionally; only the first-run experience differs.
 | Migrations | `golang-migrate` | Versioned, up/down, embedded in the binary |
 | Validation | `go-playground/validator` | Struct tags on API payloads |
 | JWT | `go-jose/v4` | Assertion signing (R-052), JWKS (R-057) |
-| Config | `spf13/viper` | YAML + env + flags, per R-271 |
+| Config | `spf13/viper` | YAML + env + flags, per R-271. The YAML file can also fix host policy fields and declare adapters with their AI function assignments, read-only elsewhere while declared (§02 2.5, §10 7.1) |
 | CLI | `spf13/cobra` | |
 | Container runtime | `docker/docker` client | Local runtime + builder adapters |
 | BuildKit | `moby/buildkit` client | R-111 |

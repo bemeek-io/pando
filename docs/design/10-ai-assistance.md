@@ -11,6 +11,11 @@ the questions detection could not**. Screening runs only in those two cases (R-3
 remaining uses R-106 names — reading README prose, and repairing a failed build at deploy time — are
 not built here. The capabilities struct is shaped so they arrive without changing the interface.
 
+Each function is assigned to one adapter at a time, optionally on a model of its own (R-259, §9).
+Four further functions serve administrators rather than detection — drafting access and policy,
+searching the audit log, and answering from the reference (R-343 – R-346, §10). They share the
+adapter category and the assignment, and none of them touches a spec.
+
 ---
 
 ## 1. What screening is
@@ -76,10 +81,12 @@ type AIAdapter interface {
 }
 
 type AICapabilities struct {
-    Functions []AIFunction // repair_plan, answer_questions; read_readme when it exists
-    Model     string       // shown in the review: which model read this code
-    MaxFiles  int
-    MaxBytes  int64
+    Functions    []AIFunction // repair_plan, answer_questions, revise_plan, and §10's four
+    Model        string       // the adapter's own model; shown in the review
+    ChoosesModel bool         // an assignment may name another model (§9)
+    Models       []string     // when set, the only models an assignment may name
+    MaxFiles     int
+    MaxBytes     int64
 }
 ```
 
@@ -250,7 +257,7 @@ turns the second into the first.
 
 **[D]** R-335. Every one of these leaves the proposal untouched and records why in `Outcome.Skipped`:
 
-- no AI adapter configured
+- no AI adapter is assigned the function detection needs (§9)
 - detection did not need one (§4.2) — the common case, `not_needed`
 - the adapter does not advertise the function detection needed
 - host policy forbids screening
@@ -451,7 +458,8 @@ depguard rule in `.golangci.yml` covers it without a new entry, because it match
 
 An `adapter_configs` row like any other (§02 2.5), seeded **disabled and absent**: unlike the eight
 categories `seedDefaultAdapters` fills, there is no AI adapter that works without a credential, and
-seeding a broken one would put a permanently unhealthy adapter in every install's console.
+seeding a broken one would put a permanently unhealthy adapter in every install's console. An
+install may instead declare the adapter in its config file (§7.1).
 
 ```json
 {
@@ -467,6 +475,17 @@ Configured through `POST /api/v1/adapters` like any other category, with `catego
 `kind: "anthropic"`, the settings above as `config`, and the key as `credentials: {"api_key": "…"}`.
 It takes effect at the next restart, because adapters are registered at startup (R-253).
 
+**[D] There is no default AI adapter.** `Registry.DefaultAI`, which returned the category default or
+else the first AI adapter registered, is gone, and the console does not offer "use as default" for
+an AI adapter. A caller asks the registry for the adapter assigned one function
+(`Registry.AIFor`), and an adapter does nothing until it is assigned something (§9).
+
+**[D] One AI adapter per provider** (R-259). A partial unique index on
+`adapter_configs (kind) WHERE category = 'ai'` refuses a second Anthropic adapter, and the refusal
+says to set a model on an assignment instead: besides the credential, a model is the only thing two
+adapters of one provider would differ by. Migration `000033` stops with the query to run if an
+install already has two.
+
 **[D] The API key is never stored in the clear (O-20).** `credentials` is write-only and is sealed by
 the install's secrets adapter into `adapter_credentials`, bound to the adapter's ID. The database
 refuses a `credentials` key in `adapter_configs.config`, the handler refuses `api_key` and similar
@@ -476,12 +495,79 @@ configuration. Core decrypts the credential at startup and passes it to `Configu
 environment can instead set `api_key_env`, or `ANTHROPIC_API_KEY`, which the adapter reads when no
 credential is stored.
 
-**[P] `screen_plans` defaults to true** (R-336). Configuring the adapter required a credential; that
-was the decision. False turns off both functions. The key kept its name when screening split into
-two functions, so existing configurations read unchanged.
+**[P] `screen_plans` defaults to true** (R-336). False stops the adapter advertising `repair_plan`,
+`answer_questions` and `revise_plan`, so an assignment of them to it is off. The key kept its name
+when screening split into two functions, so existing configurations read unchanged. Assignment is now
+the ordinary way to turn screening off; the key stays so a stored configuration keeps its meaning.
+
+**[D] An upgrade keeps screening.** Migration `000033` assigns `repair_plan`, `answer_questions` and
+`revise_plan` to the install's one enabled AI adapter — the default, else the first by ID — unless it
+set `screen_plans: false`. §10's functions start unassigned: they send a provider things screening
+never did (account names, audit records, policy), so they are off until an administrator assigns them.
 
 **[P] Host policy carries `DisableAIScreening`**, install-wide, evaluated in `core/detection` beside
-the source allowlist. It can only deny, like everything else in the document (R-272).
+the source allowlist. It can only deny, like everything else in the document (R-272). It covers
+screening, not §10's functions, which are each gated by a verb instead.
+
+### 7.1 Declared in the config file
+
+**[D]** An install kept as code declares adapters, and the AI functions each handles, in an
+`adapters:` section of the startup YAML (R-271), beside `policy:`. There is no environment-variable
+form: a map of adapters with nested credentials and functions does not flatten into variables anyone
+could read.
+
+```yaml
+adapters:
+  ai_anthropic:
+    category: ai
+    kind: anthropic
+    name: Anthropic
+    config:
+      model: claude-opus-5-5
+    credentials:
+      api_key: {env: ANTHROPIC_API_KEY}   # or {file: /run/secrets/anthropic}
+    functions:
+      repair_plan: {}
+      answer_questions: {}
+      search_audit: {model: claude-haiku-4-5}
+```
+
+Keys are adapter IDs. `category` and `kind` are required; `name` (the ID), `default` (false),
+`enabled` (true), `config` and `credentials` are optional. `functions` is a list of names, or a map of
+names to `{model: …}`, and only an AI adapter may have it. Parsing is `internal/config/adapters.go`.
+
+**[D] Credentials are references only** (R-190). Each is `{env: VARIABLE}` or `{file: PATH}`, read at
+startup and handed to `Configure` in memory, as a decrypted stored credential is. A value written
+inline under `credentials`, or a key under `config` named like a credential (`api_key`, `token`,
+`secret`, `password` and similar), stops startup with a message saying how to reference it instead.
+The config file is not encrypted.
+
+**[D] A declaration overrides what is stored, and is read-only elsewhere while it is declared.** A
+declared adapter replaces a stored adapter with the same ID, a stored AI adapter of the same provider,
+and a stored default in its category. A declared assignment replaces a stored one for the same
+function. The stored rows are not changed: `GET /adapters` lists an overridden adapter with
+`status: "overridden"` and `overridden_by` naming the declaration, `GET /ai/functions` lists an
+overridden assignment under `overridden`, and removing the declaration and restarting brings them
+back. `POST /adapters` for a declared ID, or for an AI adapter of a declared provider, and
+`PUT`/`DELETE /ai/functions/{function}` for a declared function, return `STATE_SET_AT_STARTUP` naming
+the file and key. `GET /adapters` marks each declared adapter `declared: true` with its `source`, and
+`GET /config` lists the declared adapters with their credential names (never values) and functions.
+Declared and console-managed adapters may be mixed, and a declared AI adapter may be assigned, from
+the console, a function the file does not assign (O-21).
+
+**[D] A declaration that contradicts itself stops startup, in every category.** Two enabled defaults
+in one category, two AI adapters of one kind, one AI function under two adapters, and two declared
+services adapters that provide the same slot type each stop startup with an error naming both keys,
+for example *"the config file /etc/pando/pando.yaml assigns the AI function search_audit twice, at
+adapters.ai_anthropic.functions.search_audit and adapters.ai_openai.functions.search_audit. Each AI
+function is handled by one adapter: remove it from one of them"*. This follows `policy.NewOverlay`: a
+declaration that silently resolved one way does not do what its author wrote. The services check runs
+after registration, because which slot types an adapter provides is the adapter's answer (`Supports`).
+
+**[D] A declared adapter that fails to configure is logged and skipped,** as a stored one is: an unset
+variable, an unreadable file, a key the provider refuses. The declaration does not contradict itself;
+the environment is wrong, and one broken adapter does not take the install offline. An assignment to
+it reads as off, with the reason, in `GET /ai/functions`.
 
 ---
 
@@ -498,3 +584,172 @@ it — `add_slot` needs a key, and a key comes from somewhere in the source.
 
 **[D] It is not required.** Everything the auction produces is produced whether or not a screener
 runs (R-106). §4.1 lists the cases in which screening is skipped.
+
+---
+
+## 9. Assigning functions to adapters
+
+**[D] Each AI function is assigned to at most one adapter, and an adapter may hold any number**
+(R-259). With Anthropic and OpenAI both configured, an administrator might give screening and access
+drafting to one, and audit search and reference help to the other.
+
+| Function | Title | Called by |
+|---|---|---|
+| `repair_plan` | Plan repair | detection, when the proposal failed (§4.2) |
+| `answer_questions` | Answering detection questions | detection, when it asked something (§4.2) |
+| `revise_plan` | Plan revision | a person reviewing a proposal (§4.3) |
+| `draft_access` | Access drafting | `POST /ai/access/draft` (§10.1) |
+| `draft_policy` | Policy drafting | `POST /ai/policy/draft` (§10.2) |
+| `search_audit` | Audit search | `POST /ai/audit/search` (§10.3) |
+| `answer_reference` | Reference help | `POST /ai/reference/answer` (§10.4) |
+
+`read_readme` is declared and not assignable, because nothing calls it. `api.AIFunctions()` is the
+list, and `AIFunction.Title()` names each in a sentence.
+
+**[D] The database enforces one adapter per function.** `ai_assignments` has `function` as its
+primary key (§02 2.5). `PUT /ai/functions/{function}` inserts, or updates the model only when the row
+already names the same adapter; a row naming another adapter is not moved. The refusal is
+`STATE_AI_FUNCTION_ASSIGNED`, to R-105's standard: *"Audit search is already handled by the adapter
+ai_openai. Each AI function is handled by one adapter at a time. To move audit search to the
+Anthropic adapter (ai_anthropic), remove it from the adapter ai_openai first."* Moving a function is
+two requests, so no adapter loses work someone gave it without someone taking it away.
+
+**[D] `adapter_id` has no foreign key.** A declared adapter has no `adapter_configs` row and may
+still be assigned a function from the console. Core checks at assignment that the adapter is a running
+AI adapter that advertises the function; an adapter that later fails to start, or is removed, leaves
+the assignment in place and the function off, with the reason (R-335).
+
+**[D] An adapter is assigned only functions it advertises** (`AICapabilities.Functions`), checked at
+assignment and again at each call. A refusal lists what the adapter does perform.
+
+**[D] A model per assignment, when the adapter can choose one.** `AICapabilities.ChoosesModel` says
+the adapter can run a model other than its own for one call; `Models`, when set, lists the only ones
+it may. An assignment's `model` is optional and falls back to the adapter's `Model`. A model on an
+adapter that cannot choose is refused, as is one outside a non-empty `Models`. The model reaches the
+adapter on each request (`ScreenRequest.Model`, and the `Model` field on §10's requests), and the
+result, the review and the audit event name the model that ran. The Anthropic adapter sets
+`ChoosesModel` and leaves `Models` empty: any model the Messages API serves, and a name it does not
+serve fails that call rather than the assignment.
+
+**[D] An unassigned function is off, not an error** (R-106, R-335). Detection records it as
+`not_configured` with *"Plan repair is not assigned to an AI adapter on this installation."* §10's
+endpoints return `ADAPTER_UNAVAILABLE` with the remedy of assigning it, and the console does not
+offer them (§08 1.1).
+
+**[D] Assignments take effect immediately.** Adapters are registered at startup (R-253); an
+assignment is not an adapter. After each change core reloads the stored assignments, lays the
+declared ones over them (§7.1), and hands the result to the registry (`Registry.SetAIAssignments`).
+The next call uses it.
+
+**[D] Every change is audited**, as `ai.function.assign` and `ai.function.unassign`, with the adapter
+and model. Listing is `install.view`; assigning and unassigning are `install.adapters.manage`, the
+verb that manages the adapters themselves.
+
+```
+GET    /api/v1/ai/functions               each function: adapter, model, effective_model, on/off and why, source, overridden
+PUT    /api/v1/ai/functions/{function}    {adapter_id, model?}
+DELETE /api/v1/ai/functions/{function}
+```
+
+`pando ai functions|assign|unassign` and the MCP tools `pando_list_ai_functions`,
+`pando_assign_ai_function` and `pando_unassign_ai_function` are clients of these (R-261).
+
+---
+
+## 10. Administrative functions
+
+R-343 – R-346, in `internal/core/assist` (`Service`), the service layer both `httpapi` and `mcp` call.
+They share three rules with screening, adjusted to what they touch.
+
+**[D] Each proposes and none applies.** The result is a draft, a filter or an answer. Creating the
+role, saving the policy or paging the log is a separate request, made by a person through the
+endpoint that already exists for it, under their own authority. An agent holding a token can ask for
+a draft and still lacks whatever verb applying it needs.
+
+**[D] Core checks what comes back against a closed set, whatever the model said,** as
+`screening.Apply` checks amendments: verbs against the catalog, policy fields against the overlay,
+citations against the reference. What core drops is returned under `refused` or `declined`, with the
+reason, so the person reviewing sees it.
+
+**[D] Each call is audited, and the content is not.** `ai.<function>` (`ai.draft_access`,
+`ai.search_audit`, …) names the adapter and model, with target kind `ai_function`, and for audit
+search the number of records sent. The description or question is not recorded: it is free text a
+person typed, and the log is readable by everyone with `install.audit.read`. This is R-337's record of
+what left the host, applied to these functions (R-227).
+
+Each is one bounded call (two for audit search), with a 90-second timeout and a 2,000-character limit
+on what a person types. The Anthropic adapter implements each with one `submit` tool whose schema is
+the function's result, forced with `tool_choice`, on the assignment's model. There is no tool loop,
+because none of these reads a repository.
+
+### 10.1 Access (`draft_access`, R-343)
+
+`POST /api/v1/ai/access/draft {description}`, `install.users.manage`. The adapter receives the verb
+catalog, the existing roles and groups, and the accounts (ID, name, email), and returns
+`{role?: {name, scope, verbs}, group?: {name, members}, reply}`.
+
+The catalog handed over is what the caller could grant: every app verb, since `POST /roles` lets any
+holder of `install.users.manage` define an app role, and only the install verbs the caller holds.
+Core then refuses a verb outside the catalog, a verb of the other scope (R-080), a role left with no
+verb, a role or group name that already exists (built-in names included, R-081 and R-082), and a
+member who is not an account. The console creates what survives with `POST /roles`, `POST /groups`
+and, for an install-scoped role, `PUT /groups/{id}/role`; an app role is granted per app, which is
+that app's decision. R-088's last-administrator rule is untouched, because a draft only adds.
+
+### 10.2 Policy (`draft_policy`, R-344)
+
+`POST /api/v1/ai/policy/draft {description}`, `install.policy.manage`. The adapter receives the
+current effective document, each field's name and type and whether it is fixed at startup, and the
+verb catalog, and returns `{changes: {field: value}, reply}`.
+
+Core builds the result: `proposed` (the document as it would be saved), `changes` as
+`{key, from, to}`, `declined`, and `refused`. A change to a field the startup overlay fixes is
+declined **here**, whatever the adapter returned, citing the overlay's source: *"disabled_verbs is set
+in /etc/pando/pando.yaml (policy.disabled_verbs) and can't be changed here. Remove it from that file
+and restart Pando to manage it from the console."* The adapter is told which fields are fixed so it
+can say so, but the refusal does not depend on it. A value that does not read as its field
+(`policy.CheckValue`, the check startup settings get) and a verb list naming a verb that does not
+exist are refused. The proposal is saved only by `PUT /policy`, which runs its own checks again.
+
+### 10.3 Audit search (`search_audit`, R-345)
+
+`POST /api/v1/ai/audit/search {question}`, `install.audit.read`. Two calls:
+
+1. `SearchAudit` receives the question, the current UTC time, the accounts (ID, name, email), the apps
+   (ID, name) and the action names present in the log, and returns one filter — `actions` (prefixes,
+   any of which matches), `app_id`, `principal_id`, `principal_kind`, `target_kind`, `target_id`,
+   `involving`, `since`, `until` — and a `note`. Core trims it, drops an unknown principal kind, keeps
+   at most ten actions, and refuses a range that ends before it starts.
+2. Core runs the filter (`audit.Reader.List`, up to 200 records). `SummarizeAudit` receives up to 100
+   of them with the question, and returns a summary written from those alone.
+
+The response carries `filter`, `note`, `summary`, `matched` and `truncated`. The filter is ordinary
+`GET /audit` parameters, so the console puts it in the audit log's own filter fields and the table
+below is the ordinary table (§08 1.1). `GET /audit` accepts `action` more than once for this; any of
+them matches.
+
+**[D] The adapter never reads the log** (R-027, R-226). It proposes a filter; core runs it and decides
+how many records to send.
+
+**[P] "Accessed" is answered from what is recorded, and says so.** A successful use of an app writes
+no event; `session.create` records a sign-in and the proxy records `app.use.denied`. The adapter is
+told this and, asked what someone accessed, filters on what is recorded and says in its `note` that
+successful use is not. Whether to add an `app.use` event is O-22.
+
+### 10.4 Reference help (`answer_reference`, R-346)
+
+`POST /api/v1/ai/reference/answer {question}`, any signed-in user, like `GET /reference`. The adapter
+receives the question and the generated reference as Markdown — the document `make reference` writes
+to `docs/api.md`, `docs/cli.md` and `docs/mcp.md`, rendered by `internal/reference` and built once per
+process — and returns `{answer, cites, covered}`. Core drops any citation that does not occur in the
+reference text, which catches an answer drawn from the model's memory of another version of Pando.
+`covered: false` means the reference does not answer the question, and the answer says so.
+
+### 10.5 Surfaces
+
+Each function is an endpoint first (R-261). The CLI is `pando ai ask`, `pando ai audit`,
+`pando ai draft-access` and `pando ai draft-policy`. The MCP tools are `pando_ai_draft_access`,
+`pando_ai_draft_host_rules`, `pando_ai_search_audit` and `pando_ai_ask_reference`; the policy tool's
+name avoids "policy" because `TestO12_TheMostDangerousActionsAreNotOfferedAsTools` refuses any tool
+name containing it (§04 3), and drafting a policy changes nothing. The console's entry points are in
+§08 1.1.

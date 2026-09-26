@@ -702,6 +702,14 @@ document; R-251 says core never learns it. Core says "screen this proposal again
 interface, the closed set of amendments it may return, and why it returns amendments rather than a
 spec are in [10-ai-assistance.md](10-ai-assistance.md).
 
+**[D] AI has no category default.** Every other category resolves "the adapter" through
+`Registry.Default`; AI resolves one per function. Each AI function is assigned to at most one AI
+adapter, one adapter may hold any number, and an assignment may name a model when the adapter
+advertises `ChoosesModel` (R-259). `Registry.AIFor(function)` is the lookup, and a function with no
+assignment is off. An install has **one AI adapter per provider** (a unique index on
+`adapter_configs (kind) WHERE category = 'ai'`), because two adapters of one kind would differ only by
+credential or model, and the assignment carries the model. Design 10 §9.
+
 ---
 
 ## 9. Registration
@@ -715,7 +723,7 @@ func (r *Registry) ByCategory(c Category) []Adapter
 func (r *Registry) Default(c Category) (Adapter, error)
 ```
 
-**[D]** Registration happens in `main` at startup, from compiled-in packages (R-253). Configured instances come from `adapter_configs` (§02 2.5).
+**[D]** Registration happens in `main` at startup, from compiled-in packages (R-253). Configured instances come from `adapter_configs` (§02 2.5), and from the `adapters:` section of the config file, which overrides a stored adapter with the same ID, a stored AI adapter of the same kind, and a stored default in the category (R-271, design 10 §7.1).
 
 **[D]** CI enforces an import rule: nothing under `internal/adapter/` may import `internal/core/authz`, `internal/core/audit`, or `internal/core/state`. This is R-027 as a lint rule rather than a convention.
 
@@ -734,4 +742,4 @@ func (r *Registry) Default(c Category) (Adapter, error)
 | backup | `local` | a filesystem path; retention owned by Pando |
 | services | `docker` | postgres, mysql, redis in-bundle |
 | notify | `console` | R-231 |
-| ai | `anthropic` | screens deployment plans (design 10). Not seeded — needs a credential. |
+| ai | `anthropic` | performs the AI functions assigned to it, each on its own model if the assignment names one (design 10 §9). Not seeded — needs a credential. One per install, like any AI provider. |

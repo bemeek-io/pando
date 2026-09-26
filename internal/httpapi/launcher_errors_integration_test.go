@@ -123,5 +123,5 @@ func TestR271_ConfigWithNothingSetIsEmptyNotNull(t *testing.T) {
 	i := newInstall(t)
 	got := i.do(i.admin(), http.MethodGet, "/config", nil)
 	require.Equal(t, http.StatusOK, got.Code, got.String())
-	require.JSONEq(t, `{"file":"","settings":[],"policy":[]}`, got.String())
+	require.JSONEq(t, `{"file":"","settings":[],"policy":[],"adapters":[]}`, got.String())
 }

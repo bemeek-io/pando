@@ -305,6 +305,21 @@ CREATE TABLE adapter_credentials (
     PRIMARY KEY (adapter_id, field)
 );
 
+-- One AI adapter per provider (R-259).
+CREATE UNIQUE INDEX adapter_configs_one_ai_adapter_per_kind
+    ON adapter_configs (kind) WHERE category = 'ai';
+
+-- Which AI adapter performs each AI function (R-259). The primary key is the
+-- rule: a function has at most one adapter; an adapter may hold any number.
+-- No FK to adapter_configs: an adapter declared in the config file has no row.
+CREATE TABLE ai_assignments (
+    function    text PRIMARY KEY CHECK (function ~ '^[a-z][a-z_]*$'),  -- repair_plan, search_audit, ...
+    adapter_id  text NOT NULL CHECK (adapter_id <> ''),
+    model       text NOT NULL DEFAULT '',     -- empty: the adapter's own model
+    updated_by  text NOT NULL,
+    updated_at  timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE host_policy (
     id          integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),  -- singleton, R-015
     body        jsonb NOT NULL,
@@ -318,6 +333,10 @@ CREATE TABLE host_policy (
 **[D]** Policy is a single versioned document, not scattered columns, so R-274's "apply policy to a running install" is one transaction and one audit event.
 
 **[D]** Startup configuration can fix any policy field (R-271): a `policy:` section in the config file or `PANDO_POLICY_<FIELD>`, the environment winning. A fixed field is laid over the stored document by the policy store itself (`policy.Overlay.Wrap`), so every reader — evaluator, handlers, the security pass — sees it; `PUT /policy` refuses to change it and the store never writes it into `body`, so removing it from the config and restarting restores what was stored. An unknown field or a value of the wrong type stops startup, because a policy that silently does not apply is worse than one that refuses to start. `GET /config` reports every non-secret startup setting and each fixed field with its source (env var, or file and key), and the console shows fixed fields disabled with that source on hover.
+
+**[D]** Adapters and AI function assignments are overlaid the same way (R-271). An `adapters:` section of the config file declares adapters by ID, and the AI functions each handles; credentials are `{env: …}` or `{file: …}` references, never values (R-190). At startup a declared adapter replaces a stored one with the same ID, a stored AI adapter of the same kind, and a stored default in its category, and a declared assignment replaces the `ai_assignments` row for its function. Nothing declared is written to `adapter_configs` or `ai_assignments`, so removing a declaration and restarting brings back what was stored; the API reports a stored row the file replaces as overridden, and refuses to change a declared item with `STATE_SET_AT_STARTUP`. A declaration that contradicts itself — two defaults in a category, two AI adapters of one kind, one function under two adapters, two services adapters for one slot type — stops startup, naming both keys. Design 10 §7.1.
+
+**[D]** `ai_assignments.adapter_id` has no foreign key, deliberately: a declared adapter can be assigned a function from the console and has no `adapter_configs` row to reference. An assignment whose adapter is not running leaves the function off. The primary key makes a second adapter for one function impossible rather than a handler's check; `PUT /ai/functions/{function}` updates a row only when it already names the same adapter, and otherwise returns `STATE_AI_FUNCTION_ASSIGNED`.
 
 ### 2.6 Audit
 

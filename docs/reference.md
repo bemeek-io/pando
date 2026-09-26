@@ -152,6 +152,50 @@ The settings are `source_allowlist`, `disabled_verbs`, `agent_disabled_verbs`,
 `GET /api/v1/config`, `pando config` and the Policy screen list every setting Pando started with,
 its value, and where it came from. Secrets are never shown.
 
+### Adapters at startup
+
+Adapters, and the AI functions each one handles, can be declared in an `adapters:` section of the
+config file instead of being added in the console. There is no environment-variable form.
+
+```yaml
+adapters:
+  ai_anthropic:                  # the adapter's ID
+    category: ai
+    kind: anthropic
+    name: Anthropic
+    config:
+      model: claude-opus-5-5
+    credentials:
+      api_key: {env: ANTHROPIC_API_KEY}   # or {file: /run/secrets/anthropic_key}
+    functions:                   # a list of names, or names with a model of their own
+      repair_plan: {}
+      answer_questions: {}
+      revise_plan: {}
+      search_audit: {model: claude-haiku-4-5}
+```
+
+`category` and `kind` are required. `name`, `default`, `enabled`, `config`, `credentials` and
+`functions` are optional; `functions` is for AI adapters only. The AI functions are `repair_plan`,
+`answer_questions`, `revise_plan`, `draft_access`, `draft_policy`, `search_audit` and
+`answer_reference`. A function no adapter handles is off, and Pando works without it.
+
+Credentials are never written in the file. Each names an environment variable or a file to read at
+startup, and a value written inline, or a key under `config` that looks like a credential, stops
+Pando at startup. A declared adapter whose variable is unset or whose file cannot be read is logged
+and skipped, like any adapter that fails to start.
+
+A declared adapter overrides a saved adapter with the same ID, a saved AI adapter of the same kind,
+and a saved default in its category; a declared function overrides the function's saved assignment.
+While declared, they cannot be changed from the console, the API, the CLI or MCP, and each refusal
+names the file and key. Nothing saved is deleted: the Adapters screen and `GET /api/v1/adapters` show
+an overridden adapter as overridden, and removing the declaration and restarting brings it back.
+Declared adapters and adapters added in the console can be used together.
+
+A declaration that contradicts itself stops Pando at startup with an error naming both keys: two
+default adapters in one category, two AI adapters of one kind (an installation has one per
+provider), one AI function under two adapters, or two services adapters that provide the same kind
+of service.
+
 ## Guarantees worth relying on
 
 These are requirements, not implementation details, and they will not be changed without a major
