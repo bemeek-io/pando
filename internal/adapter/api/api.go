@@ -110,6 +110,13 @@ type RoutingCapabilities struct {
 	// is a global setting (design 03 §4.1).
 	DefaultMode RoutingMode
 
+	// BaseDomain is what a new app's hostname is carved out of under this
+	// adapter — <app>.<base domain> — when the adapter has one: a Cloudflare
+	// zone, a Traefik's configured domain. Empty leaves it to the install's
+	// server.base_domain. Data, like DefaultMode, so adding an app on
+	// Cloudflare names it in the zone without a second setting to keep in step.
+	BaseDomain string
+
 	SupportsTLS         bool
 	SupportsWildcardTLS bool
 

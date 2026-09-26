@@ -17,6 +17,7 @@ import (
 // to a routing adapter.
 type routingStub struct {
 	mode spec.RoutingMode
+	base string
 	err  error
 }
 
@@ -28,7 +29,7 @@ func (r routingStub) Capabilities(context.Context) (api.RoutingCapabilities, err
 	if r.err != nil {
 		return api.RoutingCapabilities{}, r.err
 	}
-	return api.RoutingCapabilities{Modes: []api.RoutingMode{r.mode}, DefaultMode: r.mode}, nil
+	return api.RoutingCapabilities{Modes: []api.RoutingMode{r.mode}, DefaultMode: r.mode, BaseDomain: r.base}, nil
 }
 func (routingStub) Ensure(context.Context, api.RouteRequest) (api.RouteHandle, error) {
 	return api.RouteHandle{}, nil
@@ -83,6 +84,24 @@ func TestDefaultsTakeEachCategorysConfiguredDefault(t *testing.T) {
 	require.Equal(t, "rt_docker_local", d.RuntimeAdapter)
 	require.Equal(t, "bld_buildkit", d.BuilderAdapter)
 	require.Equal(t, "rte_loopback", d.RoutingAdapter)
+}
+
+// TestR162_AnAppIsNamedInTheRoutingAdaptersDomain: a Cloudflare zone is the
+// only place its tunnel can serve, so a new app is named there rather than
+// under the install's server.base_domain — and with no adapter domain, the
+// install's still applies.
+func TestR162_AnAppIsNamedInTheRoutingAdaptersDomain(t *testing.T) {
+	r := api.NewRegistry()
+	require.NoError(t, r.Register("rte_cf", routingStub{mode: spec.RoutingSubdomain, base: "bemeek.io"}))
+	require.NoError(t, r.SetDefault(api.CategoryRouting, "rte_cf"))
+	d := detection.NewInstallation(r, "localtest.me").Defaults(context.Background())
+	require.Equal(t, "bemeek.io", d.BaseDomain)
+
+	r = api.NewRegistry()
+	require.NoError(t, r.Register("rte_x", routingStub{mode: spec.RoutingSubdomain}))
+	require.NoError(t, r.SetDefault(api.CategoryRouting, "rte_x"))
+	d = detection.NewInstallation(r, "localtest.me").Defaults(context.Background())
+	require.Equal(t, "localtest.me", d.BaseDomain)
 }
 
 // R-162: each adapter declares a default mode, and adding an app uses it

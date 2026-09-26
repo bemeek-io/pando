@@ -547,6 +547,11 @@ change beyond §4.4, which Traefik needed first.
   and the last rule — the catch-all Cloudflare requires — sends everything else to Pando's proxy, so
   any hostname routed to the tunnel that is not an app's shows the console.
 - **Subdomain by default, path available** (R-161, R-162) — path on one hostname is R-164's proxy mode.
+- **The console and the apps can sit at different depths.** Zone `bemeek.io` with console hostname
+  `pando.bemeek.io` serves the console there and apps at `<app>.bemeek.io`. The adapter's base domain
+  is `RoutingCapabilities.BaseDomain`, which a new app's hostname is taken from ahead of the install's
+  `server.base_domain` — the same way `DefaultMode` is, and for the same reason: an app named outside
+  the zone is one the tunnel can only refuse.
 - **Hostnames are one level below the zone.** Cloudflare's included certificate covers `*.zone` and
   nothing deeper, so an app is `<app>.<zone>`; a base domain deeper than one level reports
   `SupportsTLS: false` and says why, rather than issuing a route a browser will refuse.

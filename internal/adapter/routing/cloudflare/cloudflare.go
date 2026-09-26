@@ -168,6 +168,7 @@ func (a *Adapter) Capabilities(context.Context) (api.RoutingCapabilities, error)
 	return api.RoutingCapabilities{
 		Modes:               []api.RoutingMode{spec.RoutingSubdomain, spec.RoutingPath},
 		DefaultMode:         spec.RoutingSubdomain,
+		BaseDomain:          a.config.BaseDomain,
 		SupportsTLS:         covered,
 		SupportsWildcardTLS: covered,
 

@@ -204,6 +204,11 @@ func (a *Adapter) Capabilities(context.Context) (api.RoutingCapabilities, error)
 		// default is gated by app.routing.override.
 		DefaultMode: spec.RoutingSubdomain,
 
+		// Its base domain, when set, is where new apps are named (R-162's
+		// sibling: a default the adapter declares rather than a setting kept
+		// in step with it).
+		BaseDomain: a.config.BaseDomain,
+
 		SupportsTLS:         tls,
 		SupportsWildcardTLS: wildcard,
 
