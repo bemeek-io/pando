@@ -13,6 +13,8 @@ import { Button, Checkbox, Input, Select } from '@design';
 
 import { api } from '@api/client';
 import { AIDialog, AIHeading, AIPrompt, AnsweredBy } from '../ui/AskAI';
+import { PeopleField } from '../ui/PeopleField';
+import type { Person } from '../ui/PeopleField';
 import { AI_PHRASES, AiThinking } from '../ui/AiThinking';
 import { Quiet, refusal } from './Accounts';
 
@@ -36,14 +38,6 @@ export interface AccessDraft {
   model?: string;
 }
 
-interface Account {
-  id: string;
-  display_name?: string;
-  email?: string;
-}
-
-const personName = (a?: Account, id?: string) => a?.display_name || a?.email || id || '';
-
 export function AccessAI({ onClose }: { onClose: () => void }) {
   const queries = useQueryClient();
   const [draft, setDraft] = useState<AccessDraft | null>(null);
@@ -54,7 +48,7 @@ export function AccessAI({ onClose }: { onClose: () => void }) {
   });
   const users = useQuery({
     queryKey: ['users'],
-    queryFn: () => api.get<{ users: Account[] }>('/users'),
+    queryFn: () => api.get<{ users: Person[] }>('/users'),
     retry: false,
   });
   const people = users.data?.users ?? [];
@@ -184,30 +178,12 @@ export function AccessAI({ onClose }: { onClose: () => void }) {
             <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
               <AIHeading>Group</AIHeading>
               <Input label="Name" value={draft.group.name} onChange={(e) => setGroup({ ...draft.group!, name: e.target.value })} />
-              {members.map((id) => (
-                <Checkbox
-                  key={id}
-                  checked
-                  label={personName(
-                    people.find((p) => p.id === id),
-                    id,
-                  )}
-                  onChange={() => setGroup({ ...draft.group!, members: members.filter((m) => m !== id) })}
-                />
-              ))}
-              {people.length > 0 && (
-                <Select
-                  label="Add a person"
-                  value=""
-                  options={[
-                    { value: '', label: 'Choose someone' },
-                    ...people
-                      .filter((p) => !members.includes(p.id))
-                      .map((p) => ({ value: p.id, label: personName(p, p.id) })),
-                  ]}
-                  onChange={(e) => e.target.value && setGroup({ ...draft.group!, members: [...members, e.target.value] })}
-                />
-              )}
+              <PeopleField
+                label="People"
+                people={people}
+                value={members}
+                onChange={(ids) => setGroup({ ...draft.group!, members: ids })}
+              />
               <div>
                 <Button variant="ghost" onClick={() => setGroup(undefined)}>
                   Leave out the group
