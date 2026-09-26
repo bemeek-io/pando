@@ -181,8 +181,8 @@ adapters:
     functions: [answer_reference, draft_access]
 ```
 
-The AI adapter kinds are `anthropic`, `openai` (with `api_key` from `OPENAI_API_KEY` by default) and
-`local`, for any server that speaks the OpenAI API: Ollama, LM Studio, llama.cpp's server or vLLM. A
+The AI adapter kinds are `anthropic`, `openai` (with `api_key` from `OPENAI_API_KEY` by default; it uses
+OpenAI's Responses API, which stores each conversation on OpenAI's servers, not Pando's) and `local`, for any server that speaks the OpenAI API: Ollama, LM Studio, llama.cpp's server or vLLM. A
 local server needs no key, and `model` is required because no model is on every server.
 
 `category` and `kind` are required. `name`, `default`, `enabled`, `config`, `credentials` and

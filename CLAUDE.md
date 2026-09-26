@@ -14,7 +14,7 @@ Two document sets, and the distinction is load-bearing:
 
 | | Path | Authority |
 |---|---|---|
-| **Requirements** | `docs/requirements.md` | What Pando *is*. 207 requirements, IDs `R-###`. Churns slowly. |
+| **Requirements** | `docs/requirements.md` | What Pando *is*. 242 requirements, IDs `R-###`. Churns slowly. |
 | **Design** | `docs/design/00`–`10` | How it is built. Churns every sprint. |
 
 **When design contradicts a requirement, the requirement wins** — or the requirement gets amended

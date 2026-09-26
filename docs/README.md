@@ -4,7 +4,7 @@ Three kinds of document, and the distinction between the first two is load-beari
 
 | | Path | Authority | Churn |
 |---|---|---|---|
-| **Requirements** | [`requirements.md`](requirements.md) | What Pando *is*. 207 requirements, IDs `R-###`. | Slowly |
+| **Requirements** | [`requirements.md`](requirements.md) | What Pando *is*. 242 requirements, IDs `R-###`. | Slowly |
 | **Design** | [`design/`](design/) | How it is built. Ten documents, `00`–`09`. | Every sprint |
 | **Plan** | [`plan/`](plan/) | What to build next, in what order, and what is still unresolved. | Continuously |
 | **Traceability** | [`traceability/`](traceability/) | Generated. Which requirements are designed, planned, and proven. | On demand |

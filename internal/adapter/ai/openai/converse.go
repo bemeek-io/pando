@@ -22,8 +22,9 @@ var errDone = errors.New("done")
 // the model has answered.
 //
 // Each turn continues the last by previous_response_id rather than resending
-// the whole conversation, so OpenAI keeps the response for the conversation's
-// length (design 10 §6.2). A model that answers in prose rather than through
+// the whole conversation, which works because OpenAI stores each response on
+// its own servers. Pando stores none of it; the adapter's description says so
+// where it is configured (design 10 §6.2). A model that answers in prose rather than through
 // a tool is asked once more before that counts as a failure — tool use is
 // asked for, not forced, as it is with every adapter.
 func (a *Adapter) converse(

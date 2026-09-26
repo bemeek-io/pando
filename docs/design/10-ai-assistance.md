@@ -1,4 +1,4 @@
-# 09 — AI Assistance
+# 10 — AI Assistance
 
 R-106 has been in the requirements since draft 1 and has never had a design. It says AI assistance is
 optional supporting functionality, names three places it may be applied, and sets the constraint that
@@ -473,9 +473,12 @@ to answer through the tool, and asks once more when a model answers in prose.
 
 - **[P] `gpt-5.5` is the default model**, the SDK's newest general model when this was written. An install
   sets its own; each function may run on another (§9).
-- **[P] Each turn continues the last by `previous_response_id`** rather than resending the conversation,
-  so OpenAI keeps each response for the conversation's length. An organization under zero data retention
-  cannot use `previous_response_id`; that install needs the conversation resent instead, which is not
+- **[D] The conversation is stored by OpenAI, not by Pando, and the adapter says so.** Each turn continues
+  the last by `previous_response_id` rather than resending the conversation, which the Responses API makes
+  possible by keeping each response on OpenAI's servers, under OpenAI's retention terms. Pando stores none
+  of it. The adapter's description in the console's Add adapter form states this, so whoever configures it
+  knows before a repository or an audit record is sent. An organization under zero data retention cannot
+  use `previous_response_id`; supporting one means resending the conversation each turn, which is not
   built.
 - **[P] Not strict.** OpenAI's strict mode needs every property required, and the amendment schema's
   optional fields are what let one shape carry every kind. Core validates every answer regardless.

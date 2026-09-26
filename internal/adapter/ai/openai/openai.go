@@ -202,7 +202,9 @@ func Info() api.KindInfo {
 		Category:    api.CategoryAI,
 		Kind:        Kind,
 		Name:        "OpenAI",
-		Description: "Performs the AI functions assigned to it with OpenAI's models, through the Responses API. Needs an OpenAI API key.",
+		Description: "Performs the AI functions assigned to it with OpenAI's models. Uses OpenAI's Responses API, " +
+			"which stores each conversation on OpenAI's servers under OpenAI's retention terms; Pando does not store it. " +
+			"Needs an OpenAI API key.",
 		IDPrefix:    "ai_",
 		Fields: []api.Field{
 			{Key: "api_key", Label: "API key", Type: "string", Help: "An OpenAI API key. Stored encrypted and never shown again. Leave empty to use OPENAI_API_KEY from Pando’s environment.", Credential: true, Placeholder: "sk-…"},
