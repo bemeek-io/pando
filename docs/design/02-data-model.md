@@ -358,6 +358,10 @@ CREATE INDEX ON audit_events (app_id, occurred_at DESC);
 CREATE INDEX ON audit_events (principal_id, occurred_at DESC);
 ```
 
+**[D] `app.use`** is the highest-volume action: one row per visit to an app (design 06 §6), with
+`detail` holding the first path, the visit ID, and for an anonymous visitor the address Pando saw.
+About 470 bytes a row with its indexes.
+
 **[D]** Append-only. `REVOKE UPDATE, DELETE` from the application role at the database level. R-027 says no adapter can rewrite the audit log; the enforcement should be a database grant, not a code review.
 
 **[D] The revoke is only meaningful if the application role owns nothing.** This was established

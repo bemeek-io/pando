@@ -125,6 +125,7 @@ Browser → GET https://notes.corp.com/dashboard
       data grant (group)?   → resolve live      (R-079)
       anonymous grant?      → allow             (R-075)
       else: anonymous → 302 login; authed → 403
+ 5a. record app.use, first request of a visit only  (R-227)
  6. mint assertion: sub, email, name, groups, aud=app_id, exp=+120s  (R-054)
  7. STRIP all inbound X-Pando-* headers          ← R-053 spoofing defense
  8. set X-Pando-Assertion + convenience headers

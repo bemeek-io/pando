@@ -494,10 +494,14 @@ func serve(ctx context.Context, configPath string) error {
 		Minter:        minter,
 		Upstreams:     proxy.NewRuntimeUpstreams(registry),
 		Auditor:       auditor,
-		Metrics:       proxy.NewCounters(),
-		Logger:        logger,
-		LoginPath:     httpapi.LoginPath,
-		Mode:          cfg.Server.RoutingMode,
+		// Whether a visit by someone not signed in is recorded as app.use
+		// (R-227); read when one would be, like any other policy.
+		UsePolicy:   hostPolicy,
+		ExternalURL: externalURL,
+		Metrics:     proxy.NewCounters(),
+		Logger:      logger,
+		LoginPath:   httpapi.LoginPath,
+		Mode:        cfg.Server.RoutingMode,
 	}
 
 	// A delete asks for its teardown now rather than at the next GC pass.

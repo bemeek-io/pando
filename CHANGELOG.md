@@ -21,10 +21,38 @@ Unreleased above it. -->
 
 ### Added
 
+- Who used an app is in the audit log: `app.use`, once per visit (a browser session, or a token's use
+  within twelve hours), with the first page visited. Visitors who are not signed in are recorded too,
+  with the address Pando saw; host policy's **Don't record visits from people who aren't signed in**
+  (`disable_anonymous_use_audit`) turns that off. Audit search can now answer "who accessed this app".
+- AI functions beyond detection (#74): drafting roles and groups, drafting host policy, searching the
+  audit log with a question, and answering "How can I…" from the API, CLI and MCP reference. Each
+  proposes and a person applies. Each AI function is assigned to one AI adapter, optionally on a model
+  of its own, chosen when editing the adapter.
+- OpenAI and local-model AI adapters, beside Anthropic. The local adapter talks to any server that
+  speaks the OpenAI API, such as Ollama, LM Studio, llama.cpp's server or vLLM, and sends nothing to a
+  provider.
+- Adapters, and the AI functions each handles, can be declared in the config file's `adapters:`
+  section, with credentials named by environment variable or file. Declared ones are read-only in the
+  console, API, CLI and MCP.
+
 - A security scan now shows while it runs: in the app's Security section and in the app list's
   Security column, wherever the scan was started (a deploy, detection, the CLI, MCP or **Scan
   now**). The API reports it as `scanning_since` on `GET /apps/{id}/security` and
   `security_scanning` on each app in `GET /apps`.
+
+### Changed
+
+- An install has at most one AI adapter per provider, and an AI adapter has no default: each AI
+  function is off until assigned. The existing AI adapter keeps plan repair, answering detection's
+  questions and plan revision on upgrade; the new functions start off.
+- Pando sets a `pando_visit_<app>` cookie on responses from apps, to recognize a visit. Like every
+  cookie named `pando_…`, it never reaches the app.
+
+### Upgrade notes
+
+- An install with more than one AI adapter of the same provider must remove all but one before
+  upgrading; the migration stops with a message naming the provider otherwise.
 
 ## [0.3.0] - 2026-09-24
 
