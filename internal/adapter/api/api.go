@@ -186,6 +186,20 @@ type RuntimeAdapter interface {
 	Logs(ctx context.Context, ref WorkloadRef, opts LogOptions) (io.ReadCloser, error)
 	Exec(ctx context.Context, ref WorkloadRef, req ExecRequest) (ExecSession, error)
 
+	// Upstream says where Pando's proxy sends a request for one port of one
+	// workload (R-023).
+	//
+	// The runtime answers because it is the runtime that made the workload
+	// reachable: it put the workload on a private network and joined Pando to
+	// it, or opened whatever path stands in for that. How a workload is
+	// addressed is provider vocabulary core must never learn (R-251). The proxy
+	// assembled the address itself, as a Docker container name, and any other
+	// runtime would have received every request at a host that does not exist.
+	//
+	// Called on every proxied request. An adapter that can compute the answer
+	// computes it rather than asking its provider each time.
+	Upstream(ctx context.Context, ref WorkloadRef, port int) (Upstream, error)
+
 	// Trial starts a workload in throwaway isolation and reports what it did
 	// (R-097): which ports it bound, what it wrote outside its declared
 	// storage, and — if it crashed — the log, which is the whole output when a
@@ -280,6 +294,17 @@ type BundleRef struct {
 type WorkloadRef struct {
 	BundleID string
 	Workload string
+}
+
+// Upstream is how Pando's proxy reaches a workload.
+//
+// A struct rather than a string so that a runtime whose workloads are not
+// directly addressable — a remote host reached through a tunnel it opens — can
+// answer here later without the interface changing again.
+type Upstream struct {
+	// URL is the scheme, host and port the proxy forwards to, such as
+	// "http://pando-app_01HQ8-web:3000". No path: the proxy keeps the request's.
+	URL string
 }
 
 // BundleHandle is the adapter's own identifier for a bundle.

@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -75,15 +74,26 @@ func (u *RuntimeUpstreams) PrimaryAddress(ctx context.Context, app state.App, s 
 			WithRemedy("Add the port to the app's spec.")
 	}
 
-	// The bundle network gives each workload a DNS alias under its own name, so
-	// the address is the workload name and its port — no container ID, no IP,
-	// nothing that changes when the app is recreated.
-	return fmt.Sprintf("http://%s:%d", workloadHost(app.ID, primary.Name), port), nil
-}
+	// Which port is a question about the spec, and core answers it. Where that
+	// port is reachable is a question about the runtime, and only the runtime
+	// can answer it (R-251). The address was assembled here as a Docker
+	// container name, which sent every request for an app on any other runtime
+	// to a host that did not exist.
+	if u.registry == nil {
+		return "", errs.New(errs.AdapterUnavailable, "Pando has no runtimes set up.")
+	}
+	runtime, ok := u.registry.Runtime(s.Runtime.AdapterRef)
+	if !ok {
+		return "", errs.Newf(errs.PlanAdapterNotConfigured,
+			"The runtime %q is not configured.", s.Runtime.AdapterRef)
+	}
 
-// workloadHost is the name a workload answers to inside its bundle network.
-func workloadHost(appID, workload string) string {
-	return "pando-" + appID + "-" + workload
+	// The bundle is the app: every deploy names it by the app's ID.
+	upstream, err := runtime.Upstream(ctx, api.WorkloadRef{BundleID: app.ID, Workload: primary.Name}, port)
+	if err != nil {
+		return "", err
+	}
+	return upstream.URL, nil
 }
 
 // Counters is an in-memory request count, per app.
