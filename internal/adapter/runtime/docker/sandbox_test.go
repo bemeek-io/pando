@@ -56,13 +56,13 @@ func TestR255_TheReportedClassIsTheConfiguredRuntimes(t *testing.T) {
 	require.False(t, caps.SupportsWriteObservation)
 }
 
-// TestR114_ARuntimeDockerDoesNotHaveMakesTheAdapterUnavailable asserts that a
+// TestR255_ARuntimeDockerDoesNotHaveMakesTheAdapterUnavailable asserts that a
 // sandboxed class is only ever claimed for a runtime the daemon has. The
 // planner refuses to plan against an unhealthy adapter, so a floor of
 // `sandboxed` cannot be met by a runtime that was configured but never
 // installed — which Docker would otherwise refuse at the first container, after
 // the plan had already said yes.
-func TestR114_ARuntimeDockerDoesNotHaveMakesTheAdapterUnavailable(t *testing.T) {
+func TestR255_ARuntimeDockerDoesNotHaveMakesTheAdapterUnavailable(t *testing.T) {
 	ctx := context.Background()
 	info := func(runtimes ...string) http.HandlerFunc {
 		m := map[string]any{}
@@ -109,11 +109,11 @@ func createdRuntimes(f *fakeDaemon) *[]string {
 	return got
 }
 
-// TestR114_AppCodeRunsUnderTheConfiguredRuntime asserts that both places an
+// TestR255_AppCodeRunsUnderTheConfiguredRuntime asserts that both places an
 // app's own code runs — its deploy and the trial before it — use the runtime
 // the class was reported for. A trial under runc on a sandboxed install would
 // put the least trusted moment of an app's life outside the sandbox.
-func TestR114_AppCodeRunsUnderTheConfiguredRuntime(t *testing.T) {
+func TestR255_AppCodeRunsUnderTheConfiguredRuntime(t *testing.T) {
 	ctx := context.Background()
 	f, a := newFakeDaemon(t, map[string]any{"oci_runtime": "runsc"})
 	got := createdRuntimes(f)
@@ -135,13 +135,13 @@ func TestR114_AppCodeRunsUnderTheConfiguredRuntime(t *testing.T) {
 	require.Equal(t, []string{""}, *got)
 }
 
-// TestR114_ChangingTheRuntimeMovesAppsOnTheirNextDeploy asserts that a
+// TestR255_ChangingTheRuntimeMovesAppsOnTheirNextDeploy asserts that a
 // container under a runtime other than the configured one does not match its
 // plan, however unchanged its image and environment are. The reported class
 // changes the moment the setting does; without this, a redeploy after switching
 // to runsc would have left the app on runc while the adapter called it
 // sandboxed.
-func TestR114_ChangingTheRuntimeMovesAppsOnTheirNextDeploy(t *testing.T) {
+func TestR255_ChangingTheRuntimeMovesAppsOnTheirNextDeploy(t *testing.T) {
 	w := api.WorkloadPlan{Name: "web", Image: "nginx:1"}
 
 	matches := func(configured, running string) bool {

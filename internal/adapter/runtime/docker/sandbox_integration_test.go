@@ -41,11 +41,11 @@ func kernelOf(t *testing.T, container string) string {
 	return string(out)
 }
 
-// TestR114_ASandboxedTrialRunsInsideTheSandbox asserts that the trial run —
+// TestR255_ASandboxedTrialRunsInsideTheSandbox asserts that the trial run —
 // the first time an unreviewed app's code runs at all — gets the boundary its
 // deploy will, and that it reports what it can see through that boundary
 // rather than what it cannot.
-func TestR114_ASandboxedTrialRunsInsideTheSandbox(t *testing.T) {
+func TestR255_ASandboxedTrialRunsInsideTheSandbox(t *testing.T) {
 	ctx := context.Background()
 	a := sandboxedAdapter(t)
 
@@ -71,9 +71,9 @@ func TestR114_ASandboxedTrialRunsInsideTheSandbox(t *testing.T) {
 	require.Empty(t, result.ObservedWrites)
 }
 
-// TestR114_ASandboxedDeployRunsInsideTheSandbox asserts the same of an app's
+// TestR255_ASandboxedDeployRunsInsideTheSandbox asserts the same of an app's
 // deploy: the container the reported class describes is the one running.
-func TestR114_ASandboxedDeployRunsInsideTheSandbox(t *testing.T) {
+func TestR255_ASandboxedDeployRunsInsideTheSandbox(t *testing.T) {
 	ctx := context.Background()
 	a := sandboxedAdapter(t)
 
