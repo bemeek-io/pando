@@ -1807,46 +1807,49 @@ function aiMarkFor(marks: Suggestions, row: VariableRow, spec: AppSpec): Amendme
  * what it is, so nobody wonders whether Pando looked something up.
  */
 function GenerateValue({ onGenerate, justDone }: { onGenerate: () => void; justDone: boolean }) {
+  // The explanation is the button's own tooltip — hovering the thing is how
+  // somebody asks what it does. It is a short paragraph, so it sets its own
+  // width and wraps; Tooltip itself is one line, for labels.
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', flex: '0 0 auto' }}>
+    <Tooltip
+      side="top"
+      content={
+        <span style={{ display: 'block', width: '16rem', whiteSpace: 'normal', lineHeight: 1.4 }}>
+          Fills in a random, secure string — essentially a password. Use it when the app just needs a
+          secret value and you don’t have one of your own.
+        </span>
+      }
+    >
+      {/* The label never changes, only the icon (the same size), so the
+          button keeps its width and the value beside it does not jump. */}
       <Button
         variant="ghost"
         icon={<Icon name={justDone ? 'check' : 'dices'} size={16} />}
         onClick={onGenerate}
-        aria-live="polite"
+        aria-label={justDone ? 'Generated a random value. Generate another.' : 'Generate a random value'}
       >
-        {justDone ? 'Generated' : 'Generate'}
+        Generate
       </Button>
-      {/* Right against the button it explains, not a separate control. The
-          tooltip is a short paragraph, so it sets its own width and wraps —
-          Tooltip itself is one line, for labels. */}
-      <Tooltip
-        side="top"
-        content={
-          <span style={{ display: 'block', width: '16rem', whiteSpace: 'normal', lineHeight: 1.4 }}>
-            A random, secure string — essentially a password. Use it when the app just needs a secret
-            value and you don’t have one of your own.
-          </span>
-        }
-      >
-        <span
-          tabIndex={0}
-          aria-label="What Generate does"
-          style={{ display: 'inline-flex', marginLeft: 'calc(var(--space-1) * -1)', color: 'var(--ink-secondary)', cursor: 'help' }}
-        >
-          <Icon name="info" size={14} />
-        </span>
-      </Tooltip>
-    </span>
+    </Tooltip>
   );
 }
 
-/** A thin upright rule between two controls that should not read as one. */
+/**
+ * A full-height rule between two controls that should not read as one, with
+ * room on both sides: the Generate button acts on the value, the Secret box
+ * on how it is stored.
+ */
 function Divider() {
   return (
     <span
       aria-hidden="true"
-      style={{ alignSelf: 'stretch', width: 'var(--border-width)', background: 'var(--rule)', margin: 'var(--space-1) 0' }}
+      style={{
+        alignSelf: 'stretch',
+        flex: '0 0 auto',
+        width: 'var(--border-width)',
+        background: 'var(--rule-strong)',
+        margin: '0 var(--space-2)',
+      }}
     />
   );
 }
