@@ -1,11 +1,12 @@
 # Open decisions
 
-Twenty-two questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
+Twenty-three questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
 design; O-15 through O-17 were found while implementing phases 6, 7 and 8; O-18 was found while
 setting up the release build; O-19 was found by turning `gosec` on; O-20 was found while building the
-first AI adapter; O-21 and O-22 came from issue #74, AI functions beyond detection. **Nineteen are
-resolved. Three remain.** O-4 needs a measurement, O-18 needs somebody to pick a host and pay for it,
-and O-22 is a product decision about what the audit log records.
+first AI adapter; O-21 and O-22 came from issue #74, AI functions beyond detection; O-23 came from building the
+Cloudflare Tunnel adapter. **Nineteen are resolved. Four remain.** O-4 needs a measurement, O-18 needs
+somebody to pick a host and pay for it, O-22 is a product decision about what the audit log records,
+and O-23 is kept open deliberately so it is revisited.
 
 O-5 was the other long-standing one and is now resolved: "per-adapter" answered it until R-174 made
 Pando run the edge and write its configuration, at which point Pando became the thing choosing.
@@ -21,6 +22,7 @@ resolution both here and in the requirements or design doc that owns it.
 | **O-4** | Required vs optional slot detection — the forty-key `.env.example` problem | Has a `[P]` answer that needs measuring, not deciding | Phase 6 |
 | **O-18** | Where a signed apt repository is hosted, so `apt install pando` works without downloading a file first | Costs money or custody of a signing key; neither is an engineering call | Not blocking — the `.deb` is already published |
 | **O-22** | Whether successful use of an app is audited (`app.use`), so audit search can answer "who accessed this app" | Adds an event on the proxy path and interacts with retention (issue #60); has a `[P]` answer that reports only what is recorded | Not blocking — R-345 ships without it |
+| **O-23** | Whether the Cloudflare adapter configures Cloudflare Access in front of an app | A product decision about a second gate Pando does not control; the adapter ships without it | Not blocking — design 03 §4.5 |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything the file
 gives a sample value for, and let the trial run settle it — a slot whose absence crashes the trial run
@@ -372,6 +374,19 @@ migration is about paying that cost in the schema rather than in `CheckControl`'
 carries its scope, a grant carries the scope it was made at, and a composite foreign key makes the two
 agree. Two check functions that each refuse the other's verbs keep the call sites honest — and the
 asymmetry matters, because an app verb evaluated install-wide looks for a grant that *can* exist.
+
+**O-23** was raised while building the Cloudflare Tunnel adapter, and is open on purpose so it is
+revisited rather than forgotten. Cloudflare Access can require a sign-in at Cloudflare's edge before a
+request reaches the tunnel. R-023 settles what it cannot be: the only check. What is open is whether
+Pando should configure it at all. The options:
+
+1. **Leave it to the operator.** Access is configured in Cloudflare's dashboard against hostnames
+   Pando created. Nothing new in Pando; the operator maintains two lists of who may use what.
+2. **Mirror grants into Access policies.** One source of truth, and a request refused at Cloudflare's
+   edge never reaches the host. It makes Pando's authorization depend on a second system staying in
+   step, and a policy that drifts open is invisible to Pando.
+3. **A per-app switch that puts Access in front with an operator-chosen policy**, reported in the plan
+   as an addition and never as a replacement for the proxy.
 
 **O-13 — one clock, not two.** The re-authorization interval is *exactly* the assertion lifetime
 rather than an independently chosen value. Two clocks measuring the same thing drift apart the first

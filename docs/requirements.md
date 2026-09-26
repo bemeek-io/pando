@@ -556,7 +556,7 @@ reference is dropped. It describes and never acts. Any signed-in user may ask.
 
 ## 11. Networking and Routing
 
-**R-160 [D]** Routing is an adapter category. **[V1]** loopback and Traefik.
+**R-160 [D]** Routing is an adapter category. **[V1]** loopback, Traefik and Cloudflare Tunnel.
 
 **R-161 [D]** Each routing adapter advertises which addressing modes it supports: subdomain, path prefix, port.
 
@@ -920,7 +920,7 @@ Confirmed for the first release:
 
 - Core: state, authorization, audit, identity assertion path, reconciler
 - **Identity:** local users (username/password)
-- **Routing:** loopback and Traefik
+- **Routing:** loopback, Traefik and Cloudflare Tunnel
 - **Secrets:** local encrypted storage
 - **Source:** public GitHub repos
 - **Builder:** rootless BuildKit in a container
@@ -932,7 +932,7 @@ Confirmed for the first release:
 - Volumes with the undeclared-persistence warning
 - Rolling backups + full-host DR bundle
 
-Explicitly deferred: per-user instances, SCIM, external identity adapters, private repos, cloud routing adapters, external secrets adapters, VM runtime adapters, setting profiles, per-user quotas, notification adapters, log masking.
+Explicitly deferred: per-user instances, SCIM, external identity adapters, private repos, cloud routing adapters other than Cloudflare Tunnel, external secrets adapters, VM runtime adapters, setting profiles, per-user quotas, notification adapters, log masking.
 
 ---
 

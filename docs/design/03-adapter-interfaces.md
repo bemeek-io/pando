@@ -323,6 +323,11 @@ type RoutingAdapter interface {
     Ensure(ctx context.Context, r RouteRequest) (RouteHandle, error)
     Remove(ctx context.Context, h RouteHandle) error
     Observe(ctx context.Context, h RouteHandle) (RouteState, error)
+
+    // Edge describes the install-scoped workload this adapter needs running
+    // in front of Pando, if any (R-174, §4.4). false means none: loopback, or
+    // a Traefik somebody else runs.
+    Edge(ctx context.Context, r EdgeRequest) (EdgePlan, bool, error)
 }
 
 type RouteRequest struct {
@@ -450,6 +455,102 @@ rather than as a message to an operator, which is the wrong person finding out.
 The per-adapter shape is unchanged and still carries it: `RoutingCapabilities.SupportsTLS` and
 `SupportsWildcardTLS` are how an adapter says what it can do, and they now follow the configured
 challenge type rather than the mere presence of a resolver name.
+
+### 4.4 The edge Pando runs
+
+**[D] Built (R-174).** A routing adapter that needs a process in front of Pando — Traefik terminating
+`:80` and `:443`, `cloudflared` holding a tunnel open — describes it as an `EdgePlan`, and core asks
+the default runtime adapter to run it. The routing adapter says *what* runs; the runtime adapter says
+*how*; core joins them. Neither adapter reaches into the other, which is the same reason the Traefik
+adapter uses the file provider rather than labels on a workload.
+
+```go
+type EdgePlan struct {
+    Name   string                  // unique per install; one edge per routing adapter config
+    Image  string
+    Args   []string
+    Env    map[string]secret.Value // DNS-01 credentials, a tunnel token
+    Ports  []EdgePort              // host ports; the only ones Pando ever publishes
+    Mounts []EdgeMount             // a path shared with Pando, or a volume the edge owns
+    ProxyAlias string              // the name the edge uses to reach Pando's proxy
+}
+
+// On RuntimeAdapter, gated by RuntimeCapabilities.SupportsEdge:
+ApplyEdge(ctx context.Context, p EdgePlan) error
+ObserveEdge(ctx context.Context, name string) (EdgeState, error)
+RemoveEdge(ctx context.Context, name string) error
+Edges(ctx context.Context) ([]string, error)
+```
+
+**[D] A separate entry point, not a flag on `BundlePlan`.** An edge publishes host ports, which R-026
+forbids for a workload, and it is not in any app's private network. A flag on the app path would be a
+loophole every app plan could reach; a second method cannot be reached by building a plan wrongly.
+
+**[D] What an edge may do is narrow.** It joins one network, `pando-edge`, that holds the edges and
+Pando's own container, under the alias its plan names — so it can reach Pando's proxy and nothing
+else. It never joins an app's network: an edge that could reach a workload is R-023 with extra steps.
+It restarts itself (`unless-stopped`) where an app does not (R-149): an edge has no backoff state and
+no failed state, and every app behind it is unreachable while it is down.
+
+**[D] Shared configuration is resolved by the runtime adapter** (R-251). The Traefik adapter writes its
+per-app files into a directory in Pando's own container. `EdgeMount.SharedWithPando` names that path,
+and the Docker adapter finds whatever volume or bind is mounted there in its own container and mounts
+the same storage into the edge, read-only. Core never learns it is a Docker volume.
+
+**[D] Applied at startup and on the reconciler's tick,** idempotently: a matching edge is left alone,
+a changed plan recreates it, and an edge no configured adapter asks for is removed. Changing an
+adapter's settings takes effect on restart, as every adapter setting does (`pending_restart`).
+
+**[D] Traefik runs in one of two modes, Pando-run by default.** `managed: true` is the default for a
+new Traefik adapter: Pando starts `traefik`, generates its static configuration from the adapter's
+settings, and publishes `:80` and `:443` (both overridable). `managed: false` is the mode that existed
+before R-174 was built — somebody else runs Traefik, and Pando only writes route files into the
+directory it watches. It stays because an install that already runs Traefik for other services cannot
+give Pando those ports. A migration marks every Traefik adapter configured before this change
+`managed: false`, so upgrading never starts a second Traefik on a host that has one.
+
+**[D] The console answers any hostname that is not an app's.** The proxy already falls through to the
+console for an unknown host (`proxy.StateResolver.IsAppHostname`). A Pando-run Traefik adds a
+lowest-priority catch-all router to Pando, so pointing a domain at the edge loads the console. The
+**console hostname** setting exists only because a certificate is issued per hostname: it is the one
+hostname the edge asks a certificate for on the console's behalf. Apps default to
+`<app>.<base domain>`.
+
+**[D] The Traefik image is pinned by Pando's release and overridable** in the adapter's settings.
+Upgrading Pando upgrades the edge; an operator who needs a different Traefik sets `image`.
+
+**[D] DNS-01 providers: five named, and "other".** Traefik supports every DNS provider its ACME
+library does and needs only the provider's code and its credentials as environment variables. The
+adapter offers Cloudflare, Route 53, DigitalOcean, Porkbun and Namecheap by name — which lets it name a
+missing variable in a message that meets R-105 — and accepts any other provider code with whatever
+`KEY=value` pairs the operator gives. Credentials are stored like every adapter credential (R-190) and
+reach the edge as `secret.Value` environment variables.
+
+**[D] Certificate storage survives the edge.** The ACME store is a volume the edge owns
+(`EdgeMount.Volume`), not the container's filesystem, so recreating the edge does not re-issue every
+certificate and meet Let's Encrypt's rate limits. It is part of the full-host DR bundle for the same
+reason.
+
+### 4.5 Cloudflare Tunnel
+
+**[D] Built** as the sketch in `notes-cloudflare-routing-sketch.md` described, with no interface
+change beyond §4.4, which Traefik needed first.
+
+- **Pando creates and owns the tunnel by default.** Given an API token (Account → Cloudflare Tunnel:
+  Edit, Zone → DNS: Edit, Zone → Zone: Read), the adapter creates a tunnel named `pando-<adapter id>`,
+  runs `cloudflared` as its edge, and owns the tunnel's whole ingress configuration. **Attaching to an
+  existing tunnel** is the option: given its ID, Pando still writes the ingress configuration, and
+  `cloudflared` runs with that tunnel's token.
+- **Subdomain by default, path available** (R-161, R-162) — path on one hostname is R-164's proxy mode.
+- **Hostnames are one level below the zone.** Cloudflare's included certificate covers `*.zone` and
+  nothing deeper, so an app is `<app>.<zone>`; a base domain deeper than one level reports
+  `SupportsTLS: false` and says why, rather than issuing a route a browser will refuse.
+- **Pando owns what it made, and says so.** The tunnel's ingress is rewritten on every `Ensure`, and a
+  change made in Cloudflare's dashboard is reset on the next reconcile and reported by `Observe`. Each
+  DNS record Pando creates carries the comment *Managed by Pando — changes are reset*, and Pando never
+  touches a record without it.
+- **Cloudflare Access is not part of this adapter.** It would be a layer in front of Pando's proxy and
+  never the only check (R-023). Whether Pando should configure it is O-23.
 
 ---
 
@@ -735,7 +836,8 @@ func (r *Registry) Default(c Category) (Adapter, error)
 |---|---|---|
 | identity | `local` | username/password, argon2id |
 | routing | `loopback` | port mode, no TLS, laptop default |
-| routing | `traefik` | subdomain and path, TLS |
+| routing | `traefik` | subdomain and path, TLS; Pando runs it by default (§4.4) |
+| routing | `cloudflare` | Cloudflare Tunnel; subdomain and path, TLS at Cloudflare's edge (§4.5) |
 | builder | `buildkit` | rootless, containerized, no socket (R-111) |
 | runtime | `docker` | container isolation class |
 | secrets | `local` | encrypted at rest, key on disk (R-190) |
