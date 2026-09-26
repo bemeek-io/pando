@@ -32,6 +32,7 @@ import (
 	notifyconsole "github.com/bemeek-io/pando/internal/adapter/notify/console"
 	"github.com/bemeek-io/pando/internal/adapter/registry/ociprobe"
 	"github.com/bemeek-io/pando/internal/adapter/routing/loopback"
+	"github.com/bemeek-io/pando/internal/adapter/routing/cloudflare"
 	"github.com/bemeek-io/pando/internal/adapter/routing/traefik"
 	dockerruntime "github.com/bemeek-io/pando/internal/adapter/runtime/docker"
 	trivyscanner "github.com/bemeek-io/pando/internal/adapter/scanner/trivy"
@@ -1037,6 +1038,8 @@ func newAdapter(category, kind string, notifications *state.Notifications) adapt
 		return servicesdocker.New()
 	case category == string(adapterapi.CategoryRouting) && kind == traefik.Kind:
 		return traefik.New()
+	case category == string(adapterapi.CategoryRouting) && kind == cloudflare.Kind:
+		return cloudflare.New()
 	case category == string(adapterapi.CategoryScanner) && kind == trivyscanner.Kind:
 		return trivyscanner.New()
 	case category == string(adapterapi.CategoryAI) && kind == aianthropic.Kind:
@@ -1483,6 +1486,7 @@ func adapterKinds() []adapterapi.KindInfo {
 		dockerruntime.Info(),
 		loopback.Info(),
 		traefik.Info(),
+		cloudflare.Info(),
 		buildkitadapter.Info(),
 		trivyscanner.Info(),
 		secretslocal.Info(),

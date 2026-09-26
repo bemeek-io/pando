@@ -121,6 +121,16 @@ func (a *Adapter) Category() api.Category { return api.CategoryRouting }
 func (a *Adapter) Configure(_ context.Context, raw json.RawMessage) error {
 	cfg := Config{Dir: "/etc/traefik/dynamic", EntryPoint: "websecure"}
 	if len(raw) > 0 {
+		// Credentials at the top level were stored in the clear. The create
+		// handler and the database both refuse them; refusing them here too
+		// means a row written some other way does not quietly work (R-190).
+		var top map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &top); err == nil {
+			if _, inline := top["dns_credentials"]; inline {
+				return errs.New(errs.ValidInvalid, "The DNS provider credentials are in this adapter's stored settings, which are not encrypted.").
+					WithRemedy("Set them as the adapter's DNS provider credentials instead.")
+			}
+		}
 		if err := json.Unmarshal(raw, &cfg); err != nil {
 			return errs.Wrap(errs.ValidInvalid, "The Traefik routing configuration could not be read.", err)
 		}

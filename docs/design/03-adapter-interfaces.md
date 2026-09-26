@@ -537,16 +537,21 @@ reason.
 change beyond §4.4, which Traefik needed first.
 
 - **Pando creates and owns the tunnel by default.** Given an API token (Account → Cloudflare Tunnel:
-  Edit, Zone → DNS: Edit, Zone → Zone: Read), the adapter creates a tunnel named `pando-<adapter id>`,
-  runs `cloudflared` as its edge, and owns the tunnel's whole ingress configuration. **Attaching to an
-  existing tunnel** is the option: given its ID, Pando still writes the ingress configuration, and
-  `cloudflared` runs with that tunnel's token.
+  Edit, Zone → DNS: Edit, Zone → Zone: Read), the adapter creates a remotely managed tunnel named
+  `pando-<zone>` and runs `cloudflared` as its edge with the tunnel's token, fetched through the API
+  and passed in its environment. The name comes from the zone rather than the adapter's ID because
+  the zone is known at `Configure`, and an app routed before the first `Edge` call must find the same
+  tunnel. **Attaching to an existing tunnel** is the option: given its ID, Pando adds its rules to
+  that tunnel's ingress and leaves the rules it did not write alone.
+- **Rules are Pando's by hostname and path.** Each app's rule is upserted whole on every `Ensure`,
+  and the last rule — the catch-all Cloudflare requires — sends everything else to Pando's proxy, so
+  any hostname routed to the tunnel that is not an app's shows the console.
 - **Subdomain by default, path available** (R-161, R-162) — path on one hostname is R-164's proxy mode.
 - **Hostnames are one level below the zone.** Cloudflare's included certificate covers `*.zone` and
   nothing deeper, so an app is `<app>.<zone>`; a base domain deeper than one level reports
   `SupportsTLS: false` and says why, rather than issuing a route a browser will refuse.
-- **Pando owns what it made, and says so.** The tunnel's ingress is rewritten on every `Ensure`, and a
-  change made in Cloudflare's dashboard is reset on the next reconcile and reported by `Observe`. Each
+- **Pando owns what it made, and says so.** A change made in Cloudflare's dashboard to one of Pando's
+  rules is reported by `Observe` and reset by the next `Ensure`. Each
   DNS record Pando creates carries the comment *Managed by Pando — changes are reset*, and Pando never
   touches a record without it.
 - **Cloudflare Access is not part of this adapter.** It would be a layer in front of Pando's proxy and
