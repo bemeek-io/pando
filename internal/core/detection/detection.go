@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/bemeek-io/pando/internal/core/clock"
 	"github.com/bemeek-io/pando/internal/core/screening"
 	"github.com/bemeek-io/pando/internal/core/source"
 	"github.com/bemeek-io/pando/internal/core/spec"
@@ -82,6 +83,9 @@ type Runner struct {
 	ScreenMaxBytes int64
 	ScreenTimeout  time.Duration
 
+	// Clock stamps conversation turns. Nil is the system clock.
+	Clock clock.Clock
+
 	// Scanner scores the checkout while it is still on disk (R-312).
 	//
 	// Detection is the first and, for a while, the only moment Pando holds an
@@ -100,7 +104,7 @@ type Runner struct {
 // SourceScanner scans a checkout. One method, so detection cannot reach into
 // the rest of the security service.
 type SourceScanner interface {
-	ScanSource(ctx context.Context, appID, dir string)
+	ScanSource(ctx context.Context, appID, dir, commit string)
 }
 
 // PortAllocator hands out host ports for port-mode routing.
@@ -212,7 +216,10 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 	// An app that runs a published image has no checkout: Dir is empty, and
 	// scanning "" would scan whatever directory the server runs in.
 	if r.Scanner != nil && checkout.Dir != "" {
-		r.Scanner.ScanSource(ctx, appID, checkout.Dir)
+		// Reported as its own stage: a scan can take a while, and the
+		// onboarding page shows it as a step of the plan.
+		detect.Report(ctx, detect.StageScanning, &proposal)
+		r.Scanner.ScanSource(ctx, appID, checkout.Dir, checkout.Commit)
 	}
 
 	// Fill in the install's own answers before the proposal is shown, not when
@@ -248,17 +255,15 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 	proposal.Commit = checkout.Commit
 	proposal.DraftSpec.Source.Commit = checkout.Commit
 
-	// Step 12a — screening (R-330, design 10 §4). After the defaults, because a
-	// screener handed a spec with no routing mode and no limits is reviewing
-	// blanks for the same reason a person would be. Before the proposal is
-	// stored, because what is stored is what gets reviewed.
+	// Step 12a — AI assistance (R-330, R-336, design 10 §4), only when the plan
+	// failed or asked something. After the defaults, because an adapter handed
+	// a spec with no routing mode and no limits is reviewing blanks for the
+	// same reason a person would be. Before the proposal is stored, because
+	// what is stored is what gets reviewed.
 	//
 	// The outcome is recorded whatever it is, including "nothing ran and here
 	// is why". Screening never fails a detection (R-335), so there is nothing
 	// to check here and that is the point.
-	if r.Screener != nil {
-		detect.Report(ctx, detect.StageScreening, &proposal)
-	}
 	outcome := r.screen(ctx, appID, &proposal, checkout.View(src.Subdir))
 	proposal.Screening = &outcome
 	if outcome.Changed() {

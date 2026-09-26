@@ -67,6 +67,7 @@ var routeDocs = []reference.Route{
 	{Method: "POST", Path: "/api/v1/apps/{appID}/detection/rerun", Group: "Detection", Summary: "Run detection again, against the current commit.", Verb: string(authz.AppSpecEdit)},
 	{Method: "GET", Path: "/api/v1/apps/{appID}/detection/diff", Group: "Detection", Summary: "What accepting the proposal would change about the running app.", Verb: string(authz.AppView)},
 	{Method: "POST", Path: "/api/v1/apps/{appID}/detection/answers", Group: "Detection", Summary: "Answer detection's questions. Each answer is a fact detection could not find, not a preference.", Verb: string(authz.AppSpecEdit)},
+	{Method: "POST", Path: "/api/v1/apps/{appID}/detection/revise", Group: "Detection", Summary: "Tell the AI adapter what is wrong with the plan (`message`). It checks the repository, changes what it can show, replies, and records the exchange on the proposal. Needs an AI adapter.", Verb: string(authz.AppSpecEdit)},
 	{Method: "POST", Path: "/api/v1/apps/{appID}/detection/accept", Group: "Detection", Summary: "Accept the proposal, writing a spec revision and pinning it. `values` sets variables in the same step — `{key, value, secret?, workload?}` each; a secret goes to the secrets adapter and needs app.secrets.write. Accepting over a configured app needs `confirm`.", Verb: string(authz.AppSpecEdit)},
 	{Method: "POST", Path: "/api/v1/apps/{appID}/source", Group: "Detection", Summary: "Upload a source archive for an app that has no reachable repository.", Verb: string(authz.AppSpecEdit)},
 

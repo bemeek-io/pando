@@ -33,7 +33,56 @@ func (s *Server) handleGetDetection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	JSON(w, http.StatusOK, detectionResponse(d))
+	JSON(w, http.StatusOK, withPlannedAddress(r, app, detectionResponse(d), d))
+}
+
+// withPlannedAddress adds where the app will be reachable once deployed, from
+// the proposal's routing — which detection has already filled, port and all
+// (Runner.applyDefaults). The same spec.Address the app's own page uses once
+// it is configured, so the review and the running app name one address, and
+// no client re-derives it (R-261).
+func withPlannedAddress(r *http.Request, app state.App, out map[string]any, d state.Detection) map[string]any {
+	p, err := decodeProposal(d)
+	if err != nil {
+		return out
+	}
+	if address := spec.Address(r.Host, app.Slug, p.DraftSpec.Routing); address != "" {
+		out["address"] = address
+	}
+	return out
+}
+
+// handleReviseDetection asks the AI adapter to change the plan as a person
+// described (R-336's third trigger, design 10 §4.3).
+//
+// Answered in the request rather than in the background, unlike a re-run: it is
+// one bounded call to the adapter (R-339), and the person is waiting on the
+// reply. The rules live in core/detection.Runner.Revise; this reads the body
+// and hands it over.
+func (s *Server) handleReviseDetection(w http.ResponseWriter, r *http.Request) {
+	app, ok := s.requireControl(w, r, authz.AppSpecEdit)
+	if !ok {
+		return
+	}
+	if s.Detector == nil {
+		Error(w, r, errs.New(errs.AdapterUnavailable, "Detection is not configured on this install."))
+		return
+	}
+	var req struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read.").
+			WithRemedy(`Send what should change, for example {"message": "The app serves on port 8080."}.`))
+		return
+	}
+
+	updated, err := s.Detector.Revise(r.Context(), app.ID, req.Message)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	JSON(w, http.StatusOK, withPlannedAddress(r, app, detectionResponse(updated), updated))
 }
 
 // handleRerunDetection re-detects, explicitly (R-022).
@@ -230,7 +279,7 @@ func (s *Server) handleDetectionAnswers(w http.ResponseWriter, r *http.Request) 
 		Error(w, r, err)
 		return
 	}
-	JSON(w, http.StatusOK, detectionResponse(updated))
+	JSON(w, http.StatusOK, withPlannedAddress(r, app, detectionResponse(updated), updated))
 }
 
 // handleAcceptDetection pins the proposal as spec revision 1 (Sequence A 13–17).
@@ -270,6 +319,16 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 			// reference in the spec, as the Environment tab does.
 			Secret bool `json:"secret"`
 		} `json:"values"`
+
+		// Optional names slots the person judged the app runs without, so an
+		// empty one leaves its variable unset instead of refusing the deploy
+		// (spec.MarkSlotOptional).
+		Optional []string `json:"optional"`
+
+		// Hostname is the address the person chose, where the app's routing
+		// serves it at a hostname of its own (spec.SetHostname). Empty keeps
+		// the one detection assigned.
+		Hostname string `json:"hostname"`
 	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
@@ -353,6 +412,23 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 	// The values set during review. A secret goes to the secrets adapter first
 	// and the spec gets only its name, so the pinned spec is safe to export.
 	for _, v := range req.Values {
+		// A variable filled from a slot gets its value on the slot, as a
+		// secret, so the slot is filled and the deploy is not refused for it
+		// (R-132, spec.FillSlotLiteral).
+		if slot, ok := spec.EnvSlot(&draft, v.Workload, v.Key); ok {
+			if !v.Secret {
+				spec.FillSlotValue(&draft, slot, v.Value)
+				continue
+			}
+			ref := spec.SlotSecretKey(slot)
+			if err := s.Secrets.Put(r.Context(), app.ID, ref, secret.New(v.Value)); err != nil {
+				Error(w, r, err)
+				return
+			}
+			spec.FillSlotLiteral(&draft, slot, ref)
+			continue
+		}
+
 		entry := spec.EnvEntry{}
 		if v.Secret {
 			if err := s.Secrets.Put(r.Context(), app.ID, v.Key, secret.New(v.Value)); err != nil {
@@ -366,6 +442,15 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 			entry.Value = &value
 		}
 		spec.SetEnv(&draft, v.Workload, v.Key, entry)
+	}
+	for _, key := range req.Optional {
+		spec.MarkSlotOptional(&draft, key)
+	}
+	if req.Hostname != "" {
+		if err := spec.SetHostname(&draft, req.Hostname); err != nil {
+			Error(w, r, err)
+			return
+		}
 	}
 
 	// Refused here rather than pinned and found at deploy. A spec that cannot
@@ -457,11 +542,10 @@ func decodeProposal(d state.Detection) (detect.Proposal, error) {
 // one still marked deferred by the time a proposal is accepted was resolved by
 // observation rather than left hanging.
 func unanswered(p detect.Proposal, answers map[string]string) []string {
+	// An AI adapter's suggestion counts as an answer (R-338).
 	var out []string
-	for _, q := range detect.Asked(p.Questions) {
-		if answers[q.Key] == "" {
-			out = append(out, q.Key)
-		}
+	for _, q := range detect.Open(p.Questions, answers) {
+		out = append(out, q.Key)
 	}
 	return out
 }
@@ -485,4 +569,8 @@ type Detector interface {
 	// Check refuses what Detect would refuse before it starts, without
 	// writing anything.
 	Check(ctx context.Context, appID string) error
+
+	// Revise changes a finished proposal as a person asked, through the AI
+	// adapter, and records the exchange on it (R-336).
+	Revise(ctx context.Context, appID, message string) (state.Detection, error)
 }

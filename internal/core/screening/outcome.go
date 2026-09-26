@@ -25,6 +25,17 @@ type Outcome struct {
 	// without matching on a sentence that may be reworded.
 	SkipCode SkipCode `json:"skip_code,omitempty"`
 
+	// Function is what the adapter was asked to do: repair_plan when detection
+	// failed, answer_questions when it asked something (R-336). Empty when
+	// nothing was needed.
+	Function api.AIFunction `json:"function,omitempty"`
+
+	// Why is what made the call necessary — the trial run crashed, no detector
+	// could read the repository, detection asked a question — in one sentence.
+	// On the repair path the original failure is still on the proposal, as its
+	// trial log, whatever the repair did (R-107).
+	Why string `json:"why,omitempty"`
+
 	AdapterRef string `json:"adapter_ref,omitempty"`
 	Model      string `json:"model,omitempty"`
 
@@ -73,15 +84,28 @@ const (
 	// SkipNotConfigured is the ordinary case: no AI adapter. The console shows
 	// nothing for it, because an install without one is not degraded (R-335).
 	SkipNotConfigured SkipCode = "not_configured"
-	SkipPolicy        SkipCode = "policy"      // host policy forbids it (R-336)
-	SkipUnsupported   SkipCode = "unsupported" // the adapter does not screen
-	SkipUnavailable   SkipCode = "unavailable" // the provider failed or timed out
-	SkipBlocked       SkipCode = "blocked"     // nothing to screen (R-099)
+
+	// SkipNotNeeded is the other ordinary case, and the common one on an install
+	// that has an adapter: detection produced a plan, the plan did not fail, and
+	// nothing was asked. No call is made, nothing leaves the host, and the
+	// console shows nothing for it (R-336).
+	SkipNotNeeded SkipCode = "not_needed"
+
+	SkipPolicy      SkipCode = "policy"      // host policy forbids it (R-336)
+	SkipUnsupported SkipCode = "unsupported" // the adapter does not do what was needed
+	SkipUnavailable SkipCode = "unavailable" // the provider failed or timed out
+	SkipBlocked     SkipCode = "blocked"     // nothing to screen (R-099)
 )
 
 // SkippedOutcome returns an outcome for a screening that never ran.
 func SkippedOutcome(code SkipCode, reason string) Outcome {
 	return Outcome{Ran: false, SkipCode: code, Skipped: reason}
+}
+
+// For records which function the outcome was for.
+func (o Outcome) For(fn api.AIFunction) Outcome {
+	o.Function = fn
+	return o
 }
 
 // Elapsed records how long a screening took.

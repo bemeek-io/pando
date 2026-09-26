@@ -492,6 +492,7 @@ func (s *Server) Routes() http.Handler {
 					r.Post("/rerun", s.handleRerunDetection)
 					r.Get("/diff", s.handleDetectionDiff)
 					r.Post("/answers", s.handleDetectionAnswers)
+					r.Post("/revise", s.handleReviseDetection)
 					r.Post("/accept", s.handleAcceptDetection)
 				})
 

@@ -37,6 +37,10 @@ produced, and amending what it missed.
       restart like every other adapter; `api_key_env` keeps the key out of the database
 - [x] Credentials encrypted at rest (O-20, resolved): write-only `credentials` sealed by the secrets
       adapter into `adapter_credentials`; a check constraint refuses them in plain configuration
+- [x] Screening runs only when detection needs it (issue #69, R-336 amended): `repair_plan` when the
+      trial crashed or no detector could read the repository, `answer_questions` when questions are
+      outstanding, and no call otherwise (design 10 §4.2)
+- [ ] The onboarding page reworked for AI as an exception path (issue #69, design 08 §1.3)
 - [ ] The corpus measurement below
 
 ## Requirements in scope
@@ -57,7 +61,10 @@ enforced and tested — and not yet that it helps.
 
 ## Traps
 
-- **The whole-spec return.** Somebody will propose that `ScreenPlan` return an amended `AppSpec`
+- **Calling the adapter on every detection.** It is what this phase first shipped, and it put latency,
+  cost and a repository upload on every app for the few that needed help. `core/detection.needed` is
+  the only place that decides; keep it that way (R-336).
+- **The whole-spec return.** Somebody will propose that `RepairPlan` return an amended `AppSpec`
   because it is simpler. It is simpler, and it lets a model's output express an isolation floor. The
   closed set is the mechanism; a denylist in core is not (design 10 §3).
 - **A screener marking slots required.** Turns "might not start" into "cannot be deployed". O-4's

@@ -12,10 +12,18 @@ import (
 type stubAI struct{ base }
 
 func (stubAI) Capabilities(context.Context) (api.AICapabilities, error) {
-	return api.AICapabilities{Functions: []api.AIFunction{api.AIFunctionScreenPlan}}, nil
+	return api.AICapabilities{Functions: []api.AIFunction{api.AIFunctionRepairPlan}}, nil
 }
 
-func (stubAI) ScreenPlan(context.Context, api.ScreenRequest) (api.ScreenResult, error) {
+func (stubAI) RepairPlan(context.Context, api.ScreenRequest) (api.ScreenResult, error) {
+	return api.ScreenResult{}, nil
+}
+
+func (stubAI) AnswerQuestions(context.Context, api.ScreenRequest) (api.ScreenResult, error) {
+	return api.ScreenResult{}, nil
+}
+
+func (stubAI) RevisePlan(context.Context, api.ScreenRequest) (api.ScreenResult, error) {
 	return api.ScreenResult{}, nil
 }
 

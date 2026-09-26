@@ -30,9 +30,9 @@ const Kind = "anthropic"
 
 // DefaultModel is what an install gets without choosing.
 //
-// [P] Screening runs once per detection, on a repository somebody is about to
-// deploy, and what is being bought is whether the app comes up on the first
-// try. This is not a high-volume path where a cheaper model pays for itself,
+// [P] It runs at most once per detection, and only when detection failed or
+// asked something (R-336), on a repository somebody is about to deploy — what
+// is being bought is whether the app comes up without a person stepping in. This is not a high-volume path where a cheaper model pays for itself,
 // and the cost of a wrong amendment is a person's afternoon. Opus 5.5 rather
 // than Opus 5: newer, and cheaper per token besides.
 const DefaultModel = "claude-opus-5-5"
@@ -70,8 +70,10 @@ type Config struct {
 	BaseURL string `json:"base_url,omitempty"`
 
 	// ScreenPlans defaults to true (R-336): configuring this adapter meant
-	// supplying a credential, and that was the decision. An install that wants
-	// the adapter for something else turns it off here.
+	// supplying a credential, and that was the decision. False turns off both
+	// functions — repairing a failed plan and answering questions — for an
+	// install that wants the adapter for something else. The key keeps its
+	// original name so existing configurations still read.
 	ScreenPlans *bool `json:"screen_plans,omitempty"`
 
 	MaxFiles int   `json:"max_files,omitempty"`
@@ -178,7 +180,8 @@ func (a *Adapter) Capabilities(_ context.Context) (api.AICapabilities, error) {
 		MaxBytes: a.cfg.MaxBytes,
 	}
 	if a.screensPlans() {
-		caps.Functions = append(caps.Functions, api.AIFunctionScreenPlan)
+		caps.Functions = append(caps.Functions,
+			api.AIFunctionRepairPlan, api.AIFunctionAnswerQuestions, api.AIFunctionRevisePlan)
 	}
 	return caps, nil
 }
@@ -212,7 +215,7 @@ func Info() api.KindInfo {
 		Category:    api.CategoryAI,
 		Kind:        Kind,
 		Name:        "Anthropic",
-		Description: "Reads a repository and checks the plan detection made, suggesting fixes it can show evidence for (R-330). Needs an Anthropic API key.",
+		Description: "Called only when detection fails or asks a question: reads the repository to repair the plan or answer the question, with evidence for each change (R-336). Needs an Anthropic API key.",
 		IDPrefix:    "ai_",
 		Fields: []api.Field{
 			{Key: "api_key", Label: "API key", Type: "string", Help: "An Anthropic API key. Stored encrypted and never shown again. Leave empty to use ANTHROPIC_API_KEY from Pando’s environment.", Credential: true, Placeholder: "sk-ant-…"},

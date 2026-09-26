@@ -7,6 +7,7 @@ import (
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/screening"
+	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/detect"
 	"github.com/bemeek-io/pando/internal/errs"
 )
@@ -49,7 +50,8 @@ type AuditEvent struct {
 // ActionScreen is R-337's event.
 const ActionScreen = "detection.screen"
 
-// screen reviews the proposal and folds in what it may.
+// screen calls the AI adapter when detection needs it, and folds in what it
+// may. When detection does not need it, nothing is called (R-336).
 //
 // It mutates proposal and returns the outcome. It never returns an error:
 // R-335 makes every failure here leave the deterministic proposal exactly as it
@@ -57,11 +59,6 @@ const ActionScreen = "detection.screen"
 func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Proposal, view api.SourceView) screening.Outcome {
 	if r.Screener == nil {
 		return screening.SkippedOutcome(screening.SkipNotConfigured, "No AI adapter is configured.")
-	}
-	if r.ScreenPolicy != nil {
-		if reason := r.ScreenPolicy.AllowsScreening(ctx); reason != "" {
-			return screening.SkippedOutcome(screening.SkipPolicy, reason)
-		}
 	}
 
 	// A blocked proposal is not screened. There is nothing useful to amend in a
@@ -72,12 +69,35 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 		return screening.SkippedOutcome(screening.SkipBlocked, "This repository cannot be imported as written, so there was nothing to screen.")
 	}
 
+	fn, why := needed(*proposal)
+	if fn == "" {
+		// The common case, and the point of R-336's amendment: a plan that
+		// worked and asked nothing is not sent anywhere. No latency, no cost,
+		// no repository contents leaving the host, and no audit event because
+		// nothing happened.
+		return screening.SkippedOutcome(screening.SkipNotNeeded,
+			"Detection produced a plan without failing or asking anything, so no AI adapter was called.")
+	}
+
+	if r.ScreenPolicy != nil {
+		if reason := r.ScreenPolicy.AllowsScreening(ctx); reason != "" {
+			o := screening.SkippedOutcome(screening.SkipPolicy, reason).For(fn)
+			o.Why = why
+			return o
+		}
+	}
+
+	// Only now, so the console's "Checking with AI" step appears on the
+	// detections that call one and on no others.
+	detect.Report(ctx, detect.StageScreening, proposal)
+
 	trial := proposal.TrialSummary()
-	result, outcome := screening.Run(ctx, r.Screener, r.ScreenerRef, api.ScreenRequest{
+	result, outcome := screening.Run(ctx, r.Screener, r.ScreenerRef, fn, api.ScreenRequest{
 		Source:    view,
 		Spec:      proposal.DraftSpec,
 		Evidence:  proposal.Winner.Evidence,
 		Questions: questionsFor(proposal.Questions),
+		Values:    emptyValues(*proposal),
 		Trial:     trial,
 		Budget: api.ScreenBudget{
 			MaxFiles: r.ScreenMaxFiles,
@@ -85,6 +105,8 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 			Timeout:  r.ScreenTimeout,
 		},
 	})
+
+	outcome.Why = why
 
 	// Audited whether or not anything was applied, and before the amendments
 	// are folded in: the event records that a repository was read, which
@@ -103,6 +125,25 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 	answers, rest, refused := screening.Split(env, result.Amendments, outstanding(proposal.Questions))
 	outcome.Refused = append(outcome.Refused, refused...)
 
+	// Asked for answers, it may give answers. A plan that worked needs no
+	// repairing, and the only reason this call was made is the questions
+	// (R-336). Refused rather than dropped, so the review shows what was asked.
+	// Asked for answers, it may give answers and fill values the deploy waits
+	// on — both are blanks a person would otherwise fill. Anything else is
+	// refused: the plan did not fail, so it is not changed.
+	if fn == api.AIFunctionAnswerQuestions {
+		var values []api.Amendment
+		for _, a := range rest {
+			if a.Kind == api.AmendSetEnv {
+				values = append(values, a)
+				continue
+			}
+			outcome.Refused = append(outcome.Refused, screening.Refused{Amendment: a,
+				Reason: "Pando asked the AI adapter only to answer detection's questions and fill values; this plan did not fail, so it was not changed."})
+		}
+		rest = values
+	}
+
 	// An answer that cannot become a spec is not an answer, whoever gave it.
 	// The screener answered build_method in prose ("serve the repository root
 	// with php -S …") and it was applied to nothing (issue #55).
@@ -120,12 +161,14 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 		}
 	}
 	if len(answers) > 0 {
-		proposal.DraftSpec = proposal.WithScreenedAnswers(answers)
-		proposal.Questions = unanswered(proposal.Questions, answers)
 		outcome.Answers = answers
 
-		// Listed with the other changes, reason and evidence included, so the
-		// review shows why a question stopped being asked — not only that it did.
+		// Each answer is carried on its question as a suggestion, not folded
+		// into the draft: the question stays on the page with the answer
+		// filled in, and a person changes it with the same request that answers
+		// any question. Accepting applies it unless a person answered instead
+		// (detect.Proposal.WithAnswers). Listed with the other changes too,
+		// reason and evidence included.
 		pending := make(map[string]string, len(answers))
 		for k, v := range answers {
 			pending[k] = v
@@ -135,6 +178,9 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 			if a.Kind != api.AmendAnswerQuestion || pending[key] != value || value == "" {
 				continue
 			}
+			suggest(proposal.Questions, key, detect.Suggestion{
+				Value: value, Reason: a.Reason, Evidence: nonEmpty(a.Evidence),
+			})
 			outcome.Applied = append(outcome.Applied, screening.Applied{
 				Amendment: a, Summary: fmt.Sprintf("answered %s: %s", key, value),
 			})
@@ -142,9 +188,17 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 		}
 	}
 
-	applied, refusedRest := screening.Apply(&proposal.DraftSpec, env, rest)
+	// Onto the reading accepting would pin: the one its answers — including
+	// the ones just suggested — pick. A value filled on the winner's draft
+	// while the build-method answer adopts another reading is a value nobody
+	// deploys.
+	target, _ := revisionTarget(proposal, proposal.Answers(nil))
+	applied, refusedRest := screening.Apply(target, env, rest)
 	outcome.Applied = append(outcome.Applied, applied...)
 	outcome.Refused = append(outcome.Refused, refusedRest...)
+	if target != &proposal.DraftSpec {
+		return outcome
+	}
 
 	// The winner's draft is kept in step with the spec, because it is what the
 	// review renders beside the evidence and what a re-detection diffs against.
@@ -159,11 +213,17 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 }
 
 func (r *Runner) auditScreen(ctx context.Context, appID string, o screening.Outcome) {
+	r.audit(ctx, ActionScreen, appID, o)
+}
+
+// audit records that an AI adapter was called about an app, and what it read
+// (R-337): screening during detection, or a revision a person asked for.
+func (r *Runner) audit(ctx context.Context, action, appID string, o screening.Outcome) {
 	if r.Auditor == nil {
 		return
 	}
 
-	detail := map[string]any{"ran": o.Ran}
+	detail := map[string]any{"ran": o.Ran, "function": string(o.Function), "why": o.Why}
 	if o.Skipped != "" {
 		detail["skipped"] = o.Skipped
 	}
@@ -176,7 +236,64 @@ func (r *Runner) auditScreen(ctx context.Context, appID string, o screening.Outc
 
 	// A failure to audit does not fail the detection, and it does not fail the
 	// screening either — which already happened. R-335 holds here too.
-	_ = r.Auditor.Write(ctx, AuditEvent{Action: ActionScreen, AppID: appID, Detail: detail})
+	_ = r.Auditor.Write(ctx, AuditEvent{Action: action, AppID: appID, Detail: detail})
+}
+
+// needed decides whether detection needs an AI adapter, and for what (R-336).
+//
+// Two triggers and no others. A plan that failed is repaired: the trial run
+// crashed, or no detector could read the repository at all. Otherwise a plan
+// that asks something has its questions answered. A repair is handed the
+// questions too and may answer them, so one call covers a detection that both
+// failed and asked — there is never a second.
+//
+// An empty function means nothing is needed.
+func needed(p detect.Proposal) (api.AIFunction, string) {
+	switch {
+	case p.Trial.Crashed:
+		return api.AIFunctionRepairPlan, "Pando started this app to watch it, and it exited with an error."
+	case p.Winner.Strategy == detect.StrategyUnknown:
+		return api.AIFunctionRepairPlan, "None of Pando's detectors could work out how to build this repository."
+	}
+	if n := len(detect.Asked(p.Questions)); n > 0 {
+		if n == 1 {
+			return api.AIFunctionAnswerQuestions, "Detection asked one question."
+		}
+		return api.AIFunctionAnswerQuestions, fmt.Sprintf("Detection asked %d questions.", n)
+	}
+	// A required value nobody has is a question in all but name: the deploy
+	// is refused without it (R-132), and a person would be asked for it.
+	if n := len(emptyValues(p)); n > 0 {
+		if n == 1 {
+			return api.AIFunctionAnswerQuestions, "The plan needs one value nobody has set."
+		}
+		return api.AIFunctionAnswerQuestions, fmt.Sprintf("The plan needs %d values nobody has set.", n)
+	}
+	return "", ""
+}
+
+// emptyValues are the value slots the deploy would be refused without —
+// required, type unknown, unfilled — in any reading of the repository, once
+// each. A reading a question may adopt counts: the person has not chosen yet.
+func emptyValues(p detect.Proposal) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(s *spec.AppSpec) {
+		if s == nil {
+			return
+		}
+		for _, slot := range s.Slots {
+			if slot.Required && slot.Type == spec.SlotUnknown && slot.Resolution == nil && !seen[slot.Key] {
+				seen[slot.Key] = true
+				out = append(out, slot.Key)
+			}
+		}
+	}
+	add(&p.DraftSpec)
+	for i := range p.RunnersUp {
+		add(p.RunnersUp[i].Spec)
+	}
+	return out
 }
 
 // questionsFor converts detection's questions to the adapter vocabulary.
@@ -202,13 +319,22 @@ func outstanding(qs []detect.Question) map[string]bool {
 	return keys
 }
 
-func unanswered(qs []detect.Question, answers map[string]string) []detect.Question {
-	var out []detect.Question
-	for _, q := range qs {
-		if _, done := answers[q.Key]; done {
-			continue
+// suggest records s on the question with key, in place.
+func suggest(qs []detect.Question, key string, s detect.Suggestion) {
+	for i := range qs {
+		if qs[i].Key == key {
+			qs[i].Suggested = &s
+			return
 		}
-		out = append(out, q)
+	}
+}
+
+func nonEmpty(paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		if strings.TrimSpace(p) != "" {
+			out = append(out, p)
+		}
 	}
 	return out
 }

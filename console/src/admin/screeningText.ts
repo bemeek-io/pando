@@ -40,16 +40,20 @@ export function describeAmendment(a: Amendment): string {
 /**
  * Whether the section is worth showing at all.
  *
- * An install with no AI adapter is not a degraded install (R-335), so a
- * screening that never ran for that reason says nothing. Any other reason it
- * did not run — host policy, a provider that failed — is shown, because the
- * person who configured the adapter will want to know it did not do its job.
+ * An install with no AI adapter is not a degraded install (R-335), and a
+ * detection that neither failed nor asked anything does not call one (R-336),
+ * so a screening that never ran for either reason says nothing. Any other
+ * reason it did not run — host policy, a provider that failed — is shown,
+ * because the person who configured the adapter will want to know it did not
+ * do its job.
  */
 export function screeningVisible(outcome: Outcome | undefined): outcome is Outcome {
   if (!outcome) return false;
   if (outcome.ran) return true;
-  return !!outcome.skip_code && outcome.skip_code !== 'not_configured';
+  return !!outcome.skip_code && !QUIET.has(outcome.skip_code);
 }
+
+const QUIET = new Set(['not_configured', 'not_needed', 'blocked']);
 
 export function filesRead(count: number): string {
   if (count === 0) return 'It read no files.';

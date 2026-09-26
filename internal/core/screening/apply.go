@@ -156,17 +156,33 @@ func setEnv(s *spec.AppSpec, a api.Amendment) (string, string) {
 		return "", fmt.Sprintf("%q is not a usable environment variable name.", a.Key)
 	}
 
-	// A key the spec fills from a slot is a resolved dependency, not a literal
-	// somebody forgot. Writing a literal over it would replace a database URL
-	// Pando is about to provision with a string a model wrote.
+	value := a.Value
+
+	// A key the spec fills from a slot. A service slot is a resolved
+	// dependency, not a literal somebody forgot: writing a literal over it
+	// would replace a database URL Pando is about to provision with a string a
+	// model wrote. A value slot — a key named with no value in .env.example,
+	// type unknown — is a blank the deploy is refused without (R-132), and a
+	// value the repository shows (the app's own domain, a mailto: address in
+	// the README) is exactly what a screener is for. It fills the slot, left
+	// readable; one already filled is not overwritten.
 	for _, slot := range s.Slots {
-		if slot.Key == key {
+		if slot.Key != key {
+			continue
+		}
+		if slot.Type != spec.SlotUnknown {
 			return "", fmt.Sprintf(
 				"%s is filled from a declared dependency, so a literal value cannot be set for it.", key)
 		}
+		if slot.Resolution != nil {
+			return "", fmt.Sprintf("%s already has a value, and a screening does not overwrite it.", key)
+		}
+		if strings.TrimSpace(value) == "" {
+			return "", fmt.Sprintf("The amendment set %s to nothing.", key)
+		}
+		spec.FillSlotValue(s, key, value)
+		return fmt.Sprintf("%s set to %s", key, value), ""
 	}
-
-	value := a.Value
 	for j, e := range s.Workloads[i].Env {
 		if e.Key != key {
 			continue

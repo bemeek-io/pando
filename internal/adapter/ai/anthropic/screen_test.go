@@ -124,7 +124,7 @@ func TestR330_AScreeningReadsTheRepositoryThenSubmitsFindings(t *testing.T) {
 			"notes":["The README documents HOST."]}`)),
 	)
 
-	result, err := a.ScreenPlan(context.Background(), request())
+	result, err := a.RepairPlan(context.Background(), request())
 	require.NoError(t, err)
 
 	require.Len(t, result.Amendments, 1)
@@ -156,7 +156,7 @@ func TestR330_AScreeningReadsTheRepositoryThenSubmitsFindings(t *testing.T) {
 func TestR332_TheToolSchemaIsTheClosedSet(t *testing.T) {
 	a, fake := withFake(t, message("tool_use", toolUse("t1", "submit_findings", `{"amendments":[]}`)))
 
-	result, err := a.ScreenPlan(context.Background(), request())
+	result, err := a.RepairPlan(context.Background(), request())
 	require.NoError(t, err)
 	require.Empty(t, result.Amendments, "an empty result is a good outcome")
 
@@ -172,11 +172,132 @@ func TestR332_TheToolSchemaIsTheClosedSet(t *testing.T) {
 	require.NotContains(t, string(tools), "egress")
 }
 
+// TestR106_ARepairIsToldThePlanFailed asserts R-106's repair function: the
+// model is told this plan did not work, is handed the log, and is told that
+// changing nothing is right when the failure is real (R-107).
+func TestR106_ARepairIsToldThePlanFailed(t *testing.T) {
+	a, fake := withFake(t, message("tool_use", toolUse("t1", "submit_findings", `{"amendments":[]}`)))
+
+	_, err := a.RepairPlan(context.Background(), request())
+	require.NoError(t, err)
+
+	system, _ := json.Marshal(fake.bodies[0]["system"])
+	require.Contains(t, string(system), "repairing a deployment plan")
+	require.Contains(t, string(system), "the failure is real")
+	prompt, _ := json.Marshal(fake.bodies[0]["messages"])
+	require.Contains(t, string(prompt), "which did not work")
+	require.Contains(t, string(prompt), "EADDRINUSE")
+}
+
+// TestR338_AnsweringQuestionsOffersOnlyAnswers asserts R-338 and R-336 at the
+// adapter: asked to answer questions, the model is given one amendment kind,
+// so it cannot spend its budget proposing changes core would refuse.
+func TestR338_AnsweringQuestionsOffersOnlyAnswers(t *testing.T) {
+	a, fake := withFake(t, message("tool_use", toolUse("t1", "submit_findings", `{
+		"amendments":[{"kind":"answer_question","key":"start_command","value":"npm start",
+		  "reason":"package.json defines a start script.","evidence":["package.json"]}]}`)))
+
+	result, err := a.AnswerQuestions(context.Background(), request())
+	require.NoError(t, err)
+	require.Len(t, result.Amendments, 1)
+	require.Equal(t, api.AmendAnswerQuestion, result.Amendments[0].Kind)
+
+	system, _ := json.Marshal(fake.bodies[0]["system"])
+	require.Contains(t, string(system), "answering questions")
+
+	tools, _ := json.Marshal(fake.bodies[0]["tools"])
+	require.Contains(t, string(tools), `"enum":["answer_question"]`)
+	require.NotContains(t, string(tools), `"set_command"`)
+
+	// The key is required and can only name a question that was asked. A
+	// model once answered build_strategy correctly with no key, and the answer
+	// was refused because nothing said which question it was for.
+	item := fake.bodies[0]["tools"].([]any)[2].(map[string]any)["input_schema"].(map[string]any)["properties"].(map[string]any)["amendments"].(map[string]any)["items"].(map[string]any)
+	require.ElementsMatch(t, []any{"kind", "key", "value", "reason", "evidence"}, item["required"])
+	key := item["properties"].(map[string]any)["key"].(map[string]any)
+	require.Equal(t, []any{"start_command"}, key["enum"])
+}
+
+// TestR336_ARevisionHearsThePersonAndReplies asserts R-336's third trigger at
+// the adapter: the person's words and what was said before reach the model,
+// quoted as theirs, and the tool requires a reply so they are never met with
+// silence.
+func TestR336_ARevisionHearsThePersonAndReplies(t *testing.T) {
+	a, fake := withFake(t, message("tool_use", toolUse("t1", "submit_findings", `{
+		"amendments":[],
+		"reply":"server.js calls listen(3000), which is what the plan has."}`)))
+
+	req := request()
+	req.Instruction = "It serves on 8080."
+	req.Conversation = []api.Turn{{From: "person", Text: "Is the port right?"}, {From: "ai", Text: "It is 3000."}}
+	result, err := a.RevisePlan(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, "server.js calls listen(3000), which is what the plan has.", result.Reply)
+
+	system, _ := json.Marshal(fake.bodies[0]["system"])
+	require.Contains(t, string(system), "helping a person review")
+	prompt, _ := json.Marshal(fake.bodies[0]["messages"])
+	require.Contains(t, string(prompt), "What the person reviewing the plan says now")
+	// JSON escapes ">" as >; the prompt quotes the person's words.
+	quoted := string(rune('\\')) + "u003e It serves on 8080."
+	require.Contains(t, string(prompt), quoted, "quoted as theirs")
+	require.Contains(t, string(prompt), "Is the port right?")
+
+	system2, _ := json.Marshal(fake.bodies[0]["system"])
+	require.Contains(t, string(system2), "not about the plan at all", "off-topic messages are steered back")
+
+	tools, _ := json.Marshal(fake.bodies[0]["tools"])
+	require.Contains(t, string(tools), `"reply"`)
+	require.Contains(t, string(tools), `"required":["amendments","reply"]`)
+}
+
+// TestR339_FilesReadBeforeAreHandedOverNotReadAgain asserts R-339's budget
+// with R-337's record: files an earlier call on the proposal read are given to
+// the model at the start, counted as reads and recorded as sent, so it does
+// not spend round trips finding them again.
+func TestR339_FilesReadBeforeAreHandedOverNotReadAgain(t *testing.T) {
+	a, fake := withFake(t, message("tool_use", toolUse("t1", "submit_findings", `{"amendments":[],"reply":"ok"}`)))
+
+	req := request()
+	req.Instruction = "Is the port right?"
+	req.Known = []string{"server.js", "missing.txt"}
+	result, err := a.RevisePlan(context.Background(), req)
+	require.NoError(t, err)
+
+	prompt, _ := json.Marshal(fake.bodies[0]["messages"])
+	require.Contains(t, string(prompt), "Files you read about this plan before")
+	require.Contains(t, string(prompt), "app.listen(3000")
+	require.Equal(t, []string{"server.js"}, result.FilesRead, "sent, and recorded; a missing one is left out")
+	require.Len(t, fake.bodies, 1, "no round trip spent reading it again")
+}
+
+// TestR132_AnsweringMayFillTheValuesTheDeployWaitsOn asserts the answer call's
+// second shape: set_env, keyed to exactly the values nobody has set, offered
+// beside answer_question, and the prompt says never to make up a secret.
+func TestR132_AnsweringMayFillTheValuesTheDeployWaitsOn(t *testing.T) {
+	a, fake := withFake(t, message("tool_use", toolUse("t1", "submit_findings", `{"amendments":[]}`)))
+
+	req := request()
+	req.Values = []string{"APP_DOMAIN", "VAPID_SUBJECT"}
+	_, err := a.AnswerQuestions(context.Background(), req)
+	require.NoError(t, err)
+
+	tools, _ := json.Marshal(fake.bodies[0]["tools"])
+	require.Contains(t, string(tools), `"anyOf"`)
+	require.Contains(t, string(tools), `"enum":["set_env"]`)
+	require.Contains(t, string(tools), `"enum":["APP_DOMAIN","VAPID_SUBJECT"]`)
+	require.Contains(t, string(tools), `"enum":["start_command"]`)
+
+	prompt, _ := json.Marshal(fake.bodies[0]["messages"])
+	require.Contains(t, string(prompt), "Values the deploy waits on")
+	require.Contains(t, string(prompt), "Never make up a secret")
+}
+
 // TestR335_AModelThatStopsWithoutFindingsIsAFailureNotACleanBill asserts R-335:
 // "found nothing" and "did not finish" mean opposite things in the review.
 func TestR335_AModelThatStopsWithoutFindingsIsAFailureNotACleanBill(t *testing.T) {
 	a, _ := withFake(t, message("end_turn", `{"type":"text","text":"Looks fine."}`))
-	_, err := a.ScreenPlan(context.Background(), request())
+	_, err := a.RepairPlan(context.Background(), request())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "without submitting")
 }
@@ -186,7 +307,7 @@ func TestR335_ARefusalIsReportedAsAFailure(t *testing.T) {
 	a, _ := withFake(t, `{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5",`+
 		`"content":[],"stop_reason":"refusal","stop_details":{"type":"refusal","category":"cyber"},`+
 		`"usage":{"input_tokens":1,"output_tokens":1}}`)
-	_, err := a.ScreenPlan(context.Background(), request())
+	_, err := a.RepairPlan(context.Background(), request())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "declined")
 }
@@ -205,7 +326,7 @@ func TestR020_ToolCallsThatLeaveTheCheckoutAreRefused(t *testing.T) {
 		message("tool_use", toolUse("t6", "submit_findings", `{"amendments":[]}`)),
 	)
 
-	result, err := a.ScreenPlan(context.Background(), request())
+	result, err := a.RepairPlan(context.Background(), request())
 	require.NoError(t, err)
 	require.Empty(t, result.FilesRead)
 
@@ -230,7 +351,7 @@ func TestR336_AnAdapterTurnedOffForScreeningDoesNotScreen(t *testing.T) {
 	a := anthropicadapter.New()
 	require.NoError(t, a.Configure(context.Background(),
 		json.RawMessage(`{"credentials":{"api_key":"sk-ant-test"},"screen_plans":false}`)))
-	_, err := a.ScreenPlan(context.Background(), request())
+	_, err := a.RepairPlan(context.Background(), request())
 	require.Error(t, err)
 	require.Equal(t, anthropicadapter.Kind, a.Kind())
 	require.Equal(t, api.CategoryAI, a.Category())

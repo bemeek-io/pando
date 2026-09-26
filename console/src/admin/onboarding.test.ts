@@ -1,16 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Amendment, AppSpec, Outcome, Proposal } from '@api/types.gen';
+import type { Amendment, AppSpec, Outcome } from '@api/types.gen';
 import {
-  answeredPrompt,
-  detectionSteps,
   envKey,
   mergeRows,
+  neededValues,
   primaryWorkload,
-  ringsFor,
   rowProblems,
   suggestions,
-  trialSentence,
   valuesPayload,
   variableRows,
   type VariableRow,
@@ -91,29 +88,79 @@ describe('suggestions', () => {
   });
 });
 
-describe('answeredPrompt', () => {
-  it('finds the wording among the candidates, since detection dropped the question', () => {
-    const proposal = {
-      winning_bid: { questions: [{ key: 'primary_port', prompt: 'Which port?' }] },
-      runners_up: [{ questions: [{ key: 'start', prompt: 'Which command?' }] }],
-    } as unknown as Proposal;
-    expect(answeredPrompt(proposal, 'primary_port')?.prompt).toBe('Which port?');
-    expect(answeredPrompt(proposal, 'start')?.prompt).toBe('Which command?');
-    expect(answeredPrompt(proposal, 'nope')).toBeUndefined();
-  });
-});
-
 describe('variableRows', () => {
-  it('lists plain variables, not ones a dependency or a secret fills', () => {
+  it('lists every variable a person could set, including ones a slot fills, not ones a secret fills', () => {
     const rows = variableRows(twoWorkloads);
-    expect(rows.map((r) => r.id)).toEqual(['web/API_KEY', 'web/NODE_ENV', 'worker/QUEUE']);
+    expect(rows.map((r) => r.id)).toEqual(['web/API_KEY', 'web/NODE_ENV', 'web/DATABASE_URL', 'worker/QUEUE']);
   });
 
   it('starts a credential-looking name with no value as a secret', () => {
-    const [apiKey, nodeEnv, queue] = variableRows(twoWorkloads);
+    const [apiKey, nodeEnv, , queue] = variableRows(twoWorkloads);
     expect(apiKey).toMatchObject({ secret: true, value: '', original: '' });
     expect(nodeEnv).toMatchObject({ secret: false, value: 'production', original: 'production' });
     expect(queue).toMatchObject({ secret: false });
+  });
+
+  it('marks a slot-filled variable with its slot, always as a secret', () => {
+    const withSlots = {
+      ...twoWorkloads,
+      slots: [
+        { key: 'DATABASE_URL', type: 'postgres', required: true, resolution: { mode: 'provisioned' } },
+      ],
+    } as AppSpec;
+    const database = variableRows(withSlots).find((r) => r.key === 'DATABASE_URL');
+    expect(database).toMatchObject({
+      secret: true,
+      slot: { key: 'DATABASE_URL', type: 'postgres', required: true, service: true, provisioned: true },
+    });
+  });
+});
+
+describe('neededValues', () => {
+  it('lists required slot values Pando will not create and nobody has set (R-132)', () => {
+    const slotted = (key: string, slot: Partial<NonNullable<VariableRow['slot']>>, value = ''): VariableRow => ({
+      id: key,
+      workload: 'app',
+      key,
+      value,
+      secret: true,
+      original: '',
+      slot: { key, type: 'unknown', required: true, service: false, provisioned: false, ...slot },
+    });
+    const rows = [
+      slotted('CREW_TOKEN_ENC_KEY', {}),
+      slotted('VAPID_SUBJECT', { required: false }),
+      slotted('DATABASE_URL', { type: 'postgres', service: true, provisioned: true }),
+      slotted('ANTHROPIC_API_KEY', {}, 'sk-ant-set'),
+    ];
+    expect(neededValues(rows).map((r) => r.key)).toEqual(['CREW_TOKEN_ENC_KEY']);
+    expect(neededValues(rows, new Set(['CREW_TOKEN_ENC_KEY']))).toEqual([]); // marked not required by the person
+  });
+});
+
+describe('slot values are secret by default, never by force', () => {
+  it('starts a plain-named value readable and a service address or key-like name secret', () => {
+    const domain = 'APP_DOMAIN';
+    const token = 'CREW_TOKEN_ENC_KEY';
+    const rows = variableRows({
+      workloads: [
+        {
+          name: 'app',
+          primary: true,
+          exposed: true,
+          env: [
+            { key: domain, slot_ref: domain },
+            { key: token, slot_ref: token },
+          ],
+        },
+      ],
+      slots: [
+        { key: domain, type: 'unknown', required: true },
+        { key: token, type: 'unknown', required: true },
+      ],
+    } as unknown as AppSpec);
+    expect(rows.find((r) => r.key === domain)?.secret).toBe(false);
+    expect(rows.find((r) => r.key === token)?.secret).toBe(true);
   });
 });
 
@@ -192,43 +239,3 @@ describe('rowProblems', () => {
   });
 });
 
-describe('detectionSteps', () => {
-  it('ticks over as the stage advances', () => {
-    expect(detectionSteps('running', 'fetching', false).map((s) => s.state)).toEqual(['active', 'pending', 'pending']);
-    expect(detectionSteps('running', 'trying', false).map((s) => s.state)).toEqual(['done', 'done', 'active']);
-  });
-
-  it('lists the AI step only once Pando is taking it', () => {
-    expect(detectionSteps('running', 'trying', false)).toHaveLength(3);
-    const screening = detectionSteps('running', 'screening', false);
-    expect(screening.map((s) => s.state)).toEqual(['done', 'done', 'done', 'active']);
-    expect(detectionSteps('ready', undefined, true).map((s) => s.state)).toEqual(['done', 'done', 'done', 'done']);
-    expect(detectionSteps('ready', undefined, false)).toHaveLength(3);
-  });
-
-  it('reads a stage it does not know as the first, rather than claiming progress', () => {
-    expect(detectionSteps('running', 'mystery', false)[0]!.state).toBe('active');
-  });
-});
-
-describe('ringsFor', () => {
-  it('draws two rings more per stage, and the full figure when finished', () => {
-    expect(['fetching', 'detecting', 'trying', 'screening'].map((s) => ringsFor(s, false))).toEqual([2, 4, 6, 8]);
-    expect(ringsFor(undefined, true)).toBe(8);
-    expect(ringsFor(undefined, false)).toBe(2);
-  });
-});
-
-describe('trialSentence', () => {
-  it('says what the trial run showed', () => {
-    expect(trialSentence(undefined)).toBeUndefined();
-    expect(trialSentence({ ran: false })).toBeUndefined();
-    expect(trialSentence({ ran: true, crashed: true })).toContain('exited');
-    expect(trialSentence({ ran: true, started: false })).toContain('did not start');
-    expect(trialSentence({ ran: true, started: true, observed_ports: [3000] })).toBe(
-      'Pando tried a run: the app started and opened port 3000.',
-    );
-    expect(trialSentence({ ran: true, started: true, observed_ports: [80, 443] })).toContain('ports 80, 443');
-    expect(trialSentence({ ran: true, started: true })).toContain('no ports');
-  });
-});

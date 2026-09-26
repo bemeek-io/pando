@@ -118,6 +118,13 @@ scan orders the same way twice.
 
 ### 4.1 At deploy (R-314)
 
+**[D] Scanned once per source, not once per deploy.** A scan records the commit it read. Detection
+scans the commit it reads, a person can ask for a scan (`POST /security/scan`), and a deploy of a commit
+nobody has scanned scans it — but a deploy of a commit that already has a successful scan uses that one
+and says so in the deploy log ("Using the security scan of 3f9a2c1 from …"). The threshold below is
+checked either way. The trade: a deploy that reuses the source scan does not also scan the built image's
+OS packages, which only a deploy-time scan saw; a new commit, or a scan somebody asks for, still does.
+
 In the planner, beside the other plan-time refusals, so it fails before anything is created:
 
 - Threshold set, scanner configured, newest scan of the revision being deployed is **below** it →

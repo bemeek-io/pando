@@ -119,6 +119,34 @@ type Question struct {
 	// The question is still carried, because the trial run can fail to observe
 	// an answer — at which point it stops being deferred and is put to a person.
 	Deferred bool `json:"deferred,omitempty"`
+
+	// Suggested is an AI adapter's answer to this question (R-338).
+	//
+	// Carried on the question rather than folded into the draft spec, so the
+	// question stays on the page and a person can see the answer, check its
+	// reason, and change it with the same request that answers any question.
+	// It counts as an answer until a person gives one; a person's answer wins.
+	Suggested *Suggestion `json:"suggested,omitempty"`
+}
+
+// Suggestion is an answer an AI adapter gave, with why and from what.
+type Suggestion struct {
+	Value    string   `json:"value"`
+	Reason   string   `json:"reason,omitempty"`
+	Evidence []string `json:"evidence,omitempty"`
+}
+
+// Open returns the asked questions nobody has answered: no answer from a
+// person in answers, and no suggestion from an AI adapter.
+func Open(questions []Question, answers map[string]string) []Question {
+	var open []Question
+	for _, q := range Asked(questions) {
+		if strings.TrimSpace(answers[q.Key]) != "" || q.Suggested != nil {
+			continue
+		}
+		open = append(open, q)
+	}
+	return open
 }
 
 // Asked returns the questions a person has to answer.
