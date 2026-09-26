@@ -172,7 +172,18 @@ adapters:
       answer_questions: {}
       revise_plan: {}
       search_audit: {model: claude-haiku-4-5}
+  ai_local:                      # a model on this machine, served by Ollama
+    category: ai
+    kind: local
+    config:
+      base_url: http://host.docker.internal:11434/v1
+      model: qwen2.5:7b
+    functions: [answer_reference, draft_access]
 ```
+
+The AI adapter kinds are `anthropic`, `openai` (with `api_key` from `OPENAI_API_KEY` by default) and
+`local`, for any server that speaks the OpenAI API: Ollama, LM Studio, llama.cpp's server or vLLM. A
+local server needs no key, and `model` is required because no model is on every server.
 
 `category` and `kind` are required. `name`, `default`, `enabled`, `config`, `credentials` and
 `functions` are optional; `functions` is for AI adapters only. The AI functions are `repair_plan`,

@@ -42,7 +42,6 @@ const DefaultModel = "claude-opus-5-5"
 const (
 	DefaultMaxFiles = 40
 	DefaultMaxBytes = 256 << 10
-	maxFileBytes    = 64 << 10
 	maxIterations   = 24
 
 	// maxTokens is generous because the answer is a tool call carrying

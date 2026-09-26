@@ -743,3 +743,5 @@ func (r *Registry) Default(c Category) (Adapter, error)
 | services | `docker` | postgres, mysql, redis in-bundle |
 | notify | `console` | R-231 |
 | ai | `anthropic` | performs the AI functions assigned to it, each on its own model if the assignment names one (design 10 §9). Not seeded — needs a credential. One per install, like any AI provider. |
+| ai | `openai` | the same functions with OpenAI's models, through the Responses API (design 10 §6.2). Not seeded — needs a credential. |
+| ai | `local` | the same functions with a model on the install's own hardware, through any OpenAI-compatible server such as Ollama (design 10 §6.3). Not seeded — needs a server and a model. |

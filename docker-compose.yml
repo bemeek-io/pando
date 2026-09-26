@@ -16,6 +16,11 @@
 services:
   pando:
     build: .
+    # A model served on this machine, for the local AI adapter, whose default
+    # address is host.docker.internal:11434 (Ollama). Docker Desktop provides
+    # the name; on Linux this maps it to the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy

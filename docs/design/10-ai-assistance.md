@@ -452,6 +452,58 @@ cannot reach a log line (R-194).
 **[D] The adapter imports nothing from core but `spec` and `secret`,** like every other adapter. The
 depguard rule in `.golangci.yml` covers it without a new entry, because it matches `**/internal/adapter/**`.
 
+### 6.1 What every AI adapter shares
+
+**[D] `internal/adapter/ai/aikit` holds everything that is not a provider's**: the system and user
+prompts, the tools (`list_files`, `read_file`, `submit_findings`, and `submit` for the administrative
+functions) with their JSON schemas, the budgeted reader, what a tool call does, and each
+administrative function's task. An adapter translates these into its provider's request types and holds
+the conversation; nothing in `aikit` speaks to a provider. One copy, so every adapter asks the same
+questions under the same rules and is refused the same way by core — a second copy of a prompt is a copy
+that drifts. The Anthropic adapter was moved onto it with its tests unchanged.
+
+**[D] Tool use is asked for, never forced.** Current models refuse forced tool use (`tool_choice` of a
+named tool or `any`) with a 400. Every adapter sets tool choice to automatic, says in the system prompt
+to answer through the tool, and asks once more when a model answers in prose.
+
+### 6.2 The OpenAI adapter
+
+`internal/adapter/ai/openai`, kind `openai`, through the **Responses API** with the official SDK
+(`github.com/openai/openai-go/v3`). All seven functions, and any model per function.
+
+- **[P] `gpt-5.5` is the default model**, the SDK's newest general model when this was written. An install
+  sets its own; each function may run on another (§9).
+- **[P] Each turn continues the last by `previous_response_id`** rather than resending the conversation,
+  so OpenAI keeps each response for the conversation's length. An organization under zero data retention
+  cannot use `previous_response_id`; that install needs the conversation resent instead, which is not
+  built.
+- **[P] Not strict.** OpenAI's strict mode needs every property required, and the amendment schema's
+  optional fields are what let one shape carry every kind. Core validates every answer regardless.
+- The key is a credential like Anthropic's, or `api_key_env`, or `OPENAI_API_KEY`.
+
+### 6.3 The local adapter
+
+`internal/adapter/ai/local`, kind `local`, for a model on the install's own hardware through **any
+server that speaks the OpenAI Chat Completions API** — Ollama, LM Studio, llama.cpp's server, vLLM — by
+the same SDK. Nothing is sent to a provider, which is the reason to choose it; R-337's audit event is
+still written, because the server is somebody's machine and what was sent to it is still worth knowing.
+
+- **[P] The default address is `http://host.docker.internal:11434/v1`**, Ollama on the machine Pando's
+  container runs on. Docker Desktop provides that name; `docker-compose.yml` maps it to the host gateway
+  on Linux.
+- **[D] A model is required.** There is no model every local server has. The health check lists the
+  server's models and says which it serves when the configured one is not among them.
+- **[D] No key by default, and never `OPENAI_API_KEY`.** A key meant for OpenAI sent to somebody's local
+  server would be a leak. A key may be stored as a credential for a server that asks for one.
+- **[P] Longer defaults**: a 300-second request timeout and a smaller read budget (30 files, 192 KiB).
+- **[P] An answer in the reply is read.** A small model often answers in prose where a tool call was
+  asked for, or writes the call out as text. A reply that is a JSON object is taken as the answer tool's
+  input, and one shaped `{"name", "arguments"}` as a call; an answer that does not decode is handed back
+  to be fixed. Core validates the result like any other, so a weaker model can be wrong but is trusted
+  no further.
+- **[D] One per install**, like every AI provider (§9): different models on one server are chosen per
+  function.
+
 ---
 
 ## 7. Configuration

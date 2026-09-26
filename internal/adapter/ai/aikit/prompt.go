@@ -1,4 +1,4 @@
-package anthropic
+package aikit
 
 import (
 	"encoding/json"
@@ -9,13 +9,13 @@ import (
 	"github.com/bemeek-io/pando/internal/core/spec"
 )
 
-// systemPrompt returns the job for fn, and the rules core will enforce anyway.
+// SystemPrompt returns the job for fn, and the rules core will enforce anyway.
 //
 // Stating the rules twice is not redundancy. Core refuses an amendment that
 // breaks one of these (design 10 §3), so a model that has not been told is a
 // model whose work is thrown away — the refusal is correct and the call is
 // wasted. Telling it here is what turns a refusal into a rarity.
-func systemPrompt(fn api.AIFunction) string {
+func SystemPrompt(fn api.AIFunction) string {
 	switch fn {
 	case api.AIFunctionAnswerQuestions:
 		return answerPrompt + "\n\n" + rulesPrompt + "\n\n" + answerClosing
@@ -115,8 +115,8 @@ amendment for each question the repository answers: "key" is the question's key 
 "value" is the answer, and "evidence" names the files you read that settle it. Submitting none is the right outcome when the
 repository does not settle any of them — a person will answer instead. Do not guess.`
 
-// userPrompt is the proposal, rendered.
-func userPrompt(fn api.AIFunction, req api.ScreenRequest) string {
+// UserPrompt is the proposal, rendered.
+func UserPrompt(fn api.AIFunction, req api.ScreenRequest) string {
 	var b strings.Builder
 
 	switch fn {

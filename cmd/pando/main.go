@@ -23,6 +23,8 @@ import (
 	"go.uber.org/zap"
 
 	aianthropic "github.com/bemeek-io/pando/internal/adapter/ai/anthropic"
+	ailocal "github.com/bemeek-io/pando/internal/adapter/ai/local"
+	aiopenai "github.com/bemeek-io/pando/internal/adapter/ai/openai"
 	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
 	backuplocal "github.com/bemeek-io/pando/internal/adapter/backup/local"
 	buildkitadapter "github.com/bemeek-io/pando/internal/adapter/builder/buildkit"
@@ -1028,6 +1030,12 @@ func newAdapter(category, kind string, notifications *state.Notifications) adapt
 		// unhealthy adapter in every install's console. An install that
 		// wants AI configures one itself.
 		return aianthropic.New()
+	case category == string(adapterapi.CategoryAI) && kind == aiopenai.Kind:
+		return aiopenai.New()
+	case category == string(adapterapi.CategoryAI) && kind == ailocal.Kind:
+		// A model on the install's own hardware: nothing is sent to a
+		// provider. Not seeded either — it needs a server and a model named.
+		return ailocal.New()
 	case category == string(adapterapi.CategoryNotify) && kind == notifyconsole.Kind:
 		// The sink is supplied by core. The adapter stores nothing itself,
 		// which is R-027 — an adapter never touches state.
@@ -1455,6 +1463,8 @@ func startupPolicy(cfg *config.Config) (*corepolicy.Overlay, error) {
 func adapterKinds() []adapterapi.KindInfo {
 	return []adapterapi.KindInfo{
 		aianthropic.Info(),
+		aiopenai.Info(),
+		ailocal.Info(),
 		dockerruntime.Info(),
 		loopback.Info(),
 		traefik.Info(),
