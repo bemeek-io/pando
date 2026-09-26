@@ -424,6 +424,7 @@ export interface Scan {
   id: string;
   app_id: string;
   spec_id?: string;
+  commit?: string;
   scanner_ref: string;
   scanner?: string;
   score?: number;
