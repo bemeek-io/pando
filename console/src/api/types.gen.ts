@@ -23,6 +23,7 @@ export interface App {
   address?: string;
   security_score?: number;
   security_verdict?: string;
+  security_scanning?: boolean;
   icon_updated_at?: string;
   favorite?: boolean;
   section_id?: string;
@@ -181,6 +182,7 @@ export interface Report {
   counts: Counts;
   worst?: (Finding[] | null);
   scanner?: string;
+  scanning_since?: string;
   ignoring_unfixable: boolean;
 }
 

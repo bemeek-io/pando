@@ -10,7 +10,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | | Count | Of total |
 |---|---:|---:|
 | Requirements | 238 | — |
-| Specified in a design doc | 186 | 78% |
+| Specified in a design doc | 187 | 78% |
 | Assigned to a phase | 137 | 57% |
 | Covered by a named test | 144 | 60% |
 
@@ -244,7 +244,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-294** | D | Data destruction on revoke follows §21. | 22. Per-User Instances [LATER] | — | — | — |
 | **R-295** | P | The cold-start path needs specification: a first request arrives with nothing running, and… | 22. Per-User Instances [LATER] | — | — | — |
 | **R-296** | D | This does not violate R-010. | 22. Per-User Instances [LATER] | — | — | — |
-| **R-310** | D | Every app has a security score: a whole number from 0 to 100. | 23. Security Scanning | 08, 09 | — | `TestR310_TheScoreIsReadableByAnyoneWhoCanSeeTheApp` |
+| **R-310** | D | Every app has a security score: a whole number from 0 to 100. | 23. Security Scanning | 08, 09 | — | `TestR310_AScanInProgressIsVisibleWhoeverStartedIt`, `TestR310_AScanIsRunningUntilTheLastOfItsScansEnds`, `TestR310_TheScoreIsReadableByAnyoneWhoCanSeeTheApp` |
 | **R-311** | D | The score comes from scanning what the app actually deploys — the image that was | 23. Security Scanning | — | — | `TestR311_ScanningAnImageReportsWhatIsInIt`, `TestR311_ScanningSourceFindsWhatNeverReachesAnImage` |
 | **R-312** | D | An app is scanned whenever what it runs changes, which means on every deploy, and | 23. Security Scanning | — | — | `TestR312_ADeployOfAScannedCommitDoesNotScanItAgain`, `TestR312_ADeployOfAScannedCommitUsesThatScan`, `TestR312_AcceptingAProposalDoesNotHideTheScanTakenAtDiscovery` |
 | **R-313** | P | The score is derived from findings by severity, starting at 100 and deducting per | 23. Security Scanning | 09 | — | `TestR313_OneCriticalCostsMoreThanFiftyLows`, `TestR313_PolicyMayCountOnlyWhatCanBeFixed` |
@@ -253,7 +253,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-316** | D | Host policy may say that insecure apps are stopped, with a grace period stated | 23. Security Scanning | 09 | — | `TestR316_AZeroGraceIsTheDefaultNotImmediately`, `TestR316_AnAppPandoStoppedStartsAgainAndOneItsOwnerStoppedDoesNot`, `TestR316_StoppingWaitsForTheGraceAndThenStops`, `TestR316_TheGraceIsMeasuredFromWhenItWasFirstFound` |
 | **R-317** | D | Scanning is an adapter category (§18). | 23. Security Scanning | 09 | — | `TestR317_WithNoScannerThePassDoesNothing` |
 | **R-318** | P | A scanner that fails does not block a deploy. | 23. Security Scanning | 09 | — | — |
-| **R-319** | D | Scans, score changes, policy-driven warnings and policy-driven stops are audited | 23. Security Scanning | — | — | — |
+| **R-319** | D | Scans, score changes, policy-driven warnings and policy-driven stops are audited | 23. Security Scanning | 09 | — | — |
 | **R-320** | P | The score is not shown as a grade, a badge, or a color alone. | 23. Security Scanning | 08, 09 | — | — |
 | **R-300** | D | AGPL, dual-licensed with commercial exceptions available. | 26. Licensing and Governance | — | — | — |
 | **R-301** | D | A CLA is required from the first outside contribution, implemented with CLA Assistant as a… | 26. Licensing and Governance | — | — | — |
@@ -311,7 +311,6 @@ Check each against the categories above before treating it as a gap.
 - **R-296** (22. Per-User Instances [LATER]) — This does not violate R-010.
 - **R-311** (23. Security Scanning) — The score comes from scanning what the app actually deploys — the image that was
 - **R-312** (23. Security Scanning) — An app is scanned whenever what it runs changes, which means on every deploy, and
-- **R-319** (23. Security Scanning) — Scans, score changes, policy-driven warnings and policy-driven stops are audited
 - **R-300** (26. Licensing and Governance) — AGPL, dual-licensed with commercial exceptions available.
 - **R-301** (26. Licensing and Governance) — A CLA is required from the first outside contribution, implemented with CLA Assistant as a…
 - **R-302** (26. Licensing and Governance) — Rationale for starting here: AGPL → MIT is reversible; MIT → AGPL is not.

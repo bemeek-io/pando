@@ -222,7 +222,7 @@ export function AppOverview({
           short lines and a findings table is not: at 1.25fr, "Incorrect
           certificate validation during TLS session resumption" wrapped one
           word to a line and the section ran off the bottom of the page. */}
-      <Security appID={app.id} />
+      <Security appID={app.id} watching={app.state === 'deploying'} />
 
       {unset.length > 0 && (
         <InlineWarning
