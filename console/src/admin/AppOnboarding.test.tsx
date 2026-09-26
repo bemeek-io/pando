@@ -131,7 +131,7 @@ describe('AppOnboarding', () => {
     };
     const html = render({ status: 'ready', answers: {}, commit: '3f9a2c1d0000', detection: crewmate } as never);
 
-    const plan = html.slice(html.indexOf('The plan'));
+    const plan = html.slice(html.indexOf('The plan'), html.indexOf('pando-actionbar'));
     expect(plan).toContain('/crewmate');
     expect(plan).not.toContain('The image’s own command');
     expect(plan).toContain('PostgreSQL');
@@ -139,10 +139,17 @@ describe('AppOnboarding', () => {
     expect(plan).toContain('Pando creates it');
     expect(plan).not.toContain('CREW_TOKEN_ENC_KEY');
 
+    // Every slot-filled variable is a value somebody can set here.
     const variables = html.slice(html.indexOf('>Variables<'), html.indexOf('The plan'));
     expect(variables).toContain('CREW_TOKEN_ENC_KEY');
     expect(variables).toContain('Needs a value');
-    expect(variables).toContain('From PostgreSQL');
+    expect(variables).toContain('Pando fills this when it creates PostgreSQL');
+    expect(variables).not.toContain('runs one inside this app');
+    expect((variables.match(/<input/g) ?? []).length).toBeGreaterThanOrEqual(2);
+
+    // Deploying waits for the required value; accepting does not.
+    const bar = html.slice(html.indexOf('pando-actionbar'));
+    expect(bar).toContain('1 value needed to deploy');
   });
 
   it('renders the discovery view while detection runs, with no review', () => {

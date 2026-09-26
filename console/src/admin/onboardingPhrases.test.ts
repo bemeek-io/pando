@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { phrasesFor } from './onboardingPhrases';
 
-const STEPS = ['read', 'stack', 'runs', 'vars', 'trial', 'repair', 'answer'];
+const STEPS = ['read', 'stack', 'runs', 'vars', 'trial', 'scan', 'repair', 'answer'];
 
 describe('phrasesFor', () => {
   it('has phrases for every step, and falls back for an unknown one', () => {

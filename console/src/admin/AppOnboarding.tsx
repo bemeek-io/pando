@@ -44,10 +44,12 @@ import {
 } from '@design';
 
 import { api, RequestFailed } from '@api/client';
-import type { Amendment, AppSpec, Question, Source } from '@api/types.gen';
+import type { Amendment, AppSpec, Question, Report, Source } from '@api/types.gen';
 import { Loading } from '../ui/Loading';
+import { ScoreBadge } from '../ui/ScoreBadge';
+import { Security } from './Security';
 import { deletePath } from './delete-app';
-import { Blocked, DetectionFailed, Failure, fills, type DetectionResponse, type Slot } from './DetectionReview';
+import { Blocked, DetectionFailed, Failure, type DetectionResponse } from './DetectionReview';
 import {
   aiFrom,
   answerFor,
@@ -78,6 +80,7 @@ import {
   SCREENING_ADVISORY,
   envKey,
   mergeRows,
+  neededValues,
   primaryWorkload,
   rowProblems,
   suggestions,
@@ -100,8 +103,11 @@ export interface DeployRefusal {
 
 type Phase = 'discovering' | 'ready' | 'done';
 
-/** How long "Plan ready" holds before the review rises (design handoff). */
-const READY_HOLD_MS = 2_400;
+/** How long "Plan ready" holds before the review rises. */
+const READY_HOLD_MS = 1_600;
+
+/** A detection that finished this recently is still played through. */
+const RECENT_MS = 60_000;
 
 export function AppOnboarding({
   app,
@@ -165,6 +171,7 @@ export function AppOnboarding({
   });
 
   const [rejecting, setRejecting] = useState(false);
+  const [viewingScan, setViewingScan] = useState(false);
   const reject = useMutation({
     mutationFn: async () => {
       try {
@@ -206,18 +213,53 @@ export function AppOnboarding({
   // "Ready" is held only when this page watched detection finish. Opening an
   // app that finished earlier goes straight to the review, and so does one
   // under reduced motion.
+  //
+  // "Watching" also covers a detection that finished moments before the page
+  // first heard about it. A small repository is read faster than the page's
+  // first request comes back, and that app arrived as a finished review with
+  // nothing shown of how Pando got there. The first answer decides: running,
+  // or finished within the last minute, and the steps play.
   const [watching, setWatching] = useState(false);
+  const decided = useRef(false);
   useEffect(() => {
-    if (data && running && !reduced) setWatching(true);
+    if (!data || reduced) return;
+    if (running) {
+      decided.current = true;
+      setWatching(true);
+      return;
+    }
+    if (decided.current) return;
+    decided.current = true;
+    const finishedAt = Date.parse(data.updated_at ?? '');
+    if (!Number.isNaN(finishedAt) && Date.now() - finishedAt < RECENT_MS) setWatching(true);
   }, [data, running, reduced]);
 
   // --- Steps -----------------------------------------------------------------
+  // The source scan runs during detection, so its report is there once the
+  // scan stage has passed. An install with no scanner answers with an error,
+  // which means no scan step and no badge — not a failure worth showing.
+  const scanned = !running || proposal?.stage === 'screening';
+  const security = useQuery({
+    queryKey: ['apps', appID, 'security'],
+    queryFn: () => api.get<Report>(`/apps/${appID}/security`),
+    enabled: Boolean(data) && scanned,
+    retry: false,
+  });
+  const report = security.data?.scan ? security.data : undefined;
+
   const real = useMemo(
     () =>
       proposal
-        ? discoverySteps({ status, stage: proposal.stage, proposal, source: app.source, commit: data?.commit })
+        ? discoverySteps({
+            status,
+            stage: proposal.stage,
+            proposal,
+            source: app.source,
+            commit: data?.commit,
+            security: report,
+          })
         : [],
-    [proposal, status, app.source, data?.commit],
+    [proposal, status, app.source, data?.commit, report],
   );
 
   // Paced while watching: one step at a time, each held long enough to read
@@ -352,13 +394,16 @@ export function AppOnboarding({
     </Dialog>
   );
 
-  const back = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-      <Button variant="ghost" icon={<Icon name="arrow-left" />} onClick={onBack}>
-        Apps
-      </Button>
-      <span style={{ font: 'var(--type-label)', color: 'var(--ink)' }}>{app.name}</span>
-    </div>
+  // The app's name, above its source. No back button: the sidebar is the way
+  // back to the list.
+  const back = <span style={{ font: 'var(--type-label)', color: 'var(--ink)' }}>{app.name}</span>;
+
+  // Reject is the destructive choice in the bar, so it reads in marker red
+  // while staying a quiet ghost beside the two ways forward.
+  const rejectButton = (
+    <Button variant="ghost" style={{ color: 'var(--marker-deep)' }} onClick={() => setRejecting(true)}>
+      Reject plan
+    </Button>
   );
 
   // Before the first answer: the terrain's place and the column's shape.
@@ -386,9 +431,7 @@ export function AppOnboarding({
         </div>
         {canDelete && (
           <ActionBar status="failed" label="Pando couldn’t load this app" detail="Reject it, or reload the page to try again.">
-            <Button variant="ghost" onClick={() => setRejecting(true)}>
-              Reject plan
-            </Button>
+            {rejectButton}
           </ActionBar>
         )}
         {rejectDialog}
@@ -427,11 +470,14 @@ export function AppOnboarding({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', minWidth: 0 }}>
           {back}
           <SourceTags source={app.source} commit={data.commit || proposal.commit} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            {discovering && current?.ai && <AiStar size={18} />}
-            <h2 className="pando-onboard-headline" data-big={!discovering && !failed && !blocked}>
-              {headline}
-            </h2>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3) var(--space-5)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flex: '1 1 auto', minWidth: 0 }}>
+              {discovering && current?.ai && <AiStar size={18} />}
+              <h2 className="pando-onboard-headline" data-big={!discovering && !failed && !blocked}>
+                {headline}
+              </h2>
+            </div>
+            {!discovering && report && <SecurityScore report={report} onView={() => setViewingScan(true)} />}
           </div>
           {discovering && <WorkingLine step={current} startedAt={data.started_at} reduced={reduced} />}
           {!discovering && !failed && !blocked && (
@@ -450,7 +496,8 @@ export function AppOnboarding({
           spec={done ? plan : spec}
           discovering={discovering}
           steps={steps}
-          open={missing.length}
+          asked={asked.length}
+          byAI={asked.filter((q) => q.suggested).length}
           runs={shownDone('runs')}
           vars={shownDone('vars')}
           questions={!discovering}
@@ -484,7 +531,9 @@ export function AppOnboarding({
             className="pando-onboard-enter"
             style={{ '--stagger': 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-7)' } as React.CSSProperties}
           >
-            <Notices proposal={proposal} spec={spec} marks={marks} />
+            {/* The plan's warnings, not the winner's: a warning about the
+                reading nobody picked describes an app that won't be deployed. */}
+            <Notices proposal={proposal} spec={plan} marks={marks} />
 
             {(['needs', 'ai'] as const).map((group) => {
               const items = asked.filter((q) => groupOf(q) === group);
@@ -562,12 +611,11 @@ export function AppOnboarding({
       </div>
 
       {done && !failed && !blocked && (canEdit || canDelete) && (
-        <ActionBar {...barStatus(missing, Object.keys(problems).length, canDeploy, canEdit)} error={accept.isError ? accept.error : undefined}>
-          {canDelete && (
-            <Button variant="ghost" onClick={() => setRejecting(true)}>
-              Reject plan
-            </Button>
-          )}
+        <ActionBar
+          {...barStatus(missing, Object.keys(problems).length, neededValues(rows), canDeploy, canEdit)}
+          error={accept.isError ? accept.error : undefined}
+        >
+          {canDelete && rejectButton}
           {canEdit && (
             <Button
               variant={canDeploy ? 'secondary' : 'primary'}
@@ -580,7 +628,14 @@ export function AppOnboarding({
           {canEdit && canDeploy && (
             <Button
               variant="primary"
-              disabled={missing.length > 0 || Object.keys(problems).length > 0 || accept.isPending}
+              // A required value left empty refuses the deploy (R-132), so
+              // deploying waits for it; accepting does not.
+              disabled={
+                missing.length > 0 ||
+                Object.keys(problems).length > 0 ||
+                neededValues(rows).length > 0 ||
+                accept.isPending
+              }
               onClick={() => accept.mutate(true)}
             >
               {accept.isPending && accept.variables === true ? 'Accepting' : 'Accept and deploy'}
@@ -595,13 +650,58 @@ export function AppOnboarding({
           label={failed ? 'Detection stopped' : 'Pando can’t run this app'}
           detail={failed ? 'Fix what stopped it and try again, or reject the app.' : 'Change what’s described above, or reject the app.'}
         >
-          <Button variant="ghost" onClick={() => setRejecting(true)}>
-            Reject plan
-          </Button>
+          {rejectButton}
         </ActionBar>
       )}
 
       {rejectDialog}
+
+      {/* The findings, on this page: a draft app has no overview tab to send
+          anybody to. The same panel the overview shows, so they read alike. */}
+      <Dialog
+        open={viewingScan}
+        title="Security scan"
+        width={880}
+        onClose={() => setViewingScan(false)}
+        footer={
+          <Button variant="secondary" onClick={() => setViewingScan(false)}>
+            Close
+          </Button>
+        }
+      >
+        {viewingScan && <Security appID={appID} />}
+      </Dialog>
+    </div>
+  );
+}
+
+/**
+ * The scan's score beside "Plan ready": the badge, and a way to the findings
+ * when there are any. The number is the first signal and the color the second
+ * (R-320), as everywhere else the score appears.
+ */
+function SecurityScore({ report, onView }: { report: Report; onView: () => void }) {
+  const counts = report.counts;
+  const total = counts.critical + counts.high + counts.medium + counts.low + counts.unknown;
+  return (
+    <div
+      className="pando-onboard-enter"
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-1)', marginLeft: 'auto' }}
+    >
+      <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>Security score</span>
+      <ScoreBadge
+        score={report.scan?.score}
+        verdict={report.standing.verdict as never}
+        threshold={report.standing.threshold}
+        full
+      />
+      {total > 0 ? (
+        <button type="button" className="pando-link" onClick={onView}>
+          {total === 1 ? 'View 1 vulnerability' : `View ${total} vulnerabilities`}
+        </button>
+      ) : (
+        <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>No known vulnerabilities</span>
+      )}
     </div>
   );
 }
@@ -758,7 +858,8 @@ function Tallies({
   spec,
   discovering,
   steps,
-  open,
+  asked,
+  byAI,
   runs,
   vars,
   questions,
@@ -766,25 +867,37 @@ function Tallies({
   spec: AppSpec | undefined;
   discovering: boolean;
   steps: DiscoveryStep[];
-  open: number;
+  /** Every question detection asked, answered or not. */
+  asked: number;
+  /** How many of them an AI adapter answered. */
+  byAI: number;
   runs: boolean;
   vars: boolean;
   questions: boolean;
 }) {
-  const workloads = runs ? (spec?.workloads ?? []).length : 0;
-  const services = runs ? (spec?.slots ?? []).filter(isService).length : 0;
+  // Everything that runs: the app's own services and the ones Pando runs
+  // beside it. A compose app with app, proxy and a Postgres database is three,
+  // whichever side of the plan each sits on.
+  const services = runs
+    ? (spec?.workloads ?? []).length + (spec?.slots ?? []).filter(isService).length
+    : 0;
+  const storage = runs ? new Set((spec?.workloads ?? []).flatMap((w) => (w.mounts ?? []).map((m) => m.path))).size : 0;
   const variables = vars
     ? new Set((spec?.workloads ?? []).flatMap((w) => (w.env ?? []).map((e) => e.key))).size
     : 0;
   const trial = steps.find((s) => s.id === 'trial');
   const broken = discovering && trial?.state === 'done' && trial.failed;
+  const count = questions ? asked : 0;
   const tallies: Array<{ label: string; value: number; hot?: boolean }> = [
-    { label: workloads === 1 ? 'Process' : 'Processes', value: workloads },
     { label: services === 1 ? 'Service' : 'Services', value: services },
     { label: variables === 1 ? 'Variable' : 'Variables', value: variables },
+    { label: 'Storage', value: storage },
     broken
       ? { label: 'Run failed', value: 1, hot: true }
-      : { label: 'Questions for you', value: questions ? open : 0 },
+      : {
+          label: `${count === 1 ? 'Question' : 'Questions'}${questions && byAI ? `, ${byAI} answered by AI` : ''}`,
+          value: count,
+        },
   ];
   return (
     <div
@@ -1284,60 +1397,56 @@ function Variables({
 }) {
   const workloads = spec.workloads ?? [];
   const many = workloads.length > 1;
-  const slots = (spec.slots ?? []) as Slot[];
-  // A variable a dependency fills belongs to that dependency: shown, and not
-  // editable here (onboarding.ts variableRows).
-  const filled = workloads.flatMap((w) =>
-    (w.env ?? []).filter((e) => e.slot_ref).map((e) => ({ workload: w.name, key: e.key, slot: e.slot_ref! })),
-  );
-  if (rows.length === 0 && filled.length === 0 && !canEdit) return null;
+  if (rows.length === 0 && !canEdit) return null;
 
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
         <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>Variables</h3>
         <span style={{ color: 'var(--ink-secondary)' }}>
-          {rows.length + filled.length === 0
+          {rows.length === 0
             ? 'Pando found no variables this app reads. Add any it needs.'
             : 'Change any value. Pando uses these on every deploy.'}
         </span>
       </div>
 
-      {rows.length + filled.length > 0 && (
+      {rows.length > 0 && (
         <Card tone="paper" padding="none">
-          {filled.map((f, i) => {
-            const slot = slots.find((s) => s.key === f.slot);
-            const service = slot && isService(slot);
-            return (
-              <VariableLine
-                key={`slot-${f.workload}-${f.key}`}
-                first={i === 0}
-                name={f.key}
-                workload={many ? f.workload : undefined}
-                source={
-                  service ? (
-                    <span>{`From ${slotLabel(slot.type)}`}</span>
-                  ) : (
-                    <span style={{ color: 'var(--ink)' }}>{slot?.required ? 'Needs a value' : 'Optional'}</span>
-                  )
-                }
-              >
-                <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
-                  {service
-                    ? fills(slot)
-                    : slot?.required
-                      ? 'You set this after accepting, under Settings. The app can’t deploy until it has a value.'
-                      : 'You can set this after accepting, under Settings.'}
-                </span>
-              </VariableLine>
-            );
-          })}
           {rows.map((row, i) => {
             const isNew = row.original === undefined;
             const ai = isNew ? undefined : marks.env[envKey(row.workload || primaryWorkload(spec), row.key)];
             const changed = !isNew && row.value !== row.original;
+            const slot = row.slot;
+            const service = slot?.service ? slotLabel(slot.type) : undefined;
             let source: React.ReactNode;
-            if (isNew) source = <span>Added by you</span>;
+            let placeholder = row.secret ? 'Stored as a secret' : 'No value yet';
+            if (slot && service && slot.provisioned) {
+              // Pando creates the service at the first deploy and writes its
+              // address here then. A value typed now points the app at one the
+              // person already runs instead.
+              placeholder = `Filled in when Pando creates ${service}`;
+              source = changed ? (
+                <>
+                  <span>{`Your value. Pando won’t create ${service}.`}</span>
+                  {canEdit && (
+                    <button type="button" className="pando-link" onClick={() => onEdit(row, { value: '' })}>
+                      {`Use Pando’s ${service}`}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <span>{`Pando fills this when it creates ${service}`}</span>
+              );
+            } else if (slot) {
+              placeholder = slot.required ? 'Needed before this app can deploy' : 'Optional';
+              source = changed ? (
+                <span>Your value</span>
+              ) : (
+                <span style={{ color: slot.required ? 'var(--ink)' : undefined }}>
+                  {slot.required ? 'Needs a value' : 'Optional, no value yet'}
+                </span>
+              );
+            } else if (isNew) source = <span>Added by you</span>;
             else if (changed) {
               source = (
                 <>
@@ -1362,7 +1471,7 @@ function Variables({
             return (
               <VariableLine
                 key={row.id}
-                first={filled.length === 0 && i === 0}
+                first={i === 0}
                 name={
                   isNew ? (
                     <Input
@@ -1387,7 +1496,7 @@ function Variables({
                       mono
                       type={row.secret ? 'password' : 'text'}
                       autoComplete="off"
-                      placeholder={row.secret ? 'Stored as a secret' : 'No value yet'}
+                      placeholder={placeholder}
                       value={row.value}
                       disabled={!canEdit}
                       onChange={(e) => onEdit(row, { value: e.target.value })}
@@ -1395,8 +1504,9 @@ function Variables({
                   </div>
                   <Checkbox
                     label="Secret"
-                    checked={row.secret}
-                    disabled={!canEdit || !canSecrets}
+                    checked={row.secret || Boolean(slot)}
+                    // A slot's value is always stored as a secret.
+                    disabled={!canEdit || !canSecrets || Boolean(slot)}
                     onChange={(e) => onEdit(row, { secret: e.target.checked })}
                   />
                   {isNew && canEdit && (
@@ -1709,6 +1819,7 @@ function ProcessRow({
 function barStatus(
   missing: Question[],
   problems: number,
+  values: VariableRow[],
   canDeploy: boolean,
   canEdit: boolean,
 ): { status: 'building' | 'running' | 'info'; label: string; detail: string } {
@@ -1724,6 +1835,13 @@ function barStatus(
   }
   if (problems > 0) {
     return { status: 'building', label: 'A variable needs a name', detail: 'Name the variable you added, or remove it.' };
+  }
+  if (values.length > 0) {
+    return {
+      status: 'building',
+      label: values.length === 1 ? '1 value needed to deploy' : `${values.length} values needed to deploy`,
+      detail: `Set ${listNames(values.map((r) => r.key))} to deploy now, or accept and set ${values.length === 1 ? 'it' : 'them'} later in Settings.`,
+    };
   }
   return {
     status: 'running',

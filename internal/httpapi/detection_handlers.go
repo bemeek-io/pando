@@ -353,6 +353,19 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 	// The values set during review. A secret goes to the secrets adapter first
 	// and the spec gets only its name, so the pinned spec is safe to export.
 	for _, v := range req.Values {
+		// A variable filled from a slot gets its value on the slot, as a
+		// secret, so the slot is filled and the deploy is not refused for it
+		// (R-132, spec.FillSlotLiteral).
+		if slot, ok := spec.EnvSlot(&draft, v.Workload, v.Key); ok {
+			ref := spec.SlotSecretKey(slot)
+			if err := s.Secrets.Put(r.Context(), app.ID, ref, secret.New(v.Value)); err != nil {
+				Error(w, r, err)
+				return
+			}
+			spec.FillSlotLiteral(&draft, slot, ref)
+			continue
+		}
+
 		entry := spec.EnvEntry{}
 		if v.Secret {
 			if err := s.Secrets.Put(r.Context(), app.ID, v.Key, secret.New(v.Value)); err != nil {

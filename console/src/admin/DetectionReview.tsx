@@ -66,6 +66,8 @@ export interface DetectionResponse {
   commit: string;
   /** When this detection began, RFC 3339: the onboarding page's clock. */
   started_at?: string;
+  /** When it last changed: for a finished one, when it finished. */
+  updated_at?: string;
 }
 
 export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: boolean }) {

@@ -21,7 +21,7 @@ const SCALES = [1, 0.8, 0.6, 0.4, 0.2];
 const SAMPLES = 400;
 
 /** The fastest the ridge draws, in widths per second. */
-const MAX_RATE = 0.22;
+const MAX_RATE = 0.32;
 
 export interface TerrainStop {
   x: number;

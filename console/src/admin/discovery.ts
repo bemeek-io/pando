@@ -9,12 +9,12 @@
 // event that ends the auction, and the page reveals their findings on a short
 // stagger — the findings are real, only their pacing is the page's.
 
-import type { AppSpec, Candidate, Proposal, Question, Source } from '@api/types.gen';
+import type { AppSpec, Candidate, Proposal, Question, Report, Source } from '@api/types.gen';
 import { describeAmendment } from './screeningText';
 
 /** Where a running detection is. `stage` is set only while it runs. */
-export type Stage = 'fetching' | 'detecting' | 'trying' | 'screening';
-const ORDER: Stage[] = ['fetching', 'detecting', 'trying', 'screening'];
+export type Stage = 'fetching' | 'detecting' | 'trying' | 'scanning' | 'screening';
+const ORDER: Stage[] = ['fetching', 'detecting', 'trying', 'scanning', 'screening'];
 
 export type StepState = 'done' | 'current' | 'pending';
 
@@ -45,6 +45,8 @@ export interface DiscoveryInput {
   proposal: Partial<Proposal>;
   source?: Source;
   commit?: string;
+  /** The app's security report, once the scan has run (GET /security). */
+  security?: Report;
 }
 
 const STRATEGY: Record<string, string> = {
@@ -351,12 +353,51 @@ function trialStep(proposal: Partial<Proposal>, at: number): DiscoveryStep | und
   };
 }
 
+/**
+ * The security scan (R-310), as a step of the plan: shown while the scan runs,
+ * and once there is a scan to report. An install with no scanner has neither,
+ * and no step.
+ */
+function scanStep(security: Report | undefined, at: number): DiscoveryStep | undefined {
+  const scan = security?.scan;
+  if (at !== 3 && !(at > 3 && scan)) return undefined;
+  const step: DiscoveryStep = {
+    id: 'scan',
+    name: 'Scan for known vulnerabilities',
+    active: 'Scanning for vulnerabilities',
+    state: at > 3 ? 'done' : 'current',
+    findings: [],
+  };
+  if (at <= 3 || !scan || !security) return step;
+
+  if (scan.error) {
+    step.result = 'Couldn’t scan';
+    step.findings.push({ key: 'Why', value: scan.error, text: true });
+    return step;
+  }
+  const counts = security.counts;
+  const total = counts.critical + counts.high + counts.medium + counts.low + counts.unknown;
+  if (scan.score !== undefined && scan.score !== null) step.findings.push({ key: 'Score', value: `${scan.score} / 100` });
+  const severities: Array<[string, number]> = [
+    ['Critical', counts.critical],
+    ['High', counts.high],
+    ['Medium', counts.medium],
+    ['Low', counts.low],
+  ];
+  for (const [label, n] of severities) if (n > 0) step.findings.push({ key: label, value: String(n) });
+  const worst = (security.worst ?? []).slice(0, 3).map((f) => f.id);
+  if (worst.length) step.findings.push({ key: 'Worst', value: worst.join(' ') });
+  step.result = total === 0 ? 'Nothing known' : plural(total, 'vulnerability', 'vulnerabilities');
+  step.failed = security.standing.verdict === 'insecure';
+  return step;
+}
+
 /** Skip codes that say nothing: no adapter, nothing needed, blocked (R-335, R-336). */
 const QUIET = new Set(['not_configured', 'not_needed', 'blocked']);
 
 function aiStep(proposal: Partial<Proposal>, stage: string | undefined, at: number): DiscoveryStep | undefined {
   const outcome = proposal.screening;
-  const running = at === 3 && stage === 'screening';
+  const running = at === 4 && stage === 'screening';
   const visible = outcome && (outcome.ran || (outcome.skip_code && !QUIET.has(outcome.skip_code)));
   if (!running && !visible) return undefined;
 
@@ -409,6 +450,8 @@ export function discoverySteps(input: DiscoveryInput): DiscoveryStep[] {
   ];
   const trial = trialStep(proposal, at);
   if (trial) steps.push(trial);
+  const scan = scanStep(input.security, at);
+  if (scan) steps.push(scan);
   const ai = aiStep(proposal, input.stage, at);
   if (ai) steps.push(ai);
   return steps;
@@ -438,10 +481,13 @@ export function finishedCount(steps: DiscoveryStep[]): number {
   return i < 0 ? steps.length : i;
 }
 
-/** The least time a step stays under way on screen: long enough to read. */
-export const MIN_STEP_MS = 1_400;
-const PER_FINDING_MS = 280;
-const MAX_STEP_MS = 3_600;
+/**
+ * The least time a step stays under way on screen. Fast, but long enough to
+ * see: the point is that each step visibly happens, not that anybody waits.
+ */
+export const MIN_STEP_MS = 700;
+const PER_FINDING_MS = 90;
+const MAX_STEP_MS = 1_400;
 
 /** How long a finished step is held as under way while its findings rise in. */
 export function dwellFor(step: DiscoveryStep): number {
@@ -460,6 +506,7 @@ export function currentStep(steps: DiscoveryStep[]): DiscoveryStep | undefined {
  */
 const EXPECTED_MS: Record<string, number> = {
   read: 4_000,
+  scan: 8_000,
   stack: 3_000,
   trial: 30_000,
   ai: 40_000,

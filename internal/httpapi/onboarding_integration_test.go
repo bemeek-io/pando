@@ -82,3 +82,56 @@ func TestR022_AcceptingSetsTheVariablesGivenWithIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "s3cret-value", value.Reveal())
 }
+
+// TestR132_AValueSetDuringReviewFillsItsSlot asserts R-132 at accept: a
+// variable filled from a slot — a key the compose importer found named with
+// no value in .env.example — gets its value on the slot, so the slot is filled
+// and the deploy is not refused for it. Replacing the variable's entry instead
+// left the required slot unfilled and moved the refusal to deploy time.
+func TestR132_AValueSetDuringReviewFillsItsSlot(t *testing.T) {
+	ctx := context.Background()
+	i := newInstall(t)
+	admin := i.admin()
+	appID := i.createApp(admin, "crew")
+
+	slot := "CREW_TOKEN_ENC_KEY"
+	proposal := detect.Proposal{
+		Status: "ready",
+		Winner: detect.Candidate{Detector: "compose", Strategy: "compose"},
+		DraftSpec: spec.AppSpec{
+			SchemaVersion: 1,
+			AppID:         appID,
+			Source:        spec.Source{Type: "git", URL: "https://github.com/acme/crew"},
+			Build:         spec.Build{Strategy: "dockerfile", Dockerfile: "Dockerfile"},
+			Workloads: []spec.Workload{{
+				Name:    "app",
+				Primary: true,
+				Env:     []spec.EnvEntry{{Key: slot, SlotRef: &slot}},
+			}},
+			Slots: []spec.Slot{{Key: slot, Type: spec.SlotUnknown, Required: true}},
+		},
+	}
+	require.NoError(t, state.NewDetections(i.db).Save(ctx, appID, "ready", proposal, "abc123"))
+
+	accepted := i.do(admin, http.MethodPost, "/apps/"+appID+"/detection/accept", map[string]any{
+		"values": []map[string]any{{"key": slot, "value": "enc-key-value", "workload": "app"}},
+	})
+	require.Contains(t, []int{http.StatusOK, http.StatusCreated}, accepted.Code, accepted.String())
+
+	got := i.do(admin, http.MethodGet, "/apps/"+appID+"/specs/1", nil)
+	require.NotContains(t, got.String(), "enc-key-value", "the spec holds a reference, not the value")
+	var rev struct {
+		Body spec.AppSpec `json:"body"`
+	}
+	require.NoError(t, json.Unmarshal(got.Body, &rev))
+	filled, ok := rev.Body.Slot(slot)
+	require.True(t, ok)
+	require.NotNil(t, filled.Resolution, "the slot is filled")
+	require.Equal(t, spec.ResolutionLiteral, filled.Resolution.Mode)
+	require.Equal(t, spec.SlotSecretKey(slot), filled.Resolution.SecretRef)
+	require.Equal(t, &slot, rev.Body.Workloads[0].Env[0].SlotRef, "the variable still reads from its slot")
+
+	value, err := i.Secrets.Get(ctx, appID, spec.SlotSecretKey(slot))
+	require.NoError(t, err)
+	require.Equal(t, "enc-key-value", value.Reveal())
+}

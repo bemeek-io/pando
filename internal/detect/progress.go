@@ -9,6 +9,7 @@ const (
 	StageFetching  = "fetching"  // cloning the repository
 	StageDetecting = "detecting" // detectors bidding on what the app is
 	StageTrying    = "trying"    // a trial run of the winning draft (R-097)
+	StageScanning  = "scanning"  // a security scan of the source, when a scanner is configured
 	StageScreening = "screening" // an AI adapter repairing the plan or answering its questions (R-336)
 )
 

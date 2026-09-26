@@ -4,6 +4,7 @@ import type { Amendment, AppSpec, Outcome } from '@api/types.gen';
 import {
   envKey,
   mergeRows,
+  neededValues,
   primaryWorkload,
   rowProblems,
   suggestions,
@@ -88,16 +89,51 @@ describe('suggestions', () => {
 });
 
 describe('variableRows', () => {
-  it('lists plain variables, not ones a dependency or a secret fills', () => {
+  it('lists every variable a person could set, including ones a slot fills, not ones a secret fills', () => {
     const rows = variableRows(twoWorkloads);
-    expect(rows.map((r) => r.id)).toEqual(['web/API_KEY', 'web/NODE_ENV', 'worker/QUEUE']);
+    expect(rows.map((r) => r.id)).toEqual(['web/API_KEY', 'web/NODE_ENV', 'web/DATABASE_URL', 'worker/QUEUE']);
   });
 
   it('starts a credential-looking name with no value as a secret', () => {
-    const [apiKey, nodeEnv, queue] = variableRows(twoWorkloads);
+    const [apiKey, nodeEnv, , queue] = variableRows(twoWorkloads);
     expect(apiKey).toMatchObject({ secret: true, value: '', original: '' });
     expect(nodeEnv).toMatchObject({ secret: false, value: 'production', original: 'production' });
     expect(queue).toMatchObject({ secret: false });
+  });
+
+  it('marks a slot-filled variable with its slot, always as a secret', () => {
+    const withSlots = {
+      ...twoWorkloads,
+      slots: [
+        { key: 'DATABASE_URL', type: 'postgres', required: true, resolution: { mode: 'provisioned' } },
+      ],
+    } as AppSpec;
+    const database = variableRows(withSlots).find((r) => r.key === 'DATABASE_URL');
+    expect(database).toMatchObject({
+      secret: true,
+      slot: { key: 'DATABASE_URL', type: 'postgres', required: true, service: true, provisioned: true },
+    });
+  });
+});
+
+describe('neededValues', () => {
+  it('lists required slot values Pando will not create and nobody has set (R-132)', () => {
+    const slotted = (key: string, slot: Partial<NonNullable<VariableRow['slot']>>, value = ''): VariableRow => ({
+      id: key,
+      workload: 'app',
+      key,
+      value,
+      secret: true,
+      original: '',
+      slot: { key, type: 'unknown', required: true, service: false, provisioned: false, ...slot },
+    });
+    const rows = [
+      slotted('CREW_TOKEN_ENC_KEY', {}),
+      slotted('VAPID_SUBJECT', { required: false }),
+      slotted('DATABASE_URL', { type: 'postgres', service: true, provisioned: true }),
+      slotted('ANTHROPIC_API_KEY', {}, 'sk-ant-set'),
+    ];
+    expect(neededValues(rows).map((r) => r.key)).toEqual(['CREW_TOKEN_ENC_KEY']);
   });
 });
 

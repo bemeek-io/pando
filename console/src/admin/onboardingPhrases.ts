@@ -16,6 +16,7 @@ const PHRASES: Record<string, string[]> = {
   runs: ['Finding what it runs', 'Tracing its services'],
   vars: ['Collecting variables', 'Matching variables to services'],
   trial: ['Starting it to watch', 'Watching which ports it opens', 'Checking what it writes'],
+  scan: ['Scanning for known vulnerabilities', 'Reading the lockfiles', 'Matching packages against known CVEs'],
   repair: ['Reading the trial run’s output', 'Looking for what went wrong', 'Checking the start command'],
   answer: ['Reading the questions', 'Looking for the answers in the repo', 'Leaving what it can’t settle for you'],
 };

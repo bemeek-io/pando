@@ -212,6 +212,9 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 	// An app that runs a published image has no checkout: Dir is empty, and
 	// scanning "" would scan whatever directory the server runs in.
 	if r.Scanner != nil && checkout.Dir != "" {
+		// Reported as its own stage: a scan can take a while, and the
+		// onboarding page shows it as a step of the plan.
+		detect.Report(ctx, detect.StageScanning, &proposal)
 		r.Scanner.ScanSource(ctx, appID, checkout.Dir)
 	}
 

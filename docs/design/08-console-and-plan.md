@@ -201,6 +201,28 @@ the step that found them is shown. The terrain eases through the current step an
 than about a fifth of its width per second, so a step completing moves the ridge on rather than
 snapping it.
 
+**[D] The security scan is a step of the plan** (R-310). Detection reports a `scanning` stage while
+the source scan runs, and the step shows the score, the counts by severity and the worst findings.
+Beside "Plan ready" sit the score badge (`ScoreBadge`, number first, color second — R-320) and a link
+to the findings, which open the overview's security panel in a dialog, because a draft app has no
+overview to send anybody to. An install with no scanner shows neither.
+
+**[D] Tallies count what a person thinks of as the app's parts:** *Services* is everything that runs
+(the app's own services and the ones Pando runs beside it — app, proxy and PostgreSQL are three),
+then *Variables*, *Storage*, and *Questions* — every question detection asked, with how many AI
+answered, because an answered question is still one Pando could not settle alone.
+
+**[D] Every slot-filled variable is a value somebody can set here.** A key named with no value in
+`.env.example` is a slot the deploy is refused without (R-132); a value typed for it during review is
+stored as the slot's secret at accept (`spec.FillSlotLiteral`), the same place `PUT /slots/{key}`
+writes, so the slot is filled rather than the variable overwritten and the slot left empty. A
+database's URL cannot be prefilled — its host and password are generated at the first deploy — so its
+row says Pando fills it then, and a value typed there points the app at a database the person already
+runs instead. *Accept and deploy* waits for required values; *Accept plan* does not.
+
+No back button: the sidebar is the way back. *Reject plan* is a ghost button in `--marker-deep`, the
+destructive text color.
+
 **[D] The plan shows what runs, and only services as services.** The variables, tallies and plan all
 describe the spec accepting would pin — the reading the build-method answer picks — not the winner's
 draft. A workload with no command that builds from the Dockerfile the Dockerfile reading parsed shows

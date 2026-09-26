@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Proposal, Question } from '@api/types.gen';
+import type { Proposal, Question, Report } from '@api/types.gen';
 import {
   MIN_STEP_MS,
   aiFrom,
@@ -195,6 +195,33 @@ describe('pacing', () => {
     expect(dwellFor({ ...steps[0]!, findings: [] })).toBe(MIN_STEP_MS);
     expect(dwellFor(steps[2]!)).toBeGreaterThan(MIN_STEP_MS);
     expect(dwellFor({ ...steps[0]!, findings: Array(50).fill({ key: '', value: '' }) })).toBeLessThanOrEqual(3_600);
+  });
+});
+
+describe('the scan step (R-310)', () => {
+  const report = {
+    standing: { verdict: 'ok', score: 82, threshold: 60, scanned: '', stop_at: '' },
+    scan: { id: 's', app_id: 'a', scanner_ref: 'scn', score: 82, findings: [] },
+    counts: { critical: 0, high: 2, medium: 1, low: 0, unknown: 0 },
+    worst: [{ id: 'CVE-2026-0001', severity: 'high', title: '', target: '' }],
+    ignoring_unfixable: false,
+  } as unknown as Report;
+
+  it('is under way while the source is scanned', () => {
+    const steps = discoverySteps({ status: 'running', stage: 'scanning', proposal: found, source });
+    expect(steps.at(-1)).toMatchObject({ id: 'scan', state: 'current' });
+  });
+
+  it('reports the score and what it found once there is a scan', () => {
+    const scan = discoverySteps({ status: 'ready', proposal: found, source, security: report }).find((s) => s.id === 'scan');
+    expect(scan?.result).toBe('3 vulnerabilities');
+    expect(scan?.findings).toContainEqual({ key: 'Score', value: '82 / 100' });
+    expect(scan?.findings).toContainEqual({ key: 'High', value: '2' });
+    expect(scan?.findings).toContainEqual({ key: 'Worst', value: 'CVE-2026-0001' });
+  });
+
+  it('is absent on an install with no scanner', () => {
+    expect(discoverySteps({ status: 'ready', proposal: found, source }).some((s) => s.id === 'scan')).toBe(false);
   });
 });
 

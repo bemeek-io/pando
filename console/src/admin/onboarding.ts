@@ -140,24 +140,43 @@ export interface VariableRow {
   secret: boolean;
   /** What detection put there. Absent for a row added during review. */
   original?: string;
+  /**
+   * The slot this variable is filled from, when it is one. A value typed for
+   * it fills the slot at accept (spec.FillSlotLiteral), always as a secret.
+   */
+  slot?: RowSlot;
+}
+
+export interface RowSlot {
+  key: string;
+  type: string;
+  required: boolean;
+  /** A service Pando runs — a database, a cache — rather than a bare value. */
+  service: boolean;
+  /** Pando creates it at the first deploy, and fills the variable then. */
+  provisioned: boolean;
 }
 
 /**
  * The rows the form starts with: every variable the proposal declares that
- * Pando fills with a plain value or nothing.
+ * a person could give a value — plain ones, and ones filled from a slot.
  *
- * A variable filled from a dependency (`slot_ref`) belongs to that dependency
- * and is shown there; one already filled from a secret is not something
- * detection produces. A name that reads like a credential starts as a secret
- * when it has no value yet — the same default the Environment tab takes.
+ * A slot-filled variable is a row too. A key named with no value in
+ * .env.example is a slot the deploy is refused without (R-132), and the
+ * review is where somebody has the value to hand; a database's URL can be
+ * pointed at one they already run instead of the one Pando would create. One
+ * already filled from a secret is not something detection produces. A name
+ * that reads like a credential starts as a secret when it has no value yet —
+ * the same default the Environment tab takes.
  */
 export function variableRows(spec: AppSpec | undefined): VariableRow[] {
+  const slots = spec?.slots ?? [];
   return (spec?.workloads ?? []).flatMap((w) =>
     (w.env ?? [])
-      .filter((e) => !e.slot_ref && !e.secret_ref)
+      .filter((e) => !e.secret_ref)
       .map((e) => {
         const value = e.value ?? '';
-        return {
+        const row: VariableRow = {
           id: envKey(w.name, e.key),
           workload: w.name,
           key: e.key,
@@ -165,8 +184,31 @@ export function variableRows(spec: AppSpec | undefined): VariableRow[] {
           secret: value === '' && looksSensitive(e.key),
           original: value,
         };
+        if (e.slot_ref) {
+          const slot = slots.find((s) => s.key === e.slot_ref);
+          const service = Boolean(slot && slot.type && slot.type !== 'unknown');
+          row.slot = {
+            key: e.slot_ref,
+            type: slot?.type ?? 'unknown',
+            required: Boolean(slot?.required),
+            service,
+            provisioned: slot?.resolution?.mode === 'provisioned',
+          };
+          // Stored as a secret whatever the checkbox says (the server writes
+          // a slot's value to the secrets adapter), so it is shown as one.
+          row.secret = true;
+        }
+        return row;
       }),
   );
+}
+
+/**
+ * Slot-filled values a deploy would be refused without (R-132): required, not
+ * created by Pando, and empty.
+ */
+export function neededValues(rows: VariableRow[]): VariableRow[] {
+  return rows.filter((r) => r.slot && r.slot.required && !r.slot.provisioned && !r.value.trim());
 }
 
 /** What the person changed on a detected row, kept apart from the rows. */

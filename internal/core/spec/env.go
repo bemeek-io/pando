@@ -56,3 +56,44 @@ func SetEnv(s *AppSpec, workload, key string, entry EnvEntry) {
 		set(&s.Workloads[0])
 	}
 }
+
+// SlotSecretKey is the secret a literal slot value is stored under. The same
+// name PUT /slots/{key} writes, so a value set during review and one set later
+// on the settings screen are one value.
+func SlotSecretKey(slot string) string { return "slot_" + slot }
+
+// EnvSlot returns the slot a variable is filled from, when it is: the SlotRef
+// on the entry with this key, on the named workload or, with none named, on
+// any workload.
+func EnvSlot(s *AppSpec, workload, key string) (string, bool) {
+	for _, w := range s.Workloads {
+		if workload != "" && w.Name != workload {
+			continue
+		}
+		for _, e := range w.Env {
+			if e.Key == key && e.SlotRef != nil {
+				return *e.SlotRef, true
+			}
+		}
+	}
+	return "", false
+}
+
+// FillSlotLiteral fills a slot with a value somebody supplied, stored as the
+// secret named secretRef (R-132).
+//
+// A variable filled from a slot was given a value by replacing its entry,
+// which dropped the SlotRef and left the slot itself unfilled — and a required
+// unfilled slot refuses the deploy, so a value typed during review did
+// nothing but move the refusal to deploy time. The value belongs on the slot.
+// A service slot filled this way stops being provisioned: the person has said
+// what the app should connect to.
+func FillSlotLiteral(s *AppSpec, slot, secretRef string) bool {
+	for i := range s.Slots {
+		if s.Slots[i].Key == slot {
+			s.Slots[i].Resolution = &Resolution{Mode: ResolutionLiteral, SecretRef: secretRef}
+			return true
+		}
+	}
+	return false
+}
