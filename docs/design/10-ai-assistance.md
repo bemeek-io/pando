@@ -311,6 +311,37 @@ seconds and the value is not yet measured.
 wired here. It would take the build log rather than the trial log, and would amend a pinned spec,
 which means a new revision rather than a draft — a different review gate from this one.
 
+### 4.3 When a person asks
+
+**[D] The third trigger is a person reviewing the proposal** (R-336). They know things the repository
+does not say out loud — "it serves on 8080", "you missed the Redis" — and used to carry each one to a
+settings screen after accepting. `POST /apps/{id}/detection/revise {message}` calls
+`core/detection.Runner.Revise`, which:
+
+1. refuses an empty or over-long message, no adapter (`ADAPTER_UNAVAILABLE`), host policy
+   (`PERM_DENIED`), or a proposal that is not finished (`STATE_INVALID`);
+2. fetches the source **at the reviewed commit** (R-120), not wherever the branch has moved;
+3. calls `revise_plan` with the plan accepting would pin — the reading the build-method answer picks,
+   a runner-up's `spec` when it adopts one — its evidence, the questions, the trial, the person's
+   message and the conversation so far;
+4. applies what comes back exactly as screening does: answers become suggestions on their questions,
+   everything else goes through `screening.Apply` and its refusals (R-332 – R-334). Asking is not a way
+   around the rules; a claim the repository does not support is answered, not applied;
+5. appends the person's turn and the adapter's (its reply, the changes, and what Pando refused) to
+   `proposal.conversation`, recomputes the status, stores the proposal, and writes a
+   `detection.revise` audit event naming what was read (R-337).
+
+A provider that fails leaves the proposal and the conversation as they were and returns
+`ADAPTER_FAILED` with the reason (R-335). The call is synchronous — one bounded call (R-339), and the
+person is waiting on the reply — unlike a re-run, which clones and builds in the background.
+
+**[D] `reply` is required** on the tool the adapter submits with, for this function only: a person who
+asked is never met with silence. It is one to three sentences, held to R-105 like any reason.
+
+**[P] The conversation lives on the proposal.** It is about this reading of this commit; detecting
+again starts a new one. The console shows it only when an AI adapter is available for this app (the
+outcome's `skip_code` is not `not_configured`, `policy` or `unsupported`).
+
 ---
 
 ## 5. Review and provenance

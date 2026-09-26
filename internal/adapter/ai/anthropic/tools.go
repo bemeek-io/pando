@@ -78,6 +78,18 @@ func tools(fn api.AIFunction, questions []api.Question) []anthropic.ToolUnionPar
 		},
 	}
 
+	// A revision answers a person, so it says something back — required, so a
+	// person who asked is never met with silence.
+	if fn == api.AIFunctionRevisePlan {
+		submit.InputSchema.Properties.(map[string]any)["reply"] = map[string]any{
+			"type": "string",
+			"description": "Your answer to the person, in one to three plain sentences: what you changed " +
+				"and the file that shows it, or why the repository does not support what they asked. " +
+				"No apology, no exclamation mark.",
+		}
+		submit.InputSchema.Required = []string{"amendments", "reply"}
+	}
+
 	// strict: true, so the API validates against the schema before Pando sees
 	// the call. additionalProperties and required are what make that possible.
 	submit.Strict = anthropic.Bool(true)

@@ -103,6 +103,7 @@ export interface Proposal {
   commit?: string;
   trial: TrialObservation;
   screening?: Outcome;
+  conversation?: (Turn[] | null);
 }
 
 export interface Candidate {
@@ -245,6 +246,14 @@ export interface Outcome {
   answers?: (Record<string, string> | null);
   notes?: (string[] | null);
   duration_ms?: number;
+}
+
+export interface Turn {
+  from: string;
+  text: string;
+  at: string;
+  changes?: (string[] | null);
+  refused?: (string[] | null);
 }
 
 export interface Draft {

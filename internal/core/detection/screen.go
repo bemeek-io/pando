@@ -195,6 +195,12 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 }
 
 func (r *Runner) auditScreen(ctx context.Context, appID string, o screening.Outcome) {
+	r.audit(ctx, ActionScreen, appID, o)
+}
+
+// audit records that an AI adapter was called about an app, and what it read
+// (R-337): screening during detection, or a revision a person asked for.
+func (r *Runner) audit(ctx context.Context, action, appID string, o screening.Outcome) {
 	if r.Auditor == nil {
 		return
 	}
@@ -212,7 +218,7 @@ func (r *Runner) auditScreen(ctx context.Context, appID string, o screening.Outc
 
 	// A failure to audit does not fail the detection, and it does not fail the
 	// screening either — which already happened. R-335 holds here too.
-	_ = r.Auditor.Write(ctx, AuditEvent{Action: ActionScreen, AppID: appID, Detail: detail})
+	_ = r.Auditor.Write(ctx, AuditEvent{Action: action, AppID: appID, Detail: detail})
 }
 
 // needed decides whether detection needs an AI adapter, and for what (R-336).

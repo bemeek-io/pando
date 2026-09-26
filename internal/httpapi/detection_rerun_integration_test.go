@@ -32,6 +32,10 @@ func (f *fakeDetector) Detect(context.Context, string) (state.Detection, error) 
 	return state.Detection{}, f.detectErr
 }
 
+func (f *fakeDetector) Revise(context.Context, string, string) (state.Detection, error) {
+	return state.Detection{}, f.detectErr
+}
+
 // TestR092_ARefusedRerunWritesNothing asserts R-092. A source the allowlist no
 // longer permits is refused before anything is recorded, so the previous
 // outcome is not replaced by a detection that was never going to run.

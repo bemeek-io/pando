@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/bemeek-io/pando/internal/core/clock"
 	"github.com/bemeek-io/pando/internal/core/screening"
 	"github.com/bemeek-io/pando/internal/core/source"
 	"github.com/bemeek-io/pando/internal/core/spec"
@@ -81,6 +82,9 @@ type Runner struct {
 	ScreenMaxFiles int
 	ScreenMaxBytes int64
 	ScreenTimeout  time.Duration
+
+	// Clock stamps conversation turns. Nil is the system clock.
+	Clock clock.Clock
 
 	// Scanner scores the checkout while it is still on disk (R-312).
 	//

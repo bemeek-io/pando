@@ -23,6 +23,10 @@ func (stubAI) AnswerQuestions(context.Context, api.ScreenRequest) (api.ScreenRes
 	return api.ScreenResult{}, nil
 }
 
+func (stubAI) RevisePlan(context.Context, api.ScreenRequest) (api.ScreenResult, error) {
+	return api.ScreenResult{}, nil
+}
+
 // TestR258_AIIsAnAdapterCategory asserts R-258.
 //
 // Registered and looked up like the other eight, and rejected at registration

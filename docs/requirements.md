@@ -398,13 +398,16 @@ unreachable provider, an expired budget, a timeout, an answer that does not pars
 deterministic proposal exactly as it was (R-106). Screening runs after the proposal is complete, so
 when it fails the proposal is the one Pando would have produced without it.
 
-**R-336 [P]** **Screening runs only when detection needs it, and is on when an AI adapter is
-configured.** Detection needs it in two cases. When the proposal failed — the trial run crashed, or no
-detector could read the repository — the adapter is asked to repair it. Otherwise, when detection has
-questions for a person, the adapter is asked to answer them, and may change nothing else. A detection
-that produced a plan without failing or asking anything makes no call at all: no latency, no cost, and
-no repository contents leaving the host on the common path. At most one call is made per detection; a
-repair is handed the questions too. Configuring an adapter means supplying a credential, which is the
+**R-336 [P]** **Screening runs only when detection needs it or a person asks, and is on when an AI
+adapter is configured.** Detection needs it in two cases. When the proposal failed — the trial run
+crashed, or no detector could read the repository — the adapter is asked to repair it. Otherwise, when
+detection has questions for a person, the adapter is asked to answer them, and may change nothing else.
+A detection that produced a plan without failing or asking anything makes no call at all: no latency,
+no cost, and no repository contents leaving the host on the common path. At most one call is made per
+detection; a repair is handed the questions too. The third case is a person reviewing the proposal
+telling the adapter what is wrong with it; the adapter checks that against the repository and changes
+what the repository supports, under the same closed set, evidence and refusals (R-332 – R-334), and
+replies. Each such request is one call, made only because the person asked. Configuring an adapter means supplying a credential, which is the
 deliberate act; asking a second time would charge the setup cost twice (R-002). Host policy may forbid
 screening install-wide, and an install may turn it off per adapter.
 

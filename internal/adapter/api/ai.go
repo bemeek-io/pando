@@ -43,10 +43,23 @@ const (
 	// the repository (R-338). Answers only: nothing else in the plan changes.
 	AIFunctionAnswerQuestions AIFunction = "answer_questions"
 
+	// AIFunctionRevisePlan changes a plan because a person reviewing it asked:
+	// "you missed the database", "it serves on 8080". It reads the repository
+	// again to check, and replies (R-336's third trigger).
+	AIFunctionRevisePlan AIFunction = "revise_plan"
+
 	// AIFunctionReadReadme is R-106's remaining name. Declared so the reason
 	// this is a list is visible; not built.
 	AIFunctionReadReadme AIFunction = "read_readme"
 )
+
+// Turn is one message in a conversation about a plan, from a person or from
+// the AI adapter.
+type Turn struct {
+	// From is "person" or "ai".
+	From string `json:"from"`
+	Text string `json:"text"`
+}
 
 // AICapabilities is what an AI adapter can do, as data.
 type AICapabilities struct {
@@ -93,6 +106,12 @@ type AIAdapter interface {
 	// AnswerQuestions answers what it can of req.Questions from the repository.
 	// Only AmendAnswerQuestion is accepted from it; core refuses anything else.
 	AnswerQuestions(ctx context.Context, req ScreenRequest) (ScreenResult, error)
+
+	// RevisePlan acts on req.Instruction, what a person reviewing the plan
+	// asked for, checking it against the repository. Any kind in the closed
+	// set may be proposed, and ScreenResult.Reply says what it did and why —
+	// including that the repository does not support what was asked.
+	RevisePlan(ctx context.Context, req ScreenRequest) (ScreenResult, error)
 }
 
 // ScreenRequest is a finished proposal, and the repository it came from. Both
@@ -126,6 +145,14 @@ type ScreenRequest struct {
 	// positioned to read it would be withholding it for no reason. What it may
 	// produce is bounded by the amendment set, not by keeping it secret.
 	Trial TrialSummary
+
+	// Instruction is what a person reviewing the plan asked for, for
+	// RevisePlan. Empty for the other functions.
+	Instruction string
+
+	// Conversation is what the person and the adapter said before
+	// Instruction, oldest first, so "no, the other one" means something.
+	Conversation []Turn
 
 	Budget ScreenBudget
 }
@@ -163,6 +190,11 @@ type ScreenResult struct {
 	FilesRead []string
 
 	Model string
+
+	// Reply is the adapter's answer to a person, for RevisePlan: what it
+	// changed and why, or why it changed nothing. Held to R-105 like any
+	// reason.
+	Reply string
 }
 
 // AmendmentKind is the closed set (R-332, design 10 §3).

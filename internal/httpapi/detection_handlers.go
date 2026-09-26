@@ -36,6 +36,39 @@ func (s *Server) handleGetDetection(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, detectionResponse(d))
 }
 
+// handleReviseDetection asks the AI adapter to change the plan as a person
+// described (R-336's third trigger, design 10 §4.3).
+//
+// Answered in the request rather than in the background, unlike a re-run: it is
+// one bounded call to the adapter (R-339), and the person is waiting on the
+// reply. The rules live in core/detection.Runner.Revise; this reads the body
+// and hands it over.
+func (s *Server) handleReviseDetection(w http.ResponseWriter, r *http.Request) {
+	app, ok := s.requireControl(w, r, authz.AppSpecEdit)
+	if !ok {
+		return
+	}
+	if s.Detector == nil {
+		Error(w, r, errs.New(errs.AdapterUnavailable, "Detection is not configured on this install."))
+		return
+	}
+	var req struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read.").
+			WithRemedy(`Send what should change, for example {"message": "The app serves on port 8080."}.`))
+		return
+	}
+
+	updated, err := s.Detector.Revise(r.Context(), app.ID, req.Message)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	JSON(w, http.StatusOK, detectionResponse(updated))
+}
+
 // handleRerunDetection re-detects, explicitly (R-022).
 //
 // Explicitly is the whole point. Detection never re-runs on its own: a spec
@@ -497,4 +530,8 @@ type Detector interface {
 	// Check refuses what Detect would refuse before it starts, without
 	// writing anything.
 	Check(ctx context.Context, appID string) error
+
+	// Revise changes a finished proposal as a person asked, through the AI
+	// adapter, and records the exchange on it (R-336).
+	Revise(ctx context.Context, appID, message string) (state.Detection, error)
 }

@@ -26,6 +26,7 @@ type Screener interface {
 	Capabilities(ctx context.Context) (api.AICapabilities, error)
 	RepairPlan(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error)
 	AnswerQuestions(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error)
+	RevisePlan(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error)
 }
 
 // Run calls fn on the screener under the budget and returns what it said.
@@ -46,6 +47,8 @@ func Run(ctx context.Context, s Screener, ref string, fn api.AIFunction, req api
 		call, doing = s.RepairPlan, "repair deployment plans"
 	case api.AIFunctionAnswerQuestions:
 		call, doing = s.AnswerQuestions, "answer detection questions"
+	case api.AIFunctionRevisePlan:
+		call, doing = s.RevisePlan, "revise a plan when asked"
 	default:
 		return api.ScreenResult{}, SkippedOutcome(SkipUnsupported, fmt.Sprintf(
 			"Pando does not call an AI adapter for %q.", fn))

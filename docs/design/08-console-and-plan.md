@@ -220,6 +220,22 @@ database's URL cannot be prefilled — its host and password are generated at th
 row says Pando fills it then, and a value typed there points the app at a database the person already
 runs instead. *Accept and deploy* waits for required values; *Accept plan* does not.
 
+**[D] Ask AI about this plan.** When an AI adapter is available for the app, the review ends with a
+conversation: the person says what is wrong, AI checks the repository and changes what it can show
+(design 10 §4.3), and each reply lists what changed and what Pando would not do. Without an adapter the
+section does not exist — not disabled, absent. Someone who may read but not change the plan sees the
+conversation and no box to type in.
+
+**[D] Compose rewrites are one notice**, "Pando adapted N settings from the compose file", opening to
+one line each — service, construct, the first sentence of why — with the importer's full paragraph on
+hover. Eight paragraphs of it was a wall nobody read.
+
+A value Pando fills (a created database's URL) shows *Filled in by Pando* and no field until the person
+chooses *Use your own*; required values carry a *Required* tag; a slot's value is always kept as a
+secret, which is said in words rather than shown as a locked checkbox. The action bar is two columns so
+its buttons stay put as the status beside them changes length. The repository tag opens the repository
+in a new tab. The security dialog lists every finding and scrolls.
+
 No back button: the sidebar is the way back. *Reject plan* is a ghost button in `--marker-deep`, the
 destructive text color.
 

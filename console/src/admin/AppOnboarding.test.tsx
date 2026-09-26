@@ -161,6 +161,34 @@ describe('AppOnboarding', () => {
     expect(bar).toContain('1 value needed to deploy');
   });
 
+  it('offers a conversation with AI when an adapter is there, showing what it changed (R-336)', () => {
+    const talked = {
+      ...detection,
+      conversation: [
+        { from: 'person', text: 'It serves on 8080.', at: '2026-09-26T12:00:00Z' },
+        {
+          from: 'ai',
+          text: 'server.js calls listen(8080), so I set the port.',
+          at: '2026-09-26T12:00:05Z',
+          changes: ['port 8080'],
+          refused: ['set HOST: HOST is a declared slot'],
+        },
+      ],
+    };
+    const html = render({ status: 'ready', answers: {}, commit: '3f9a2c1d0000', detection: talked } as never);
+    expect(html).toContain('Ask AI about this plan');
+    expect(html).toContain('It serves on 8080.');
+    expect(html).toContain('Changed: port 8080');
+    expect(html).toContain('Pando didn’t apply: set HOST');
+    expect(html).toContain('Ask AI');
+  });
+
+  it('has no conversation at all when no AI adapter is configured', () => {
+    const plain = { ...detection, screening: { ran: false, skip_code: 'not_configured' } };
+    const html = render({ status: 'ready', answers: {}, commit: '3f9a2c1d0000', detection: plain } as never);
+    expect(html).not.toContain('Ask AI');
+  });
+
   it('links a repository to its page, and nothing else', () => {
     expect(repoPage('https://github.com/acme/crewmate.git')).toBe('https://github.com/acme/crewmate');
     expect(repoPage('git@github.com:acme/crewmate.git')).toBe('https://github.com/acme/crewmate');

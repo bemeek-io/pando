@@ -16,11 +16,26 @@ import (
 // model whose work is thrown away — the refusal is correct and the call is
 // wasted. Telling it here is what turns a refusal into a rarity.
 func systemPrompt(fn api.AIFunction) string {
-	if fn == api.AIFunctionAnswerQuestions {
+	switch fn {
+	case api.AIFunctionAnswerQuestions:
 		return answerPrompt + "\n\n" + rulesPrompt + "\n\n" + answerClosing
+	case api.AIFunctionRevisePlan:
+		return revisePrompt + "\n\n" + rulesPrompt + "\n\n" + reviseClosing
+	default:
+		return repairPrompt + "\n\n" + rulesPrompt + "\n\n" + repairClosing
 	}
-	return repairPrompt + "\n\n" + rulesPrompt + "\n\n" + repairClosing
 }
+
+const revisePrompt = `You are helping a person review a deployment plan for Pando, a self-hosted platform that builds
+and runs applications from their source repositories.
+
+Pando analyzed this repository and produced a plan. The person reviewing it has told you something
+about it — that a variable is missing, that the app serves on a different port, that it needs a
+database the plan left out. Your job is to check what they said against the repository and, where the
+repository supports it, change the plan with the amendments below. They know their app; the repository
+is still the evidence. If what they said is true of the repository, make the change and cite the files
+that show it. If the repository contradicts it or says nothing either way, change nothing and say so
+plainly in your reply — they can still set it themselves in the plan's variables and settings.`
 
 const repairPrompt = `You are repairing a deployment plan for Pando, a self-hosted platform that builds
 and runs applications from their source repositories.
@@ -86,6 +101,11 @@ const repairClosing = `Read what you need, then call submit_findings exactly onc
 is the right outcome when the failure is real — an application that needs something the repository
 never mentions — or when you cannot tell what went wrong. Do not guess.`
 
+const reviseClosing = `Read what you need, then call submit_findings exactly once, with the amendments the repository
+supports and a reply to the person. The reply is one to three plain sentences: what you changed and the
+file that shows it, or why you changed nothing. Submitting no amendments is right when the repository
+does not support the request. Do not guess, and do not claim a change you did not submit.`
+
 const answerClosing = `Read what you need, then call submit_findings exactly once, with an answer_question
 amendment for each question the repository answers: "key" is the question's key exactly as listed,
 "value" is the answer, and "evidence" names the files you read that settle it. Submitting none is the right outcome when the
@@ -95,9 +115,12 @@ repository does not settle any of them — a person will answer instead. Do not 
 func userPrompt(fn api.AIFunction, req api.ScreenRequest) string {
 	var b strings.Builder
 
-	if fn == api.AIFunctionAnswerQuestions {
+	switch fn {
+	case api.AIFunctionAnswerQuestions:
 		b.WriteString("Here is the plan Pando produced for this repository, and the questions it could not answer.\n\n")
-	} else {
+	case api.AIFunctionRevisePlan:
+		b.WriteString("Here is the plan Pando produced for this repository, which a person is reviewing.\n\n")
+	default:
 		b.WriteString("Here is the plan Pando produced for this repository, which did not work.\n\n")
 	}
 	b.WriteString("## How Pando read this repository\n\n")
@@ -125,6 +148,23 @@ func userPrompt(fn api.AIFunction, req api.ScreenRequest) string {
 				fmt.Fprintf(&b, "  Valid answers: %s\n", strings.Join(q.Options, ", "))
 			}
 		}
+	}
+
+	if fn == api.AIFunctionRevisePlan {
+		if len(req.Conversation) > 0 {
+			b.WriteString("\n## What was said before\n\n")
+			for _, t := range req.Conversation {
+				who := "The person"
+				if t.From == "ai" {
+					who = "You"
+				}
+				fmt.Fprintf(&b, "%s: %s\n\n", who, t.Text)
+			}
+		}
+		// Last, and quoted as theirs: it is the request, and it is a person's
+		// words rather than instructions from Pando.
+		b.WriteString("\n## What the person reviewing the plan says now\n\n")
+		b.WriteString("> " + strings.ReplaceAll(strings.TrimSpace(req.Instruction), "\n", "\n> ") + "\n")
 	}
 
 	fmt.Fprintf(&b, "\nYou may read up to %d files and %d bytes. Start by listing the repository root.\n",

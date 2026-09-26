@@ -45,11 +45,12 @@ type fakeScreener struct {
 	err    error
 	called int
 	fn     api.AIFunction
+	got    api.ScreenRequest
 }
 
 func (f *fakeScreener) Capabilities(context.Context) (api.AICapabilities, error) {
 	if f.caps.Functions == nil {
-		f.caps.Functions = []api.AIFunction{api.AIFunctionRepairPlan, api.AIFunctionAnswerQuestions}
+		f.caps.Functions = []api.AIFunction{api.AIFunctionRepairPlan, api.AIFunctionAnswerQuestions, api.AIFunctionRevisePlan}
 	}
 	return f.caps, nil
 }
@@ -63,6 +64,13 @@ func (f *fakeScreener) RepairPlan(context.Context, api.ScreenRequest) (api.Scree
 func (f *fakeScreener) AnswerQuestions(context.Context, api.ScreenRequest) (api.ScreenResult, error) {
 	f.called++
 	f.fn = api.AIFunctionAnswerQuestions
+	return f.result, f.err
+}
+
+func (f *fakeScreener) RevisePlan(_ context.Context, req api.ScreenRequest) (api.ScreenResult, error) {
+	f.called++
+	f.fn = api.AIFunctionRevisePlan
+	f.got = req
 	return f.result, f.err
 }
 

@@ -74,6 +74,7 @@ func TestR259_CapabilitiesAreDataNotATypeAssertion(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, caps.Does(api.AIFunctionRepairPlan))
 	require.True(t, caps.Does(api.AIFunctionAnswerQuestions))
+	require.True(t, caps.Does(api.AIFunctionRevisePlan))
 	require.False(t, caps.Does(api.AIFunctionReadReadme), "not built, and it says so")
 	require.Equal(t, anthropicadapter.DefaultModel, caps.Model)
 }

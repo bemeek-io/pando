@@ -218,6 +218,36 @@ func TestR338_AnsweringQuestionsOffersOnlyAnswers(t *testing.T) {
 	require.Equal(t, []any{"start_command"}, key["enum"])
 }
 
+// TestR336_ARevisionHearsThePersonAndReplies asserts R-336's third trigger at
+// the adapter: the person's words and what was said before reach the model,
+// quoted as theirs, and the tool requires a reply so they are never met with
+// silence.
+func TestR336_ARevisionHearsThePersonAndReplies(t *testing.T) {
+	a, fake := withFake(t, message("tool_use", toolUse("t1", "submit_findings", `{
+		"amendments":[],
+		"reply":"server.js calls listen(3000), which is what the plan has."}`)))
+
+	req := request()
+	req.Instruction = "It serves on 8080."
+	req.Conversation = []api.Turn{{From: "person", Text: "Is the port right?"}, {From: "ai", Text: "It is 3000."}}
+	result, err := a.RevisePlan(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, "server.js calls listen(3000), which is what the plan has.", result.Reply)
+
+	system, _ := json.Marshal(fake.bodies[0]["system"])
+	require.Contains(t, string(system), "helping a person review")
+	prompt, _ := json.Marshal(fake.bodies[0]["messages"])
+	require.Contains(t, string(prompt), "What the person reviewing the plan says now")
+	// JSON escapes ">" as >; the prompt quotes the person's words.
+	quoted := string(rune('\\')) + "u003e It serves on 8080."
+	require.Contains(t, string(prompt), quoted, "quoted as theirs")
+	require.Contains(t, string(prompt), "Is the port right?")
+
+	tools, _ := json.Marshal(fake.bodies[0]["tools"])
+	require.Contains(t, string(tools), `"reply"`)
+	require.Contains(t, string(tools), `"required":["amendments","reply"]`)
+}
+
 // TestR335_AModelThatStopsWithoutFindingsIsAFailureNotACleanBill asserts R-335:
 // "found nothing" and "did not finish" mean opposite things in the review.
 func TestR335_AModelThatStopsWithoutFindingsIsAFailureNotACleanBill(t *testing.T) {

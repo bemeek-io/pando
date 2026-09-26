@@ -24,7 +24,13 @@ func (a *Adapter) AnswerQuestions(ctx context.Context, req api.ScreenRequest) (a
 	return a.run(ctx, api.AIFunctionAnswerQuestions, req)
 }
 
-// run is the conversation both functions have; the prompt and the amendments
+// RevisePlan acts on what a person reviewing the plan asked for, checking it
+// against the repository first (R-336). Core calls it only when somebody asks.
+func (a *Adapter) RevisePlan(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error) {
+	return a.run(ctx, api.AIFunctionRevisePlan, req)
+}
+
+// run is the conversation every function has; the prompt and the amendments
 // the model may submit are what differ.
 //
 // A manual loop rather than the SDK's tool runner, for one reason: the budget.
@@ -169,6 +175,7 @@ func (a *Adapter) findings(use anthropic.ToolUseBlock, src *reader) (api.ScreenR
 	var in struct {
 		Amendments []api.Amendment `json:"amendments"`
 		Notes      []string        `json:"notes"`
+		Reply      string          `json:"reply"`
 	}
 
 	// Parsed rather than matched on the raw string: escaping in a tool input is
@@ -180,6 +187,7 @@ func (a *Adapter) findings(use anthropic.ToolUseBlock, src *reader) (api.ScreenR
 	return api.ScreenResult{
 		Amendments: in.Amendments,
 		Notes:      in.Notes,
+		Reply:      in.Reply,
 		FilesRead:  src.files(),
 		Model:      a.cfg.Model,
 	}, nil

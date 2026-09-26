@@ -44,7 +44,7 @@ import {
 } from '@design';
 
 import { api, RequestFailed } from '@api/client';
-import type { Amendment, AppSpec, Question, Report, Source } from '@api/types.gen';
+import type { Amendment, AppSpec, Question, Report, Source, Turn } from '@api/types.gen';
 import { Loading } from '../ui/Loading';
 import { ScoreBadge } from '../ui/ScoreBadge';
 import { looksSensitive } from './sensitive';
@@ -608,6 +608,10 @@ export function AppOnboarding({
                 source={app.source}
                 commit={data.commit}
               />
+            )}
+
+            {aiAvailable(outcome) && (
+              <AskAI appID={appID} conversation={proposal.conversation ?? []} canAsk={canEdit} />
             )}
           </div>
         )}
@@ -1727,6 +1731,157 @@ function AiNotes({ notes }: { notes: string[] }) {
         ))}
       </div>
     </section>
+  );
+}
+
+/**
+ * Whether an AI adapter is there to ask. Every finished detection records an
+ * outcome; these skip codes say there is no adapter, host policy forbids it, or
+ * it cannot revise. Anything else — it ran, or was not needed — means it is.
+ */
+export function aiAvailable(outcome: DetectionResponse['detection']['screening']): boolean {
+  if (!outcome) return false;
+  return !['not_configured', 'policy', 'unsupported'].includes(outcome.skip_code ?? '');
+}
+
+/**
+ * Talking to the AI adapter about the plan (R-336's third trigger, design 10
+ * §4.3). The person says what is wrong; the adapter checks the repository,
+ * changes what it can show, and replies. What it changed and what Pando would
+ * not do are listed under each reply (R-334). Somebody who may read the plan
+ * but not change it sees the conversation and no box to type in.
+ */
+function AskAI({ appID, conversation, canAsk }: { appID: string; conversation: Turn[]; canAsk: boolean }) {
+  const queries = useQueryClient();
+  const [message, setMessage] = useState('');
+  const ask = useMutation({
+    mutationFn: (text: string) => api.post<DetectionResponse>(`/apps/${appID}/detection/revise`, { message: text }),
+    onSuccess: (updated) => {
+      setMessage('');
+      queries.setQueryData(['apps', appID, 'detection'], updated);
+    },
+  });
+
+  const send = () => {
+    const text = message.trim();
+    if (text && !ask.isPending) ask.mutate(text);
+  };
+
+  return (
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <AiStar size={20} />
+          <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>Ask AI about this plan</h3>
+        </div>
+        <span style={{ color: 'var(--ink-secondary)', textWrap: 'pretty' } as React.CSSProperties}>
+          Say what’s wrong — a missing variable, the right port, a database it missed. AI checks the
+          repository and changes what it can show.
+        </span>
+      </div>
+
+      {(conversation.length > 0 || ask.isPending) && (
+        <ol style={{ display: 'flex', flexDirection: 'column', margin: 0, padding: 0, listStyle: 'none' }}>
+          {conversation.map((turn, i) => (
+            <TurnRow key={`${turn.at}-${i}`} turn={turn} />
+          ))}
+          {ask.isPending && (
+            <>
+              <TurnRow turn={{ from: 'person', text: ask.variables ?? '', at: '' }} />
+              <li style={{ padding: 'var(--space-3) 0', borderTop: 'var(--border-width) solid var(--rule)' }}>
+                <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                  <span className="pando-ripple" data-ai="true" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                    <i />
+                  </span>
+                  <span style={{ font: 'var(--type-body-ui)', color: 'var(--water)' }}>
+                    AI is reading the repo
+                    <span className="pando-dots" aria-hidden="true">
+                      <span>.</span>
+                      <span>.</span>
+                      <span>.</span>
+                    </span>
+                  </span>
+                </div>
+              </li>
+            </>
+          )}
+        </ol>
+      )}
+
+      {canAsk && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+          <Input
+            as="textarea"
+            rows={2}
+            aria-label="What should change about this plan"
+            placeholder="It also needs Redis, reached at REDIS_URL."
+            value={message}
+            disabled={ask.isPending}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter with a modifier sends; plain Enter is a new line.
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                send();
+              }
+            }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <Button variant="secondary" disabled={!message.trim() || ask.isPending} onClick={send}>
+              {ask.isPending ? 'Asking' : 'Ask AI'}
+            </Button>
+            <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
+              AI reads files from the repository to check what you say.
+            </span>
+          </div>
+          {ask.isError && <Failure error={ask.error} />}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function TurnRow({ turn }: { turn: Turn }) {
+  const ai = turn.from === 'ai';
+  return (
+    <li
+      className="pando-onboard-enter"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'var(--space-6) minmax(0, 1fr)',
+        gap: 'var(--space-3)',
+        padding: 'var(--space-3) 0',
+        borderTop: 'var(--border-width) solid var(--rule)',
+      }}
+    >
+      <span style={{ display: 'flex', alignItems: 'flex-start', paddingTop: 'calc(var(--space-1) / 2)' }}>
+        {ai ? <AiStar size={14} /> : <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>You</span>}
+      </span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', minWidth: 0 }}>
+        <span style={{ color: 'var(--ink)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{turn.text}</span>
+        {(turn.changes ?? []).length > 0 && (
+          <ul style={{ margin: 0, paddingLeft: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+            {(turn.changes ?? []).map((change) => (
+              <li key={change} style={{ font: 'var(--type-caption)', color: 'var(--water)' }}>
+                {`Changed: ${change}`}
+              </li>
+            ))}
+          </ul>
+        )}
+        {(turn.refused ?? []).length > 0 && (
+          <ul style={{ margin: 0, paddingLeft: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+            {(turn.refused ?? []).map((refusal) => (
+              <li key={refusal} style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
+                {`Pando didn’t apply: ${refusal}`}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </li>
   );
 }
 

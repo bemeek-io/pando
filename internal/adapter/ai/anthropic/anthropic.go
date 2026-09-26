@@ -180,7 +180,8 @@ func (a *Adapter) Capabilities(_ context.Context) (api.AICapabilities, error) {
 		MaxBytes: a.cfg.MaxBytes,
 	}
 	if a.screensPlans() {
-		caps.Functions = append(caps.Functions, api.AIFunctionRepairPlan, api.AIFunctionAnswerQuestions)
+		caps.Functions = append(caps.Functions,
+			api.AIFunctionRepairPlan, api.AIFunctionAnswerQuestions, api.AIFunctionRevisePlan)
 	}
 	return caps, nil
 }

@@ -170,6 +170,11 @@ func (s *screener) AnswerQuestions(ctx context.Context, req api.ScreenRequest) (
 	return s.call(ctx, req)
 }
 
+func (s *screener) RevisePlan(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error) {
+	s.fn = api.AIFunctionRevisePlan
+	return s.call(ctx, req)
+}
+
 func (s *screener) call(ctx context.Context, req api.ScreenRequest) (api.ScreenResult, error) {
 	s.got = req
 	if _, ok := ctx.Deadline(); !ok {
