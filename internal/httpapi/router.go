@@ -60,6 +60,10 @@ type Server struct {
 	// means the endpoints say assignment is not set up.
 	AIFunctions *assist.Assignments
 
+	// Assist runs the administrative AI functions. Nil means the endpoints
+	// say AI assistance is not set up.
+	Assist *assist.Service
+
 	// TeardownNow asks for a deleted app's bundle to be torn down now rather
 	// than at the collector's next pass. Nil leaves it to the pass.
 	TeardownNow func()
@@ -416,6 +420,14 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/ai/functions", s.handleListAIFunctions)
 		r.Put("/ai/functions/{function}", s.handleAssignAIFunction)
 		r.Delete("/ai/functions/{function}", s.handleUnassignAIFunction)
+
+		// The AI functions themselves (R-343 … R-346). Each proposes and
+		// none applies, and each is behind the verb its ordinary endpoint
+		// needs: drafting a role is install.users.manage, like creating one.
+		r.Post("/ai/access/draft", s.handleDraftAccess)
+		r.Post("/ai/policy/draft", s.handleDraftPolicy)
+		r.Post("/ai/audit/search", s.handleSearchAudit)
+		r.Post("/ai/reference/answer", s.handleAnswerReference)
 		r.Post("/restart", s.handleRestart)
 		r.Get("/capacity", s.handleCapacity)
 

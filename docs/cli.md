@@ -122,6 +122,86 @@ Show the adapters configured here
 pando adapter list
 ```
 
+### `ai`
+
+Assign AI functions to adapters, and ask the AI functions
+
+```
+pando ai
+```
+
+Each AI function is handled by at most one AI adapter, optionally on a model of its own.
+A function with no adapter is off. The draft commands propose and never apply: create
+what they draft with pando group and pando policy, or in the console.
+
+#### `ai ask`
+
+Ask how to do something, answered from the API, CLI and MCP reference
+
+```
+pando ai ask <question>
+```
+
+#### `ai assign`
+
+Have an AI adapter handle a function, optionally on its own model
+
+```
+pando ai assign <function> <adapter>
+```
+
+Refused while another adapter handles the function: unassign it there first.
+--model needs an adapter that can choose its model.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--model` |  | a model for this function only; empty uses the adapter's own |
+
+#### `ai audit`
+
+Search the audit log with a question, and summarize what matched
+
+```
+pando ai audit <question>
+```
+
+Prints the summary and the filters it used. Run pando audit with those filters to
+see the records.
+
+#### `ai draft-access`
+
+Draft a custom role and a group from a description
+
+```
+pando ai draft-access <description>
+```
+
+#### `ai draft-policy`
+
+Propose host policy from a description
+
+```
+pando ai draft-policy <description>
+```
+
+Prints the proposed document; save it with pando policy set.
+
+#### `ai functions`
+
+List each AI function, the adapter that handles it, and on which model
+
+```
+pando ai functions
+```
+
+#### `ai unassign`
+
+Turn an AI function off
+
+```
+pando ai unassign <function>
+```
+
 ### `app`
 
 Work with apps

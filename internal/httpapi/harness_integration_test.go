@@ -46,6 +46,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/httpapi"
+	"github.com/bemeek-io/pando/internal/reference"
 	"github.com/bemeek-io/pando/internal/secret"
 )
 
@@ -217,6 +218,12 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 		Registry:     registry,
 		Adapters:     adapters,
 		AIFunctions:  &assist.Assignments{Store: state.NewAIAssignments(db), Registry: registry, Declared: declaredAI(startup)},
+		Assist: &assist.Service{
+			Registry: registry, Users: users, Apps: apps,
+			Roles: state.NewRoles(db), Groups: state.NewGroups(db), Verbs: authzStore,
+			Policy: overlay.Wrap(policyStore), Overlay: overlay, Audit: audit.NewReader(db.Pool),
+			Reference: func() string { return reference.Markdown(httpapi.Reference()) },
+		},
 		AdapterKinds: []adapterapi.KindInfo{aianthropic.Info(), secretslocal.Info()},
 		Allocations:  allocations,
 

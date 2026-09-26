@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -58,6 +59,7 @@ import (
 	"github.com/bemeek-io/pando/internal/httpapi"
 	"github.com/bemeek-io/pando/internal/log"
 	"github.com/bemeek-io/pando/internal/proxy"
+	"github.com/bemeek-io/pando/internal/reference"
 	"github.com/bemeek-io/pando/internal/secret"
 )
 
@@ -523,6 +525,21 @@ func serve(ctx context.Context, configPath string) error {
 		Registry:     registry,
 		Adapters:     adapters,
 		AIFunctions:  aiFunctions,
+		Assist: &assist.Service{
+			Registry: registry,
+			Users:    users,
+			Apps:     apps,
+			Roles:    state.NewRoles(db),
+			Groups:   state.NewGroups(db),
+			Verbs:    authzStore,
+			Policy:   policyStore,
+			Overlay:  policyOverlay,
+			Audit:    audit.NewReader(db.Pool),
+
+			// Built once: the reference is the binary's, and does not change
+			// while it runs.
+			Reference: sync.OnceValue(func() string { return reference.Markdown(httpapi.Reference()) }),
+		},
 		AdapterKinds: adapterKinds(),
 		StartedAt:    startedAt,
 		Restart: func() {

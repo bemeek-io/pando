@@ -248,6 +248,15 @@ func TestEachToolMapsToItsEndpoint(t *testing.T) {
 		{"pando_set_app_icon", `{"app_id":"app_01HQ8","image_base64":"iVBORw=="}`, "PUT", "/apps/app_01HQ8/icon"},
 		{"pando_clear_app_icon", `{"app_id":"app_01HQ8"}`, "DELETE", "/apps/app_01HQ8/icon"},
 
+		// R-259 and R-343 … R-346: the AI functions, from every surface.
+		{"pando_list_ai_functions", `{}`, "GET", "/ai/functions"},
+		{"pando_assign_ai_function", `{"function":"search_audit","adapter_id":"ai_openai"}`, "PUT", "/ai/functions/search_audit"},
+		{"pando_unassign_ai_function", `{"function":"search_audit"}`, "DELETE", "/ai/functions/search_audit"},
+		{"pando_ai_draft_access", `{"description":"release managers"}`, "POST", "/ai/access/draft"},
+		{"pando_ai_draft_host_rules", `{"description":"no exec"}`, "POST", "/ai/policy/draft"},
+		{"pando_ai_search_audit", `{"question":"who deleted what?"}`, "POST", "/ai/audit/search"},
+		{"pando_ai_ask_reference", `{"question":"how do I make a group?"}`, "POST", "/ai/reference/answer"},
+
 		// R-341: favorites, from every surface.
 		{"pando_favorite_app", `{"app_id":"app_01HQ8"}`, "PUT", "/me/favorites/app_01HQ8"},
 		{"pando_unfavorite_app", `{"app_id":"app_01HQ8"}`, "DELETE", "/me/favorites/app_01HQ8"},

@@ -431,8 +431,9 @@ func (s *Server) handleListAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// action may repeat: any of them matches.
 	q := audit.Query{
-		Action:      r.URL.Query().Get("action"),
+		Actions:     r.URL.Query()["action"],
 		AppID:       r.URL.Query().Get("app_id"),
 		PrincipalID: r.URL.Query().Get("principal_id"),
 		TargetKind:  r.URL.Query().Get("target_kind"),
