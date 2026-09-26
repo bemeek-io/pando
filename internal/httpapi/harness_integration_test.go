@@ -31,6 +31,7 @@ import (
 	secretslocal "github.com/bemeek-io/pando/internal/adapter/secrets/local"
 	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/core/assertion"
+	"github.com/bemeek-io/pando/internal/core/assist"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/backup"
@@ -215,6 +216,7 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 
 		Registry:     registry,
 		Adapters:     adapters,
+		AIFunctions:  &assist.Assignments{Store: state.NewAIAssignments(db), Registry: registry, Declared: declaredAI(startup)},
 		AdapterKinds: []adapterapi.KindInfo{aianthropic.Info(), secretslocal.Info()},
 		Allocations:  allocations,
 
@@ -492,4 +494,22 @@ func (i *install) createApp(s *session, name string) string {
 	got.JSON(i.t, &app)
 	require.NotEmpty(i.t, app.ID)
 	return app.ID
+}
+
+// declaredAI is what main hands the assignments service from the config
+// file's adapters.
+func declaredAI(startup *config.Config) []assist.Declared {
+	if startup == nil {
+		return nil
+	}
+	var out []assist.Declared
+	for _, d := range startup.Adapters {
+		for _, f := range d.Functions {
+			out = append(out, assist.Declared{
+				Function: adapterapi.AIFunction(f.Function), Adapter: d.ID, Model: f.Model,
+				Source: assist.Source{Kind: f.Source.Kind, Name: f.Source.Name, Key: f.Source.Key},
+			})
+		}
+	}
+	return out
 }

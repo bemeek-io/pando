@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/bemeek-io/pando/internal/core/planner"
 	"github.com/bemeek-io/pando/internal/core/policy"
@@ -73,6 +74,15 @@ func (a *Adapters) Upsert(ctx context.Context, c AdapterConfig) error {
 			is_default = EXCLUDED.is_default, enabled = EXCLUDED.enabled, updated_at = now()`,
 		c.ID, c.Category, c.Kind, c.Name, cfg, c.IsDefault, c.Enabled)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "adapter_configs_one_ai_adapter_per_kind" {
+			// One AI adapter per provider (R-259). An assignment's model is how
+			// one provider serves two models.
+			return errs.Newf(errs.ValidInvalid,
+				"This installation already has a %s AI adapter, and Pando allows one AI adapter per provider.", c.Kind).
+				WithRemedy("Change the existing adapter instead of adding a second one. To run some AI functions on " +
+					"a different model, set the model on those functions' assignments.")
+		}
 		return errs.Wrap(errs.Internal, "Could not save the adapter configuration.", err)
 	}
 	return nil

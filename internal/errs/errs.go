@@ -69,6 +69,14 @@ const (
 	// stopped rather than serving (issue #55).
 	StateAppExited Code = "STATE_APP_EXITED"
 
+	// StateAIFunctionAssigned: another AI adapter already handles this
+	// function, and each function has one adapter at a time (R-259).
+	StateAIFunctionAssigned Code = "STATE_AI_FUNCTION_ASSIGNED"
+
+	// StateSetAtStartup: the startup configuration declares this, so it
+	// cannot be changed from the API while it does (R-271).
+	StateSetAtStartup Code = "STATE_SET_AT_STARTUP"
+
 	// ADAPTER_* — adapter failed or is unavailable. 502.
 	AdapterUnavailable Code = "ADAPTER_UNAVAILABLE"
 	AdapterFailed      Code = "ADAPTER_FAILED"

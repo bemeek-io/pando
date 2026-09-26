@@ -1,11 +1,15 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
 )
 
@@ -111,9 +115,54 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Adapters declared in the config file come first and are read-only
+	// (R-271). A stored adapter one of them overrides — same ID, or an AI
+	// adapter of the same provider — is listed as overridden, so an operator
+	// can see what applies again once the declaration is removed.
+	declared := s.declaredAdapters()
+	declaredSources := map[string]config.Source{}
+	declaredIDs := map[string]config.AdapterDecl{}
+	declaredAIKinds := map[string]config.AdapterDecl{}
+	for _, d := range declared {
+		declaredIDs[d.ID] = d
+		if d.Category == string(api.CategoryAI) && d.Enabled {
+			declaredAIKinds[d.Kind] = d
+		}
+	}
+	for _, d := range declared {
+		c := state.AdapterConfig{ID: d.ID, Category: d.Category, Kind: d.Kind, Name: d.Name,
+			IsDefault: d.Default, Enabled: d.Enabled}
+		if showConfig && len(d.Config) > 0 {
+			c.Config, _ = json.Marshal(d.Config)
+		}
+		for field := range d.Credentials {
+			credentials[d.ID] = append(credentials[d.ID], field)
+		}
+		sort.Strings(credentials[d.ID])
+		declaredAt := d.Source
+		configured = append([]state.AdapterConfig{c}, configured...)
+		declaredSources[d.ID] = declaredAt
+	}
+
 	restartNeeded := false
 	out := make([]map[string]any, 0, len(configured))
 	for _, c := range configured {
+		src, isDeclared := declaredSources[c.ID]
+		if !isDeclared {
+			// A stored row the file overrides.
+			over, byID := declaredIDs[c.ID]
+			if !byID && c.Category == string(api.CategoryAI) {
+				over, byID = declaredAIKinds[c.Kind]
+			}
+			if byID {
+				out = append(out, map[string]any{
+					"id": c.ID, "category": c.Category, "kind": c.Kind, "name": c.Name,
+					"is_default": c.IsDefault, "enabled": c.Enabled, "healthy": false,
+					"status": "overridden", "overridden_by": over.Source,
+				})
+				continue
+			}
+		}
 		entry := map[string]any{
 			"id":         c.ID,
 			"category":   c.Category,
@@ -125,6 +174,10 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 		}
 		if fields := credentials[c.ID]; len(fields) > 0 {
 			entry["credentials_set"] = fields
+		}
+		if isDeclared {
+			entry["source"] = src
+			entry["declared"] = true
 		}
 		if showConfig && len(c.Config) > 0 {
 			entry["config"] = c.Config
@@ -141,7 +194,7 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 		// adapter is not loaded at all, a changed one still runs as it was.
 		// Without this a just-added adapter reads as reachable, having never
 		// been asked.
-		if !s.StartedAt.IsZero() && c.UpdatedAt.After(s.StartedAt) {
+		if !isDeclared && !s.StartedAt.IsZero() && c.UpdatedAt.After(s.StartedAt) {
 			entry["pending_restart"] = true
 			entry["status"] = "pending_restart"
 			restartNeeded = true
@@ -217,4 +270,12 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	JSON(w, http.StatusOK, map[string]any{"runtimes": out})
+}
+
+// declaredAdapters are the adapters the config file declares (R-271).
+func (s *Server) declaredAdapters() []config.AdapterDecl {
+	if s.Startup == nil {
+		return nil
+	}
+	return s.Startup.Adapters
 }

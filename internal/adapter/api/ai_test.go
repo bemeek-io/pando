@@ -27,6 +27,26 @@ func (stubAI) RevisePlan(context.Context, api.ScreenRequest) (api.ScreenResult, 
 	return api.ScreenResult{}, nil
 }
 
+func (stubAI) DraftAccess(context.Context, api.AccessRequest) (api.AccessDraft, error) {
+	return api.AccessDraft{}, nil
+}
+
+func (stubAI) DraftPolicy(context.Context, api.PolicyRequest) (api.PolicyDraft, error) {
+	return api.PolicyDraft{}, nil
+}
+
+func (stubAI) SearchAudit(context.Context, api.AuditSearchRequest) (api.AuditSearch, error) {
+	return api.AuditSearch{}, nil
+}
+
+func (stubAI) SummarizeAudit(context.Context, api.AuditSummaryRequest) (api.AuditSummary, error) {
+	return api.AuditSummary{}, nil
+}
+
+func (stubAI) AnswerReference(context.Context, api.ReferenceRequest) (api.ReferenceAnswer, error) {
+	return api.ReferenceAnswer{}, nil
+}
+
 // TestR258_AIIsAnAdapterCategory asserts R-258.
 //
 // Registered and looked up like the other eight, and rejected at registration
@@ -35,11 +55,9 @@ func (stubAI) RevisePlan(context.Context, api.ScreenRequest) (api.ScreenResult, 
 func TestR258_AIIsAnAdapterCategory(t *testing.T) {
 	r := api.NewRegistry()
 	require.NoError(t, r.Register("ai_anthropic", stubAI{base{kind: "anthropic", cat: api.CategoryAI}}))
-	require.NoError(t, r.SetDefault(api.CategoryAI, "ai_anthropic"))
 
-	ai, ref, found := r.DefaultAI()
-	require.True(t, found)
-	require.Equal(t, "ai_anthropic", ref)
+	ai, ok := r.AI("ai_anthropic")
+	require.True(t, ok)
 	require.NotNil(t, ai)
 
 	// A notify adapter claiming to be an AI one is refused loudly.
@@ -48,23 +66,53 @@ func TestR258_AIIsAnAdapterCategory(t *testing.T) {
 	require.Contains(t, err.Error(), "ai adapter interface")
 }
 
-// TestR258_NoAIAdapterIsAnOrdinaryOutcome asserts R-258 and R-335.
+// TestR259_UnassignedFunctionIsOff asserts R-259 and R-335.
 //
-// Every caller of DefaultAI has to be written so that "none" is the normal
-// case: an install with no AI adapter is not a degraded install.
-func TestR258_NoAIAdapterIsAnOrdinaryOutcome(t *testing.T) {
-	_, _, found := api.NewRegistry().DefaultAI()
+// A function nobody is assigned is off, which is an ordinary outcome: an
+// install with no AI adapter is not a degraded install. Configuring an adapter
+// does not assign it anything by itself.
+func TestR259_UnassignedFunctionIsOff(t *testing.T) {
+	_, _, found := api.NewRegistry().AIFor(api.AIFunctionRepairPlan)
+	require.False(t, found)
+
+	r := api.NewRegistry()
+	require.NoError(t, r.Register("ai_anthropic", stubAI{base{kind: "anthropic", cat: api.CategoryAI}}))
+	_, _, found = r.AIFor(api.AIFunctionRepairPlan)
 	require.False(t, found)
 }
 
-// TestR258_AnAIAdapterConfiguredWithoutBeingMarkedDefaultIsStillFound asserts
-// R-258: an install that configured one should not have to know about a
-// default flag for it to be used.
-func TestR258_AnAIAdapterConfiguredWithoutBeingMarkedDefaultIsStillFound(t *testing.T) {
+// TestR259_EachFunctionGoesToItsAssignedAdapter asserts R-259: two adapters,
+// each handling different functions, each on its own model.
+func TestR259_EachFunctionGoesToItsAssignedAdapter(t *testing.T) {
 	r := api.NewRegistry()
 	require.NoError(t, r.Register("ai_anthropic", stubAI{base{kind: "anthropic", cat: api.CategoryAI}}))
+	require.NoError(t, r.Register("ai_openai", stubAI{base{kind: "openai", cat: api.CategoryAI}}))
+	r.SetAIAssignments([]api.AIAssignment{
+		{Function: api.AIFunctionRepairPlan, AdapterRef: "ai_anthropic"},
+		{Function: api.AIFunctionSearchAudit, AdapterRef: "ai_openai", Model: "small"},
+	})
 
-	_, ref, found := r.DefaultAI()
+	_, a, found := r.AIFor(api.AIFunctionRepairPlan)
 	require.True(t, found)
-	require.Equal(t, "ai_anthropic", ref)
+	require.Equal(t, "ai_anthropic", a.AdapterRef)
+	require.Empty(t, a.Model)
+
+	_, a, found = r.AIFor(api.AIFunctionSearchAudit)
+	require.True(t, found)
+	require.Equal(t, "ai_openai", a.AdapterRef)
+	require.Equal(t, "small", a.Model)
+
+	_, _, found = r.AIFor(api.AIFunctionDraftPolicy)
+	require.False(t, found)
+}
+
+// TestR259_AssignmentToAnAdapterNotRunningIsOff asserts R-259 and R-335: an
+// assignment whose adapter failed to configure leaves the function off rather
+// than failing its callers.
+func TestR259_AssignmentToAnAdapterNotRunningIsOff(t *testing.T) {
+	r := api.NewRegistry()
+	r.SetAIAssignments([]api.AIAssignment{{Function: api.AIFunctionRepairPlan, AdapterRef: "ai_gone"}})
+	_, a, found := r.AIFor(api.AIFunctionRepairPlan)
+	require.False(t, found)
+	require.Equal(t, "ai_gone", a.AdapterRef)
 }

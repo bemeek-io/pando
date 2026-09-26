@@ -50,6 +50,45 @@ type AuditEvent struct {
 // ActionScreen is R-337's event.
 const ActionScreen = "detection.screen"
 
+// Screeners resolves the adapter assigned an AI function (R-259).
+type Screeners interface {
+	ScreenerFor(fn api.AIFunction) (s screening.Screener, ref, model string, ok bool)
+}
+
+// RegistryScreeners reads assignments from the adapter registry.
+type RegistryScreeners struct{ Registry *api.Registry }
+
+func (r RegistryScreeners) ScreenerFor(fn api.AIFunction) (screening.Screener, string, string, bool) {
+	ai, a, ok := r.Registry.AIFor(fn)
+	if !ok {
+		return nil, "", "", false
+	}
+	return ai, a.AdapterRef, a.Model, true
+}
+
+// screenerFor is the adapter that performs fn, its reference and the model
+// its assignment names.
+func (r *Runner) screenerFor(fn api.AIFunction) (screening.Screener, string, string, bool) {
+	if r.Screeners != nil {
+		return r.Screeners.ScreenerFor(fn)
+	}
+	if r.Screener != nil {
+		return r.Screener, r.ScreenerRef, "", true
+	}
+	return nil, "", "", false
+}
+
+// anyScreener reports whether some function has an adapter, so an install
+// with none says "not configured" before anything else.
+func (r *Runner) anyScreener() bool {
+	for _, fn := range []api.AIFunction{api.AIFunctionRepairPlan, api.AIFunctionAnswerQuestions} {
+		if _, _, _, ok := r.screenerFor(fn); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // screen calls the AI adapter when detection needs it, and folds in what it
 // may. When detection does not need it, nothing is called (R-336).
 //
@@ -57,7 +96,7 @@ const ActionScreen = "detection.screen"
 // R-335 makes every failure here leave the deterministic proposal exactly as it
 // was, and the only trace is a reason recorded on the outcome.
 func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Proposal, view api.SourceView) screening.Outcome {
-	if r.Screener == nil {
+	if !r.anyScreener() {
 		return screening.SkippedOutcome(screening.SkipNotConfigured, "No AI adapter is configured.")
 	}
 
@@ -87,12 +126,23 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 		}
 	}
 
+	// Assigned per function (R-259): an install may have an adapter answer
+	// questions and none repair plans.
+	screener, ref, model, assigned := r.screenerFor(fn)
+	if !assigned {
+		o := screening.SkippedOutcome(screening.SkipNotConfigured, fmt.Sprintf(
+			"%s is not assigned to an AI adapter on this installation.", fn.Title())).For(fn)
+		o.Why = why
+		return o
+	}
+
 	// Only now, so the console's "Checking with AI" step appears on the
 	// detections that call one and on no others.
 	detect.Report(ctx, detect.StageScreening, proposal)
 
 	trial := proposal.TrialSummary()
-	result, outcome := screening.Run(ctx, r.Screener, r.ScreenerRef, fn, api.ScreenRequest{
+	result, outcome := screening.Run(ctx, screener, ref, fn, api.ScreenRequest{
+		Model:     model,
 		Source:    view,
 		Spec:      proposal.DraftSpec,
 		Evidence:  proposal.Winner.Evidence,

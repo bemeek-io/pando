@@ -48,10 +48,11 @@ func (r *Runner) Revise(ctx context.Context, appID, message string) (state.Detec
 		return state.Detection{}, errs.Newf(errs.ValidInvalid,
 			"That message is longer than %d characters. Say what should change in a few sentences.", MaxInstruction)
 	}
-	if r.Screener == nil {
+	if _, _, _, ok := r.screenerFor(api.AIFunctionRevisePlan); !ok {
 		return state.Detection{}, errs.New(errs.AdapterUnavailable,
-			"No AI adapter is configured on this installation, so there is nothing to ask.").
-			WithRemedy("Change the plan by answering its questions and setting its variables, or configure an AI adapter.")
+			"Plan revision is not assigned to an AI adapter on this installation, so there is nothing to ask.").
+			WithRemedy("Change the plan by answering its questions and setting its variables, or assign plan revision " +
+				"to an AI adapter under Adapters in the console, or with PUT /api/v1/ai/functions/revise_plan.")
 	}
 	if r.ScreenPolicy != nil {
 		if reason := r.ScreenPolicy.AllowsScreening(ctx); reason != "" {
@@ -124,7 +125,9 @@ func (r *Runner) revise(
 	}
 
 	trial := proposal.TrialSummary()
-	result, outcome := screening.Run(ctx, r.Screener, r.ScreenerRef, api.AIFunctionRevisePlan, api.ScreenRequest{
+	screener, ref, model, _ := r.screenerFor(api.AIFunctionRevisePlan)
+	result, outcome := screening.Run(ctx, screener, ref, api.AIFunctionRevisePlan, api.ScreenRequest{
+		Model:        model,
 		Source:       view,
 		Spec:         *target,
 		Evidence:     evidence,

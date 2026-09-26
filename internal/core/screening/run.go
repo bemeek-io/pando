@@ -67,6 +67,13 @@ func Run(ctx context.Context, s Screener, ref string, fn api.AIFunction, req api
 
 	req.Budget = budget(req.Budget, caps)
 
+	// A model the adapter cannot choose is dropped rather than sent: the
+	// assignment was checked when it was made, and an adapter reconfigured
+	// since runs on its own model, which is what the outcome then says.
+	if !caps.ChoosesModel {
+		req.Model = ""
+	}
+
 	// The timeout is enforced here rather than trusted to the adapter. An
 	// adapter that ignores its budget would otherwise hold an app in detection
 	// for as long as a provider takes to answer, and detection runs in the
@@ -81,7 +88,12 @@ func Run(ctx context.Context, s Screener, ref string, fn api.AIFunction, req api
 			"The AI adapter did not finish: "+err.Error()).For(fn).Elapsed(elapsed)
 	}
 
+	// The model that ran, for the review and the audit event (R-337): the
+	// adapter's word, else the assignment's, else the adapter's default.
 	model := result.Model
+	if model == "" {
+		model = req.Model
+	}
 	if model == "" {
 		model = caps.Model
 	}

@@ -53,7 +53,7 @@ func (a *Adapter) run(ctx context.Context, fn api.AIFunction, req api.ScreenRequ
 	src := newReader(req.Source, a.limit(req.Budget.MaxFiles, a.cfg.MaxFiles), a.limitBytes(req.Budget.MaxBytes, a.cfg.MaxBytes))
 
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(a.cfg.Model),
+		Model:     anthropic.Model(a.model(req.Model)),
 		MaxTokens: maxTokens,
 		System: []anthropic.TextBlockParam{{
 			Text: systemPrompt(fn),
@@ -100,7 +100,7 @@ func (a *Adapter) run(ctx context.Context, fn api.AIFunction, req api.ScreenRequ
 			// Findings end the conversation. Nothing after them is read: the
 			// model has answered, and a second call would be a second answer.
 			if use.Name == toolSubmitFindings {
-				return a.findings(use, src)
+				return a.findings(use, src, a.model(req.Model))
 			}
 
 			results = append(results, a.call(use, src))
@@ -172,7 +172,7 @@ func (a *Adapter) call(use anthropic.ToolUseBlock, src *reader) anthropic.Conten
 }
 
 // findings reads the submitted amendments.
-func (a *Adapter) findings(use anthropic.ToolUseBlock, src *reader) (api.ScreenResult, error) {
+func (a *Adapter) findings(use anthropic.ToolUseBlock, src *reader, model string) (api.ScreenResult, error) {
 	var in struct {
 		Amendments []api.Amendment `json:"amendments"`
 		Notes      []string        `json:"notes"`
@@ -190,7 +190,7 @@ func (a *Adapter) findings(use anthropic.ToolUseBlock, src *reader) (api.ScreenR
 		Notes:      in.Notes,
 		Reply:      in.Reply,
 		FilesRead:  src.files(),
-		Model:      a.cfg.Model,
+		Model:      model,
 	}, nil
 }
 

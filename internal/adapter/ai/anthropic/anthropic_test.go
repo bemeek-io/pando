@@ -94,7 +94,22 @@ func TestR336_BothFunctionsAreOnWhenTheAdapterIsConfigured(t *testing.T) {
 	off := configured(t, `{"credentials":{"api_key":"sk-ant-test"},"screen_plans":false}`)
 	caps, err = off.Capabilities(context.Background())
 	require.NoError(t, err)
-	require.Empty(t, caps.Functions, "an install may keep the adapter and turn both functions off")
+	require.False(t, caps.Does(api.AIFunctionRepairPlan), "an install may keep the adapter and turn screening off")
+	require.False(t, caps.Does(api.AIFunctionAnswerQuestions))
+	require.False(t, caps.Does(api.AIFunctionRevisePlan))
+	require.True(t, caps.Does(api.AIFunctionSearchAudit), "the administrative functions are not screening")
+}
+
+// TestR259_TheAdapterLetsEachFunctionChooseItsModel asserts R-259: model
+// choice is advertised as data, and a call runs on the model its assignment
+// names.
+func TestR259_TheAdapterLetsEachFunctionChooseItsModel(t *testing.T) {
+	caps, err := configured(t, `{"credentials":{"api_key":"sk-ant-test"}}`).Capabilities(context.Background())
+	require.NoError(t, err)
+	require.True(t, caps.ChoosesModel)
+	for _, fn := range api.AIFunctions() {
+		require.True(t, caps.Does(fn), "%s", fn)
+	}
 }
 
 // TestAnAdapterWithNoCredentialRefusesToConfigure asserts design 10 §7.

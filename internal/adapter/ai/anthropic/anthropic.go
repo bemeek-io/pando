@@ -175,7 +175,13 @@ func (a *Adapter) HealthCheck(ctx context.Context) error {
 // Capabilities reports what this adapter does, as data (R-254, R-259).
 func (a *Adapter) Capabilities(_ context.Context) (api.AICapabilities, error) {
 	caps := api.AICapabilities{
-		Model:    a.cfg.Model,
+		Model: a.cfg.Model,
+
+		// Any model the Messages API serves, for one function at a time
+		// (R-259). A name it does not serve fails that call, and the health
+		// check reports on the adapter's own model only.
+		ChoosesModel: true,
+
 		MaxFiles: a.cfg.MaxFiles,
 		MaxBytes: a.cfg.MaxBytes,
 	}
@@ -183,6 +189,11 @@ func (a *Adapter) Capabilities(_ context.Context) (api.AICapabilities, error) {
 		caps.Functions = append(caps.Functions,
 			api.AIFunctionRepairPlan, api.AIFunctionAnswerQuestions, api.AIFunctionRevisePlan)
 	}
+	// Advertised, not performed: each runs only when an administrator assigns
+	// it to this adapter (R-259).
+	caps.Functions = append(caps.Functions,
+		api.AIFunctionDraftAccess, api.AIFunctionDraftPolicy,
+		api.AIFunctionSearchAudit, api.AIFunctionAnswerReference)
 	return caps, nil
 }
 
@@ -197,6 +208,14 @@ func resolveKey(cfg Config, getenv func(string) string) secret.Value {
 		return secret.New(getenv(cfg.APIKeyEnv))
 	}
 	return secret.New(getenv("ANTHROPIC_API_KEY"))
+}
+
+// model is the model one call runs on: the assignment's, else the adapter's.
+func (a *Adapter) model(assigned string) string {
+	if assigned != "" {
+		return assigned
+	}
+	return a.cfg.Model
 }
 
 func (a *Adapter) screensPlans() bool {
@@ -215,11 +234,11 @@ func Info() api.KindInfo {
 		Category:    api.CategoryAI,
 		Kind:        Kind,
 		Name:        "Anthropic",
-		Description: "Called only when detection fails or asks a question: reads the repository to repair the plan or answer the question, with evidence for each change (R-336). Needs an Anthropic API key.",
+		Description: "Performs the AI functions assigned to it: repairing a failed plan, answering detection's questions, revising a plan on request, drafting access and policy, searching the audit log, and answering from the reference. Needs an Anthropic API key.",
 		IDPrefix:    "ai_",
 		Fields: []api.Field{
 			{Key: "api_key", Label: "API key", Type: "string", Help: "An Anthropic API key. Stored encrypted and never shown again. Leave empty to use ANTHROPIC_API_KEY from Pando’s environment.", Credential: true, Placeholder: "sk-ant-…"},
-			{Key: "model", Label: "Model", Type: "string", Help: "Which Claude model reads the repository.", Default: DefaultModel},
+			{Key: "model", Label: "Model", Type: "string", Help: "The Claude model each function uses unless its assignment names another.", Default: DefaultModel},
 			{Key: "base_url", Label: "Base URL", Type: "string", Help: "A gateway or proxy in front of the Anthropic API. Empty is the API itself.", Default: "https://api.anthropic.com"},
 			{Key: "api_key_env", Label: "API key variable", Type: "string", Help: "The environment variable to read the key from, instead of a stored one.", Default: "ANTHROPIC_API_KEY"},
 		},
