@@ -6,7 +6,10 @@
 // the server refuses a second adapter outright, and moving it is removing it
 // there first. A function the config file assigns is shown with where (R-271).
 
-import { Checkbox, Input } from '@design';
+import { useState } from 'react';
+import { Button, Checkbox, Input } from '@design';
+
+import { BesideField } from '../ui/BesideField';
 
 import type { AIFunction } from './AIFunctions';
 
@@ -42,6 +45,8 @@ export function AdapterFunctions({
   choice: FunctionChoice;
   onChange: (next: FunctionChoice) => void;
 }) {
+  // Functions whose model field was opened and is still empty.
+  const [overriding, setOverriding] = useState<Set<string>>(new Set());
   return (
     <fieldset style={{ border: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
       <legend style={{ font: 'var(--type-label)', marginBottom: 'var(--space-2)' }}>What this adapter handles</legend>
@@ -74,15 +79,39 @@ export function AdapterFunctions({
                 }}
               />
             </div>
-            {mine && !declared && (
-              <Input
-                label={`Model for ${f.title.toLowerCase()}`}
-                mono
-                placeholder="The adapter's own"
-                value={choice[f.function]}
-                onChange={(e) => onChange({ ...choice, [f.function]: e.target.value })}
-                style={{ flex: '1 1 14rem' }}
-              />
+            {/* The model is the adapter's unless someone asks otherwise, so
+                the field stays out of the way until then. One with an override
+                already shows it. */}
+            {mine && !declared && (overriding.has(f.function) || choice[f.function] !== '') ? (
+              <div style={{ flex: '1 1 14rem', display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-end' }}>
+                <Input
+                  label={`Model for ${f.title.toLowerCase()}`}
+                  mono
+                  autoFocus={overriding.has(f.function) && choice[f.function] === ''}
+                  placeholder="claude-haiku-4-5"
+                  value={choice[f.function]}
+                  onChange={(e) => onChange({ ...choice, [f.function]: e.target.value })}
+                  style={{ flex: 1 }}
+                />
+                <BesideField>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setOverriding((was) => new Set([...was].filter((x) => x !== f.function)));
+                      onChange({ ...choice, [f.function]: '' });
+                    }}
+                  >
+                    Use the adapter&rsquo;s model
+                  </Button>
+                </BesideField>
+              </div>
+            ) : (
+              mine &&
+              !declared && (
+                <Button variant="ghost" onClick={() => setOverriding((was) => new Set(was).add(f.function))}>
+                  Override model
+                </Button>
+              )
             )}
           </div>
         );
