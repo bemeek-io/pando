@@ -129,6 +129,7 @@ func (r *Runner) revise(
 		Spec:         *target,
 		Evidence:     evidence,
 		Questions:    questionsFor(proposal.Questions),
+		Values:       emptyValues(*proposal),
 		Trial:        trial,
 		Instruction:  message,
 		Conversation: history,

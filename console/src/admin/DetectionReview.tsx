@@ -68,6 +68,11 @@ export interface DetectionResponse {
   started_at?: string;
   /** When it last changed: for a finished one, when it finished. */
   updated_at?: string;
+  /**
+   * Where the app will be reachable once deployed, from the proposal's
+   * routing (spec.Address): https://host/, //host:port/ or /slug/.
+   */
+  address?: string;
 }
 
 export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: boolean }) {

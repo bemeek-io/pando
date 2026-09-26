@@ -39,3 +39,14 @@ export function phrasesFor(step: string | undefined): string[] {
 
 /** How often the phrase changes. */
 export const PHRASE_MS = 1_500;
+
+/**
+ * The glyphs AI's working line turns through, out and back, one per frame:
+ * the asterisk-flower that AI tools use for "thinking", so it reads as that
+ * at a glance. An approved exception to the design system's no-unicode-icons
+ * rule, for AI at work only (design 08 §1.3).
+ */
+export const AI_GLYPHS = ['✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳'] as const;
+
+/** How long each glyph shows. */
+export const AI_GLYPH_MS = 120;

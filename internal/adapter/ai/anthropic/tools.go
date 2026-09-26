@@ -19,7 +19,7 @@ const (
 	toolSubmitFindings = "submit_findings"
 )
 
-func tools(fn api.AIFunction, questions []api.Question) []anthropic.ToolUnionParam {
+func tools(fn api.AIFunction, questions []api.Question, values []string) []anthropic.ToolUnionParam {
 	list := anthropic.ToolParam{
 		Name: toolListFiles,
 		Description: anthropic.String(
@@ -65,7 +65,7 @@ func tools(fn api.AIFunction, questions []api.Question) []anthropic.ToolUnionPar
 				"amendments": map[string]any{
 					"type":        "array",
 					"description": "Changes to the deployment plan. Empty if none are needed.",
-					"items":       itemSchema(fn, questions),
+					"items":       itemSchema(fn, questions, values),
 				},
 				"notes": map[string]any{
 					"type": "array",
@@ -109,7 +109,11 @@ func tools(fn api.AIFunction, questions []api.Question) []anthropic.ToolUnionPar
 // "key" is optional because most kinds have none — and a model answered the
 // build_strategy question correctly with no key at all, so the answer was
 // refused and the person was asked anyway.
-func itemSchema(fn api.AIFunction, questions []api.Question) map[string]any {
+//
+// Answering also fills the values the deploy waits on (api.ScreenRequest.
+// Values): a second shape, set_env, whose key must be one of those. Each shape
+// is offered only when it has keys, so an empty enum never reaches the API.
+func itemSchema(fn api.AIFunction, questions []api.Question, values []string) map[string]any {
 	if fn != api.AIFunctionAnswerQuestions {
 		return amendmentSchema([]string{
 			"set_command", "set_env", "set_port", "set_health", "add_slot",
@@ -122,6 +126,28 @@ func itemSchema(fn api.AIFunction, questions []api.Question) map[string]any {
 	for _, q := range questions {
 		keys = append(keys, q.Key)
 	}
+	var shapes []any
+	if len(keys) > 0 {
+		shapes = append(shapes, keyedItem(api.AmendAnswerQuestion, keys,
+			"The key of the question this answers, exactly as listed.",
+			"The answer, as a person would type it into the question's field: one of its valid answers when it lists them.",
+			"Why the repository answers the question this way"))
+	}
+	if len(values) > 0 {
+		shapes = append(shapes, keyedItem(api.AmendSetEnv, values,
+			"The variable this fills, exactly as listed.",
+			"The value, exactly as the app should read it. Never a secret, key, token or password you made up.",
+			"Why the repository, or the address the plan gives the app, settles this value"))
+	}
+	if len(shapes) == 1 {
+		return shapes[0].(map[string]any)
+	}
+	return map[string]any{"anyOf": shapes}
+}
+
+// keyedItem is one strict amendment shape: a fixed kind, a key from a list,
+// and every field required.
+func keyedItem(kind api.AmendmentKind, keys []string, keyHelp, valueHelp, reasonHelp string) map[string]any {
 	return map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
@@ -129,22 +155,21 @@ func itemSchema(fn api.AIFunction, questions []api.Question) map[string]any {
 		"properties": map[string]any{
 			"kind": map[string]any{
 				"type": "string",
-				"enum": []string{string(api.AmendAnswerQuestion)},
+				"enum": []string{string(kind)},
 			},
 			"key": map[string]any{
 				"type":        "string",
 				"enum":        keys,
-				"description": "The key of the question this answers, exactly as listed.",
+				"description": keyHelp,
 			},
 			"value": map[string]any{
-				"type": "string",
-				"description": "The answer, as a person would type it into the question's field: " +
-					"one of its valid answers when it lists them.",
+				"type":        "string",
+				"description": valueHelp,
 			},
 			"reason": map[string]any{
 				"type": "string",
-				"description": "Why the repository answers the question this way, written so that " +
-					"someone who cannot see the repository understands it. One or two sentences.",
+				"description": reasonHelp + ", written so that someone who cannot see the repository " +
+					"understands it. One or two sentences.",
 			},
 			"evidence": map[string]any{
 				"type":     "array",

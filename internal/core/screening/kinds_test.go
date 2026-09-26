@@ -267,3 +267,30 @@ func TestR338_AnAnswerMayNotBeEmptyOrGivenTwice(t *testing.T) {
 	require.Equal(t, map[string]string{"primary_port": "3000"}, answers)
 	require.Len(t, refused, 2)
 }
+
+// TestR132_AScreenerMayFillAValueTheDeployWaitsOn asserts that set_env fills a
+// value slot — a key named with no value in .env.example — and still refuses
+// a service slot or one that already has a value (R-331, R-332).
+func TestR132_AScreenerMayFillAValueTheDeployWaitsOn(t *testing.T) {
+	domain, db, set := "APP_DOMAIN", "DATABASE_URL", "APP_BASE_URL"
+	s := draft()
+	s.Workloads[0].Env = []spec.EnvEntry{{Key: domain, SlotRef: &domain}, {Key: db, SlotRef: &db}, {Key: set, SlotRef: &set}}
+	s.Slots = []spec.Slot{
+		{Key: domain, Type: spec.SlotUnknown, Required: true},
+		{Key: db, Type: spec.SlotPostgres, Required: true, Resolution: &spec.Resolution{Mode: spec.ResolutionProvisioned}},
+		{Key: set, Type: spec.SlotUnknown, Required: true, Resolution: &spec.Resolution{Mode: spec.ResolutionBound, Target: "https://mine"}},
+	}
+
+	applied, refused := screening.Apply(s, env(), []api.Amendment{
+		sound(api.Amendment{Kind: api.AmendSetEnv, Key: domain, Value: "crew.example.com"}),
+		sound(api.Amendment{Kind: api.AmendSetEnv, Key: db, Value: "postgres://nope"}),
+		sound(api.Amendment{Kind: api.AmendSetEnv, Key: set, Value: "https://other"}),
+	})
+	require.Len(t, applied, 1)
+	require.Len(t, refused, 2)
+
+	filled, _ := s.Slot(domain)
+	require.Equal(t, &spec.Resolution{Mode: spec.ResolutionBound, Target: "crew.example.com"}, filled.Resolution)
+	kept, _ := s.Slot(set)
+	require.Equal(t, "https://mine", kept.Resolution.Target, "a value already there is not overwritten")
+}

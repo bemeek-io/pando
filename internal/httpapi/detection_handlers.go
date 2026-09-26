@@ -33,7 +33,23 @@ func (s *Server) handleGetDetection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	JSON(w, http.StatusOK, detectionResponse(d))
+	JSON(w, http.StatusOK, withPlannedAddress(r, app, detectionResponse(d), d))
+}
+
+// withPlannedAddress adds where the app will be reachable once deployed, from
+// the proposal's routing — which detection has already filled, port and all
+// (Runner.applyDefaults). The same spec.Address the app's own page uses once
+// it is configured, so the review and the running app name one address, and
+// no client re-derives it (R-261).
+func withPlannedAddress(r *http.Request, app state.App, out map[string]any, d state.Detection) map[string]any {
+	p, err := decodeProposal(d)
+	if err != nil {
+		return out
+	}
+	if address := spec.Address(r.Host, app.Slug, p.DraftSpec.Routing); address != "" {
+		out["address"] = address
+	}
+	return out
 }
 
 // handleReviseDetection asks the AI adapter to change the plan as a person
@@ -66,7 +82,7 @@ func (s *Server) handleReviseDetection(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
-	JSON(w, http.StatusOK, detectionResponse(updated))
+	JSON(w, http.StatusOK, withPlannedAddress(r, app, detectionResponse(updated), updated))
 }
 
 // handleRerunDetection re-detects, explicitly (R-022).
@@ -263,7 +279,7 @@ func (s *Server) handleDetectionAnswers(w http.ResponseWriter, r *http.Request) 
 		Error(w, r, err)
 		return
 	}
-	JSON(w, http.StatusOK, detectionResponse(updated))
+	JSON(w, http.StatusOK, withPlannedAddress(r, app, detectionResponse(updated), updated))
 }
 
 // handleAcceptDetection pins the proposal as spec revision 1 (Sequence A 13–17).
@@ -308,6 +324,11 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 		// empty one leaves its variable unset instead of refusing the deploy
 		// (spec.MarkSlotOptional).
 		Optional []string `json:"optional"`
+
+		// Hostname is the address the person chose, where the app's routing
+		// serves it at a hostname of its own (spec.SetHostname). Empty keeps
+		// the one detection assigned.
+		Hostname string `json:"hostname"`
 	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
@@ -424,6 +445,12 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, key := range req.Optional {
 		spec.MarkSlotOptional(&draft, key)
+	}
+	if req.Hostname != "" {
+		if err := spec.SetHostname(&draft, req.Hostname); err != nil {
+			Error(w, r, err)
+			return
+		}
 	}
 
 	// Refused here rather than pinned and found at deploy. A spec that cannot

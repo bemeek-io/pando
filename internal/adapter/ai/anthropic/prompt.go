@@ -154,6 +154,17 @@ func userPrompt(fn api.AIFunction, req api.ScreenRequest) string {
 		}
 	}
 
+	if len(req.Values) > 0 {
+		b.WriteString("\n## Values the deploy waits on\n\n")
+		b.WriteString("Nobody has set these, and the app cannot deploy without them. Fill one with a " +
+			"`set_env` amendment only when the repository settles its value — or, for the app's own URL " +
+			"or domain, the routing in the plan above does. Never make up a secret, key, token or " +
+			"password: leave those for the person, who can generate one.\n\n")
+		for _, key := range req.Values {
+			fmt.Fprintf(&b, "- %s\n", key)
+		}
+	}
+
 	if fn == api.AIFunctionRevisePlan {
 		if len(req.Conversation) > 0 {
 			b.WriteString("\n## What was said before\n\n")
@@ -205,7 +216,12 @@ func planJSON(s spec.AppSpec) string {
 		Health      spec.Health      `json:"health"`
 		Warnings    []spec.Warning   `json:"warnings,omitempty"`
 		RoutingMode spec.RoutingMode `json:"routing_mode"`
-		Subdir      string           `json:"subdir,omitempty"`
+		// Where the app will be served, as far as the plan says: a hostname
+		// in subdomain mode, a port on Pando's own host in port mode. What a
+		// variable naming the app's own domain or URL should hold.
+		Hostname string `json:"hostname,omitempty"`
+		Port     int    `json:"port,omitempty"`
+		Subdir   string `json:"subdir,omitempty"`
 	}{
 		Build:       s.Build,
 		Volumes:     s.Volumes,
@@ -213,6 +229,8 @@ func planJSON(s spec.AppSpec) string {
 		Health:      s.Health,
 		Warnings:    s.Warnings,
 		RoutingMode: s.Routing.Mode,
+		Hostname:    s.Routing.Hostname,
+		Port:        s.Routing.Port,
 		Subdir:      s.Source.Subdir,
 	}
 

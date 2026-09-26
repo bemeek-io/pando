@@ -146,6 +146,8 @@ export interface VariableRow {
    * plain, in the spec (spec.FillSlotValue).
    */
   slot?: RowSlot;
+  /** The value came from the app's address (valueFromAddress), not the repo. */
+  fromAddress?: boolean;
 }
 
 export interface RowSlot {
@@ -170,13 +172,16 @@ export interface RowSlot {
  * that reads like a credential starts as a secret when it has no value yet —
  * the same default the Environment tab takes.
  */
-export function variableRows(spec: AppSpec | undefined): VariableRow[] {
+export function variableRows(spec: AppSpec | undefined, address?: string): VariableRow[] {
   const slots = spec?.slots ?? [];
   return (spec?.workloads ?? []).flatMap((w) =>
     (w.env ?? [])
       .filter((e) => !e.secret_ref)
       .map((e) => {
-        const value = e.value ?? '';
+        // A slot already filled with a readable value — by an AI adapter,
+        // most often — shows it; one filled with a secret cannot.
+        const slotOf = e.slot_ref ? slots.find((s) => s.key === e.slot_ref) : undefined;
+        const value = e.value ?? (slotOf?.resolution?.mode === 'bound' ? (slotOf.resolution.target ?? '') : '');
         const row: VariableRow = {
           id: envKey(w.name, e.key),
           workload: w.name,
@@ -201,9 +206,69 @@ export function variableRows(spec: AppSpec | undefined): VariableRow[] {
           // where it can be read back (spec.FillSlotValue).
           row.secret = service || row.secret;
         }
+        // The app's own URL or domain, from where Pando will serve it: a
+        // default the person can change, sent with the accept like any value
+        // they set (its original stays empty).
+        const fromAddress = row.value === '' && !row.slot?.service ? valueFromAddress(row.key, address) : undefined;
+        if (fromAddress) {
+          row.value = fromAddress;
+          row.secret = false;
+          row.fromAddress = true;
+        }
         return row;
       }),
   );
+}
+
+/**
+ * The app's address as a full URL with no trailing slash. The server writes a
+ * port-mode address protocol-relative ("//localhost:9003/"), because it cannot
+ * know how the browser reached it; the browser can.
+ */
+export function absoluteAddress(address: string | undefined, protocol = 'http:'): string | undefined {
+  if (!address) return undefined;
+  const full = address.startsWith('//') ? `${protocol}${address}` : address;
+  if (!/^https?:\/\//.test(full)) return undefined;
+  return full.replace(/\/+$/, '');
+}
+
+// Names that mean "this app's own public URL" or "its own domain". Matched on
+// the last part of the name, so APP_BASE_URL and NEXTAUTH_URL are URLs and
+// APP_DOMAIN is a domain. HOST is not here: it is the address an app binds to.
+const OWN_URL = /(^|_)(BASE_URL|PUBLIC_URL|APP_URL|SITE_URL|EXTERNAL_URL|ROOT_URL|ORIGIN|NEXTAUTH_URL)$/;
+const OWN_DOMAIN = /(^|_)(DOMAIN|HOSTNAME|PUBLIC_HOST|SERVER_NAME)$/;
+
+/**
+ * What a variable should hold when its name says it is the app's own URL or
+ * domain, from the address Pando will serve the app at — undefined for any
+ * other name. A person deploying a generated app rarely knows what "domain"
+ * means here, and Pando does.
+ */
+export function valueFromAddress(key: string, address: string | undefined): string | undefined {
+  if (!address) return undefined;
+  if (OWN_URL.test(key)) return address;
+  if (OWN_DOMAIN.test(key)) {
+    try {
+      return new URL(address).hostname;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * A random value for a variable that just needs one: an encryption key, a
+ * session secret, a password nobody types. 32 bytes from the browser's
+ * cryptographic generator, as URL-safe base64 with no padding — 43 characters
+ * that survive a shell, a URL and a .env file unquoted.
+ */
+export function randomSecret(bytes = 32): string {
+  const raw = new Uint8Array(bytes);
+  crypto.getRandomValues(raw);
+  let binary = '';
+  for (const b of raw) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 /**
@@ -242,6 +307,8 @@ export function mergeRows(detected: VariableRow[], edits: Record<string, RowEdit
         ...row,
         value: edit.value ?? row.value,
         secret: edit.secret ?? row.secret,
+        // A value the person typed over is theirs, not the address's.
+        fromAddress: row.fromAddress && (edit.value === undefined || edit.value === row.value),
       };
     }),
     ...added,

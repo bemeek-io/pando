@@ -154,6 +154,12 @@ type ScreenRequest struct {
 	// Instruction, oldest first, so "no, the other one" means something.
 	Conversation []Turn
 
+	// Values are variables the deploy waits on that nobody has set (R-132),
+	// in any reading of the repository. An adapter may fill one with
+	// AmendSetEnv where the repository or the plan's own address settles it —
+	// the app's domain, a mailto: contact — and never with a secret it made up.
+	Values []string
+
 	// Known are files an adapter already read about this proposal, in an
 	// earlier call. Each call is a new conversation with the model, so it
 	// starts knowing nothing; an adapter may hand these over at the start

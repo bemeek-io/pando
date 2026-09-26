@@ -254,6 +254,7 @@ export interface Turn {
   at: string;
   changes?: (string[] | null);
   refused?: (string[] | null);
+  files_read?: (string[] | null);
 }
 
 export interface Draft {

@@ -271,6 +271,28 @@ func TestR339_FilesReadBeforeAreHandedOverNotReadAgain(t *testing.T) {
 	require.Len(t, fake.bodies, 1, "no round trip spent reading it again")
 }
 
+// TestR132_AnsweringMayFillTheValuesTheDeployWaitsOn asserts the answer call's
+// second shape: set_env, keyed to exactly the values nobody has set, offered
+// beside answer_question, and the prompt says never to make up a secret.
+func TestR132_AnsweringMayFillTheValuesTheDeployWaitsOn(t *testing.T) {
+	a, fake := withFake(t, message("tool_use", toolUse("t1", "submit_findings", `{"amendments":[]}`)))
+
+	req := request()
+	req.Values = []string{"APP_DOMAIN", "VAPID_SUBJECT"}
+	_, err := a.AnswerQuestions(context.Background(), req)
+	require.NoError(t, err)
+
+	tools, _ := json.Marshal(fake.bodies[0]["tools"])
+	require.Contains(t, string(tools), `"anyOf"`)
+	require.Contains(t, string(tools), `"enum":["set_env"]`)
+	require.Contains(t, string(tools), `"enum":["APP_DOMAIN","VAPID_SUBJECT"]`)
+	require.Contains(t, string(tools), `"enum":["start_command"]`)
+
+	prompt, _ := json.Marshal(fake.bodies[0]["messages"])
+	require.Contains(t, string(prompt), "Values the deploy waits on")
+	require.Contains(t, string(prompt), "Never make up a secret")
+}
+
 // TestR335_AModelThatStopsWithoutFindingsIsAFailureNotACleanBill asserts R-335:
 // "found nothing" and "did not finish" mean opposite things in the review.
 func TestR335_AModelThatStopsWithoutFindingsIsAFailureNotACleanBill(t *testing.T) {

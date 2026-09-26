@@ -186,7 +186,7 @@ func TestR338_AnsweringQuestionsChangesNothingElse(t *testing.T) {
 	screener := &fakeScreener{result: api.ScreenResult{Amendments: []api.Amendment{
 		{Kind: api.AmendAnswerQuestion, Key: detect.KeyPrimaryPort, Value: "3000",
 			Reason: "server.js calls listen(3000).", Evidence: []string{"server.js"}},
-		{Kind: api.AmendSetEnv, Key: "NODE_ENV", Value: "production",
+		{Kind: api.AmendSetCommand, Command: []string{"npm", "run", "serve"},
 			Reason: "The start script expects production.", Evidence: []string{"package.json"}},
 	}}}
 
@@ -195,10 +195,48 @@ func TestR338_AnsweringQuestionsChangesNothingElse(t *testing.T) {
 	require.Equal(t, api.AIFunctionAnswerQuestions, screener.fn)
 	require.Equal(t, map[string]string{detect.KeyPrimaryPort: "3000"}, outcome.Answers)
 	require.Len(t, outcome.Refused, 1)
-	require.Equal(t, api.AmendSetEnv, outcome.Refused[0].Amendment.Kind)
+	require.Equal(t, api.AmendSetCommand, outcome.Refused[0].Amendment.Kind)
 	require.Contains(t, outcome.Refused[0].Reason, "only to answer")
-	require.Empty(t, p.DraftSpec.Workloads[0].Env, "the plan is otherwise untouched")
+	require.Empty(t, p.DraftSpec.Workloads[0].Command, "the plan is otherwise untouched")
 	require.Empty(t, detect.Open(p.Questions, nil), "answered, by suggestion")
+}
+
+// TestR336_AValueNobodyHasIsFilledOnTheReadingTheAnswerAdopts asserts R-336's
+// answer trigger for values: a required value the deploy waits on calls the
+// adapter like a question does, and the value it fills lands on the reading
+// its build-method answer adopts — the one accepting pins.
+func TestR336_AValueNobodyHasIsFilledOnTheReadingTheAnswerAdopts(t *testing.T) {
+	domain := "APP_DOMAIN"
+	composeSpec := spec.AppSpec{
+		Workloads: []spec.Workload{{Name: "app", Primary: true, Env: []spec.EnvEntry{{Key: domain, SlotRef: &domain}}}},
+		Slots:     []spec.Slot{{Key: domain, Type: spec.SlotUnknown, Required: true}},
+	}
+	p := proposal()
+	p.RunnersUp = []detect.Candidate{{Strategy: spec.BuildCompose, Spec: &composeSpec, Draft: detect.Draft{Workloads: composeSpec.Workloads}}}
+	p.Questions = []detect.Question{{Key: detect.KeyBuildStrategy, Kind: api.QuestionChoice, Options: []string{"buildpack", "compose"}}}
+
+	fn, why := needed(p)
+	require.Equal(t, api.AIFunctionAnswerQuestions, fn)
+	require.NotEmpty(t, why)
+
+	noQuestions := p
+	noQuestions.Questions = nil
+	fn, why = needed(noQuestions)
+	require.Equal(t, api.AIFunctionAnswerQuestions, fn, "an empty required value is enough on its own")
+	require.Contains(t, why, "value")
+
+	screener := &fakeScreener{result: api.ScreenResult{Amendments: []api.Amendment{
+		{Kind: api.AmendAnswerQuestion, Key: detect.KeyBuildStrategy, Value: "compose",
+			Reason: "The README deploys with compose.", Evidence: []string{"package.json"}},
+		{Kind: api.AmendSetEnv, Key: domain, Value: "localhost",
+			Reason: "server.js serves the app on localhost.", Evidence: []string{"server.js"}},
+	}}}
+	p.Winner.Draft = detect.Draft{Workloads: p.DraftSpec.Workloads}
+	outcome := (&Runner{Screener: screener}).screen(context.Background(), "app_x", &p, checkout)
+	require.Len(t, outcome.Applied, 2, outcome.Refused)
+
+	filled, _ := p.RunnersUp[0].Spec.Slot(domain)
+	require.Equal(t, &spec.Resolution{Mode: spec.ResolutionBound, Target: "localhost"}, filled.Resolution)
 }
 
 // TestR336_AFailedPlanThatAlsoAskedIsOneCall asserts R-336: a repair is handed

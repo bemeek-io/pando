@@ -7,6 +7,7 @@ import (
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/screening"
+	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/detect"
 	"github.com/bemeek-io/pando/internal/errs"
 )
@@ -96,6 +97,7 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 		Spec:      proposal.DraftSpec,
 		Evidence:  proposal.Winner.Evidence,
 		Questions: questionsFor(proposal.Questions),
+		Values:    emptyValues(*proposal),
 		Trial:     trial,
 		Budget: api.ScreenBudget{
 			MaxFiles: r.ScreenMaxFiles,
@@ -126,12 +128,20 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 	// Asked for answers, it may give answers. A plan that worked needs no
 	// repairing, and the only reason this call was made is the questions
 	// (R-336). Refused rather than dropped, so the review shows what was asked.
+	// Asked for answers, it may give answers and fill values the deploy waits
+	// on — both are blanks a person would otherwise fill. Anything else is
+	// refused: the plan did not fail, so it is not changed.
 	if fn == api.AIFunctionAnswerQuestions {
+		var values []api.Amendment
 		for _, a := range rest {
+			if a.Kind == api.AmendSetEnv {
+				values = append(values, a)
+				continue
+			}
 			outcome.Refused = append(outcome.Refused, screening.Refused{Amendment: a,
-				Reason: "Pando asked the AI adapter only to answer detection's questions; this plan did not fail, so it was not changed."})
+				Reason: "Pando asked the AI adapter only to answer detection's questions and fill values; this plan did not fail, so it was not changed."})
 		}
-		rest = nil
+		rest = values
 	}
 
 	// An answer that cannot become a spec is not an answer, whoever gave it.
@@ -178,9 +188,17 @@ func (r *Runner) screen(ctx context.Context, appID string, proposal *detect.Prop
 		}
 	}
 
-	applied, refusedRest := screening.Apply(&proposal.DraftSpec, env, rest)
+	// Onto the reading accepting would pin: the one its answers — including
+	// the ones just suggested — pick. A value filled on the winner's draft
+	// while the build-method answer adopts another reading is a value nobody
+	// deploys.
+	target, _ := revisionTarget(proposal, proposal.Answers(nil))
+	applied, refusedRest := screening.Apply(target, env, rest)
 	outcome.Applied = append(outcome.Applied, applied...)
 	outcome.Refused = append(outcome.Refused, refusedRest...)
+	if target != &proposal.DraftSpec {
+		return outcome
+	}
 
 	// The winner's draft is kept in step with the spec, because it is what the
 	// review renders beside the evidence and what a re-detection diffs against.
@@ -243,7 +261,39 @@ func needed(p detect.Proposal) (api.AIFunction, string) {
 		}
 		return api.AIFunctionAnswerQuestions, fmt.Sprintf("Detection asked %d questions.", n)
 	}
+	// A required value nobody has is a question in all but name: the deploy
+	// is refused without it (R-132), and a person would be asked for it.
+	if n := len(emptyValues(p)); n > 0 {
+		if n == 1 {
+			return api.AIFunctionAnswerQuestions, "The plan needs one value nobody has set."
+		}
+		return api.AIFunctionAnswerQuestions, fmt.Sprintf("The plan needs %d values nobody has set.", n)
+	}
 	return "", ""
+}
+
+// emptyValues are the value slots the deploy would be refused without —
+// required, type unknown, unfilled — in any reading of the repository, once
+// each. A reading a question may adopt counts: the person has not chosen yet.
+func emptyValues(p detect.Proposal) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(s *spec.AppSpec) {
+		if s == nil {
+			return
+		}
+		for _, slot := range s.Slots {
+			if slot.Required && slot.Type == spec.SlotUnknown && slot.Resolution == nil && !seen[slot.Key] {
+				seen[slot.Key] = true
+				out = append(out, slot.Key)
+			}
+		}
+	}
+	add(&p.DraftSpec)
+	for i := range p.RunnersUp {
+		add(p.RunnersUp[i].Spec)
+	}
+	return out
 }
 
 // questionsFor converts detection's questions to the adapter vocabulary.

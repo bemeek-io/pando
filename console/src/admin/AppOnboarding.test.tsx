@@ -109,9 +109,12 @@ describe('AppOnboarding', () => {
           env: [
             { key: 'DATABASE_URL', slot_ref: 'DATABASE_URL' },
             { key: 'CREW_TOKEN_ENC_KEY', slot_ref: 'CREW_TOKEN_ENC_KEY' },
+            { key: 'APP_DOMAIN', slot_ref: 'APP_DOMAIN' },
+            { key: 'VAPID_SUBJECT', slot_ref: 'VAPID_SUBJECT' },
           ],
         },
       ],
+      routing: { adapter_ref: 'rte_loopback', mode: 'port', mode_source: 'adapter_default', port: 9003 },
       slots: [
         {
           key: 'DATABASE_URL',
@@ -121,6 +124,14 @@ describe('AppOnboarding', () => {
           resolution: { mode: 'provisioned' },
         },
         { key: 'CREW_TOKEN_ENC_KEY', type: 'unknown', required: true },
+        { key: 'APP_DOMAIN', type: 'unknown', required: true },
+        // Filled by AI during detection: a readable value on the slot.
+        {
+          key: 'VAPID_SUBJECT',
+          type: 'unknown',
+          required: true,
+          resolution: { mode: 'bound', target: 'mailto:ops@acme.dev' },
+        },
       ],
     };
     const crewmate = {
@@ -128,8 +139,29 @@ describe('AppOnboarding', () => {
       winning_bid: { ...detection.winning_bid, evidence: ['Dockerfile at repository root', 'CMD ["/crewmate"]'] },
       runners_up: [{ detector: 'compose', strategy: 'compose', confidence: 0.8, spec: compose }],
       questions: [detection.questions[0]],
+      screening: {
+        ...detection.screening,
+        applied: [
+          ...detection.screening.applied,
+          {
+            summary: 'VAPID_SUBJECT set to mailto:ops@acme.dev',
+            amendment: { kind: 'set_env', key: 'VAPID_SUBJECT', value: 'mailto:ops@acme.dev', reason: 'README', evidence: ['README.md'] },
+          },
+        ],
+      },
     };
-    const html = render({ status: 'ready', answers: {}, commit: '3f9a2c1d0000', detection: crewmate } as never);
+    const html = render({
+      status: 'ready',
+      answers: {},
+      commit: '3f9a2c1d0000',
+      address: '//localhost:9003/',
+      detection: crewmate,
+    } as never);
+
+    // Where it will be, from the plan's routing.
+    expect(html).toContain('Once deployed, available at');
+    expect(html).toContain('http://localhost:9003');
+    expect(html).toContain('rte_loopback');
 
     const plan = html.slice(html.indexOf('The plan'), html.indexOf('pando-actionbar'));
     expect(plan).toContain('/crewmate');
@@ -154,7 +186,14 @@ describe('AppOnboarding', () => {
     // A required value still empty is marked in red, with a way to say the
     // app runs without it.
     expect(variables).toContain('var(--marker-deep)');
-    expect(variables).toContain('Not required?');
+    expect(variables).toContain('Required. Mark not required.');
+    // The app's own domain comes from its address; a value AI filled says so;
+    // any value can be generated.
+    expect(variables).toContain('From the app’s address');
+    expect(variables).toContain('value="localhost"');
+    expect(variables).toContain('Filled by AI');
+    expect(variables).toContain('mailto:ops@acme.dev');
+    expect(variables).toContain('Generate');
 
     // The repository opens in a new tab.
     expect(html).toContain('href="https://github.com/acme/crewmate"');

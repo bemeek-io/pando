@@ -41,6 +41,7 @@ import {
   StatusIndicator,
   StatusSymbol,
   Tag,
+  Tooltip,
 } from '@design';
 
 import { api, RequestFailed } from '@api/client';
@@ -83,6 +84,8 @@ import {
   envKey,
   mergeRows,
   neededValues,
+  absoluteAddress,
+  randomSecret,
   primaryWorkload,
   rowProblems,
   suggestions,
@@ -92,7 +95,7 @@ import {
   type Suggestions,
   type VariableRow,
 } from './onboarding';
-import { PHRASE_MS, phrasesFor } from './onboardingPhrases';
+import { AI_GLYPHS, AI_GLYPH_MS, PHRASE_MS, phrasesFor } from './onboardingPhrases';
 import { describeAmendment } from './screeningText';
 import { Terrain } from './Terrain';
 import { AppVerb, can, type AppWithVerbs } from './verbs';
@@ -162,6 +165,11 @@ export function AppOnboarding({
       else next.delete(key);
       return next;
     });
+
+  // The hostname the person chose for the app, where its routing serves one
+  // (subdomain mode). Empty keeps the one detection assigned; sent with the
+  // accept (spec.SetHostname).
+  const [hostname, setHostname] = useState('');
 
   // Answers typed but not yet saved, by question key.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -343,7 +351,13 @@ export function AppOnboarding({
   for (const q of asked) effective[q.key] = answerFor(q, saved, drafts[q.key]);
   const plan = (proposal && planSpec(proposal, effective)) ?? spec;
 
-  const detected = variableRows(plan).map((row) => (canSecrets ? row : { ...row, secret: false }));
+  // Where the app will be served: the hostname the person chose, in subdomain
+  // mode, else the address the server worked out from the plan's routing.
+  const address =
+    hostname.trim() && plan?.routing?.mode === 'subdomain'
+      ? `https://${hostname.trim()}`
+      : absoluteAddress(data?.address, typeof window === 'undefined' ? 'http:' : window.location.protocol);
+  const detected = variableRows(plan, address).map((row) => (canSecrets ? row : { ...row, secret: false }));
   const rows = mergeRows(detected, edits, added);
   const problems = rowProblems(rows);
 
@@ -364,7 +378,11 @@ export function AppOnboarding({
       if (Object.keys(pending).length > 0) {
         await api.post(`/apps/${appID}/detection/answers`, { answers: pending });
       }
-      await api.post(`/apps/${appID}/detection/accept`, { values: valuesPayload(rows), optional: [...optional] });
+      await api.post(`/apps/${appID}/detection/accept`, {
+        values: valuesPayload(rows),
+        optional: [...optional],
+        hostname: hostname.trim() || undefined,
+      });
       if (!andDeploy) return;
       // Accepting pins a spec and does not deploy it (Sequence A). The deploy is
       // its own request, made only once the accept has gone through, so a
@@ -625,6 +643,9 @@ export function AppOnboarding({
                 answers={effective}
                 source={app.source}
                 commit={data.commit}
+                address={address}
+                hostname={hostname}
+                onHostname={canEdit ? setHostname : undefined}
               />
             )}
 
@@ -854,10 +875,8 @@ function WorkingLine({
   return (
     <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
       {step?.ai ? (
-        // AI at work looks the same wherever it is: the mark, turning.
-        <span className="pando-ai-thinking" aria-hidden="true">
-          <AiStar size={14} />
-        </span>
+        // AI at work looks the same wherever it is.
+        <AiGlyph />
       ) : (
         <span className="pando-ripple" aria-hidden="true">
           <span />
@@ -1532,6 +1551,9 @@ function Variables({
   // Rows Pando would fill that the person has chosen to point elsewhere, by
   // row id: their field is shown even before anything is typed in it.
   const [overriding, setOverriding] = useState<Set<string>>(() => new Set());
+  // Values Pando generated, by row id, so the row can say so — until the
+  // person changes the value, when it is simply theirs.
+  const [generated, setGenerated] = useState<Record<string, string>>({});
   if (rows.length === 0 && !canEdit) return null;
 
   return (
@@ -1592,14 +1614,7 @@ function Variables({
               source = changed ? (
                 <span>Your value</span>
               ) : markedOptional ? (
-                <>
-                  <span>Optional — you marked it. It stays unset if empty.</span>
-                  {canEdit && (
-                    <button type="button" className="pando-link" onClick={() => onOptional(slot.key, false)}>
-                      Mark required again
-                    </button>
-                  )}
-                </>
+                <span>You marked it optional. It stays unset if empty.</span>
               ) : (
                 <span style={{ color: slot.required ? 'var(--ink)' : undefined }}>
                   {slot.required ? 'Needs a value' : 'Optional, no value yet'}
@@ -1627,6 +1642,39 @@ function Variables({
             } else if (row.original) source = <span>Found in the repo</span>;
             else source = <span style={{ color: 'var(--ink)' }}>No value yet</span>;
 
+            // Provenance for a value nobody here typed, most specific last.
+            const aiValue = isNew ? undefined : aiMarkFor(marks, row, spec);
+            if (row.fromAddress) {
+              source = <span>From the app’s address</span>;
+            } else if (aiValue && !changed && row.value !== '') {
+              source = (
+                <span title={aiValue.reason} style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                  <AiStar size={12} />
+                  Filled by AI
+                </span>
+              );
+            }
+            if (row.value !== '' && generated[row.id] === row.value) {
+              source = (
+                <>
+                  <span>A random value Pando generated</span>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      className="pando-link"
+                      onClick={() => {
+                        const value = randomSecret();
+                        setGenerated((all) => ({ ...all, [row.id]: value }));
+                        onEdit(row, { value });
+                      }}
+                    >
+                      Generate again
+                    </button>
+                  )}
+                </>
+              );
+            }
+
             return (
               <VariableLine
                 key={row.id}
@@ -1647,10 +1695,15 @@ function Variables({
                 }
                 workload={many && !isNew ? row.workload : undefined}
                 required={
-                  slot?.required && !pandoFills && !optional.has(slot.key)
+                  slot?.required && !pandoFills
                     ? {
+                        optional: optional.has(slot.key),
                         filled: row.value.trim() !== '',
-                        onNotRequired: canEdit ? () => onAskOptional(row) : undefined,
+                        onToggle: canEdit
+                          ? optional.has(slot.key)
+                            ? () => onOptional(slot.key, false)
+                            : () => onAskOptional(row)
+                          : undefined,
                       }
                     : undefined
                 }
@@ -1683,6 +1736,17 @@ function Variables({
                         onChange={(e) => onEdit(row, { value: e.target.value })}
                       />
                     </div>
+                    {canEdit && (
+                      <GenerateValue
+                        onGenerate={() => {
+                          const value = randomSecret();
+                          setGenerated((all) => ({ ...all, [row.id]: value }));
+                          // A generated value is a secret by nature; keep it
+                          // one unless the person says otherwise afterwards.
+                          onEdit(row, { value, secret: canSecrets ? true : row.secret });
+                        }}
+                      />
+                    )}
                     {/* A default, never a lock: every value can be kept as a
                         secret or left readable. */}
                     <Checkbox
@@ -1721,28 +1785,74 @@ function Variables({
 }
 
 /**
- * "Required", as a tag. Marker red while the value is missing — it blocks the
- * deploy, one of the few things on this page that should catch the eye —
- * and the ordinary tag once it is set. Shaped like Tag (2px radius, 1px
- * border), which has no red tone of its own.
+ * The AI amendment that set a variable, if one did. Keyed by workload and
+ * name; an amendment naming no workload is filed under the primary of the
+ * spec it was read against, which is not always the reading shown, so a
+ * variable of the same name elsewhere is the fallback.
  */
-function RequiredBadge({ filled }: { filled: boolean }) {
-  if (filled) return <Tag>Required</Tag>;
+function aiMarkFor(marks: Suggestions, row: VariableRow, spec: AppSpec): Amendment | undefined {
+  const direct = marks.env[envKey(row.workload || primaryWorkload(spec), row.key)];
+  if (direct) return direct;
+  return Object.entries(marks.env).find(([key]) => key.endsWith(`/${row.key}`))?.[1];
+}
+
+/**
+ * Fill a value with a random one: for a variable that just needs a secret
+ * nobody will type — an encryption key, a session secret. The info mark says
+ * what it is, so nobody wonders whether Pando looked something up.
+ */
+function GenerateValue({ onGenerate }: { onGenerate: () => void }) {
   return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        font: 'var(--type-caption)',
-        color: 'var(--marker-deep)',
-        border: 'var(--border-width) solid var(--marker)',
-        borderRadius: 'var(--radius-xs)',
-        padding: '0 var(--space-1)',
-        lineHeight: 'var(--space-5)',
-      }}
-    >
-      Required
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)', flex: '0 0 auto' }}>
+      <Button variant="ghost" icon={<Icon name="dices" size={16} />} onClick={onGenerate}>
+        Generate
+      </Button>
+      <Tooltip content="A random, secure string — essentially a password. Use it when the app just needs a secret value and you don’t have one of your own.">
+        <span
+          tabIndex={0}
+          aria-label="What Generate does"
+          style={{ display: 'inline-flex', color: 'var(--ink-secondary)', cursor: 'help' }}
+        >
+          <Icon name="info" size={14} />
+        </span>
+      </Tooltip>
     </span>
+  );
+}
+
+/**
+ * "Required" or "Optional", as a tag that is also the switch between them.
+ * The ordinary Tag, same size, recolored: marker red while a required value is
+ * missing — it blocks the deploy, one of the few things on this page that
+ * should catch the eye. Clicking Required asks before making it optional
+ * (a wrong call breaks the deploy); clicking Optional makes it required again.
+ */
+function RequirementBadge({
+  optional,
+  filled,
+  onToggle,
+}: {
+  optional: boolean;
+  filled: boolean;
+  onToggle?: () => void;
+}) {
+  const red = !optional && !filled;
+  const tag = (
+    <Tag style={red ? { color: 'var(--marker-deep)', borderColor: 'var(--marker)', background: 'transparent' } : undefined}>
+      {optional ? 'Optional' : 'Required'}
+    </Tag>
+  );
+  if (!onToggle) return tag;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={optional ? 'Mark this required again' : 'The app needs this. Click if it doesn’t.'}
+      aria-label={optional ? `Optional. Mark required again.` : `Required. Mark not required.`}
+      style={{ display: 'inline-flex', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}
+    >
+      {tag}
+    </button>
   );
 }
 
@@ -1758,11 +1868,10 @@ function VariableLine({
   name: React.ReactNode;
   workload?: string;
   /**
-   * The app can't deploy without a value (R-132): said beside the name, in
-   * marker red while it is empty so it is not missed, with a way to say the
-   * app runs without it.
+   * Whether the app can deploy without a value (R-132): said beside the name
+   * as a tag that is also the switch (RequirementBadge).
    */
-  required?: { filled: boolean; onNotRequired?: () => void };
+  required?: { optional: boolean; filled: boolean; onToggle?: () => void };
   source: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -1781,19 +1890,7 @@ function VariableLine({
         <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2)', font: 'var(--type-code-sm)', color: 'var(--ink)', overflowWrap: 'anywhere' }}>
           {name}
           {required && (
-            <>
-              <RequiredBadge filled={required.filled} />
-              {required.onNotRequired && !required.filled && (
-                <button
-                  type="button"
-                  className="pando-link"
-                  style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}
-                  onClick={required.onNotRequired}
-                >
-                  Not required?
-                </button>
-              )}
-            </>
+            <RequirementBadge optional={required.optional} filled={required.filled} onToggle={required.onToggle} />
           )}
           {workload && <Tag mono>{workload}</Tag>}
         </span>
@@ -1967,9 +2064,7 @@ function AiThinking({ phrases }: { phrases: string[] }) {
   const phrase = phrases[Math.min(reduced ? 0 : tick, phrases.length - 1)];
   return (
     <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-      <span className="pando-ai-thinking" aria-hidden="true">
-        <AiStar size={16} />
-      </span>
+      <AiGlyph />
       <span key={phrase} className="pando-onboard-enter" style={{ font: 'var(--type-body-ui)', color: 'var(--water)' }}>
         {phrase}
         <span className="pando-dots" aria-hidden="true">
@@ -1987,6 +2082,35 @@ function AiThinking({ phrases }: { phrases: string[] }) {
 
 /** How often AI's working phrase changes. */
 const THINKING_MS = 2_600;
+
+/**
+ * AI at work: a glyph turning through the asterisk-flower sequence, in water
+ * blue. Hidden from assistive technology (the phrase beside it is announced);
+ * under reduced motion it holds on the first glyph.
+ */
+function AiGlyph() {
+  const reduced = useReducedMotion();
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    if (reduced) return;
+    const timer = window.setInterval(() => setFrame((n) => (n + 1) % AI_GLYPHS.length), AI_GLYPH_MS);
+    return () => window.clearInterval(timer);
+  }, [reduced]);
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        display: 'inline-block',
+        width: '1em',
+        textAlign: 'center',
+        font: 'var(--type-body-ui)',
+        color: 'var(--water)',
+      }}
+    >
+      {AI_GLYPHS[frame]}
+    </span>
+  );
+}
 
 function TurnRow({ turn }: { turn: Turn }) {
   const ai = turn.from === 'ai';
@@ -2037,6 +2161,9 @@ function ThePlan({
   answers,
   source,
   commit,
+  address,
+  hostname,
+  onHostname,
 }: {
   proposal: DetectionResponse['detection'];
   spec: AppSpec;
@@ -2044,6 +2171,11 @@ function ThePlan({
   answers: Record<string, string>;
   source: Source | undefined;
   commit?: string;
+  /** Where the app will be reachable once deployed, as a full URL. */
+  address?: string;
+  hostname: string;
+  /** Absent where the address can't be chosen here, or by who can't edit. */
+  onHostname?: (hostname: string) => void;
 }) {
   const workloads = spec.workloads ?? [];
   const primaryName = primaryWorkload(spec);
@@ -2092,6 +2224,7 @@ function ThePlan({
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>The plan</h3>
+      <AvailableAt routing={spec.routing} address={address} hostname={hostname} onHostname={onHostname} />
       <div
         style={{
           display: 'grid',
@@ -2160,6 +2293,83 @@ function ThePlan({
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * Where the app will be once deployed, first in the plan: most people deploying
+ * a generated app are asked for "the domain" by it and don't know what that
+ * is, and Pando does. The address comes from the plan's routing — the routing
+ * adapter the install uses and the mode it serves apps in — and can be chosen
+ * here where that mode serves a hostname; elsewhere Pando assigns it.
+ */
+function AvailableAt({
+  routing,
+  address,
+  hostname,
+  onHostname,
+}: {
+  routing: AppSpec['routing'] | undefined;
+  address?: string;
+  hostname: string;
+  onHostname?: (hostname: string) => void;
+}) {
+  const mode = routing?.mode;
+  const how =
+    mode === 'subdomain'
+      ? 'at its own hostname'
+      : mode === 'port'
+        ? 'on a port of its own on this host, which Pando assigns'
+        : mode === 'path'
+          ? 'under a path on Pando’s address'
+          : undefined;
+  const editable = mode === 'subdomain' && onHostname;
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-2)',
+        padding: 'var(--space-3) var(--space-4)',
+        border: 'var(--border-width) solid var(--rule)',
+        borderRadius: 'var(--radius-md)',
+        background: 'var(--paper-raised)',
+      }}
+    >
+      <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 'var(--space-2)' }}>
+        <span style={{ color: 'var(--ink-secondary)' }}>Once deployed, available at</span>
+        {address ? (
+          <a
+            href={address}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ font: 'var(--type-code)', color: 'var(--ink)', overflowWrap: 'anywhere' }}
+          >
+            {address}
+          </a>
+        ) : (
+          <span style={{ color: 'var(--ink)' }}>an address Pando assigns on the first deploy</span>
+        )}
+      </span>
+      {how && (
+        <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
+          {`Served ${how}${routing?.adapter_ref ? `, by the ${routing.adapter_ref} routing adapter` : ''}. Variables naming the app’s own URL or domain are filled from this address.`}
+        </span>
+      )}
+      {editable && (
+        <div style={{ maxWidth: '28rem' }}>
+          <Input
+            label="Hostname"
+            mono
+            placeholder={routing?.hostname}
+            value={hostname}
+            onChange={(e) => onHostname(e.target.value)}
+            helper="Leave empty to keep the one Pando assigned. Point this name’s DNS at Pando before deploying."
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

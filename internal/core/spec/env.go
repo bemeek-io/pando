@@ -1,5 +1,12 @@
 package spec
 
+import (
+	"regexp"
+	"strings"
+
+	"github.com/bemeek-io/pando/internal/errs"
+)
+
 // SetEnv sets a variable a person chose, on the workloads it belongs to.
 //
 // With a workload named, that workload only. Without one, every workload that
@@ -113,6 +120,29 @@ func MarkSlotOptional(s *AppSpec, slot string) bool {
 		}
 	}
 	return false
+}
+
+// hostnamePattern is a DNS name: dot-separated labels of letters, digits and
+// inner hyphens.
+var hostnamePattern = regexp.MustCompile(`^(?i)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$`)
+
+// SetHostname sets the address an app is served at, in subdomain mode — the
+// one mode where the address is a name somebody chooses rather than a port
+// Pando allocates or a prefix derived from the app's slug. Refused in any
+// other mode, with the reason, rather than stored where nothing reads it.
+func SetHostname(s *AppSpec, hostname string) error {
+	hostname = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(hostname)), ".")
+	if s.Routing.Mode != RoutingSubdomain {
+		return errs.Newf(errs.ValidInvalid,
+			"This app is reached by %s, so its address can't be set as a hostname.", s.Routing.Mode).
+			WithRemedy("Leave the address as Pando assigned it, or configure a routing adapter that serves apps at their own hostname.")
+	}
+	if len(hostname) > 253 || !hostnamePattern.MatchString(hostname) {
+		return errs.Newf(errs.ValidInvalid, "%q isn't a hostname.", hostname).
+			WithRemedy("Use a name like crew.example.com: letters, digits and hyphens, separated by dots.")
+	}
+	s.Routing.Hostname = hostname
+	return nil
 }
 
 func resolveSlot(s *AppSpec, slot string, r *Resolution) bool {
