@@ -133,9 +133,10 @@ function DraftAccess() {
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxWidth: '68ch' }}>
       <AskAI
-        label="Describe who should be able to do what"
+        heading="Ask AI to draft access"
+        explanation="Describe who should be able to do what. AI drafts a role and a group from Pando's permissions; nothing is created until you choose Create."
+        label="Who should be able to do what"
         placeholder="Release managers can deploy and restart any app"
-        action="Draft"
         pending={draft.isPending}
         error={draft.error}
         onAsk={(text) => draft.mutate(text)}

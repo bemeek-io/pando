@@ -438,9 +438,10 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
       {canEdit && draftOn && (
         <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxWidth: '68ch' }}>
           <AskAI
-            label="Describe a change"
+            heading="Ask AI to draft a policy change"
+            explanation="Describe the rule you want. AI fills in the form below; nothing is saved until you save it."
+            label="The rule you want"
             placeholder="Nobody may open a shell in an app"
-            action="Draft"
             pending={proposal.isPending}
             error={proposal.error}
             onAsk={(d) => proposal.mutate(d)}
@@ -1143,9 +1144,10 @@ export function Audit({
       {searchOn && (
       <div style={{ marginBottom: 'var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
         <AskAI
-          label="Ask the audit log"
+          heading="Ask AI about the audit log"
+          explanation="Ask a question. AI sets the filters below to answer it and summarizes what they find; the events shown are the audit log's own."
+          label="Question"
           placeholder="Which apps did Dana create or delete last month?"
-          action="Search"
           pending={search.isPending}
           error={search.error}
           onAsk={(q) => search.mutate(q)}

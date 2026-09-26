@@ -55,7 +55,9 @@ function AskHow() {
   return (
     <div style={{ maxWidth: MEASURE, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-5)' }}>
       <AskAI
-        label="Ask how to do something"
+        heading="Ask AI how to do something"
+        explanation="Answered from this reference: the API, the CLI and the MCP tools. AI explains how; it doesn't do it."
+        label="What you want to do"
         placeholder="How can I give a group access to one app?"
         pending={ask.isPending}
         error={ask.error}

@@ -98,10 +98,14 @@ without a restart; the adapter's own settings are saved, and need a restart, onl
 changed. A new AI adapter is not running until Pando restarts, so its dialog says to open it again
 then to choose what it handles. An AI adapter has no default checkbox.
 
-**[D] Asking AI on an admin screen.** Four screens carry one labeled field and a secondary button
-(`ui/AskAI.tsx`), above the screen's own content and never as its primary action: *Audit log* ("Ask
-the audit log", R-345), *Policy* ("Describe a change", R-344), *Groups and roles* ("Describe who
-should be able to do what", R-343), and *API and tools* ("Ask how to do something", R-346). Each is
+**[D] Asking AI on an admin screen.** Four screens carry the same block as *Ask AI about this plan*
+(`ui/AskAI.tsx`): the AI mark and a heading that says AI is being asked, one line on what AI will do
+and that nothing applies until the person acts on it, then one field and a secondary *Ask AI*
+button, above the screen's own content and never its primary action. The headings are *Ask AI
+about the audit log* (R-345), *Ask AI to draft a policy change* (R-344), *Ask AI to draft access*
+(R-343) and *Ask AI how to do something* (R-346). Every answer carries the AI mark and names the
+adapter and model that wrote it. The AI mark (`ui/AiStar.tsx`) is the one used everywhere AI is
+indicated and nowhere else, so a person can always tell a request to AI from an ordinary field. Each is
 shown only when its function is on, because a field that could only answer "not assigned" is noise;
 *API and tools* is the exception, shown to anyone signed in unless the function is known to be off,
 since reading the list of functions needs `install.view` and that screen does not. The result lands
