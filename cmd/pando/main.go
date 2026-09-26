@@ -522,9 +522,9 @@ func serve(ctx context.Context, configPath string) error {
 		Auditor:  auditor,
 		Policy:   hostPolicy,
 
-		Registry:     registry,
-		Adapters:     adapters,
-		AIFunctions:  aiFunctions,
+		Registry:    registry,
+		Adapters:    adapters,
+		AIFunctions: aiFunctions,
 		Assist: &assist.Service{
 			Registry: registry,
 			Users:    users,
