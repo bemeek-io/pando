@@ -119,6 +119,11 @@ func (a *Adapter) Observe(_ context.Context, h api.RouteHandle) (api.RouteState,
 	return api.RouteState{Present: true, Address: fmt.Sprintf("%s:%d", base, r.Port)}, nil
 }
 
+// Edge: none. Loopback is Pando's own listeners; nothing stands in front.
+func (a *Adapter) Edge(context.Context, api.EdgeRequest) (api.EdgePlan, bool, error) {
+	return api.EdgePlan{}, false, nil
+}
+
 var _ api.RoutingAdapter = (*Adapter)(nil)
 
 // Info describes this kind of adapter for the forms that configure one

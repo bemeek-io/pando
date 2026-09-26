@@ -330,3 +330,8 @@ func Info() api.KindInfo {
 		},
 	}
 }
+
+// Edge: replaced by the managed edge in this change.
+func (a *Adapter) Edge(context.Context, api.EdgeRequest) (api.EdgePlan, bool, error) {
+	return api.EdgePlan{}, false, nil
+}
