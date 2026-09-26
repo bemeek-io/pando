@@ -11,6 +11,7 @@ import {
   Banner,
   Button,
   EmptyState,
+  Icon,
   Input,
   Radio,
   Select,
@@ -18,6 +19,7 @@ import {
   StatusIndicator,
   Switch,
   Tag,
+  Tooltip,
 } from '@design';
 
 import { api } from '@api/client';
@@ -25,7 +27,7 @@ import { InstallVerb, useInstallVerb } from '../app/principal';
 import { AdapterDialog } from './AdapterDialog';
 import { useAIFunctionOn } from './AIFunctions';
 import { RestartButton } from './Restart';
-import { categoryLabel, orderCategories } from './adapters';
+import { categoryLabel, categoryNote, orderCategories } from './adapters';
 import type { AdapterKind } from './adapters';
 import type { ConfiguredAdapter } from './AdapterDialog';
 import { Quiet, Screen, messageOf } from './Accounts';
@@ -1443,7 +1445,23 @@ function GroupedAdapters({
                 borderBottom: 'var(--border-width) solid var(--rule)',
               }}
             >
-              {categoryLabel(row.category)}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+                {categoryLabel(row.category)}
+                {/* What this kind of adapter is for, on hover or focus, so the
+                    category names explain themselves without a paragraph each. */}
+                {categoryNote(row.category) && (
+                  <Tooltip content={categoryNote(row.category)} side="right">
+                    <span
+                      tabIndex={0}
+                      role="img"
+                      aria-label={`About ${categoryLabel(row.category)} adapters: ${categoryNote(row.category)}`}
+                      style={{ display: 'inline-flex', cursor: 'help' }}
+                    >
+                      <Icon name="info" size={14} />
+                    </span>
+                  </Tooltip>
+                )}
+              </span>
             </div>
           )}
           <div

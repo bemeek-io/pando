@@ -77,16 +77,16 @@ export function categoryLabel(category: string): string {
 const CATEGORY_ORDER = ['runtime', 'routing', 'builder', 'services', 'secrets', 'backup', 'scanner', 'ai', 'notify', 'identity'];
 
 const CATEGORY_NOTES: Record<string, string> = {
-  runtime: 'Where apps run.',
-  routing: 'How apps are reached: their addresses and the edge in front of them.',
-  builder: 'What turns source into an image.',
-  services: 'The databases and caches apps declare, provisioned for them.',
-  secrets: 'Where secret values are kept.',
-  backup: 'Where backups are written.',
-  scanner: 'What checks apps for known vulnerabilities.',
-  ai: 'An AI provider that performs the AI functions assigned to it: repairing plans, drafting access and policy, searching the audit log.',
-  notify: 'Where notifications go.',
-  identity: 'Where accounts come from.',
+  runtime: 'Where apps run: it starts, stops and watches the containers each app is made of.',
+  routing: 'How apps are reached: their addresses, and the edge that sends requests through Pando to them.',
+  builder: 'What turns an app\u2019s source into an image Pando can run.',
+  services: 'The databases and caches apps declare, such as PostgreSQL or Redis, provisioned beside each app.',
+  secrets: 'Where secret values are kept, encrypted. Pando stores what this hands back, never the plain value.',
+  backup: 'Where backups of Pando and of each app\u2019s storage are written.',
+  scanner: 'What checks apps for known vulnerabilities, for the security score.',
+  ai: 'An AI provider, such as Anthropic. It performs the AI functions chosen on it: repairing plans, drafting access and policy, searching the audit log, answering from the reference.',
+  notify: 'Where notifications go, such as the console itself.',
+  identity: 'Where accounts come from and how people sign in.',
 };
 
 /** One line on what a category of adapter is for. */
