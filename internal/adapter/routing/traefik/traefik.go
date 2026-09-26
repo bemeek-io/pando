@@ -423,7 +423,7 @@ func Info() api.KindInfo {
 			{Key: "acme_email", Label: "Certificate email", Type: "string", Help: "The address Let's Encrypt registers the certificates to.", Placeholder: "ops@example.com",
 				ShownWhen: &api.Condition{Key: "certificates", Values: []string{CertsHTTP, CertsDNS}}},
 			{Key: "dns_provider", Label: "DNS provider", Type: "select", Other: true, Options: providerOptions(),
-				Help: "Who hosts the base domain's DNS. Choose Other for any provider Traefik supports, and enter its code, such as gcloud or ovh.",
+				Help:      "Who hosts the base domain's DNS. Choose Other for any provider Traefik supports, and enter its code, such as gcloud or ovh.",
 				ShownWhen: &api.Condition{Key: "certificates", Values: []string{CertsDNS}}},
 			{Key: "dns_credentials", Label: "DNS provider credentials", Type: "string", Credential: true, Multiline: true, Help: credentialsHelp(),
 				ShownWhen: &api.Condition{Key: "certificates", Values: []string{CertsDNS}}},
