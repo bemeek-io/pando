@@ -40,9 +40,13 @@ type RoleInfo struct {
 // PersonInfo is an account, so "Ben Meeker" can be resolved to an ID. No
 // credential and nothing else about the account is included.
 type PersonInfo struct {
-	ID    string `json:"id"`
-	Name  string `json:"name,omitempty"`
-	Email string `json:"email,omitempty"`
+	ID string `json:"id"`
+
+	// Username is what the person signs in with, and often the only name an
+	// account has: "admin" in a question is this, not a display name.
+	Username string `json:"username,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Email    string `json:"email,omitempty"`
 }
 
 // GroupInfo is an existing group.

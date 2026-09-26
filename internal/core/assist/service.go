@@ -543,7 +543,7 @@ func (s *Service) SearchAudit(ctx context.Context, question string) (AuditResult
 		ran.Model = search.Model
 	}
 
-	f, err := cleanFilter(search.Filter)
+	f, err := cleanFilter(search.Filter, people)
 	if err != nil {
 		return AuditResult{}, err
 	}
@@ -587,11 +587,16 @@ func (s *Service) SearchAudit(ctx context.Context, question string) (AuditResult
 }
 
 // cleanFilter trims a filter and refuses one that would not read as a query.
-func cleanFilter(f api.AuditFilter) (api.AuditFilter, error) {
+//
+// A person named by username, email or name rather than ID is resolved to
+// their ID here, so "admin" finds admin's events whether or not the model
+// looked the ID up: the log is keyed by ID, and a filter on a name matches
+// nothing without saying why.
+func cleanFilter(f api.AuditFilter, people []api.PersonInfo) (api.AuditFilter, error) {
 	out := api.AuditFilter{
-		AppID: strings.TrimSpace(f.AppID), PrincipalID: strings.TrimSpace(f.PrincipalID),
+		AppID: strings.TrimSpace(f.AppID), PrincipalID: resolvePerson(f.PrincipalID, people),
 		PrincipalKind: strings.TrimSpace(f.PrincipalKind), TargetKind: strings.TrimSpace(f.TargetKind),
-		TargetID: strings.TrimSpace(f.TargetID), Involving: strings.TrimSpace(f.Involving),
+		TargetID: strings.TrimSpace(f.TargetID), Involving: resolvePerson(f.Involving, people),
 		Since: f.Since, Until: f.Until,
 	}
 	for _, a := range f.Actions {
@@ -610,6 +615,28 @@ func cleanFilter(f api.AuditFilter) (api.AuditFilter, error) {
 			WithRemedy("Ask again with the dates spelled out, or set the filters on the audit log yourself.")
 	}
 	return out, nil
+}
+
+// resolvePerson returns the ID of the person v names, or v as it is when it
+// is already an ID or names nobody.
+func resolvePerson(v string, people []api.PersonInfo) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return v
+	}
+	for _, p := range people {
+		if p.ID == v {
+			return v
+		}
+	}
+	for _, p := range people {
+		for _, name := range []string{p.Username, p.Email, p.Name} {
+			if name != "" && strings.EqualFold(name, v) {
+				return p.ID
+			}
+		}
+	}
+	return v
 }
 
 // ---------------------------------------------------------------------------
@@ -668,7 +695,7 @@ func (s *Service) people(ctx context.Context) ([]api.PersonInfo, error) {
 	}
 	out := make([]api.PersonInfo, 0, len(users))
 	for _, u := range users {
-		out = append(out, api.PersonInfo{ID: u.ID, Name: u.DisplayName, Email: u.Email})
+		out = append(out, api.PersonInfo{ID: u.ID, Username: u.ExternalID, Name: u.DisplayName, Email: u.Email})
 	}
 	return out, nil
 }

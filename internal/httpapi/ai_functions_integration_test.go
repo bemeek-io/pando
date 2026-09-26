@@ -296,6 +296,34 @@ func TestR345_AuditSearchRunsTheFilterInCore(t *testing.T) {
 		i.do(someone, http.MethodPost, "/ai/audit/search", map[string]any{"question": "x"}).Code)
 }
 
+// TestR345_AuditSearchResolvesAUsernameToTheAccount asserts R-345: the model
+// is given each account's username, and a filter naming someone by username
+// is resolved to their ID by core, so "admin" filters on admin's events.
+func TestR345_AuditSearchResolvesAUsernameToTheAccount(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+	ai := withAI(t, i, "ai_anthropic", everything("anthropic"))
+	assignAll(t, i, admin, "ai_anthropic")
+	i.createApp(admin, "notes")
+
+	ai.search = adapterapi.AuditSearch{Filter: adapterapi.AuditFilter{Actions: []string{"app.create"}, PrincipalID: "admin"}}
+	got := i.do(admin, http.MethodPost, "/ai/audit/search", map[string]any{"question": "apps admin created"})
+	require.Equal(t, http.StatusOK, got.Code, got.String())
+	var out struct {
+		Filter  adapterapi.AuditFilter `json:"filter"`
+		Matched int                    `json:"matched"`
+	}
+	got.JSON(t, &out)
+	require.Equal(t, i.AdminID, out.Filter.PrincipalID)
+	require.Equal(t, 1, out.Matched)
+
+	var usernames []string
+	for _, p := range ai.gotSearch.People {
+		usernames = append(usernames, p.Username)
+	}
+	require.Contains(t, usernames, "admin", "the model can match a username")
+}
+
 // TestR346_ReferenceAnswersCiteOnlyTheReference asserts R-346: the answer
 // comes from the generated reference, and a citation that is not in it is
 // dropped.

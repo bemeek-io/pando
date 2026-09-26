@@ -5,7 +5,7 @@
 // happens in a dialog that button opens. The screen underneath stays the
 // screen, and nothing AI proposes reaches it until a person accepts it.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Dialog, Input } from '@design';
 
 import { refusal } from '../install/Accounts';
@@ -66,11 +66,27 @@ export function AIPrompt({
   onAsk: (text: string) => void;
 }) {
   const [text, setText] = useState('');
+  // The question stays in the field, locked, while AI works on it, so the
+  // person can see what they asked; it clears once an answer arrives, and
+  // stays when the asking failed so it can be sent again.
+  //
+  // Cleared on the request finishing, which is pending seen and then gone —
+  // not on pending being false, which it still is in the render right after
+  // sending, before the request has registered.
+  const asking = useRef(false);
+  useEffect(() => {
+    if (pending) {
+      asking.current = true;
+      return;
+    }
+    if (!asking.current) return;
+    asking.current = false;
+    if (error == null) setText('');
+  }, [pending, error]);
   const ask = () => {
     const t = text.trim();
     if (!t || pending) return;
     onAsk(t);
-    setText('');
   };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
@@ -86,6 +102,7 @@ export function AIPrompt({
           placeholder={placeholder}
           value={text}
           autoFocus
+          disabled={pending}
           onChange={(e) => setText(e.target.value)}
           style={{ flex: '1 1 20rem' }}
         />

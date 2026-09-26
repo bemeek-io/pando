@@ -130,7 +130,8 @@ func (a *Adapter) DraftPolicy(ctx context.Context, req api.PolicyRequest) (api.P
 // SearchAudit turns a question into one audit filter (R-345).
 func (a *Adapter) SearchAudit(ctx context.Context, req api.AuditSearchRequest) (api.AuditSearch, error) {
 	system := "You turn a question about Pando's audit log into one filter. Resolve people to account " +
-		"IDs and apps to app IDs from the lists given; resolve relative times against the current time " +
+		"IDs by username, name or email, and apps to app IDs, from the lists given; when the question " +
+		"names who did something, set principal_id to that account's ID; resolve relative times against the current time " +
 		"given, in UTC, and write times in RFC 3339. Actions are names or prefixes from the list given; " +
 		"any of several matches. Leave a field out rather than guess it. Pando records a successful use " +
 		"of an app nowhere: it records sign-ins (session.create) and refused uses (app.use.denied). " +
