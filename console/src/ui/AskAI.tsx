@@ -1,32 +1,64 @@
-// Asking AI to do something, marked as that (R-343 … R-346).
+// Asking AI to do something (R-343 … R-346).
 //
-// The same shape as "Ask AI about this plan" on the plan page: the AI mark and
-// a heading that says AI is being asked, one line on what it will do and that
-// nothing happens until you act on it, then the field and an Ask AI button.
-// Secondary, never the screen's primary action: every screen this sits on
-// already has one, and asking AI is never the main thing a screen does.
+// Out of the way until wanted: a screen shows one button with the AI mark, and
+// everything else — the request, the preview, refining it, accepting it —
+// happens in a dialog that button opens. The screen underneath stays the
+// screen, and nothing AI proposes reaches it until a person accepts it.
 
 import { useState } from 'react';
-import { Button, Input } from '@design';
+import { Button, Dialog, Input } from '@design';
 
 import { refusal } from '../install/Accounts';
 import { AiStar } from './AiStar';
 import { BesideField } from './BesideField';
 
-export function AskAI({
-  heading,
-  explanation,
+/** The one way into an AI function on a screen: the AI mark and "Ask AI". */
+export function AIButton({ onClick, label = 'Ask AI' }: { onClick: () => void; label?: string }) {
+  return (
+    <Button variant="secondary" icon={<AiStar size={16} />} onClick={onClick}>
+      {label}
+    </Button>
+  );
+}
+
+/** A dialog for one AI function: the mark and what AI will do, then the
+ *  caller's request field, preview and actions. */
+export function AIDialog({
+  title,
+  intro,
+  footer,
+  onClose,
+  children,
+}: {
+  title: string;
+  /** What AI will do here, and that nothing applies until you accept it. */
+  intro: string;
+  footer: React.ReactNode;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Dialog open title={title} width={640} onClose={onClose} footer={footer}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start' }}>
+          <AiStar size={18} />
+          <span style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)' }}>{intro}</span>
+        </div>
+        {children}
+      </div>
+    </Dialog>
+  );
+}
+
+/** The request: one field and Ask AI beside it. Clears once asked, so a
+ *  follow-up starts empty. */
+export function AIPrompt({
   label,
   placeholder,
   pending,
   error,
   onAsk,
 }: {
-  /** "Ask AI to …", so there is no doubt who is being asked. */
-  heading: string;
-  /** What AI will do with it, and what it will not. */
-  explanation: string;
-  /** The field's own label. */
   label: string;
   placeholder?: string;
   pending: boolean;
@@ -35,18 +67,13 @@ export function AskAI({
 }) {
   const [text, setText] = useState('');
   const ask = () => {
-    if (text.trim() && !pending) onAsk(text.trim());
+    const t = text.trim();
+    if (!t || pending) return;
+    onAsk(t);
+    setText('');
   };
-
   return (
-    <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-          <AiStar size={18} />
-          <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>{heading}</h4>
-        </div>
-        <span style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)' }}>{explanation}</span>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -58,11 +85,12 @@ export function AskAI({
           label={label}
           placeholder={placeholder}
           value={text}
+          autoFocus
           onChange={(e) => setText(e.target.value)}
-          style={{ flex: '1 1 24rem' }}
+          style={{ flex: '1 1 20rem' }}
         />
         <BesideField>
-          <Button type="submit" disabled={!text.trim() || pending}>
+          <Button type="submit" icon={<AiStar size={14} />} disabled={!text.trim() || pending}>
             {pending ? 'Asking' : 'Ask AI'}
           </Button>
         </BesideField>
@@ -70,12 +98,12 @@ export function AskAI({
       {error != null && (
         <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>{refusal(error)}</p>
       )}
-    </section>
+    </div>
   );
 }
 
-/** Which adapter and model answered, said once under the answer, with the AI
- *  mark so the answer is never mistaken for Pando's own. */
+/** Which adapter and model wrote something, with the AI mark, so an answer is
+ *  never mistaken for Pando's own. */
 export function AnsweredBy({ adapter, model }: { adapter?: string; model?: string }) {
   if (!adapter) return null;
   return (
@@ -96,4 +124,9 @@ export function AnsweredBy({ adapter, model }: { adapter?: string; model?: strin
       </span>
     </p>
   );
+}
+
+/** A heading inside an AI dialog. */
+export function AIHeading({ children }: { children: React.ReactNode }) {
+  return <h5 style={{ font: 'var(--type-label)', margin: 0 }}>{children}</h5>;
 }

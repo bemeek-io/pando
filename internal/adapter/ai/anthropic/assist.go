@@ -42,6 +42,11 @@ func (a *Adapter) DraftAccess(ctx context.Context, req api.AccessRequest) (api.A
 		"\n\n## Existing roles\n\n" + jsonBlock(req.Roles) +
 		"\n\n## Existing groups\n\n" + jsonBlock(req.Groups) +
 		"\n\n## Accounts\n\n" + jsonBlock(req.People)
+	if req.Current != nil {
+		user = "## The draft so far\n\nA person is refining this draft; some of it they may have changed by hand. " +
+			"The description below is the change they want. Submit the whole draft again with that change made, " +
+			"and keep everything else as it is.\n\n" + jsonBlock(req.Current) + "\n\n" + user
+	}
 
 	verbs := make([]string, 0, len(req.Verbs))
 	for _, v := range req.Verbs {
@@ -96,6 +101,11 @@ func (a *Adapter) DraftPolicy(ctx context.Context, req api.PolicyRequest) (api.P
 		"\n\n## Current policy\n\n```json\n" + string(req.Current) + "\n```" +
 		"\n\n## Fields\n\n" + jsonBlock(req.Fields) +
 		"\n\n## Verbs, for disabled_verbs\n\n" + jsonBlock(req.Verbs)
+	if len(req.Draft) > 0 {
+		user += "\n\n## The draft so far\n\nA person is refining a proposal. This is the policy with the " +
+			"changes they have kept so far. The description is the change they want now: propose changes " +
+			"relative to this draft, and only for what the description asks.\n\n```json\n" + string(req.Draft) + "\n```"
+	}
 
 	schema := map[string]any{
 		"changes": map[string]any{

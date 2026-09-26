@@ -98,24 +98,32 @@ without a restart; the adapter's own settings are saved, and need a restart, onl
 changed. A new AI adapter is not running until Pando restarts, so its dialog says to open it again
 then to choose what it handles. An AI adapter has no default checkbox.
 
-**[D] Asking AI on an admin screen.** Four screens carry the same block as *Ask AI about this plan*
-(`ui/AskAI.tsx`): the AI mark and a heading that says AI is being asked, one line on what AI will do
-and that nothing applies until the person acts on it, then one field and a secondary *Ask AI*
-button, above the screen's own content and never its primary action. The headings are *Ask AI
-about the audit log* (R-345), *Ask AI to draft a policy change* (R-344), *Ask AI to draft access*
-(R-343) and *Ask AI how to do something* (R-346). Every answer carries the AI mark and names the
-adapter and model that wrote it. The AI mark (`ui/AiStar.tsx`) is the one used everywhere AI is
-indicated and nowhere else, so a person can always tell a request to AI from an ordinary field. Each is
-shown only when its function is on, because a field that could only answer "not assigned" is noise;
-*API and tools* is the exception, shown to anyone signed in unless the function is known to be off,
-since reading the list of functions needs `install.view` and that screen does not. The result lands
-in the screen's own form, so it is checked and applied the ordinary way: the audit search's filter
-fills the audit log's filter fields and the table below is the ordinary table; a policy proposal
-becomes the unsaved policy draft, saved only with *Save policy*, with declined fields listed and where
-each is set; an access draft is shown as a role with its verbs and a group with its size, and
-*Create* makes them through the same endpoints *Add role* and *Add group* use. Under each result one
-caption names the adapter and model and says to check it. Policy's field is offered only to someone
-who can edit policy.
+**[D] Asking AI on an admin screen.** Out of the way until wanted. Four screens carry one
+secondary button with the AI mark, *Ask AI*, in the screen's header — never its primary action, and
+shown only when that screen's function is on (*API and tools* shows it unless reference help is
+known to be off, since most people cannot read which functions are on). Everything else happens in a
+dialog the button opens (`ui/AskAI.tsx`): the mark and one line on what AI will do, a field with an
+*Ask AI* button, and the result.
+
+- *Groups and roles* (R-343): a preview of the drafted role — its name, what it applies to, and a
+  checkbox per permission of that scope — and group, with its members. Change it by hand, or say what
+  to change, which re-drafts from what is on screen, hand edits included (`current` in the request).
+  *Accept* creates it through `POST /roles`, `POST /groups` and, for an installation role,
+  `PUT /groups/{id}/role`; *Reject* discards it.
+- *Policy* (R-344): each proposed change with a checkbox to keep it, what it was and what it would be,
+  the changes declined because the startup configuration fixes them, with where, and which apps the
+  kept changes would refuse at their next deploy (`POST /policy/preview`, asked as soon as there is a
+  proposal). Asking again refines from what is kept (`proposed` in the request). *Accept* saves the
+  policy; *Reject* discards the proposal. The button is hidden while the screen has unsaved edits of
+  its own, so the two never race.
+- *Audit log* (R-345): the summary, AI's note on what the log cannot answer, and how many events
+  matched. A search creates nothing, so there is no Accept: *Show these events* puts the filters on
+  the log as ordinary filters and closes the dialog.
+- *API and tools* (R-346): the answer and what it cites. *Close*.
+
+Every answer carries the AI mark and names the adapter and model that wrote it. The AI mark
+(`ui/AiStar.tsx`) is the one used everywhere AI is indicated and nowhere else, so a person can always
+tell a request to AI from an ordinary control.
 
 **[D] Phone width.** At 48em and below (`ui/narrow.css`, `ui/narrow.ts`): the page padding token
 drops to `--space-4`; headings and their actions wrap; the admin sidebar becomes a menu behind a

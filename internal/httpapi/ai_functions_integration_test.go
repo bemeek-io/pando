@@ -185,6 +185,63 @@ func TestR344_PolicyDraftRefusesWhatWouldNotReadAndSavesNothing(t *testing.T) {
 		i.do(someone, http.MethodPost, "/ai/policy/draft", map[string]any{"description": "x"}).Code)
 }
 
+// TestR344_RefiningAProposalKeepsWhatWasKept asserts R-344: asked again with
+// the proposal so far, the model changes that draft, and the changes reported
+// are every difference from the stored policy — what was kept earlier stays.
+func TestR344_RefiningAProposalKeepsWhatWasKept(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+	ai := withAI(t, i, "ai_anthropic", everything("anthropic"))
+	assignAll(t, i, admin, "ai_anthropic")
+
+	ai.policy = adapterapi.PolicyDraft{Changes: map[string]json.RawMessage{"public_sharing": json.RawMessage(`"none"`)}}
+
+	// The draft so far is the whole document, as the console sends it back:
+	// the stored policy with one change kept from an earlier proposal.
+	var proposed corepolicy.Document
+	i.do(admin, http.MethodGet, "/policy", nil).JSON(t, &proposed)
+	no := false
+	proposed.AllowAnonymousGrants = &no
+	got := i.do(admin, http.MethodPost, "/ai/policy/draft", map[string]any{
+		"description": "and no public sharing at all",
+		"proposed":    proposed,
+	})
+	require.Equal(t, http.StatusOK, got.Code, got.String())
+	var draft struct {
+		Changes []struct {
+			Key string `json:"key"`
+		} `json:"changes"`
+	}
+	got.JSON(t, &draft)
+	var keys []string
+	for _, c := range draft.Changes {
+		keys = append(keys, c.Key)
+	}
+	require.ElementsMatch(t, []string{"allow_anonymous_grants", "public_sharing"}, keys)
+	require.Contains(t, string(ai.gotPolicy.Draft), `"allow_anonymous_grants":false`, "the model saw the draft so far")
+}
+
+// TestR343_RefiningAnAccessDraftSendsTheDraftSoFar asserts R-343: a person's
+// hand edits reach the model with the change they asked for, and the answer
+// is checked like any other draft.
+func TestR343_RefiningAnAccessDraftSendsTheDraftSoFar(t *testing.T) {
+	i := newInstall(t)
+	admin := i.admin()
+	ai := withAI(t, i, "ai_anthropic", everything("anthropic"))
+	assignAll(t, i, admin, "ai_anthropic")
+
+	ai.access = adapterapi.AccessDraft{Role: &adapterapi.RoleDraft{Name: "Shippers", Scope: "app",
+		Verbs: []string{"app.deploy", "app.logs.read"}}}
+	got := i.do(admin, http.MethodPost, "/ai/access/draft", map[string]any{
+		"description": "they should read logs too",
+		"current":     map[string]any{"role": map[string]any{"name": "Shippers", "scope": "app", "verbs": []string{"app.deploy"}}},
+	})
+	require.Equal(t, http.StatusOK, got.Code, got.String())
+	require.NotNil(t, ai.gotAccess.Current)
+	require.Equal(t, []string{"app.deploy"}, ai.gotAccess.Current.Role.Verbs)
+	require.Contains(t, got.String(), "app.logs.read")
+}
+
 // TestR345_AuditSearchRunsTheFilterInCore asserts R-345 and R-027: the
 // adapter returns a filter, core runs it with the caller's authority, and
 // the summary is written from the records core found.

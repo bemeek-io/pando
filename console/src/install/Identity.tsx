@@ -17,7 +17,8 @@ import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
 import { Table } from '../ui/Table';
 import { LineSkeleton, Loading } from '../ui/Loading';
-import { AnsweredBy, AskAI } from '../ui/AskAI';
+import { AIButton } from '../ui/AskAI';
+import { AccessAI } from './AccessAI';
 import { useAIFunctionOn } from './AIFunctions';
 
 interface Group {
@@ -53,11 +54,21 @@ export function Identity({ canEdit }: { canEdit: boolean }) {
   // One search for both lists: they are one screen, and someone looking for
   // "engineering" should not have to know first whether it is a group or a role.
   const [query, setQuery] = useState('');
+  // Drafting with AI (R-343), behind one button: shown to whoever can create
+  // groups and roles, and only when access drafting is assigned to an adapter.
+  const draftOn = useAIFunctionOn('draft_access');
+  const [drafting, setDrafting] = useState(false);
   return (
     <Screen
       heading="Groups and roles"
-      action={<SearchField value={query} onChange={setQuery} placeholder="Search groups and roles" />}
+      action={
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3)' }}>
+          {canEdit && draftOn && <AIButton onClick={() => setDrafting(true)} />}
+          <SearchField value={query} onChange={setQuery} placeholder="Search groups and roles" />
+        </div>
+      }
     >
+      {drafting && <AccessAI onClose={() => setDrafting(false)} />}
       <div
         style={{
           display: 'flex',
@@ -65,116 +76,10 @@ export function Identity({ canEdit }: { canEdit: boolean }) {
           gap: 'var(--space-7)',
         }}
       >
-        {canEdit && <DraftAccess />}
         <Groups canEdit={canEdit} query={query} />
         <Roles canEdit={canEdit} query={query} />
       </div>
     </Screen>
-  );
-}
-
-// --- drafting with AI -------------------------------------------------------
-
-/** What POST /ai/access/draft answers (R-343). */
-interface AccessDraft {
-  role?: { name: string; scope: string; verbs: string[] };
-  group?: { name: string; members?: string[] };
-  reply: string;
-  refused?: string[];
-  adapter_id?: string;
-  model?: string;
-}
-
-/**
- * A role and a group from a sentence (R-343). The AI drafts; Create makes them
- * through the same endpoints Add group and Add role use, under your own
- * authority, so nothing is created that you could not have created yourself.
- * Shown only when access drafting is assigned to an adapter.
- */
-function DraftAccess() {
-  const queries = useQueryClient();
-  const on = useAIFunctionOn('draft_access');
-  const [created, setCreated] = useState<string | null>(null);
-
-  const draft = useMutation({
-    mutationFn: (description: string) => api.post<AccessDraft>('/ai/access/draft', { description }),
-    onSuccess: () => setCreated(null),
-  });
-  const create = useMutation({
-    mutationFn: async (d: AccessDraft) => {
-      const made: string[] = [];
-      let roleID = '';
-      if (d.role) {
-        const role = await api.post<{ id: string }>('/roles', d.role);
-        roleID = role.id;
-        made.push(`the role ${d.role.name}`);
-      }
-      if (d.group) {
-        const group = await api.post<{ id: string }>('/groups', { name: d.group.name, members: d.group.members ?? [] });
-        made.push(`the group ${d.group.name}`);
-        // An installation role is held by a group directly (R-080). An app
-        // role is granted on each app, which is that app's decision.
-        if (roleID && d.role?.scope === 'install') {
-          await api.put(`/groups/${group.id}/role`, { role_id: roleID });
-        }
-      }
-      return made;
-    },
-    onSuccess: (made) => {
-      setCreated(`Created ${made.join(' and ')}.`);
-      draft.reset();
-      void queries.invalidateQueries({ queryKey: ['groups'] });
-      void queries.invalidateQueries({ queryKey: ['roles'] });
-    },
-  });
-
-  if (!on) return null;
-  const d = draft.data;
-  return (
-    <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxWidth: '68ch' }}>
-      <AskAI
-        heading="Ask AI to draft access"
-        explanation="Describe who should be able to do what. AI drafts a role and a group from Pando's permissions; nothing is created until you choose Create."
-        label="Who should be able to do what"
-        placeholder="Release managers can deploy and restart any app"
-        pending={draft.isPending}
-        error={draft.error}
-        onAsk={(text) => draft.mutate(text)}
-      />
-      {created && <Quiet>{created}</Quiet>}
-      {d && (
-        <>
-          {d.reply && <p style={{ font: 'var(--type-body-ui)', margin: 0 }}>{d.reply}</p>}
-          {d.role && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', alignItems: 'center' }}>
-              <span style={{ font: 'var(--type-label)' }}>
-                Role: {d.role.name} ({d.role.scope === 'install' ? 'installation' : 'app'})
-              </span>
-              {d.role.verbs.map((v) => (
-                <Tag key={v}>{v}</Tag>
-              ))}
-            </div>
-          )}
-          {d.group && (
-            <span style={{ font: 'var(--type-label)' }}>
-              Group: {d.group.name}, {(d.group.members?.length ?? 0) === 1 ? '1 person' : `${d.group.members?.length ?? 0} people`}
-            </span>
-          )}
-          {(d.refused ?? []).map((r) => (
-            <Quiet key={r}>{r}</Quiet>
-          ))}
-          <AnsweredBy adapter={d.adapter_id} model={d.model} />
-          {(d.role || d.group) && (
-            <div>
-              <Button variant="secondary" disabled={create.isPending} onClick={() => create.mutate(d)}>
-                Create
-              </Button>
-            </div>
-          )}
-          {create.isError && <Quiet>{refusal(create.error)}</Quiet>}
-        </>
-      )}
-    </section>
   );
 }
 

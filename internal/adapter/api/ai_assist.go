@@ -69,6 +69,11 @@ type AccessRequest struct {
 	Groups []GroupInfo
 	People []PersonInfo
 
+	// Current is the draft so far, when a person is refining one: what an
+	// earlier call drafted, with whatever they changed by hand. Description is
+	// then the change they asked for, and the answer is the whole draft again.
+	Current *AccessDraft
+
 	Model string
 }
 
@@ -117,6 +122,11 @@ type PolicyRequest struct {
 	Current json.RawMessage
 	Fields  []PolicyField
 	Verbs   []VerbInfo
+
+	// Draft is the document so far, when a person is refining a proposal:
+	// Current with the changes already proposed and kept. Description is then
+	// the change they asked for, and Changes are relative to Draft.
+	Draft json.RawMessage
 
 	Model string
 }

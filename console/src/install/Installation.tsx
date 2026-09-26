@@ -39,8 +39,10 @@ import { FieldSkeleton, LineSkeleton } from '../ui/Loading';
 import { ActorField } from './ActorField';
 import type { Person } from './ActorField';
 import { NO_FILTERS, WHEN, auditQuery, filtersFromSearch } from './audit';
-import type { AuditFilters, SearchFilter } from './audit';
-import { AnsweredBy, AskAI } from '../ui/AskAI';
+import type { AuditFilters } from './audit';
+import { AIButton } from '../ui/AskAI';
+import { AuditAI } from './AuditAI';
+import { PolicyAI } from './PolicyAI';
 
 /** Where the config file declares an adapter, in words. */
 function declaredAt(row: AdapterRow): string {
@@ -236,45 +238,6 @@ interface PolicyDoc {
   disable_ai_screening?: boolean;
 }
 
-/** What POST /ai/policy/draft answers (R-344). */
-interface PolicyProposal {
-  proposed: PolicyDoc;
-  changes: { key: string; from: unknown; to: unknown }[];
-  declined?: { key: string; reason: string }[];
-  refused?: string[];
-  reply: string;
-  adapter_id?: string;
-  model?: string;
-}
-
-/** The AI's proposal in words: what it changed, and what it would not. */
-function ProposalSummary({ proposal }: { proposal: PolicyProposal }) {
-  const show = (v: unknown) => (v === null || v === undefined ? 'unset' : JSON.stringify(v));
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-      {proposal.reply && <p style={{ font: 'var(--type-body-ui)', margin: 0 }}>{proposal.reply}</p>}
-      {proposal.changes.length === 0 ? (
-        <Quiet>Nothing to change. The policy is as it was.</Quiet>
-      ) : (
-        <ul style={{ margin: 0, paddingLeft: 'var(--space-5)', font: 'var(--type-body-ui)' }}>
-          {proposal.changes.map((c) => (
-            <li key={c.key}>
-              <code style={{ font: 'var(--type-code-sm)' }}>{c.key}</code>: {show(c.from)} to {show(c.to)}
-            </li>
-          ))}
-        </ul>
-      )}
-      {[...(proposal.declined ?? []).map((d) => d.reason), ...(proposal.refused ?? [])].map((reason) => (
-        <Quiet key={reason}>{reason}</Quiet>
-      ))}
-      {proposal.changes.length > 0 && (
-        <Quiet>The changes are in the form below and are not saved. Check them, then save.</Quiet>
-      )}
-      <AnsweredBy adapter={proposal.adapter_id} model={proposal.model} />
-    </div>
-  );
-}
-
 interface Violation {
   app_id: string;
   app_name: string;
@@ -325,19 +288,10 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
 
   const current = draft ?? policy.data ?? {};
 
-  // A change described in a sentence (R-344). The proposal becomes the unsaved
-  // draft this screen already has, so it is checked and saved the same way as
-  // one made by hand, and nothing is saved until someone presses Save policy.
-  // Fields the startup config fixes come back declined, with where they are
-  // set — core refuses them whatever the model said.
+  // Drafting a change with AI (R-344), behind one button and in its own
+  // dialog, which saves only when accepted.
   const draftOn = useAIFunctionOn('draft_policy');
-  const proposal = useMutation({
-    mutationFn: (description: string) => api.post<PolicyProposal>('/ai/policy/draft', { description }),
-    onSuccess: (p) => {
-      setPreview(null);
-      if (p.changes.length > 0) setDraft(p.proposed);
-    },
-  });
+  const [drafting, setDrafting] = useState(false);
 
   // Fields fixed in the startup configuration (R-271): shown, not editable,
   // and each says where it is set. GET /config is install.view, the same as
@@ -423,6 +377,7 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
             </Button>
           </div>
         )}
+          {canEdit && draftOn && !draft && <AIButton onClick={() => setDrafting(true)} />}
           <SearchField value={query} onChange={setQuery} placeholder="Search policy" />
         </div>
       }
@@ -430,25 +385,12 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
       {/* O-10, stated where the decision is made rather than in a tooltip.
           Saying it plainly is the difference between an administrator who
           knows why nothing happened and one who thinks the save failed. */}
+      {drafting && <PolicyAI onClose={() => setDrafting(false)} />}
+
       <Banner tone="info">
         Saving policy doesn&rsquo;t change apps that are already running. A running app that
         breaks a new rule keeps running, and its next deploy is refused with the reason.
       </Banner>
-
-      {canEdit && draftOn && (
-        <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxWidth: '68ch' }}>
-          <AskAI
-            heading="Ask AI to draft a policy change"
-            explanation="Describe the rule you want. AI fills in the form below; nothing is saved until you save it."
-            label="The rule you want"
-            placeholder="Nobody may open a shell in an app"
-            pending={proposal.isPending}
-            error={proposal.error}
-            onAsk={(d) => proposal.mutate(d)}
-          />
-          {proposal.data && <ProposalSummary proposal={proposal.data} />}
-        </div>
-      )}
 
       {save.isError && (
         <div style={{ marginTop: 'var(--space-4)' }}>
@@ -1086,16 +1028,6 @@ export function usePeople() {
   return users.data?.users ?? [];
 }
 
-/** What POST /ai/audit/search answers (R-345). */
-interface AuditSearch {
-  filter: SearchFilter;
-  summary: string;
-  note?: string;
-  matched: number;
-  adapter_id?: string;
-  model?: string;
-}
-
 export function Audit({
   initial = NO_FILTERS,
   onFilters,
@@ -1118,14 +1050,11 @@ export function Audit({
   const { log, events } = useAuditLog(filters);
   const people = usePeople();
 
-  // A question turned into filters (R-345). What the AI searched for lands in
-  // the fields below, where it can be read and changed; the table is the same
-  // table, read with those filters, so nothing here depends on the AI's word.
+  // Asking a question with AI (R-345), behind one button. Its answer becomes
+  // the filters below, where it can be read and changed; the table is the
+  // same table, so nothing shown depends on the AI's word.
   const searchOn = useAIFunctionOn('search_audit');
-  const search = useMutation({
-    mutationFn: (question: string) => api.post<AuditSearch>('/ai/audit/search', { question }),
-    onSuccess: (found) => change(filtersFromSearch(found.filter)),
-  });
+  const [asking, setAsking] = useState(false);
 
   const custom = filters.when === 'custom';
   const range = (
@@ -1140,27 +1069,8 @@ export function Audit({
   );
 
   return (
-    <Screen heading="Audit log">
-      {searchOn && (
-      <div style={{ marginBottom: 'var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-        <AskAI
-          heading="Ask AI about the audit log"
-          explanation="Ask a question. AI sets the filters below to answer it and summarizes what they find; the events shown are the audit log's own."
-          label="Question"
-          placeholder="Which apps did Dana create or delete last month?"
-          pending={search.isPending}
-          error={search.error}
-          onAsk={(q) => search.mutate(q)}
-        />
-        {search.data && (
-          <>
-            <p style={{ font: 'var(--type-body-ui)', margin: 0 }}>{search.data.summary}</p>
-            {search.data.note && <Quiet>{search.data.note}</Quiet>}
-            <AnsweredBy adapter={search.data.adapter_id} model={search.data.model} />
-          </>
-        )}
-      </div>
-      )}
+    <Screen heading="Audit log" action={searchOn && <AIButton onClick={() => setAsking(true)} />}>
+      {asking && <AuditAI onClose={() => setAsking(false)} onShow={(f) => change(filtersFromSearch(f))} />}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
         <FilterRow>

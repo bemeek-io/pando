@@ -167,7 +167,7 @@ type AccessResult struct {
 // verb, which POST /roles lets them put in an app role, and only the install
 // verbs they hold themselves. A draft is refused any verb outside it, a mix of
 // scopes (R-080), and the name of a role that exists, built-in or not (R-082).
-func (s *Service) DraftAccess(ctx context.Context, p authz.Principal, description string) (AccessResult, error) {
+func (s *Service) DraftAccess(ctx context.Context, p authz.Principal, description string, current *api.AccessDraft) (AccessResult, error) {
 	description, err := ask("who should be able to do what", description)
 	if err != nil {
 		return AccessResult{}, err
@@ -232,7 +232,8 @@ func (s *Service) DraftAccess(ctx context.Context, p authz.Principal, descriptio
 	}
 	defer cancel()
 	draft, err := ai.DraftAccess(callCtx, api.AccessRequest{
-		Description: description, Verbs: verbs, Roles: roles, Groups: groups, People: people, Model: model,
+		Description: description, Verbs: verbs, Roles: roles, Groups: groups, People: people,
+		Current: current, Model: model,
 	})
 	if err != nil {
 		return AccessResult{}, failed(api.AIFunctionDraftAccess, err)
@@ -346,7 +347,12 @@ type PolicyResult struct {
 // A field the startup configuration fixes is declined here, citing where it
 // was set, whatever the adapter returned: the refusal does not depend on the
 // model's cooperation.
-func (s *Service) DraftPolicy(ctx context.Context, description string) (PolicyResult, error) {
+//
+// proposed, when set, is the document so far while a person refines a
+// proposal. The model changes it, and the changes reported are relative to
+// the stored policy, so what the person kept earlier is still listed. Fields
+// the startup configuration fixes are put back whatever proposed says.
+func (s *Service) DraftPolicy(ctx context.Context, description string, proposed *policy.Document) (PolicyResult, error) {
 	description, err := ask("what the policy should be", description)
 	if err != nil {
 		return PolicyResult{}, err
@@ -380,8 +386,16 @@ func (s *Service) DraftPolicy(ctx context.Context, description string) (PolicyRe
 		return PolicyResult{}, err
 	}
 	defer cancel()
+	// The base the model's changes land on: the stored policy, or the draft
+	// so far with the startup fields laid back over it.
+	baseRaw := currentRaw
+	var draftRaw json.RawMessage
+	if proposed != nil {
+		baseRaw, _ = json.Marshal(s.Overlay.Apply(*proposed))
+		draftRaw = baseRaw
+	}
 	draft, err := ai.DraftPolicy(callCtx, api.PolicyRequest{
-		Description: description, Current: currentRaw, Fields: fields, Verbs: verbs, Model: model,
+		Description: description, Current: currentRaw, Draft: draftRaw, Fields: fields, Verbs: verbs, Model: model,
 	})
 	if err != nil {
 		return PolicyResult{}, failed(api.AIFunctionDraftPolicy, err)
@@ -390,8 +404,10 @@ func (s *Service) DraftPolicy(ctx context.Context, description string) (PolicyRe
 		ran.Model = draft.Model
 	}
 
+	stored := map[string]json.RawMessage{}
+	_ = json.Unmarshal(currentRaw, &stored)
 	doc := map[string]json.RawMessage{}
-	_ = json.Unmarshal(currentRaw, &doc)
+	_ = json.Unmarshal(baseRaw, &doc)
 	out := PolicyResult{Reply: strings.TrimSpace(draft.Reply), Changes: []PolicyChange{}, Ran: ran}
 
 	keys := make([]string, 0, len(draft.Changes))
@@ -413,11 +429,15 @@ func (s *Service) DraftPolicy(ctx context.Context, description string) (PolicyRe
 			out.Refused = append(out.Refused, reason)
 			continue
 		}
-		if sameValue(doc[key], value) {
-			continue
-		}
-		out.Changes = append(out.Changes, PolicyChange{Key: key, From: orNull(doc[key]), To: value})
 		doc[key] = value
+	}
+
+	// Every field that differs from the stored policy, whichever call changed
+	// it, so a refined proposal still lists what was kept from before.
+	for _, key := range policy.Fields() {
+		if !sameValue(stored[key], doc[key]) {
+			out.Changes = append(out.Changes, PolicyChange{Key: key, From: orNull(stored[key]), To: orNull(doc[key])})
+		}
 	}
 
 	raw, _ := json.Marshal(doc)

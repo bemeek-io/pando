@@ -11,6 +11,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/assist"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
+	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
 	"github.com/bemeek-io/pando/internal/errs"
 )
 
@@ -145,11 +146,17 @@ func (s *Server) handleDraftAccess(w http.ResponseWriter, r *http.Request) {
 	if !ok || !s.assistReady(w, r) {
 		return
 	}
-	text, ok := askBody(w, r, "description", "Release managers can deploy and restart any app")
-	if !ok {
+	// current is the draft so far, when refining one.
+	var body struct {
+		Description string           `json:"description"`
+		Current     *api.AccessDraft `json:"current"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read.").
+			WithRemedy(`Send {"description": "Release managers can deploy and restart any app"}, and "current" with the draft so far when refining one.`))
 		return
 	}
-	out, err := s.Assist.DraftAccess(r.Context(), p, text)
+	out, err := s.Assist.DraftAccess(r.Context(), p, body.Description, body.Current)
 	if err != nil {
 		Error(w, r, err)
 		return
@@ -167,11 +174,17 @@ func (s *Server) handleDraftPolicy(w http.ResponseWriter, r *http.Request) {
 	if !ok || !s.assistReady(w, r) {
 		return
 	}
-	text, ok := askBody(w, r, "description", "Nobody may open a shell in an app")
-	if !ok {
+	// proposed is the document so far, when refining a proposal.
+	var body struct {
+		Description string               `json:"description"`
+		Proposed    *corepolicy.Document `json:"proposed"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read.").
+			WithRemedy(`Send {"description": "Nobody may open a shell in an app"}, and "proposed" with the document so far when refining one.`))
 		return
 	}
-	out, err := s.Assist.DraftPolicy(r.Context(), text)
+	out, err := s.Assist.DraftPolicy(r.Context(), body.Description, body.Proposed)
 	if err != nil {
 		Error(w, r, err)
 		return
