@@ -198,6 +198,7 @@ The single enforcement point (R-023). One path for every request to every app �
       passcode required   → redirect to the passcode page (R-075a)
       denied + anonymous  → redirect to login
       denied + authed     → 403 page
+5a. Record use: app.use, once per visit (R-227, §6)
 6.  Mint assertion (R-051)
 7.  Strip inbound X-Pando-* headers        ← critical, see below
 8.  Set assertion + convenience headers
@@ -358,6 +359,15 @@ console confirms each with its own wording, naming whose access goes and whose s
 ## 6. Audit integration
 
 **[D]** Every authorization **denial** is audited, not only successes. A denial pattern is the signal that matters for detecting misuse, and it is the thing most commonly left out.
+
+**[D] Use is audited, once per visit (R-227, O-22).** An allowed request writes `app.use` the first time
+its visit is seen: a browser's visit is a cookie in Pando's namespace (`pando_visit_<app>`, set on the
+app's response and stripped from every request before the app sees it, like every Pando cookie); a
+token's visit is the token, for twelve hours. Recorded after `CheckData` allows and before the request
+is forwarded. Anonymous visitors are recorded with the address Pando saw unless host policy's
+`disable_anonymous_use_audit` is set, and are capped per app per minute so a client that keeps no
+cookies cannot write a row per request. A write that fails is logged and does not refuse the use.
+Visits are remembered in memory, so a restart may record a visit twice and never records one too few.
 
 **[D]** Audit is written before the privileged action, not after (§04 2.6). An exec session that fails to open is still recorded as attempted.
 

@@ -137,10 +137,12 @@ func AuditSearchTask(req api.AuditSearchRequest) Task {
 		"IDs by username, name or email, and apps to app IDs, from the lists given; when the question " +
 		"names who did something, set principal_id to that account's ID; resolve relative times against the current time " +
 		"given, in UTC, and write times in RFC 3339. Actions are names or prefixes from the list given; " +
-		"any of several matches. Leave a field out rather than guess it. Pando records a successful use " +
-		"of an app nowhere: it records sign-ins (session.create) and refused uses (app.use.denied). " +
-		"When the question asks what someone accessed or used, filter on what is recorded and say in " +
-		"the note that a successful use of an app is not recorded. " + Voice
+		"any of several matches. Leave a field out rather than guess it. Using an app is recorded as " +
+		"app.use, once per visit (a browser session, or a token's use within twelve hours), and a refused " +
+		"use as app.use.denied; for what someone accessed or used, filter on app.use. Visitors who were " +
+		"not signed in are app.use with principal_kind anonymous, unless host policy turns that off. " +
+		"Use the note for what the filter cannot answer, such as individual requests within a visit, " +
+		"which are not recorded. " + Voice
 
 	user := "## Question\n\n" + req.Question +
 		"\n\n## Current time\n\n" + req.Now.UTC().Format(time.RFC3339) +
@@ -156,7 +158,7 @@ func AuditSearchTask(req api.AuditSearchRequest) Task {
 				"actions":        map[string]any{"type": "array", "items": str},
 				"app_id":         str,
 				"principal_id":   str,
-				"principal_kind": map[string]any{"type": "string", "enum": []string{"user", "token", "system"}},
+				"principal_kind": map[string]any{"type": "string", "enum": []string{"user", "token", "system", "anonymous"}},
 				"target_kind":    str,
 				"target_id":      str,
 				"involving":      map[string]any{"type": "string", "description": "An ID that appears as the principal, the app or the target."},

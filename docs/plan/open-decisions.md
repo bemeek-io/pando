@@ -3,9 +3,8 @@
 Twenty-two questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
 design; O-15 through O-17 were found while implementing phases 6, 7 and 8; O-18 was found while
 setting up the release build; O-19 was found by turning `gosec` on; O-20 was found while building the
-first AI adapter; O-21 and O-22 came from issue #74, AI functions beyond detection. **Nineteen are
-resolved. Three remain.** O-4 needs a measurement, O-18 needs somebody to pick a host and pay for it,
-and O-22 is a product decision about what the audit log records.
+first AI adapter; O-21 and O-22 came from issue #74, AI functions beyond detection. **Twenty are
+resolved. Two remain.** O-4 needs a measurement, and O-18 needs somebody to pick a host and pay for it.
 
 O-5 was the other long-standing one and is now resolved: "per-adapter" answered it until R-174 made
 Pando run the edge and write its configuration, at which point Pando became the thing choosing.
@@ -20,7 +19,6 @@ resolution both here and in the requirements or design doc that owns it.
 |---|---|---|---|
 | **O-4** | Required vs optional slot detection — the forty-key `.env.example` problem | Has a `[P]` answer that needs measuring, not deciding | Phase 6 |
 | **O-18** | Where a signed apt repository is hosted, so `apt install pando` works without downloading a file first | Costs money or custody of a signing key; neither is an engineering call | Not blocking — the `.deb` is already published |
-| **O-22** | Whether successful use of an app is audited (`app.use`), so audit search can answer "who accessed this app" | Adds an event on the proxy path and interacts with retention (issue #60); has a `[P]` answer that reports only what is recorded | Not blocking — R-345 ships without it |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything the file
 gives a sample value for, and let the trial run settle it — a slot whose absence crashes the trial run
@@ -53,26 +51,6 @@ key:
 
 The choice matters more than it looks: an unsigned repository, or one added with `[trusted=yes]`,
 tells every user of a product that argues for provenance to skip checking ours.
-
-**O-22** was found building audit search (R-345). Issue #74's example question is "apps Ben Meeker
-added, deleted or accessed in the last month", and the log cannot answer the third part. The proxy
-audits a refused use (`app.use.denied`), and `session.create` records a sign-in, which says nothing
-about which app was opened. A successful use of an app writes no event, and R-227 does not list one.
-
-The `[P]` default in place: the adapter is told that successful app use is not recorded, answers from
-`session.create` and `app.use.denied` where they help, and says in its note that access is not
-recorded. Nothing is inferred and presented as an answer. The options:
-
-1. **Add `app.use`**, one event per principal, app and session rather than per request. It answers the
-   question directly. It puts an audit write on the proxy path (R-023), adds the largest-volume event
-   type the log would hold, and makes retention (issue #60) a more pressing question, because the log
-   cannot be pruned (R-027).
-2. **Keep the default.** Audit search says what it cannot see. Nothing new is recorded.
-3. **Record it somewhere other than the audit log**, such as a last-used time per principal and app.
-   Cheaper, and answers "has this person used this app" but not "when".
-
-Adding an event changes R-227; the event shape belongs in design 02 §2.6 and the proxy's part in
-design 06 §4.
 
 **O-20 — where an adapter's credential lives. Resolved:** encrypted by the install's secrets adapter,
 in its own table. The Anthropic adapter (design 10 §6) was the first adapter to hold a credential, and
@@ -235,6 +213,7 @@ failure surfaces as a browser warning to a user rather than as a message to an o
 | **O-6** | Which backup destinations ship | Backup is an adapter category; destinations are adapters, and `local` ships in v1 | R-217, R-252, design 03 §8.1 |
 | **O-16** | How log retention is enforced | Per-app cap applied at workload creation; the aggregate enforced at plan time against the **sum of committed caps**, not measured usage | R-222–R-224, design 03 §2 |
 | **O-17** | What an "administrative verb" is (R-265) | Install-scoped verbs, held as a grant with no app; a fourth built-in role | design 06 §2.1, R-080/R-081 |
+| **O-22** | Whether successful use of an app is audited, so audit search can answer "who accessed this app" | Yes: `app.use`, once per visit, anonymous visitors included by default and turned off by host policy (`disable_anonymous_use_audit`) | R-227, design 06 §4, §6 |
 | **O-21** | How AI functions are assigned, named and gated, and how the config file declares them (issue #74) | The config file wins over a stored assignment or adapter, and the stored one is shown as overridden; declared and console-managed adapters mix; plan chat stays `revise_plan`; access drafting is one function; each function is gated by the verb its ordinary endpoint needs | R-259, R-271, R-343 – R-346, design 10 §7.1, §9, §10 |
 
 ### O-21 — AI functions: assignment, naming and gating
@@ -263,6 +242,25 @@ Issue #74 left five questions open. What was decided:
   Assigning functions is `install.adapters.manage`, and listing them `install.view`.
 
 The sixth question, whether to audit successful app use, is O-22.
+
+### O-22 — who used an app is recorded
+
+**Resolved:** the proxy writes `app.use` when a use is allowed, once per visit rather than per
+request. Issue #74's example question, "apps Ben Meeker added, deleted or accessed in the last month",
+could not be answered: the proxy recorded refusals (`app.use.denied`) and sessions recorded sign-ins,
+and nothing recorded which app was opened. After a leak or a misuse that is the first question, and
+the proxy is the one place every use passes through.
+
+- **A visit, not a request.** A browser carries a visit cookie in Pando's namespace (stripped before
+  the app sees a request, R-173); a token is its own visit, remembered for twelve hours. A page load is
+  dozens of requests, and a row for each would be a log nobody reads.
+- **Anonymous visitors are recorded by default**, with the address Pando saw, because "who used this"
+  includes people nobody knew by name. An install that does not want those rows turns them off with
+  `disable_anonymous_use_audit`. A client that never keeps cookies is capped per app per minute, and
+  what went unrecorded is counted onto the next record.
+- **Size.** About 470 bytes per row with its indexes, measured on a running install: one visit a day by
+  200 people across 10 apps is roughly 340 MB a year. The log is still unbounded, which issue #60
+  addresses for every event; this makes it grow faster, not a new problem.
 
 ### O-16 — bound what is promised, not what accumulates
 

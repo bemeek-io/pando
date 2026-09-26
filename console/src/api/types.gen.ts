@@ -199,6 +199,7 @@ export interface Document {
   max_token_lifetime_days?: number;
   max_log_disk_bytes?: number;
   disable_ai_screening?: boolean;
+  disable_anonymous_use_audit?: boolean;
   min_security_score?: number;
   insecure_action?: string;
   insecure_grace_hours?: number;

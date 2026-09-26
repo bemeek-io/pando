@@ -236,6 +236,7 @@ interface PolicyDoc {
   ignore_unfixable_findings?: boolean;
 
   disable_ai_screening?: boolean;
+  disable_anonymous_use_audit?: boolean;
 }
 
 interface Violation {
@@ -527,6 +528,18 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
                 const rest = (current.disabled_verbs ?? []).filter((v) => v !== 'app.exec');
                 edit({ disabled_verbs: e.target.checked ? [...rest, 'app.exec'] : rest });
               }}
+            />
+          </Fixed>
+
+          {/* R-227: every visit to an app is in the audit log, anonymous ones
+              included by default. A busy public site may not want those. */}
+          <Fixed field="disable_anonymous_use_audit">
+            <Switch
+              checked={current.disable_anonymous_use_audit ?? false}
+              disabled={locked('disable_anonymous_use_audit')}
+              label="Don't record visits from people who aren't signed in"
+              description="Each visit to an app is recorded in the audit log. With this on, only visits by signed-in people and tokens are."
+              onChange={(e) => edit({ disable_anonymous_use_audit: e.target.checked })}
             />
           </Fixed>
 

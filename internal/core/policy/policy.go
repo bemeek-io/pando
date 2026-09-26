@@ -97,6 +97,13 @@ type Document struct {
 	// deleting somebody else's adapter.
 	DisableAIScreening bool `json:"disable_ai_screening,omitempty"`
 
+	// DisableAnonymousUseAudit stops recording app.use for visitors who are
+	// not signed in (R-227). Default false: anonymous use of a public app is
+	// recorded like anyone's, once per browser session, because "who used this
+	// app" after a leak includes the people nobody knew by name. An install
+	// with a busy public site that does not want those rows turns it off.
+	DisableAnonymousUseAudit bool `json:"disable_anonymous_use_audit,omitempty"`
+
 	// The security score (R-314 – R-316, design 09 §5).
 	//
 	// MinSecurityScore is the floor a deploy has to clear, 0 to 100. Zero is
@@ -360,6 +367,17 @@ func (e *Evaluator) AllowsScreening(ctx context.Context) string {
 		return "An administrator has turned off AI screening on this installation."
 	}
 	return ""
+}
+
+// RecordsAnonymousUse reports whether a visit by someone not signed in is
+// written to the audit log as app.use (R-227). A policy that cannot be read
+// records it: when unsure, keep the record.
+func (e *Evaluator) RecordsAnonymousUse(ctx context.Context) bool {
+	doc, err := e.load(ctx)
+	if err != nil {
+		return true
+	}
+	return !doc.DisableAnonymousUseAudit
 }
 
 // Document returns the current policy.
