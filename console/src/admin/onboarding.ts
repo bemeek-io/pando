@@ -8,7 +8,7 @@
 // volume marked "screened"), but only the amendment carries the reason and the
 // files it rests on, and those are what somebody checking the suggestion needs.
 
-import type { Amendment, AppSpec, Outcome, Proposal, Question, TrialObservation } from '@api/types.gen';
+import type { Amendment, AppSpec, Outcome } from '@api/types.gen';
 import { looksSensitive } from './sensitive';
 
 /** The warning code an AI screener's notes carry (design 01 §2.8). */
@@ -128,22 +128,6 @@ export function volumePath(p: string): string {
   return cleanPath(p);
 }
 
-/**
- * The prompt a question was asked with, for one the screening answered.
- *
- * Detection drops an answered question from `questions`, so its wording is
- * looked for among the candidates' own questions. The key is the fallback: it
- * is what the screening answered, and a made-up sentence would not be.
- */
-export function answeredPrompt(proposal: Proposal, key: string): Question | undefined {
-  const candidates = [proposal.winning_bid, ...(proposal.runners_up ?? [])];
-  for (const candidate of candidates) {
-    const q = (candidate?.questions ?? []).find((question) => question.key === key);
-    if (q) return q;
-  }
-  return undefined;
-}
-
 /** One row of the variables form. */
 export interface VariableRow {
   /** Stable across edits, for React. */
@@ -215,71 +199,6 @@ export function mergeRows(detected: VariableRow[], edits: Record<string, RowEdit
     }),
     ...added,
   ];
-}
-
-/** Where detection is while it runs. `stage` is set only on a running one. */
-export type Stage = 'fetching' | 'detecting' | 'trying' | 'screening';
-
-export type StepState = 'done' | 'active' | 'pending';
-
-export interface Step {
-  label: string;
-  state: StepState;
-}
-
-const ORDER: Stage[] = ['fetching', 'detecting', 'trying', 'screening'];
-
-/**
- * The steps at the top of a running detection, each ticking over as the stage
- * advances.
- *
- * The AI step is listed only once Pando is known to be taking it: a stage of
- * `screening`, or a finished screening that ran. An install without an AI
- * adapter is not a degraded one (R-335), so it is not shown a step it will
- * never reach.
- */
-export function detectionSteps(status: string, stage: string | undefined, screened: boolean): Step[] {
-  const running = status === 'running';
-  // A stage this console does not know is read as the first: under-claiming
-  // progress is harmless, claiming a step finished that is not is not.
-  const at = running ? Math.max(0, ORDER.indexOf((stage ?? 'fetching') as Stage)) : ORDER.length;
-  const withAI = stage === 'screening' || screened;
-  const labels: Array<[Stage, string]> = [
-    ['fetching', 'Reading the repository'],
-    ['detecting', 'Working out what it is'],
-    ['trying', 'Trying a run'],
-  ];
-  if (withAI) labels.push(['screening', 'Checking with AI']);
-  return labels.map(([name, label]) => {
-    const index = ORDER.indexOf(name);
-    const state: StepState = index < at ? 'done' : index === at ? 'active' : 'pending';
-    return { label, state };
-  });
-}
-
-/**
- * How many rings the header's contour map shows. The map builds as detection
- * advances: two while fetching, and two more for each stage after. `finished`
- * is the full figure; `reached` is the last stage seen, so a detection that
- * failed stops at the rings it had drawn rather than growing or emptying.
- */
-export function ringsFor(reached: string | undefined, finished: boolean): number {
-  if (finished) return 8;
-  const index = Math.max(0, ORDER.indexOf((reached ?? 'fetching') as Stage));
-  return 2 + index * 2;
-}
-
-/** What the trial run showed, in one sentence, or nothing if there was none. */
-export function trialSentence(trial: TrialObservation | undefined): string | undefined {
-  if (!trial?.ran) return undefined;
-  if (trial.crashed) return 'Pando tried a run, and the app exited on its own.';
-  if (!trial.started) return 'Pando tried a run, and the app did not start.';
-  const ports = trial.observed_ports ?? [];
-  if (ports.length === 0) return 'Pando tried a run: the app started and opened no ports.';
-  const list = ports.join(', ');
-  return ports.length === 1
-    ? `Pando tried a run: the app started and opened port ${list}.`
-    : `Pando tried a run: the app started and opened ports ${list}.`;
 }
 
 /** What accept sends for each variable (POST /apps/{id}/detection/accept). */

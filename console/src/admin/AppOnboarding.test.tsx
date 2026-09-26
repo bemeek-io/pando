@@ -1,0 +1,115 @@
+import { describe, expect, it, vi } from 'vitest';
+
+// The API client reads the page's address when it loads. Rendered on the
+// server here, so there is no page: give it the least it needs.
+vi.hoisted(() => {
+  (globalThis as { window?: unknown }).window ??= { location: { pathname: '/' } };
+});
+
+import { renderToString } from 'react-dom/server';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+import { AppOnboarding } from './AppOnboarding';
+import type { DetectionResponse } from './DetectionReview';
+import type { AppWithVerbs } from './verbs';
+
+const app = {
+  id: 'app_x',
+  name: 'crewmate',
+  source: { type: 'git', url: 'https://github.com/acme/crewmate.git', ref: 'main' },
+  verbs: ['app.view', 'app.spec.edit', 'app.deploy', 'app.delete', 'app.secrets.write'],
+} as unknown as AppWithVerbs;
+
+const detection = {
+  commit: '3f9a2c1d0000',
+  winning_bid: { detector: 'dockerfile', strategy: 'dockerfile', confidence: 0.9, evidence: ['Dockerfile at the root'] },
+  runners_up: [{ detector: 'compose', strategy: 'compose', confidence: 0.8 }],
+  questions: [
+    {
+      key: 'build_strategy',
+      prompt: 'Pando found two plausible ways to build this app.',
+      why: 'Pando needs to know which one describes how this app is meant to run.',
+      kind: 'choice',
+      options: ['dockerfile', 'compose'],
+      suggested: { value: 'compose', reason: 'The README runs it with docker compose.', evidence: ['README.md'] },
+    },
+    { key: 'primary_port', prompt: 'Which port does it serve HTTP on?', why: '', kind: 'port' },
+  ],
+  draft_spec: {
+    build: { strategy: 'dockerfile', dockerfile: 'Dockerfile' },
+    workloads: [
+      {
+        name: 'web',
+        primary: true,
+        exposed: true,
+        command: ['npm', 'start'],
+        env: [
+          { key: 'STRIPE_SECRET_KEY' },
+          { key: 'LOG_LEVEL', value: 'info' },
+          { key: 'DATABASE_URL', slot_ref: 'DATABASE_URL' },
+        ],
+      },
+    ],
+    slots: [{ key: 'DATABASE_URL', type: 'postgres', required: true }],
+  },
+  trial: {},
+  screening: {
+    ran: true,
+    function: 'answer_questions',
+    answers: { build_strategy: 'compose' },
+    files_read: ['README.md'],
+    applied: [
+      {
+        summary: 'answered build_strategy: compose',
+        amendment: { kind: 'answer_question', key: 'build_strategy', value: 'compose', reason: 'r', evidence: ['README.md'] },
+      },
+    ],
+  },
+};
+
+function render(response: Partial<DetectionResponse>): string {
+  const client = new QueryClient();
+  client.setQueryData(['apps', 'app_x', 'detection'], response);
+  return renderToString(
+    <QueryClientProvider client={client}>
+      <AppOnboarding app={app} onBack={() => {}} onDeployRefused={() => {}} />
+    </QueryClientProvider>,
+  );
+}
+
+describe('AppOnboarding', () => {
+  it('renders the review once detection has finished', () => {
+    const html = render({ status: 'needs_answers', answers: {}, commit: '3f9a2c1d0000', detection } as never);
+    expect(html).toContain('Plan ready');
+    expect(html).toContain('Check what AI filled in');
+    expect(html).toContain('Needs your answer');
+    expect(html).toContain('Why AI picked this.');
+    expect(html).toContain('STRIPE_SECRET_KEY');
+    expect(html).toContain('The plan');
+    expect(html).toContain('Accept and deploy');
+    expect(html).toContain('1 answer needed');
+  });
+
+  it('renders the discovery view while detection runs, with no review', () => {
+    const html = render({
+      status: 'running',
+      answers: null,
+      commit: '',
+      detection: { stage: 'detecting' } as DetectionResponse['detection'],
+    });
+    expect(html).toContain('Reading the code');
+    expect(html).toContain('Read the repo');
+    expect(html).not.toContain('Accept plan');
+  });
+
+  it('renders a failed detection with its reason', () => {
+    const html = render({
+      status: 'failed',
+      answers: null,
+      commit: '',
+      detection: { error: { message: 'Pando couldn’t clone the repository.' } } as DetectionResponse['detection'],
+    });
+    expect(html).toContain('Pando couldn’t clone the repository.');
+    expect(html).toContain('Reject plan');
+  });
+});

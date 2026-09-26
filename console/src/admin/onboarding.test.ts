@@ -1,16 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Amendment, AppSpec, Outcome, Proposal } from '@api/types.gen';
+import type { Amendment, AppSpec, Outcome } from '@api/types.gen';
 import {
-  answeredPrompt,
-  detectionSteps,
   envKey,
   mergeRows,
   primaryWorkload,
-  ringsFor,
   rowProblems,
   suggestions,
-  trialSentence,
   valuesPayload,
   variableRows,
   type VariableRow,
@@ -88,18 +84,6 @@ describe('suggestions', () => {
       { key: 'primary_port', value: '3000', amendment: outcome.applied![10]!.amendment },
     ]);
     expect(found.count).toBe(11);
-  });
-});
-
-describe('answeredPrompt', () => {
-  it('finds the wording among the candidates, since detection dropped the question', () => {
-    const proposal = {
-      winning_bid: { questions: [{ key: 'primary_port', prompt: 'Which port?' }] },
-      runners_up: [{ questions: [{ key: 'start', prompt: 'Which command?' }] }],
-    } as unknown as Proposal;
-    expect(answeredPrompt(proposal, 'primary_port')?.prompt).toBe('Which port?');
-    expect(answeredPrompt(proposal, 'start')?.prompt).toBe('Which command?');
-    expect(answeredPrompt(proposal, 'nope')).toBeUndefined();
   });
 });
 
@@ -192,43 +176,3 @@ describe('rowProblems', () => {
   });
 });
 
-describe('detectionSteps', () => {
-  it('ticks over as the stage advances', () => {
-    expect(detectionSteps('running', 'fetching', false).map((s) => s.state)).toEqual(['active', 'pending', 'pending']);
-    expect(detectionSteps('running', 'trying', false).map((s) => s.state)).toEqual(['done', 'done', 'active']);
-  });
-
-  it('lists the AI step only once Pando is taking it', () => {
-    expect(detectionSteps('running', 'trying', false)).toHaveLength(3);
-    const screening = detectionSteps('running', 'screening', false);
-    expect(screening.map((s) => s.state)).toEqual(['done', 'done', 'done', 'active']);
-    expect(detectionSteps('ready', undefined, true).map((s) => s.state)).toEqual(['done', 'done', 'done', 'done']);
-    expect(detectionSteps('ready', undefined, false)).toHaveLength(3);
-  });
-
-  it('reads a stage it does not know as the first, rather than claiming progress', () => {
-    expect(detectionSteps('running', 'mystery', false)[0]!.state).toBe('active');
-  });
-});
-
-describe('ringsFor', () => {
-  it('draws two rings more per stage, and the full figure when finished', () => {
-    expect(['fetching', 'detecting', 'trying', 'screening'].map((s) => ringsFor(s, false))).toEqual([2, 4, 6, 8]);
-    expect(ringsFor(undefined, true)).toBe(8);
-    expect(ringsFor(undefined, false)).toBe(2);
-  });
-});
-
-describe('trialSentence', () => {
-  it('says what the trial run showed', () => {
-    expect(trialSentence(undefined)).toBeUndefined();
-    expect(trialSentence({ ran: false })).toBeUndefined();
-    expect(trialSentence({ ran: true, crashed: true })).toContain('exited');
-    expect(trialSentence({ ran: true, started: false })).toContain('did not start');
-    expect(trialSentence({ ran: true, started: true, observed_ports: [3000] })).toBe(
-      'Pando tried a run: the app started and opened port 3000.',
-    );
-    expect(trialSentence({ ran: true, started: true, observed_ports: [80, 443] })).toContain('ports 80, 443');
-    expect(trialSentence({ ran: true, started: true })).toContain('no ports');
-  });
-});

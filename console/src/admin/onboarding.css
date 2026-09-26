@@ -1,22 +1,24 @@
-/* Motion on the onboarding page (AppOnboarding.tsx).
+/* The onboarding page (AppOnboarding.tsx, design 08 §1.3).
  *
  * The design system allows one orchestrated moment on load, and onboarding a new
- * app is recorded in its readme as the second: the contour map draws in as
- * detection advances, and each finding rises into place as it is found. Nothing
- * here bounces or scales, everything runs on the motion tokens, and under
+ * app is recorded in its readme as the second: the terrain draws as detection
+ * advances, and each finding rises into place as it is found. Nothing here
+ * bounces or scales in, everything runs on the motion easing, and under
  * prefers-reduced-motion all of it is static (the block at the bottom). */
 
-/* A finding arriving: rises a step and fades in. `--stagger` is its place
-   among its siblings, so a batch arriving together lands one after another. */
+/* --- Arrivals --------------------------------------------------------------- */
+
+/* Something arriving: rises a step and fades in. `--stagger` is its place among
+   siblings arriving together, so a batch of findings lands one after another. */
 .pando-onboard-enter {
   animation: pando-onboard-rise var(--dur-base) var(--ease) both;
-  animation-delay: calc(var(--dur-fast) / 2 * var(--stagger, 0));
+  animation-delay: calc(var(--dur-fast) * var(--stagger, 0));
 }
 
 @keyframes pando-onboard-rise {
   from {
     opacity: 0;
-    transform: translateY(var(--space-2));
+    transform: translateY(calc(var(--space-1) * 1.5));
   }
   to {
     opacity: 1;
@@ -24,103 +26,321 @@
   }
 }
 
-/* Something the AI screening suggested, arriving: a brief contour-colored wash
-   that fades out once, and the sparkles fading in. */
-.pando-onboard-ai {
-  border-radius: var(--radius-xs);
-  animation: pando-onboard-wash var(--dur-contour-draw) var(--ease) both;
+/* --- Terrain ------------------------------------------------------------------ */
+
+.pando-terrain {
+  position: relative;
+  width: 100%;
+  height: 9.375rem;
+  background: var(--paper);
+  border-bottom: var(--border-width) solid var(--rule);
 }
 
-@keyframes pando-onboard-wash {
-  from {
-    background-color: var(--contour-line);
-  }
-  to {
-    background-color: transparent;
-  }
+.pando-terrain svg {
+  display: block;
+  overflow: visible;
 }
 
-.pando-onboard-ai-icon {
-  animation: pando-fade var(--dur-base) var(--ease) both;
+.pando-terrain-lines {
+  width: 100%;
+  height: 100%;
 }
 
-/* The step list. A label goes from secondary ink to ink as its step is reached. */
-.pando-onboard-step {
+.pando-terrain-marks {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.pando-terrain-ghost,
+.pando-terrain-line,
+.pando-terrain-index,
+.pando-terrain-ai,
+.pando-terrain-trail,
+.pando-terrain-stop {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.pando-terrain-ghost {
+  stroke: var(--rule);
+  stroke-width: var(--contour-line-width);
+  stroke-dasharray: 2 6;
+}
+
+.pando-terrain-line {
+  stroke: var(--contour-line);
+  stroke-width: var(--contour-line-width);
+}
+
+.pando-terrain-index {
+  stroke: var(--contour);
+  stroke-width: var(--contour-index-width);
+}
+
+/* The stretch of ridge drawn while AI worked. */
+.pando-terrain-ai {
+  stroke: var(--water);
+  stroke-width: var(--contour-index-width);
+}
+
+/* The surveyor's trail, a dotted line walking just above the ridge. */
+.pando-terrain-trail {
+  stroke: var(--ink-secondary);
+  stroke-width: var(--contour-line-width);
+  stroke-dasharray: 1 5;
+}
+
+.pando-terrain-stop {
+  stroke: var(--rule);
+  stroke-width: var(--contour-line-width);
+}
+
+.pando-terrain-waypoint {
+  fill: var(--paper);
+  stroke-width: 1.5;
+  animation: pando-onboard-rise var(--dur-base) var(--ease) both;
+}
+
+.pando-terrain-summit {
+  fill: var(--marker);
+  animation: pando-onboard-rise calc(var(--dur-base) * 2) var(--ease) both;
+}
+
+/* --- The column ------------------------------------------------------------------ */
+
+/* Narrow while Pando works, wider once there is a plan to review. */
+.pando-onboard-column {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 45rem;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  transition: max-width calc(var(--dur-base) * 3.5) var(--ease);
+}
+
+.pando-onboard-column[data-phase='done'] {
+  max-width: 55rem;
+}
+
+.pando-onboard-headline {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--size-24);
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-wrap: balance;
+  transition: font-size calc(var(--dur-base) * 2.5) var(--ease);
+}
+
+.pando-onboard-headline[data-big='true'] {
+  font-size: var(--size-48);
+  letter-spacing: var(--tracking-headline);
+}
+
+/* --- The working line ---------------------------------------------------------- */
+
+.pando-ripple {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: calc(var(--space-3) + var(--space-1) / 2);
+  height: calc(var(--space-3) + var(--space-1) / 2);
   color: var(--ink-secondary);
-  transition: color var(--dur-base) var(--ease);
 }
 
-.pando-onboard-step[data-state='active'],
-.pando-onboard-step[data-state='done'] {
-  color: var(--ink);
+.pando-ripple[data-ai='true'] {
+  color: var(--water);
 }
 
-/* The active step's marker: a contour ring drawing itself, slowly, for as long
-   as the step lasts. The one loop on the page. */
-.pando-onboard-ring {
-  stroke-dasharray: 1;
-  animation: pando-onboard-survey calc(var(--dur-contour-draw) * 2) var(--ease) infinite;
+.pando-ripple > span {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-pill);
+  border: var(--border-width) solid currentColor;
+  animation: pando-ripple 1.8s var(--ease) infinite both;
 }
 
-@keyframes pando-onboard-survey {
+.pando-ripple > span:nth-child(2) {
+  animation-delay: 0.6s;
+}
+
+.pando-ripple > span:nth-child(3) {
+  animation-delay: 1.2s;
+}
+
+.pando-ripple > i {
+  position: absolute;
+  inset: calc(50% - var(--space-1) / 2);
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+@keyframes pando-ripple {
   0% {
-    stroke-dashoffset: 1;
-  }
-  50% {
-    stroke-dashoffset: 0;
+    transform: scale(0.25);
+    opacity: 0.9;
   }
   100% {
-    stroke-dashoffset: -1;
-  }
-}
-
-/* A finished step's check, drawn in once. `pando-draw` is the design system's. */
-.pando-onboard-check {
-  --dash: 1;
-  stroke-dasharray: 1;
-  animation: pando-draw var(--dur-base) var(--ease) both;
-}
-
-/* The summit lands when detection finishes: the one red mark, dropping into
-   place after the rings. */
-.pando-onboard-map circle {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: pando-onboard-land var(--dur-base) var(--ease) var(--dur-contour-draw) both;
-}
-
-@keyframes pando-onboard-land {
-  from {
+    transform: scale(1);
     opacity: 0;
-    transform: translateY(calc(var(--space-2) * -1));
-  }
-  to {
-    opacity: 1;
-    transform: none;
   }
 }
 
-/* The status line's phrase, faded in each time it changes. */
-.pando-onboard-phrase {
-  animation: pando-fade var(--dur-base) var(--ease) both;
+.pando-dots > span {
+  animation: pando-dot 1.2s infinite both;
+}
+
+.pando-dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.pando-dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes pando-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* --- Progress ----------------------------------------------------------------------- */
+
+.pando-segments {
+  display: flex;
+  gap: var(--space-1);
+  height: calc(var(--space-1) - var(--border-width));
+  transition:
+    opacity calc(var(--dur-base) * 2) var(--ease),
+    height calc(var(--dur-base) * 2) var(--ease);
+}
+
+.pando-segments[data-hidden='true'] {
+  height: 0;
+  opacity: 0;
+}
+
+.pando-segments > span {
+  flex: 1;
+  border-radius: var(--radius-xs);
+  transition: background var(--dur-base) var(--ease);
+}
+
+/* --- Steps ------------------------------------------------------------------------- */
+
+.pando-step {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2) 0;
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid transparent;
+}
+
+/* An AI step: a quiet water tint, so it reads as the exception it is. */
+.pando-step[data-ai='true'] {
+  padding: var(--space-3);
+  margin: var(--space-1) calc(var(--space-3) * -1);
+  background: var(--status-info-tint);
+  border-color: color-mix(in oklab, var(--water) 35%, transparent);
+}
+
+.pando-step-head {
+  display: grid;
+  grid-template-columns: var(--space-4) minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  min-height: var(--space-5);
+}
+
+.pando-step-findings {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-1) / 2);
+  margin: var(--space-2) 0 var(--space-1) calc(var(--space-6) - var(--space-1));
+  padding-left: var(--space-3);
+  border-left: var(--border-width) solid var(--rule-strong);
+}
+
+.pando-step[data-ai='true'] .pando-step-findings {
+  border-left-color: var(--water);
+}
+
+.pando-finding {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+/* The AI mark: a label that says AI in words, beside the star. */
+.pando-ai-label {
+  font: var(--type-caption);
+  line-height: 1;
+  color: var(--water);
+  border: var(--border-width) solid var(--water);
+  border-radius: var(--radius-xs);
+  padding: calc(var(--space-1) / 2) var(--space-1);
+}
+
+/* --- The action bar --------------------------------------------------------------- */
+
+.pando-actionbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  background: var(--paper-raised);
+  border-top: var(--border-width) solid var(--rule-strong);
+}
+
+.pando-actionbar > div {
+  box-sizing: border-box;
+  max-width: 55rem;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  flex-wrap: wrap;
+}
+
+/* A text button inside a sentence: "Use suggestion", "Show". */
+.pando-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  font: var(--type-caption);
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: calc(var(--space-1) / 2);
 }
 
 @media (prefers-reduced-motion: reduce) {
   /* base.css shortens every animation to nothing, which leaves an infinite one
-     cycling at that speed. Switched off outright instead, and each element
-     left in its final state. */
+     cycling at that speed. Switched off outright instead, and each element left
+     in its final state. */
   .pando-onboard-enter,
-  .pando-onboard-ai,
-  .pando-onboard-ai-icon,
-  .pando-onboard-ring,
-  .pando-onboard-check,
-  .pando-onboard-map circle,
-  .pando-onboard-phrase {
+  .pando-terrain-waypoint,
+  .pando-terrain-summit,
+  .pando-ripple > span,
+  .pando-dots > span {
     animation: none;
   }
 
-  .pando-onboard-ring,
-  .pando-onboard-check {
-    stroke-dasharray: none;
+  .pando-onboard-column,
+  .pando-onboard-headline,
+  .pando-segments,
+  .pando-segments > span {
+    transition: none;
   }
 }

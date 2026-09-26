@@ -170,13 +170,48 @@ Most screens are ordinary CRUD. These four are where requirements are either hon
 Shows the winning bid with its evidence, the runners-up, and every outstanding question. **Each question has a copy button**, because the intended workflow is pasting it into the assistant that wrote the app. Question text is rendered verbatim from the API; the console does not paraphrase it, or the R-105 guarantee is lost in the UI layer.
 
 **[D] Onboarding a new app** — the detection review for an app with no configuration yet is its own
-page, not a one-tab app screen. It builds as detection runs: detection records each stage
-(fetching, detecting, trying, screening) with the proposal as far as it has got, and each section
-appears as soon as its data exists. Variables can be filled in before accepting — `values` on
-accept writes them into the accepted spec in one step. An AI screener's changes are shown inline
-where they apply, marked as suggested by AI, rather than as a separate section. Reject deletes the
-app; Accept and Accept and deploy finish it. It is the second orchestrated moment the design system
-allows motion for: the contour map draws in as detection advances.
+page, not a one-tab app screen (`AppOnboarding.tsx`, from the repo-discovery design handoff, issue
+#69). One page in three phases that morphs rather than cuts:
+
+1. **Discovering.** A terrain profile draws across the top as detection advances. The headline is
+   what Pando is doing ("Reading the code"), with a working line under it: a ripple, a phrase that
+   turns over every 1.5s, and elapsed seconds. A segmented bar, four tallies (processes, services,
+   variables, questions for you) and a step list, newest on top, each step with what it found.
+2. **Ready.** The headline becomes "Plan ready" at display size and the red summit mark lands on the
+   terrain. Held 2.4s, and only when the page watched detection finish.
+3. **Done.** The column widens from 45 to 55rem, the steps fold behind "How Pando got here", and the
+   review rises: notices, questions, variables, the plan, and a sticky bar with **Reject plan**,
+   **Accept plan** and **Accept and deploy** (disabled while a question is unanswered). Opening an
+   app whose detection already finished lands here directly.
+
+**[D] Steps are real events, not a script.** The handoff's prototype ran on canned steps; the page
+derives them from the detection response (`discovery.ts`): *Read the repo* (source, branch, commit),
+*Work out how it's built* (strategy and evidence), *Find processes and services* and *Collect
+variables* (the draft's workloads, slots, mounts and env), then *Try running it* only if a trial ran,
+and an AI step only if an adapter was called (R-336) — *Review the failed plan* or *Answer what it
+can*. The three auction steps finish on one server event and reveal their findings on a short
+stagger. No per-step durations are shown, because detection does not record them. The terrain eases
+through the current step by elapsed time but never past it; a boundary is drawn only when the server
+reports it.
+
+**[D] AI appears only where it did something.** An AI step is tinted `--status-info-tint` with a water
+border; questions it answered are grouped under *Check what AI filled in* with its reason and files,
+and changing one offers *Use suggestion* back (R-338 — AI answers are suggestions on the question,
+design 10 §4.2); anything else it changed carries the AI mark in the plan; what Pando refused of it is
+a notice with its reasons (R-334). A plain successful detection shows none of this. A failed trial
+run's output stays reachable from its notice whatever a repair did (R-107).
+
+**[D] Two brand exceptions, approved in the handoff and confined to this page:** the AI mark (Lucide
+`sparkle` in `--water` with a small solid four-point star at its lower right — the readme's
+avoid-list otherwise rules out sparkle icons) and the animated terrain strip, outside the contour
+system's usual placements. The console's `TopoBackground` still sits behind the page, so the strip
+has a solid `--paper` fill: one terrain in view, not two.
+
+**[P] Kept from the previous page though the handoff omits them:** the copy button on each question
+(R-105), the *Secret* checkbox on variables, adding a variable, and the reject confirmation dialog.
+Accepting leaves the page for the configured app screen, so the handoff's post-decision bar states
+and toasts are not built. It is the second orchestrated moment the design system allows motion for,
+and under `prefers-reduced-motion` every phase shows its final state.
 
 **Warnings** — R-201, R-168, R-028.
 Rendered inline where they apply, dismissible, never blocking. The persistence warning uses the observed directory when available: *"Your app wrote to `/app/data` during setup. That data won't survive a redeploy unless you add a volume here."* Warnings and blockers are visually distinct — a warning must never look like an error, or people learn to ignore both.
