@@ -118,6 +118,13 @@ export function AdminConsole({
     queryKey: ['apps'],
     queryFn: () => api.get<{ apps: App[] | null }>('/apps'),
     enabled: administrative,
+    // Asked again while a row is scanning or deploying — a deploy of a new
+    // commit scans it — so the Security column moves from "Scanning" to the
+    // score without a reload.
+    refetchInterval: (query) =>
+      query.state.data?.apps?.some((a) => a.security_scanning || a.state === 'deploying')
+        ? 5_000
+        : false,
   });
 
   // The same query key the accounts screen uses, so the sidebar's count and
@@ -433,14 +440,21 @@ function AppsList({
               width: '14ch',
               filter: 'values',
               filterValue: (row: App) =>
-                row.security_score == null
-                  ? 'Not scanned'
-                  : row.security_verdict === 'insecure'
-                    ? 'Below minimum'
-                    : 'Scanned',
-              render: (row: App) => (
-                <ScoreBadge score={row.security_score} verdict={row.security_verdict as never} full />
-              ),
+                row.security_scanning
+                  ? 'Scanning'
+                  : row.security_score == null
+                    ? 'Not scanned'
+                    : row.security_verdict === 'insecure'
+                      ? 'Below minimum'
+                      : 'Scanned',
+              // A scan under way, whoever started it, as the design system's
+              // building status: the hollow ring, which does not move.
+              render: (row: App) =>
+                row.security_scanning ? (
+                  <StatusIndicator status="building" label="Scanning" />
+                ) : (
+                  <ScoreBadge score={row.security_score} verdict={row.security_verdict as never} full />
+                ),
             },
             {
               key: 'updated_at',

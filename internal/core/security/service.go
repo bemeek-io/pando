@@ -2,6 +2,7 @@ package security
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -25,6 +26,22 @@ type Service struct {
 	Policy      PolicyLoader
 	Auditor     Auditor
 	Logger      *zap.Logger
+
+	// running is every scan in progress, by app. In memory rather than in
+	// app_scans: that table is append-only and holds what a scan found, and a
+	// scan that has not finished has found nothing (R-319). A scan also dies
+	// with the process that runs it, so a row saying "running" would outlive
+	// the scan it described after a restart, and a map cannot.
+	mu      sync.Mutex
+	running map[string]*inProgress
+}
+
+// inProgress is one app's running scans: when the first began, and how many.
+// More than one is possible — a deploy's scan and a person's "Scan now" — and
+// the app is scanning until the last of them ends.
+type inProgress struct {
+	since time.Time
+	count int
 }
 
 // PolicyLoader is host policy, narrowed to the one call this needs.
@@ -47,6 +64,12 @@ type Report struct {
 	// Scanner is what would run, or what did. Empty when the installation has
 	// none configured, which is what makes a threshold inert (R-317).
 	Scanner string `json:"scanner,omitempty"`
+
+	// ScanningSince is when a scan of this app that has not finished began,
+	// and absent when none is running. Whoever started it: a deploy, detection,
+	// or somebody asking — so every client can show that a scan is under way
+	// rather than only the one that asked for it (R-261).
+	ScanningSince *time.Time `json:"scanning_since,omitempty"`
 
 	// IgnoringUnfixable says the score and the list above leave out findings
 	// with no fix, because host policy says so (R-313). Said rather than
@@ -76,6 +99,9 @@ func (s *Service) Scan(ctx context.Context, req api.ScanRequest, principal audit
 			"This installation has no security scanner configured, so there is nothing to scan with.").
 			WithRemedy("Configure a scanner adapter, or ask whoever administers this installation to.")
 	}
+
+	done := s.begin(req.AppID)
+	defer done()
 
 	result, err := scanner.Scan(ctx, req)
 	if err != nil {
@@ -128,6 +154,48 @@ func (s *Service) Scan(ctx context.Context, req api.ScanRequest, principal audit
 	return recorded, nil
 }
 
+// begin marks a scan of appID as running, and returns the call that marks it
+// finished.
+func (s *Service) begin(appID string) func() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.running == nil {
+		s.running = map[string]*inProgress{}
+	}
+	p, ok := s.running[appID]
+	if !ok {
+		p = &inProgress{since: time.Now().UTC()}
+		s.running[appID] = p
+	}
+	p.count++
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if p.count--; p.count == 0 {
+				delete(s.running, appID)
+			}
+		})
+	}
+}
+
+// Scanning reports when a scan of appID that is still running began, and
+// whether one is.
+func (s *Service) Scanning(appID string) (time.Time, bool) {
+	if s == nil {
+		return time.Time{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.running[appID]
+	if !ok {
+		return time.Time{}, false
+	}
+	return p.since, true
+}
+
 // ScannedAt returns when the app's source at commit was last scanned
 // successfully, and whether it was. A deploy of that commit uses that scan
 // rather than scanning the same source again (design 09 §4.1).
@@ -163,6 +231,9 @@ func (s *Service) Report(ctx context.Context, appID, specID string) (Report, err
 	}
 
 	report := Report{Scanner: ref}
+	if since, running := s.Scanning(appID); running {
+		report.ScanningSince = &since
+	}
 	if found {
 		// What policy counts is what the reader sees. An installation that
 		// ignores findings with no fix gets a score and a list that agree —
@@ -199,9 +270,11 @@ func (s *Service) Place(ctx context.Context, scores map[string]Scores) (map[stri
 		if doc.IgnoreUnfixableFindings && pair.Fixable != nil {
 			score = pair.Fixable
 		}
+		_, scanning := s.Scanning(appID)
 		out[appID] = Placed{
-			Score:   score,
-			Verdict: Evaluate(doc, score, time.Time{}, configured, nil).Verdict,
+			Score:    score,
+			Verdict:  Evaluate(doc, score, time.Time{}, configured, nil).Verdict,
+			Scanning: scanning,
 		}
 	}
 	return out, nil
@@ -217,6 +290,10 @@ type Scores struct {
 type Placed struct {
 	Score   *int
 	Verdict Verdict
+
+	// Scanning says a scan of the app is running now, so a list can show it
+	// rather than "Not scanned" until the scan ends.
+	Scanning bool
 }
 
 // Allows reports whether this revision may be deployed (R-314).

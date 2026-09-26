@@ -206,6 +206,21 @@ them.
 to take a new one. Both behind `app.view` and `app.deploy` respectively — asking for a scan changes
 what a deploy will do, so it is not a read.
 
+**[P] A scan in progress is reported, whoever started it** (issue #68). A scan can take a minute,
+and a deploy, detection, the CLI, MCP or the console can start one. The report carries
+`scanning_since` while a scan of the app runs, and each row of `GET /apps` carries
+`security_scanning`, so every client shows the same state rather than only the one that asked
+(R-261). The console shows it as the design system's *building* status, the hollow ring, in the
+Security section and the list's Security column, and polls while it lasts. Onboarding already has
+its own step for the scan (the `scanning` detection stage).
+
+The state is held in memory by the security service, not in `app_scans`. That table is append-only
+and records what a scan found (R-319), and an unfinished scan has found nothing yet. A scan also
+ends when the process running it ends, so a stored "running" row would be left behind by a restart.
+An in-memory marker can't be left behind. It depends on Pando running as a single server process,
+which it does. Two scans of one app at once, such as a deploy's and a **Scan now**, count as one
+running scan until the last of them ends.
+
 **CLI and MCP.** They follow from the API without further design (R-261); the MCP tool is a read,
 because an agent asking Pando to rescan until it passes is a loop nobody wants.
 
