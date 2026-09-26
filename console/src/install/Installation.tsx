@@ -1381,7 +1381,7 @@ function AdapterStatus({ row }: { row: AdapterRow }) {
   );
 }
 
-// The adapters' columns: name, ID, status, and Change for whoever may.
+// The adapters' columns: name, ID, status, and Edit for whoever may.
 const ADAPTER_GRID = 'minmax(0,1fr) minmax(0,22ch) 16ch 12ch';
 
 /**
@@ -1472,7 +1472,7 @@ function GroupedAdapters({
                 canManage &&
                 row.status !== 'overridden' && (
                   <Button variant="secondary" onClick={() => onChange(row)}>
-                    Change
+                    Edit
                   </Button>
                 )
               )}
@@ -1485,7 +1485,7 @@ function GroupedAdapters({
 }
 
 /** The adapters table's columns: the category on the first row of each group,
- *  then the adapter by name, its ID, whether it is reachable, and Change. */
+ *  then the adapter by name, its ID, whether it is reachable, and Edit. */
 function adapterColumns(
   canManage: boolean,
   setEditing: (e: { existing?: AdapterRow; category?: string }) => void,
@@ -1525,7 +1525,7 @@ function adapterColumns(
             align: 'right' as const,
             render: (row: Row) => (
               <Button variant="secondary" onClick={() => setEditing({ existing: row })}>
-                Change
+                Edit
               </Button>
             ),
           },

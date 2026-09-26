@@ -155,7 +155,7 @@ export function AdapterDialog({
   return (
     <Dialog
       open
-      title={existing ? `Change ${existing.name || existing.id}` : 'Add adapter'}
+      title={existing ? `Edit ${existing.name || existing.id}` : 'Add adapter'}
       description="Pando reads adapters when it starts, so a saved change takes effect after a restart."
       onClose={onClose}
       footer={
