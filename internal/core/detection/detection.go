@@ -104,7 +104,7 @@ type Runner struct {
 // SourceScanner scans a checkout. One method, so detection cannot reach into
 // the rest of the security service.
 type SourceScanner interface {
-	ScanSource(ctx context.Context, appID, dir string)
+	ScanSource(ctx context.Context, appID, dir, commit string)
 }
 
 // PortAllocator hands out host ports for port-mode routing.
@@ -219,7 +219,7 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 		// Reported as its own stage: a scan can take a while, and the
 		// onboarding page shows it as a step of the plan.
 		detect.Report(ctx, detect.StageScanning, &proposal)
-		r.Scanner.ScanSource(ctx, appID, checkout.Dir)
+		r.Scanner.ScanSource(ctx, appID, checkout.Dir, checkout.Commit)
 	}
 
 	// Fill in the install's own answers before the proposal is shown, not when

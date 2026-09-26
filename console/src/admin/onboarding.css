@@ -238,6 +238,23 @@
   }
 }
 
+/* A value just generated: the field washes with the info tint once and fades
+   back, so a new value shows it arrived even when it is hidden as a secret. */
+.pando-generated {
+  animation: pando-generated calc(var(--dur-base) * 5) var(--ease) both;
+}
+
+@keyframes pando-generated {
+  0% {
+    box-shadow: 0 0 0 var(--space-1) var(--status-info-tint);
+    background-color: var(--status-info-tint);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: transparent;
+  }
+}
+
 /* --- Progress ----------------------------------------------------------------------- */
 
 .pando-segments {
@@ -378,7 +395,8 @@
   .pando-terrain-summit,
   .pando-ripple > span,
   .pando-dots > span,
-  .pando-ai-thinking {
+  .pando-ai-thinking,
+  .pando-generated {
     animation: none;
   }
 

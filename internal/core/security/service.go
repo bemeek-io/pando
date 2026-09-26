@@ -80,7 +80,7 @@ func (s *Service) Scan(ctx context.Context, req api.ScanRequest, principal audit
 	result, err := scanner.Scan(ctx, req)
 	if err != nil {
 		recorded, recordErr := s.Scans.Record(ctx, state.Scan{
-			AppID: req.AppID, SpecID: req.SpecID, ScannerRef: ref,
+			AppID: req.AppID, SpecID: req.SpecID, Commit: req.Commit, ScannerRef: ref,
 			Error: messageOf(err), RanAt: time.Now().UTC(),
 		})
 		if recordErr != nil {
@@ -103,6 +103,7 @@ func (s *Service) Scan(ctx context.Context, req api.ScanRequest, principal audit
 	recorded, err := s.Scans.Record(ctx, state.Scan{
 		AppID:        req.AppID,
 		SpecID:       req.SpecID,
+		Commit:       req.Commit,
 		ScannerRef:   ref,
 		Scanner:      result.Scanner,
 		Score:        &score,
@@ -125,6 +126,17 @@ func (s *Service) Scan(ctx context.Context, req api.ScanRequest, principal audit
 		"spec_id":  req.SpecID,
 	})
 	return recorded, nil
+}
+
+// ScannedAt returns when the app's source at commit was last scanned
+// successfully, and whether it was. A deploy of that commit uses that scan
+// rather than scanning the same source again (design 09 §4.1).
+func (s *Service) ScannedAt(ctx context.Context, appID, commit string) (time.Time, bool, error) {
+	scan, found, err := s.Scans.ForCommit(ctx, appID, commit)
+	if err != nil || !found {
+		return time.Time{}, false, err
+	}
+	return scan.RanAt, true, nil
 }
 
 // Report is where an app stands right now.
