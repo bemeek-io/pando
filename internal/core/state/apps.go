@@ -75,6 +75,11 @@ type App struct {
 	// the store's to know.
 	SecurityVerdict string `json:"security_verdict,omitempty"`
 
+	// SecurityScanning says a scan of this app is running now, whoever started
+	// it. Filled in by the API layer from the security service, which is the
+	// one place that knows (R-310, R-261).
+	SecurityScanning bool `json:"security_scanning,omitempty"`
+
 	// IconUpdatedAt is when the app's tile image last changed, and nil when it
 	// has none (R-340). The time rather than a flag so a client can put it in
 	// the image's URL and a browser never shows yesterday's picture from cache.

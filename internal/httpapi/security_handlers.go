@@ -167,6 +167,7 @@ func (s *Server) withVerdicts(ctx context.Context, apps []state.App) []state.App
 		// row carried: policy decides whether findings with no fix count.
 		apps[i].SecurityScore = p.Score
 		apps[i].SecurityVerdict = string(p.Verdict)
+		apps[i].SecurityScanning = p.Scanning
 	}
 	return apps
 }
