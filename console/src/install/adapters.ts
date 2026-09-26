@@ -84,7 +84,7 @@ const CATEGORY_NOTES: Record<string, string> = {
   secrets: 'Where secret values are kept.',
   backup: 'Where backups are written.',
   scanner: 'What checks apps for known vulnerabilities.',
-  ai: 'An AI model that reads a new app and checks the plan Pando made for it.',
+  ai: 'An AI provider that performs the AI functions assigned to it: repairing plans, drafting access and policy, searching the audit log.',
   notify: 'Where notifications go.',
   identity: 'Where accounts come from.',
 };

@@ -23,6 +23,7 @@ import {
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb } from '../app/principal';
 import { AdapterDialog } from './AdapterDialog';
+import { AIFunctions, useAIFunctionOn } from './AIFunctions';
 import { RestartButton } from './Restart';
 import { categoryLabel, orderCategories } from './adapters';
 import type { AdapterKind } from './adapters';
@@ -35,10 +36,21 @@ import { BesideField } from '../ui/BesideField';
 import { FieldSkeleton, LineSkeleton } from '../ui/Loading';
 import { ActorField } from './ActorField';
 import type { Person } from './ActorField';
-import { NO_FILTERS, WHEN, auditQuery } from './audit';
-import type { AuditFilters } from './audit';
+import { NO_FILTERS, WHEN, auditQuery, filtersFromSearch } from './audit';
+import type { AuditFilters, SearchFilter } from './audit';
+import { AnsweredBy, AskAI } from '../ui/AskAI';
+
+/** Where the config file declares an adapter, in words. */
+function declaredAt(row: AdapterRow): string {
+  const src = row.source as { name?: string; key?: string } | undefined;
+  return src?.key ? `${src.name ?? 'the config file'}, at ${src.key}` : 'the config file';
+}
 
 interface AdapterRow extends ConfiguredAdapter {
+  /** `overridden` when the config file replaces this stored adapter (R-271). */
+  status?: string;
+  /** Declared in the config file, so read-only here (R-271). */
+  declared?: boolean;
   /** An older name for id, from before GET /adapters settled its shape. */
   ref?: string;
   /** Saved since Pando started, so not yet what runs (R-253). */
@@ -166,6 +178,8 @@ export function Installation() {
         />
       )}
 
+      <AIFunctions canManage={canManage} adapters={rows.filter((r) => r.category === 'ai' && r.status !== 'overridden')} />
+
       <h4 style={{ font: 'var(--type-h4)', margin: 'var(--space-6) 0 var(--space-3)' }}>
         Capacity
       </h4>
@@ -222,6 +236,45 @@ interface PolicyDoc {
   disable_ai_screening?: boolean;
 }
 
+/** What POST /ai/policy/draft answers (R-344). */
+interface PolicyProposal {
+  proposed: PolicyDoc;
+  changes: { key: string; from: unknown; to: unknown }[];
+  declined?: { key: string; reason: string }[];
+  refused?: string[];
+  reply: string;
+  adapter_id?: string;
+  model?: string;
+}
+
+/** The AI's proposal in words: what it changed, and what it would not. */
+function ProposalSummary({ proposal }: { proposal: PolicyProposal }) {
+  const show = (v: unknown) => (v === null || v === undefined ? 'unset' : JSON.stringify(v));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+      {proposal.reply && <p style={{ font: 'var(--type-body-ui)', margin: 0 }}>{proposal.reply}</p>}
+      {proposal.changes.length === 0 ? (
+        <Quiet>Nothing to change. The policy is as it was.</Quiet>
+      ) : (
+        <ul style={{ margin: 0, paddingLeft: 'var(--space-5)', font: 'var(--type-body-ui)' }}>
+          {proposal.changes.map((c) => (
+            <li key={c.key}>
+              <code style={{ font: 'var(--type-code-sm)' }}>{c.key}</code>: {show(c.from)} to {show(c.to)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {[...(proposal.declined ?? []).map((d) => d.reason), ...(proposal.refused ?? [])].map((reason) => (
+        <Quiet key={reason}>{reason}</Quiet>
+      ))}
+      {proposal.changes.length > 0 && (
+        <Quiet>The changes are in the form below and are not saved. Check them, then save.</Quiet>
+      )}
+      <AnsweredBy adapter={proposal.adapter_id} model={proposal.model} />
+    </div>
+  );
+}
+
 interface Violation {
   app_id: string;
   app_name: string;
@@ -271,6 +324,20 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
   });
 
   const current = draft ?? policy.data ?? {};
+
+  // A change described in a sentence (R-344). The proposal becomes the unsaved
+  // draft this screen already has, so it is checked and saved the same way as
+  // one made by hand, and nothing is saved until someone presses Save policy.
+  // Fields the startup config fixes come back declined, with where they are
+  // set — core refuses them whatever the model said.
+  const draftOn = useAIFunctionOn('draft_policy');
+  const proposal = useMutation({
+    mutationFn: (description: string) => api.post<PolicyProposal>('/ai/policy/draft', { description }),
+    onSuccess: (p) => {
+      setPreview(null);
+      if (p.changes.length > 0) setDraft(p.proposed);
+    },
+  });
 
   // Fields fixed in the startup configuration (R-271): shown, not editable,
   // and each says where it is set. GET /config is install.view, the same as
@@ -367,6 +434,20 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
         Saving policy doesn&rsquo;t change apps that are already running. A running app that
         breaks a new rule keeps running, and its next deploy is refused with the reason.
       </Banner>
+
+      {canEdit && draftOn && (
+        <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxWidth: '68ch' }}>
+          <AskAI
+            label="Describe a change"
+            placeholder="Nobody may open a shell in an app"
+            action="Draft"
+            pending={proposal.isPending}
+            error={proposal.error}
+            onAsk={(d) => proposal.mutate(d)}
+          />
+          {proposal.data && <ProposalSummary proposal={proposal.data} />}
+        </div>
+      )}
 
       {save.isError && (
         <div style={{ marginTop: 'var(--space-4)' }}>
@@ -1004,6 +1085,16 @@ export function usePeople() {
   return users.data?.users ?? [];
 }
 
+/** What POST /ai/audit/search answers (R-345). */
+interface AuditSearch {
+  filter: SearchFilter;
+  summary: string;
+  note?: string;
+  matched: number;
+  adapter_id?: string;
+  model?: string;
+}
+
 export function Audit({
   initial = NO_FILTERS,
   onFilters,
@@ -1026,6 +1117,15 @@ export function Audit({
   const { log, events } = useAuditLog(filters);
   const people = usePeople();
 
+  // A question turned into filters (R-345). What the AI searched for lands in
+  // the fields below, where it can be read and changed; the table is the same
+  // table, read with those filters, so nothing here depends on the AI's word.
+  const searchOn = useAIFunctionOn('search_audit');
+  const search = useMutation({
+    mutationFn: (question: string) => api.post<AuditSearch>('/ai/audit/search', { question }),
+    onSuccess: (found) => change(filtersFromSearch(found.filter)),
+  });
+
   const custom = filters.when === 'custom';
   const range = (
     <Field>
@@ -1040,6 +1140,26 @@ export function Audit({
 
   return (
     <Screen heading="Audit log">
+      {searchOn && (
+      <div style={{ marginBottom: 'var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+        <AskAI
+          label="Ask the audit log"
+          placeholder="Which apps did Dana create or delete last month?"
+          action="Search"
+          pending={search.isPending}
+          error={search.error}
+          onAsk={(q) => search.mutate(q)}
+        />
+        {search.data && (
+          <>
+            <p style={{ font: 'var(--type-body-ui)', margin: 0 }}>{search.data.summary}</p>
+            {search.data.note && <Quiet>{search.data.note}</Quiet>}
+            <AnsweredBy adapter={search.data.adapter_id} model={search.data.model} />
+          </>
+        )}
+      </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
         <FilterRow>
           <Field>
@@ -1049,6 +1169,16 @@ export function Audit({
               value={filters.action}
               placeholder="Prefix, e.g. app."
               onChange={(e) => set({ action: e.target.value })}
+            />
+          </Field>
+
+          <Field>
+            <Input
+              label="App ID"
+              mono
+              value={filters.app}
+              placeholder="app_…"
+              onChange={(e) => set({ app: e.target.value })}
             />
           </Field>
 
@@ -1242,6 +1372,9 @@ type GroupedRow = AdapterRow & { first?: boolean; kindName?: string };
 
 /** Reachable or not — or, saved since Pando started, not running yet. */
 function AdapterStatus({ row }: { row: AdapterRow }) {
+  // Replaced by one the config file declares (R-271): not running, and not
+  // broken either. It applies again when the declaration is removed.
+  if (row.status === 'overridden') return <StatusIndicator status="stopped" label="Replaced by config file" />;
   if (row.pending_restart) return <StatusIndicator status="info" label="Restart to apply" />;
   return row.healthy === false ? (
     <StatusIndicator status="failed" label="Unreachable" />
@@ -1331,10 +1464,19 @@ function GroupedAdapters({
               <AdapterStatus row={row} />
             </span>
             <span style={{ justifySelf: 'end' }}>
-              {canManage && (
-                <Button variant="secondary" onClick={() => onChange(row)}>
-                  Change
-                </Button>
+              {/* Declared in the config file, so read-only here while it is
+                  (R-271); the file is where it changes. */}
+              {row.declared ? (
+                <span title={declaredAt(row)} style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
+                  Set in config file
+                </span>
+              ) : (
+                canManage &&
+                row.status !== 'overridden' && (
+                  <Button variant="secondary" onClick={() => onChange(row)}>
+                    Change
+                  </Button>
+                )
               )}
             </span>
           </div>

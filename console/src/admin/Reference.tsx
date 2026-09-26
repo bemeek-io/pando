@@ -18,7 +18,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, CodeBlock, Dialog, Input, Skeleton, Tabs, Tag } from '@design';
+import { Banner, Button, CodeBlock, Dialog, InlineCode, Input, Skeleton, Tabs, Tag } from '@design';
 
 import { api } from '@api/client';
 import type { Command, Document, Route, Token } from '@api/types.gen';
@@ -28,6 +28,55 @@ import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { Table } from '../ui/Table';
 import { LineSkeleton, Loading } from '../ui/Loading';
+import { AnsweredBy, AskAI } from '../ui/AskAI';
+import { useAIFunctionState } from '../install/AIFunctions';
+
+/** What POST /ai/reference/answer answers (R-346). */
+interface ReferenceAnswer {
+  answer: string;
+  cites: string[];
+  covered: boolean;
+  adapter_id?: string;
+  model?: string;
+}
+
+/**
+ * "How can I…", answered from this same reference (R-346). The answer
+ * describes and cites; the tabs below are where to check it. Offered to
+ * everyone signed in unless reference help is known to be off.
+ */
+function AskHow() {
+  const state = useAIFunctionState('answer_reference');
+  const ask = useMutation({
+    mutationFn: (question: string) => api.post<ReferenceAnswer>('/ai/reference/answer', { question }),
+  });
+  if (state === 'off') return null;
+  const a = ask.data;
+  return (
+    <div style={{ maxWidth: MEASURE, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-5)' }}>
+      <AskAI
+        label="Ask how to do something"
+        placeholder="How can I give a group access to one app?"
+        pending={ask.isPending}
+        error={ask.error}
+        onAsk={(q) => ask.mutate(q)}
+      />
+      {a && (
+        <>
+          <p style={{ font: 'var(--type-body-ui)', margin: 0, whiteSpace: 'pre-wrap' }}>{a.answer}</p>
+          {a.cites.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+              {a.cites.map((c) => (
+                <InlineCode key={c}>{c}</InlineCode>
+              ))}
+            </div>
+          )}
+          <AnsweredBy adapter={a.adapter_id} model={a.model} />
+        </>
+      )}
+    </div>
+  );
+}
 
 export function Reference() {
   const [tab, setTab] = useState('connect');
@@ -43,6 +92,8 @@ export function Reference() {
   return (
     <Screen heading="API and tools">
       {doc.isError && <Banner tone="failed">{messageOf(doc.error)}</Banner>}
+
+      <AskHow />
 
       <Tabs
         value={tab}

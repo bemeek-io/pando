@@ -231,12 +231,20 @@ export function AdapterDialog({
                   />
                 ))}
 
-                <Checkbox
-                  label={`Use as the default ${kind.category === 'ai' ? 'AI' : kind.category} adapter`}
-                  description="Used by anything that needs this kind of adapter and doesn't name one."
-                  checked={form.isDefault}
-                  onChange={(e) => edit({ isDefault: e.target.checked })}
-                />
+                {/* An AI adapter has no default: each AI function is assigned
+                    to one, under AI functions (R-259). */}
+                {kind.category === 'ai' ? (
+                  <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+                    After Pando restarts, choose which AI functions this adapter handles under AI functions.
+                  </p>
+                ) : (
+                  <Checkbox
+                    label={`Use as the default ${kind.category} adapter`}
+                    description="Used by anything that needs this kind of adapter and doesn't name one."
+                    checked={form.isDefault}
+                    onChange={(e) => edit({ isDefault: e.target.checked })}
+                  />
+                )}
               </>
             )}
 
