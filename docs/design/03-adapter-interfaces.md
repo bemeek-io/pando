@@ -115,8 +115,28 @@ type RuntimeAdapter interface {
 
     Logs(ctx context.Context, ref WorkloadRef, opts LogOptions) (io.ReadCloser, error)
     Exec(ctx context.Context, ref WorkloadRef, req ExecRequest) (ExecSession, error)
+
+    // Where Pando's proxy sends a request for one port of one workload (R-023).
+    // Called on every proxied request.
+    Upstream(ctx context.Context, ref WorkloadRef, port int) (Upstream, error)
+}
+
+type Upstream struct {
+    URL string // scheme, host and port; the proxy keeps the request's path
 }
 ```
+
+**[D]** The runtime says where a workload is reachable; the proxy never assembles the address. How a
+workload is addressed is provider vocabulary (R-251), and it is the runtime that made the workload
+reachable — by joining Pando to the bundle network, or by whatever stands in for that. Core still
+chooses *which* port (the primary workload's HTTP port), because that is a reading of the spec. The
+proxy built a Docker container name itself until this was moved, which would have sent every request
+for an app on any other runtime to a host that does not exist.
+
+**[P]** `Upstream` is a struct holding only a URL. A runtime whose workloads are not directly
+addressable from Pando — a remote host, a cluster Pando runs outside of — will need to hand the proxy a
+way to dial as well, and gets a field here then rather than a second interface change. Nothing needs it
+yet, so nothing has it.
 
 ### 2.1 The plan
 
@@ -737,7 +757,7 @@ func (r *Registry) Default(c Category) (Adapter, error)
 | routing | `loopback` | port mode, no TLS, laptop default |
 | routing | `traefik` | subdomain and path, TLS |
 | builder | `buildkit` | rootless, containerized, no socket (R-111) |
-| runtime | `docker` | container isolation class |
+| runtime | `docker` | container isolation class; `sandboxed` when `oci_runtime` names gVisor (`runsc`) or a Kata runtime (R-115), which the daemon must have registered or the adapter reports itself unavailable. A sandboxed trial run still reports whether the app started, but not its ports or writes — both are read from outside the container, and a sandbox hides them. |
 | secrets | `local` | encrypted at rest, key on disk (R-190) |
 | backup | `local` | a filesystem path; retention owned by Pando |
 | services | `docker` | postgres, mysql, redis in-bundle |

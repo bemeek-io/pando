@@ -70,7 +70,9 @@ func (a *Adapter) Trial(ctx context.Context, req api.TrialRequest) (api.TrialRes
 	// watch already polls for ports while the container is up, which is the
 	// only time they can be read: a container that has exited has released its
 	// sockets and its network namespace, and there is nothing left to look at.
-	result.ObservedWrites = a.observeWrites(ctx, id, req.DeclaredPaths)
+	if a.observes() {
+		result.ObservedWrites = a.observeWrites(ctx, id, req.DeclaredPaths)
+	}
 	result.ImageVolumes = a.imageVolumes(ctx, req.Image)
 
 	logs := a.trialLogs(ctx, id)
@@ -114,6 +116,12 @@ func (a *Adapter) startTrialContainer(ctx context.Context, req api.TrialRequest,
 			// restarting would turn "this app needs a database" into a loop.
 			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyDisabled},
 			AutoRemove:    false, // the container is inspected after it exits
+
+			// The same runtime the app will be deployed on. A trial runs code
+			// nobody has reviewed yet, so it gets the boundary the deploy gets:
+			// running it under runc on a sandboxed install would put the least
+			// trusted moment of an app's life outside the sandbox.
+			Runtime: a.config.OCIRuntime,
 
 			// Throwaway storage wherever the image declares it, so an app that
 			// checks for its volume starts the way it will when deployed with
@@ -184,6 +192,13 @@ func (a *Adapter) watch(ctx context.Context, id string, timeout time.Duration) a
 				continue
 			}
 			result.Started = true
+
+			// Nothing to look at through a sandbox (Capabilities). The trial
+			// then runs to its timeout, which is the price of the sandbox: it
+			// cannot end early on a port it cannot see.
+			if !a.observes() {
+				continue
+			}
 
 			// Only a successful observation is allowed to replace an earlier
 			// one. A check that could not run — the sidecar canceled as the

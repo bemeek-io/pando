@@ -237,7 +237,10 @@ topology: there is no route to an app that does not pass through enforcement, be
 route to an app at all.
 
 Attaching is the adapter's job rather than core's — how a workload becomes reachable is exactly the
-provider vocabulary core must never learn (R-251).
+provider vocabulary core must never learn (R-251). So is the address step 11 forwards to: the proxy
+picks the primary workload's port from the spec and asks the app's runtime adapter for the rest
+(`RuntimeAdapter.Upstream`, §03 2). Docker answers with the container's name, which is unique across
+every network Pando is joined to where the workload's alias is not.
 
 **[P]** The cost is a private network per app, and a container runtime has a finite supply. Docker's
 default pool holds about thirty, so an install past that size needs `default-address-pools` widened
