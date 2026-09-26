@@ -8,12 +8,24 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Checkbox, Dialog, Input, Select } from '@design';
+import { Banner, Button, Checkbox, Dialog, Input, Radio, Select } from '@design';
 
 import { api } from '@api/client';
 import { Quiet, refusal } from './Accounts';
 import { FieldSkeleton, Loading } from '../ui/Loading';
-import { adapterRequest, blankForm, categoryLabel, categoryNote, fieldPlaceholder, formProblems, kindKey, orderCategories, sortKinds } from './adapters';
+import {
+  adapterRequest,
+  blankForm,
+  boolValue,
+  categoryLabel,
+  categoryNote,
+  fieldPlaceholder,
+  formProblems,
+  isShown,
+  kindKey,
+  orderCategories,
+  sortKinds,
+} from './adapters';
 import type { AdapterForm, AdapterKind, KindField } from './adapters';
 import { AdapterFunctions, choiceChanges, currentChoice } from './AdapterFunctions';
 import type { FunctionChoice } from './AdapterFunctions';
@@ -256,7 +268,9 @@ export function AdapterDialog({
                 />
                 <Input label="Name" value={form.name} onChange={(e) => edit({ name: e.target.value })} />
 
-                {(kind.fields ?? []).map((f) => (
+                {(kind.fields ?? [])
+                  .filter((f) => isShown(kind, f, form.values))
+                  .map((f) => (
                   <FieldInput
                     key={f.key}
                     field={f}
@@ -326,8 +340,17 @@ function FieldInput({
 
   if (field.type === 'bool') {
     return (
-      <Checkbox label={label} description={field.help} checked={value === true} onChange={(e) => onChange(e.target.checked)} />
+      <Checkbox
+        label={label}
+        description={field.help}
+        checked={boolValue(field, value)}
+        onChange={(e) => onChange(e.target.checked)}
+      />
     );
+  }
+
+  if (field.type === 'select') {
+    return <ChoiceInput field={field} label={label} value={value} error={error} onChange={onChange} />;
   }
 
   // A credential's helper says what happens to what is typed. The kind's own
@@ -338,6 +361,27 @@ function FieldInput({
     if (stored === true) helper = 'One is stored. Leave empty to keep the current one.';
     else if (stored === false) helper = `None is stored. ${field.help ?? CREDENTIAL}`;
     else helper = field.help ?? CREDENTIAL;
+  }
+
+  if (field.multiline) {
+    // NAME=value lines. Mono, because they are names a program reads; not
+    // masked, because a text area cannot be, and the value is never shown
+    // again once saved.
+    return (
+      <Input
+        as="textarea"
+        rows={4}
+        mono
+        spellCheck={false}
+        autoComplete="off"
+        label={label}
+        value={typeof value === 'string' ? value : ''}
+        placeholder={fieldPlaceholder(field)}
+        helper={helper}
+        error={error}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
   }
 
   return (
@@ -351,5 +395,96 @@ function FieldInput({
       error={error}
       onChange={(e) => onChange(e.target.value)}
     />
+  );
+}
+
+/** The value a select offers for typing in one it does not list. */
+const OTHER = '__other__';
+
+/**
+ * A `select` setting. Two or three choices are radio buttons, so the tradeoff
+ * each one's description states is visible at once; more is a select. One that
+ * takes a value it does not list offers "Other" and a field to type it in —
+ * a DNS provider Pando does not name, say.
+ */
+function ChoiceInput({
+  field,
+  label,
+  value,
+  error,
+  onChange,
+}: {
+  field: KindField;
+  label: string;
+  value: string | boolean | undefined;
+  error?: string;
+  onChange: (v: string) => void;
+}) {
+  const options = field.options ?? [];
+  const text = typeof value === 'string' ? value : '';
+  const current = text || field.default || '';
+  const listed = options.some((o) => o.value === current);
+  // "Other" is chosen when the value is one the list lacks, or when someone
+  // picked it and has not typed anything yet.
+  const [otherPicked, setOtherPicked] = useState(false);
+  const typing = Boolean(field.other) && (otherPicked || (current !== '' && !listed));
+
+  if (options.length <= 3 && !field.other) {
+    return (
+      <fieldset style={{ border: 0, margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <legend style={{ font: 'var(--type-label)', color: 'var(--ink)', marginBottom: 'var(--space-2)' }}>{label}</legend>
+        {field.help && (
+          <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>{field.help}</p>
+        )}
+        {options.map((o) => (
+          <Radio
+            key={o.value}
+            name={field.key}
+            value={o.value}
+            label={o.label}
+            description={o.description}
+            checked={current === o.value}
+            onChange={() => onChange(o.value)}
+          />
+        ))}
+        {error && <p style={{ font: 'var(--type-caption)', color: 'var(--marker-deep)', margin: 0 }}>{error}</p>}
+      </fieldset>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+      <Select
+        label={label}
+        helper={field.help}
+        value={typing ? OTHER : current}
+        options={[
+          ...(current || typing ? [] : [{ value: '', label: `Choose ${field.label.toLowerCase()}` }]),
+          ...options.map((o) => ({ value: o.value, label: o.label })),
+          ...(field.other ? [{ value: OTHER, label: 'Other' }] : []),
+        ]}
+        onChange={(e) => {
+          if (e.target.value === OTHER) {
+            setOtherPicked(true);
+            onChange('');
+          } else {
+            setOtherPicked(false);
+            onChange(e.target.value);
+          }
+        }}
+      />
+      {typing && (
+        <Input
+          label={`${field.label} code`}
+          mono
+          autoComplete="off"
+          spellCheck={false}
+          value={listed ? '' : text}
+          error={error}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+      {!typing && error && <p style={{ font: 'var(--type-caption)', color: 'var(--marker-deep)', margin: 0 }}>{error}</p>}
+    </div>
   );
 }

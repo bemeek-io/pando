@@ -59,6 +59,9 @@ interface AdapterRow extends ConfiguredAdapter {
   ref?: string;
   /** Saved since Pando started, so not yet what runs (R-253). */
   pending_restart?: boolean;
+  /** What a routing adapter has Pando run in front of itself, such as Traefik
+   *  (R-174). The reason is only there for whoever may change the adapter. */
+  edge?: { running: boolean; message?: string; checked_at?: string };
   [key: string]: unknown;
 }
 
@@ -1288,6 +1291,11 @@ function AdapterStatus({ row }: { row: AdapterRow }) {
   // broken either. It applies again when the declaration is removed.
   if (row.status === 'overridden') return <StatusIndicator status="stopped" label="Replaced by config file" />;
   if (row.pending_restart) return <StatusIndicator status="info" label="Restart to apply" />;
+  // Reachable is not the same as working: a Traefik that could not start
+  // leaves every app behind it unreachable, and says why to those who can fix it.
+  if (row.healthy !== false && row.edge && !row.edge.running) {
+    return <StatusIndicator status="failed" label="Not running" title={row.edge.message} />;
+  }
   return row.healthy === false ? (
     <StatusIndicator status="failed" label="Unreachable" />
   ) : (

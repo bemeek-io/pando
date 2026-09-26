@@ -65,6 +65,10 @@ type Field struct {
 type Option struct {
 	Value string `json:"value"`
 	Label string `json:"label"`
+
+	// Description says what choosing it means, for a short list shown as
+	// radio buttons where the tradeoff should be visible.
+	Description string `json:"description,omitempty"`
 }
 
 // Condition is a setting's value a form checks before showing another.
