@@ -71,6 +71,30 @@ func Fields() []string {
 	return out
 }
 
+// FieldType is a policy field's type in words — "list", "true or false",
+// "whole number" or "string" — and whether the field exists.
+func FieldType(key string) (string, bool) {
+	t, ok := fields[key]
+	if !ok {
+		return "", false
+	}
+	return kindName(t), true
+}
+
+// CheckValue reads value as the field key, as a startup setting is read, and
+// returns it normalized. An error says why it does not read.
+func CheckValue(key string, value json.RawMessage) (json.RawMessage, error) {
+	t, ok := fields[key]
+	if !ok {
+		return nil, fmt.Errorf("%q is not a host policy setting", key)
+	}
+	var v any
+	if err := json.Unmarshal(value, &v); err != nil {
+		return nil, fmt.Errorf("the value for %s is not JSON", key)
+	}
+	return normalize(t, v)
+}
+
 // NewOverlay checks each setting against the policy document and returns the
 // overlay. A setting that is not a policy field, or will not read as one, is
 // an error that stops startup: a misspelt or malformed policy is a policy that
@@ -242,6 +266,18 @@ func asMap(doc Document) map[string]json.RawMessage {
 	m := map[string]json.RawMessage{}
 	_ = json.Unmarshal(raw, &m)
 	return m
+}
+
+// SameValue reports whether two encodings of the field key hold the same
+// setting, treating absent as the zero value: a document that omits
+// require_backup_before_destroy and one that sets it false say the same
+// thing. An unknown key compares as the raw JSON.
+func SameValue(key string, a, b json.RawMessage) bool {
+	t, ok := fields[key]
+	if !ok {
+		return string(a) == string(b)
+	}
+	return sameJSON(a, b, t)
 }
 
 // sameJSON compares two encodings of one field, treating absent as the zero

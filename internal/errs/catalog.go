@@ -49,6 +49,8 @@ var meanings = map[Code]string{
 	PlanSecurityBelowThreshold:   "This installation requires a security score, and this app is below it or has never been scanned (R-314).",
 
 	StateInvalid:                "The object is in a state this action does not apply to.",
+	StateAIFunctionAssigned:     "Another AI adapter already handles this AI function. Remove it from that adapter first.",
+	StateSetAtStartup:           "This is declared in Pando's startup configuration and cannot be changed through the API while it is.",
 	StateAppExited:              "The app started and then stopped, so the deploy has nothing to send traffic to.",
 	StateBackupDecisionRequired: "The app has storage and the request did not say whether to keep a final backup of it (R-204, R-205).",
 

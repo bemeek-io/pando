@@ -7,7 +7,7 @@
 // learning about it.
 
 import { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banner, Button, Checkbox, Dialog, Input, Select } from '@design';
 
 import { api } from '@api/client';
@@ -15,6 +15,9 @@ import { Quiet, refusal } from './Accounts';
 import { FieldSkeleton, Loading } from '../ui/Loading';
 import { adapterRequest, blankForm, categoryLabel, categoryNote, fieldPlaceholder, formProblems, kindKey, orderCategories, sortKinds } from './adapters';
 import type { AdapterForm, AdapterKind, KindField } from './adapters';
+import { AdapterFunctions, choiceChanges, currentChoice } from './AdapterFunctions';
+import type { FunctionChoice } from './AdapterFunctions';
+import type { AIFunction } from './AIFunctions';
 
 /** A configured adapter, as GET /adapters returns it. */
 export interface ConfiguredAdapter {
@@ -98,14 +101,47 @@ export function AdapterDialog({
   const problems = kind && form ? formProblems(kind, form, stored) : {};
   const shown = (key: string) => (tried ? problems[key] : undefined);
 
+  // An AI adapter's functions are chosen here, on the adapter (R-259). Only a
+  // running one can be given functions: the server checks what it advertises.
+  const queries = useQueryClient();
+  const isAI = Boolean(existing) && (existing?.category ?? category) === 'ai';
+  const functions = useQuery({
+    queryKey: ['ai-functions'],
+    queryFn: () => api.get<{ functions: AIFunction[] }>('/ai/functions'),
+    enabled: isAI,
+  });
+  const had = currentChoice(functions.data?.functions ?? [], existing?.id ?? '');
+  const [choice, setChoice] = useState<FunctionChoice | null>(null);
+  const chosenFunctions = choice ?? had;
+
   const save = useMutation({
-    mutationFn: () => api.post<{ id: string; note?: string }>('/adapters', adapterRequest(kind!, form!, existing?.enabled)),
-    onSuccess: () => onSaved(form!.name.trim() || kind!.name),
+    mutationFn: async () => {
+      // The adapter's own settings are saved only when they changed: that is
+      // what needs a restart, and choosing functions does not.
+      const settingsChanged = draft !== null || !existing;
+      if (settingsChanged) {
+        await api.post<{ id: string; note?: string }>('/adapters', adapterRequest(kind!, form!, existing?.enabled));
+      }
+      if (existing && choice) {
+        for (const c of choiceChanges(existing.id, had, choice)) {
+          if (c.method === 'DELETE') await api.del(`/ai/functions/${c.fn}`);
+          else await api.put(`/ai/functions/${c.fn}`, { adapter_id: c.adapterID, model: c.model ?? '' });
+        }
+      }
+      return settingsChanged;
+    },
+    onSuccess: (settingsChanged) => {
+      if (settingsChanged) onSaved(form!.name.trim() || kind!.name);
+      else onClose();
+    },
+    onSettled: () => void queries.invalidateQueries({ queryKey: ['ai-functions'] }),
   });
 
   const submit = () => {
     setTried(true);
-    if (!kind || !form || Object.keys(problems).length > 0) return;
+    if (!kind || !form) return;
+    // Settings left as they were are not re-checked: only functions changed.
+    if ((draft !== null || !existing) && Object.keys(problems).length > 0) return;
     save.mutate();
   };
 
@@ -119,7 +155,7 @@ export function AdapterDialog({
   return (
     <Dialog
       open
-      title={existing ? `Change ${existing.name || existing.id}` : 'Add adapter'}
+      title={existing ? `Edit ${existing.name || existing.id}` : 'Add adapter'}
       description="Pando reads adapters when it starts, so a saved change takes effect after a restart."
       onClose={onClose}
       footer={
@@ -231,12 +267,32 @@ export function AdapterDialog({
                   />
                 ))}
 
-                <Checkbox
-                  label={`Use as the default ${kind.category === 'ai' ? 'AI' : kind.category} adapter`}
-                  description="Used by anything that needs this kind of adapter and doesn't name one."
-                  checked={form.isDefault}
-                  onChange={(e) => edit({ isDefault: e.target.checked })}
-                />
+                {/* An AI adapter has no default: it handles the functions
+                    chosen on it (R-259). A new one is not running until Pando
+                    restarts, so its functions are chosen after that. */}
+                {kind.category === 'ai' ? (
+                  existing ? (
+                    functions.isSuccess && (
+                      <AdapterFunctions
+                        adapterID={existing.id}
+                        functions={functions.data.functions}
+                        choice={chosenFunctions}
+                        onChange={setChoice}
+                      />
+                    )
+                  ) : (
+                    <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+                      After Pando restarts, open this adapter again to choose what it handles.
+                    </p>
+                  )
+                ) : (
+                  <Checkbox
+                    label={`Use as the default ${kind.category} adapter`}
+                    description="Used by anything that needs this kind of adapter and doesn't name one."
+                    checked={form.isDefault}
+                    onChange={(e) => edit({ isDefault: e.target.checked })}
+                  />
+                )}
               </>
             )}
 

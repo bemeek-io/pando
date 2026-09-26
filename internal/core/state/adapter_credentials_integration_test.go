@@ -78,9 +78,10 @@ func TestO20_ACredentialIsBoundToItsAdapter(t *testing.T) {
 	ctx := context.Background()
 	db := connected(t)
 	adapters := state.NewAdapters(db)
-	for _, id := range []string{"ai_one", "ai_two"} {
+	// Two providers: an install has one AI adapter per provider (R-259).
+	for id, kind := range map[string]string{"ai_one": "anthropic", "ai_two": "openai"} {
 		require.NoError(t, adapters.Upsert(ctx, state.AdapterConfig{
-			ID: id, Category: "ai", Kind: "anthropic", Name: id, Enabled: true,
+			ID: id, Category: "ai", Kind: kind, Name: id, Enabled: true,
 		}))
 	}
 	creds := credentialStore(t, db)

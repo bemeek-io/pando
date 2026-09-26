@@ -17,6 +17,9 @@ import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
 import { Table } from '../ui/Table';
 import { LineSkeleton, Loading } from '../ui/Loading';
+import { AIButton } from '../ui/AskAI';
+import { AccessAI } from './AccessAI';
+import { useAIFunctionOn } from './AIFunctions';
 
 interface Group {
   id: string;
@@ -51,11 +54,21 @@ export function Identity({ canEdit }: { canEdit: boolean }) {
   // One search for both lists: they are one screen, and someone looking for
   // "engineering" should not have to know first whether it is a group or a role.
   const [query, setQuery] = useState('');
+  // Drafting with AI (R-343), behind one button: shown to whoever can create
+  // groups and roles, and only when access drafting is assigned to an adapter.
+  const draftOn = useAIFunctionOn('draft_access');
+  const [drafting, setDrafting] = useState(false);
   return (
     <Screen
       heading="Groups and roles"
-      action={<SearchField value={query} onChange={setQuery} placeholder="Search groups and roles" />}
+      action={
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3)' }}>
+          {canEdit && draftOn && <AIButton onClick={() => setDrafting(true)} />}
+          <SearchField value={query} onChange={setQuery} placeholder="Search groups and roles" />
+        </div>
+      }
     >
+      {drafting && <AccessAI onClose={() => setDrafting(false)} />}
       <div
         style={{
           display: 'flex',

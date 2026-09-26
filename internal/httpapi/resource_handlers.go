@@ -354,6 +354,22 @@ func (s *Server) handleCreateAdapter(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Declared in the config file, so read-only here while it is (R-271).
+	for _, d := range s.declaredAdapters() {
+		if d.ID == req.ID {
+			Error(w, r, errs.Newf(errs.StateSetAtStartup,
+				"The adapter %s is declared in the config file %s, at %s, so it cannot be changed here.", d.ID, d.Source.Name, d.Source.Key).
+				WithRemedy("Change it there and restart Pando, or remove it there to manage it here."))
+			return
+		}
+		if req.Category == string(api.CategoryAI) && d.Category == req.Category && d.Kind == req.Kind && d.Enabled {
+			Error(w, r, errs.Newf(errs.StateSetAtStartup,
+				"A %s AI adapter, %s, is declared in the config file %s, at %s, and Pando allows one AI adapter per provider.",
+				d.Kind, d.ID, d.Source.Name, d.Source.Key).
+				WithRemedy("Change that declaration instead, or remove it there and restart Pando to manage a "+d.Kind+" adapter here."))
+			return
+		}
+	}
 	if reason := inlineCredential(req.Config); reason != "" {
 		Error(w, r, errs.New(errs.ValidInvalid, reason).
 			WithRemedy(`Send it in the request's "credentials" object instead, for example {"credentials": {"api_key": "…"}}. Pando stores that encrypted.`))

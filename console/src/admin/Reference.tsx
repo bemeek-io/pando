@@ -18,7 +18,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, CodeBlock, Dialog, Input, Skeleton, Tabs, Tag } from '@design';
+import { Banner, Button, CodeBlock, Dialog, InlineCode, Input, Skeleton, Tabs, Tag } from '@design';
 
 import { api } from '@api/client';
 import type { Command, Document, Route, Token } from '@api/types.gen';
@@ -28,9 +28,76 @@ import { MEASURE } from '../ui/layout';
 import { relative } from '../ui/time';
 import { Table } from '../ui/Table';
 import { LineSkeleton, Loading } from '../ui/Loading';
+import { AIButton, AIDialog, AIPrompt, AnsweredBy } from '../ui/AskAI';
+import { AI_PHRASES, AiThinking } from '../ui/AiThinking';
+import { useAIFunctionState } from '../install/AIFunctions';
+
+/** What POST /ai/reference/answer answers (R-346). */
+interface ReferenceAnswer {
+  answer: string;
+  cites: string[];
+  covered: boolean;
+  adapter_id?: string;
+  model?: string;
+}
+
+/**
+ * "How can I…", answered from this same reference (R-346), in a dialog behind
+ * the AI button. The answer describes and cites; the tabs are where to check
+ * it. Nothing to accept: it does nothing.
+ */
+function AskHow({ onClose }: { onClose: () => void }) {
+  const [question, setQuestion] = useState('');
+  const ask = useMutation({
+    mutationFn: (q: string) => api.post<ReferenceAnswer>('/ai/reference/answer', { question: q }),
+  });
+  const a = ask.data;
+  return (
+    <AIDialog
+      title="Ask AI how to do something"
+      intro="Answered from this reference: the API, the CLI and the MCP tools. AI explains how and cites what it used; it doesn't do anything."
+      onClose={onClose}
+      footer={
+        <Button variant="ghost" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
+      <AIPrompt
+        label={a ? 'Ask another question' : 'What you want to do'}
+        placeholder="How can I give a group access to one app?"
+        pending={ask.isPending}
+        error={ask.error}
+        onAsk={(q) => {
+          setQuestion(q);
+          ask.mutate(q);
+        }}
+      />
+      {ask.isPending && <AiThinking phrases={AI_PHRASES.reference} />}
+      {a && (
+        <>
+          <Quiet>{question}</Quiet>
+          <p style={{ font: 'var(--type-body-ui)', margin: 0, whiteSpace: 'pre-wrap' }}>{a.answer}</p>
+          {a.cites.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+              {a.cites.map((c) => (
+                <InlineCode key={c}>{c}</InlineCode>
+              ))}
+            </div>
+          )}
+          <AnsweredBy adapter={a.adapter_id} model={a.model} />
+        </>
+      )}
+    </AIDialog>
+  );
+}
 
 export function Reference() {
   const [tab, setTab] = useState('connect');
+  // Offered to everyone signed in unless reference help is known to be off:
+  // most people cannot read which functions are on, and the answer says so.
+  const aiState = useAIFunctionState('answer_reference');
+  const [asking, setAsking] = useState(false);
 
   const doc = useQuery({
     queryKey: ['reference'],
@@ -41,8 +108,9 @@ export function Reference() {
   });
 
   return (
-    <Screen heading="API and tools">
+    <Screen heading="API and tools" action={aiState !== 'off' && <AIButton onClick={() => setAsking(true)} />}>
       {doc.isError && <Banner tone="failed">{messageOf(doc.error)}</Banner>}
+      {asking && <AskHow onClose={() => setAsking(false)} />}
 
       <Tabs
         value={tab}

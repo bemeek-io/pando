@@ -31,6 +31,7 @@ import (
 	secretslocal "github.com/bemeek-io/pando/internal/adapter/secrets/local"
 	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/core/assertion"
+	"github.com/bemeek-io/pando/internal/core/assist"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/backup"
@@ -45,6 +46,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/httpapi"
+	"github.com/bemeek-io/pando/internal/reference"
 	"github.com/bemeek-io/pando/internal/secret"
 )
 
@@ -215,6 +217,13 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 
 		Registry:     registry,
 		Adapters:     adapters,
+		AIFunctions:  &assist.Assignments{Store: state.NewAIAssignments(db), Registry: registry, Declared: declaredAI(startup)},
+		Assist: &assist.Service{
+			Registry: registry, Users: users, Apps: apps,
+			Roles: state.NewRoles(db), Groups: state.NewGroups(db), Verbs: authzStore,
+			Policy: overlay.Wrap(policyStore), Overlay: overlay, Audit: audit.NewReader(db.Pool),
+			Reference: func() string { return reference.Markdown(httpapi.Reference()) },
+		},
 		AdapterKinds: []adapterapi.KindInfo{aianthropic.Info(), secretslocal.Info()},
 		Allocations:  allocations,
 
@@ -492,4 +501,22 @@ func (i *install) createApp(s *session, name string) string {
 	got.JSON(i.t, &app)
 	require.NotEmpty(i.t, app.ID)
 	return app.ID
+}
+
+// declaredAI is what main hands the assignments service from the config
+// file's adapters.
+func declaredAI(startup *config.Config) []assist.Declared {
+	if startup == nil {
+		return nil
+	}
+	var out []assist.Declared
+	for _, d := range startup.Adapters {
+		for _, f := range d.Functions {
+			out = append(out, assist.Declared{
+				Function: adapterapi.AIFunction(f.Function), Adapter: d.ID, Model: f.Model,
+				Source: assist.Source{Kind: f.Source.Kind, Name: f.Source.Name, Key: f.Source.Key},
+			})
+		}
+	}
+	return out
 }

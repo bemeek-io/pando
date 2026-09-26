@@ -2,13 +2,12 @@ package anthropic
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 
+	"github.com/bemeek-io/pando/internal/adapter/ai/aikit"
 	"github.com/bemeek-io/pando/internal/adapter/api"
 )
 
@@ -50,13 +49,13 @@ func (a *Adapter) run(ctx context.Context, fn api.AIFunction, req api.ScreenRequ
 		return api.ScreenResult{}, errors.New("anthropic: no readable copy of the repository was supplied")
 	}
 
-	src := newReader(req.Source, a.limit(req.Budget.MaxFiles, a.cfg.MaxFiles), a.limitBytes(req.Budget.MaxBytes, a.cfg.MaxBytes))
+	src := aikit.NewReader(req.Source, aikit.Limit(req.Budget.MaxFiles, a.cfg.MaxFiles), aikit.Limit(req.Budget.MaxBytes, a.cfg.MaxBytes))
 
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(a.cfg.Model),
+		Model:     anthropic.Model(a.model(req.Model)),
 		MaxTokens: maxTokens,
 		System: []anthropic.TextBlockParam{{
-			Text: systemPrompt(fn),
+			Text: aikit.SystemPrompt(fn),
 
 			// The system prompt and the tool definitions are identical on every
 			// call of one function and sit ahead of everything that varies, so
@@ -65,7 +64,7 @@ func (a *Adapter) run(ctx context.Context, fn api.AIFunction, req api.ScreenRequ
 		}},
 		Tools: tools(fn, req.Questions, req.Values),
 		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(userPrompt(fn, req) + preloaded(src, req.Known))),
+			anthropic.NewUserMessage(anthropic.NewTextBlock(aikit.UserPrompt(fn, req) + aikit.Preloaded(src, req.Known))),
 		},
 	}
 
@@ -99,11 +98,16 @@ func (a *Adapter) run(ctx context.Context, fn api.AIFunction, req api.ScreenRequ
 
 			// Findings end the conversation. Nothing after them is read: the
 			// model has answered, and a second call would be a second answer.
-			if use.Name == toolSubmitFindings {
-				return a.findings(use, src)
+			if use.Name == aikit.ToolSubmitFindings {
+				result, err := aikit.Findings(use.JSON.Input.Raw(), src, a.model(req.Model))
+				if err != nil {
+					return api.ScreenResult{}, fmt.Errorf("anthropic: %w", err)
+				}
+				return result, nil
 			}
 
-			results = append(results, a.call(use, src))
+			text, isError := aikit.Call(use.Name, use.JSON.Input.Raw(), src)
+			results = append(results, anthropic.NewToolResultBlock(use.ID, text, isError))
 		}
 
 		if resp.StopReason != anthropic.StopReasonToolUse || len(results) == 0 {
@@ -122,115 +126,4 @@ func (a *Adapter) run(ctx context.Context, fn api.AIFunction, req api.ScreenRequ
 
 	return api.ScreenResult{}, fmt.Errorf(
 		"anthropic: the call did not finish within %d rounds", maxIterations)
-}
-
-// call runs one read tool and shapes the result.
-//
-// A budget refusal comes back as an ordinary tool_result rather than an error,
-// so the model can submit what it has instead of the whole screening being
-// lost over one file too many. That is the difference between a bounded
-// screening and a failed one.
-func (a *Adapter) call(use anthropic.ToolUseBlock, src *reader) anthropic.ContentBlockParamUnion {
-	switch use.Name {
-	case toolListFiles:
-		var in struct {
-			Pattern string `json:"pattern"`
-		}
-		if err := json.Unmarshal([]byte(use.JSON.Input.Raw()), &in); err != nil {
-			return anthropic.NewToolResultBlock(use.ID, "That request could not be read: "+err.Error(), true)
-		}
-		matches, err := src.glob(in.Pattern)
-		if err != nil {
-			return anthropic.NewToolResultBlock(use.ID, err.Error(), true)
-		}
-		if len(matches) == 0 {
-			return anthropic.NewToolResultBlock(use.ID, "Nothing in this repository matches that pattern.", false)
-		}
-		body, _ := json.Marshal(matches) //nolint:errcheck // a []string always marshals.
-		return anthropic.NewToolResultBlock(use.ID, string(body), false)
-
-	case toolReadFile:
-		var in struct {
-			Path string `json:"path"`
-		}
-		if err := json.Unmarshal([]byte(use.JSON.Input.Raw()), &in); err != nil {
-			return anthropic.NewToolResultBlock(use.ID, "That request could not be read: "+err.Error(), true)
-		}
-		body, err := src.open(in.Path)
-		if err != nil {
-			if errors.Is(err, errBudget) {
-				return anthropic.NewToolResultBlock(use.ID,
-					err.Error()+". Submit your findings now, based on what you have read.", false)
-			}
-			return anthropic.NewToolResultBlock(use.ID, err.Error(), true)
-		}
-		return anthropic.NewToolResultBlock(use.ID, body, false)
-
-	default:
-		return anthropic.NewToolResultBlock(use.ID, "There is no tool by that name.", true)
-	}
-}
-
-// findings reads the submitted amendments.
-func (a *Adapter) findings(use anthropic.ToolUseBlock, src *reader) (api.ScreenResult, error) {
-	var in struct {
-		Amendments []api.Amendment `json:"amendments"`
-		Notes      []string        `json:"notes"`
-		Reply      string          `json:"reply"`
-	}
-
-	// Parsed rather than matched on the raw string: escaping in a tool input is
-	// the model's to choose, and string matching on it is how that bites.
-	if err := json.Unmarshal([]byte(use.JSON.Input.Raw()), &in); err != nil {
-		return api.ScreenResult{}, fmt.Errorf("anthropic: the submitted result could not be read: %w", err)
-	}
-
-	return api.ScreenResult{
-		Amendments: in.Amendments,
-		Notes:      in.Notes,
-		Reply:      in.Reply,
-		FilesRead:  src.files(),
-		Model:      a.cfg.Model,
-	}, nil
-}
-
-// preloaded reads the files an earlier call on this proposal read, and hands
-// them over at the start: the model begins knowing what it knew last time,
-// rather than listing and reading its way back there one round trip at a time.
-// Read through the budgeted reader, so they count as reads and are recorded
-// as sent (R-337); one the budget refuses, or that is gone, is left out.
-func preloaded(src *reader, known []string) string {
-	if len(known) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for _, name := range known {
-		body, err := src.open(name)
-		if err != nil {
-			continue
-		}
-		fmt.Fprintf(&b, "\n### %s\n\n```\n%s\n```\n", name, body)
-	}
-	if b.Len() == 0 {
-		return ""
-	}
-	return "\n## Files you read about this plan before\n\nYou read these in an earlier look at this " +
-		"repository, at this same commit. Their contents are below, so there is no need to read them " +
-		"again; read anything else you need.\n" + b.String()
-}
-
-// limit takes the lower of what core asked for and what this adapter will do.
-// Neither side raises the other's (design 10 §2).
-func (a *Adapter) limit(asked, own int) int {
-	if asked <= 0 || asked > own {
-		return own
-	}
-	return asked
-}
-
-func (a *Adapter) limitBytes(asked, own int64) int64 {
-	if asked <= 0 || asked > own {
-		return own
-	}
-	return asked
 }

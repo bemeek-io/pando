@@ -1,10 +1,11 @@
 # Open decisions
 
-Twenty questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
+Twenty-two questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
 design; O-15 through O-17 were found while implementing phases 6, 7 and 8; O-18 was found while
 setting up the release build; O-19 was found by turning `gosec` on; O-20 was found while building the
-first AI adapter. **Eighteen are resolved. Two remain, and neither is a design decision** — O-4 needs
-a measurement and O-18 needs somebody to pick a host and pay for it.
+first AI adapter; O-21 and O-22 came from issue #74, AI functions beyond detection. **Nineteen are
+resolved. Three remain.** O-4 needs a measurement, O-18 needs somebody to pick a host and pay for it,
+and O-22 is a product decision about what the audit log records.
 
 O-5 was the other long-standing one and is now resolved: "per-adapter" answered it until R-174 made
 Pando run the edge and write its configuration, at which point Pando became the thing choosing.
@@ -19,6 +20,7 @@ resolution both here and in the requirements or design doc that owns it.
 |---|---|---|---|
 | **O-4** | Required vs optional slot detection — the forty-key `.env.example` problem | Has a `[P]` answer that needs measuring, not deciding | Phase 6 |
 | **O-18** | Where a signed apt repository is hosted, so `apt install pando` works without downloading a file first | Costs money or custody of a signing key; neither is an engineering call | Not blocking — the `.deb` is already published |
+| **O-22** | Whether successful use of an app is audited (`app.use`), so audit search can answer "who accessed this app" | Adds an event on the proxy path and interacts with retention (issue #60); has a `[P]` answer that reports only what is recorded | Not blocking — R-345 ships without it |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything the file
 gives a sample value for, and let the trial run settle it — a slot whose absence crashes the trial run
@@ -51,6 +53,26 @@ key:
 
 The choice matters more than it looks: an unsigned repository, or one added with `[trusted=yes]`,
 tells every user of a product that argues for provenance to skip checking ours.
+
+**O-22** was found building audit search (R-345). Issue #74's example question is "apps Ben Meeker
+added, deleted or accessed in the last month", and the log cannot answer the third part. The proxy
+audits a refused use (`app.use.denied`), and `session.create` records a sign-in, which says nothing
+about which app was opened. A successful use of an app writes no event, and R-227 does not list one.
+
+The `[P]` default in place: the adapter is told that successful app use is not recorded, answers from
+`session.create` and `app.use.denied` where they help, and says in its note that access is not
+recorded. Nothing is inferred and presented as an answer. The options:
+
+1. **Add `app.use`**, one event per principal, app and session rather than per request. It answers the
+   question directly. It puts an audit write on the proxy path (R-023), adds the largest-volume event
+   type the log would hold, and makes retention (issue #60) a more pressing question, because the log
+   cannot be pruned (R-027).
+2. **Keep the default.** Audit search says what it cannot see. Nothing new is recorded.
+3. **Record it somewhere other than the audit log**, such as a last-used time per principal and app.
+   Cheaper, and answers "has this person used this app" but not "when".
+
+Adding an event changes R-227; the event shape belongs in design 02 §2.6 and the proxy's part in
+design 06 §4.
 
 **O-20 — where an adapter's credential lives. Resolved:** encrypted by the install's secrets adapter,
 in its own table. The Anthropic adapter (design 10 §6) was the first adapter to hold a credential, and
@@ -213,6 +235,34 @@ failure surfaces as a browser warning to a user rather than as a message to an o
 | **O-6** | Which backup destinations ship | Backup is an adapter category; destinations are adapters, and `local` ships in v1 | R-217, R-252, design 03 §8.1 |
 | **O-16** | How log retention is enforced | Per-app cap applied at workload creation; the aggregate enforced at plan time against the **sum of committed caps**, not measured usage | R-222–R-224, design 03 §2 |
 | **O-17** | What an "administrative verb" is (R-265) | Install-scoped verbs, held as a grant with no app; a fourth built-in role | design 06 §2.1, R-080/R-081 |
+| **O-21** | How AI functions are assigned, named and gated, and how the config file declares them (issue #74) | The config file wins over a stored assignment or adapter, and the stored one is shown as overridden; declared and console-managed adapters mix; plan chat stays `revise_plan`; access drafting is one function; each function is gated by the verb its ordinary endpoint needs | R-259, R-271, R-343 – R-346, design 10 §7.1, §9, §10 |
+
+### O-21 — AI functions: assignment, naming and gating
+
+Issue #74 left five questions open. What was decided:
+
+- **Config and database disagree about the same function or adapter: the config file wins, and the
+  stored row is shown as overridden.** This is the policy overlay's behavior (design 02 §2.5), for the
+  same reason: the file is what the operator wrote most deliberately, and failing startup over a row
+  somebody saved in the console would make the console able to stop the server. `GET /ai/functions`
+  reports the stored assignment under `overridden`, `GET /adapters` lists an overridden adapter with
+  status `overridden`, and removing the declaration and restarting brings the stored one back.
+  Contradictions *within* the file still stop startup (R-271).
+- **Declared and console-managed adapters may be mixed.** The policy overlay mixes field by field,
+  and nothing here needs it to be all or nothing. An adapter declared in the file can be assigned a
+  function from the console if the file does not assign that function.
+- **Chat on a plan is `revise_plan`,** the function issue #69 introduced. There is no `chat_app`: no
+  conversation about a deployed app exists yet, and a function name with nothing behind it would be
+  listed and assignable and do nothing. It is added when the feature is.
+- **Access drafting is one function, `draft_access`,** covering roles and groups. The request that
+  produces a role usually produces the group that holds it, and splitting it would mean two
+  assignments for one question.
+- **Each function is gated by the verb its ordinary endpoint needs:** `draft_access` by
+  `install.users.manage`, `draft_policy` by `install.policy.manage`, `search_audit` by
+  `install.audit.read`, and `answer_reference` by any signed-in user, like the reference itself.
+  Assigning functions is `install.adapters.manage`, and listing them `install.view`.
+
+The sixth question, whether to audit successful app use, is O-22.
 
 ### O-16 — bound what is promised, not what accumulates
 

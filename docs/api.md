@@ -185,6 +185,12 @@ one verb says nothing about another (R-082).
 | `GET /api/v1/capacity` | `install.view` | What the host has, and what is committed to apps (R-242). |
 | `GET /api/v1/policy` | `install.view` | Host policy. Reading the rules you work under is not the same privilege as changing them (R-274). |
 | `PUT /api/v1/policy` | `install.policy.manage` | Replace host policy. Policy is a floor, never an override (R-272). |
+| `GET /api/v1/ai/functions` | `install.view` | List every AI function, the adapter that handles it and on which model, whether it is on, and whether the startup configuration assigns it (R-259, R-271). |
+| `PUT /api/v1/ai/functions/{function}` | `install.adapters.manage` | Assign an AI function to an adapter, optionally on a model of its own. Refused while another adapter handles it (R-259). |
+| `DELETE /api/v1/ai/functions/{function}` | `install.adapters.manage` | Turn an AI function off by removing its assignment (R-259). |
+| `POST /api/v1/ai/access/draft` | `install.users.manage` | Draft a custom role and a group from a description, with verbs from the catalog only. Body: `description`, and `current` with the draft so far to refine it. A draft: create it with POST /roles and POST /groups (R-343). |
+| `POST /api/v1/ai/policy/draft` | `install.policy.manage` | Propose host policy from a description: the document as it would be saved, and each change. Fields fixed in the startup configuration are declined, naming where. Body: `description`, and `proposed` with the document so far to refine it. Save it with PUT /policy (R-344). |
+| `POST /api/v1/ai/audit/search` | `install.audit.read` | Turn a question into audit filters, run them, and summarize what they found. Body: `question`. The filters are ordinary GET /audit parameters (R-345). |
 | `POST /api/v1/policy/preview` | `install.policy.manage` | Which apps a candidate policy would block, before it is saved. |
 | `GET /api/v1/config` | `install.view` | The configuration Pando started with (R-271): every non-secret setting, its value and where it came from — an environment variable, the config file, or the default — and the host policy fields fixed there, which cannot be changed through the API while they are set. Secrets are never listed. |
 | `GET /api/v1/audit` | `install.audit.read` | The audit log, newest first. Filters combine: `action` (a prefix), `principal_id` (who did it, including through a token), `principal_kind` (user, token, system or anonymous), `app_id`, `target_kind` and `target_id` (what it was done to), `involving` (an ID that is the actor or the target — everything to do with one account), and `since`/`until` (RFC 3339; since inclusive, until exclusive). Pages with `before`. Append-only: no endpoint edits or deletes an event, and the database refuses it too (R-027). |
@@ -197,6 +203,7 @@ one verb says nothing about another (R-082).
 
 | Endpoint | Verb | What it does |
 | --- | --- | --- |
+| `POST /api/v1/ai/reference/answer` |  | Answer a "How can I…" question from this reference, citing the endpoints, commands and tools it relies on. Body: `question`. Describes; does nothing (R-346). |
 | `GET /api/v1/reference` |  | This document: every endpoint, every CLI command, every MCP tool and every error code, built from the running binary. |
 
 ## Errors
@@ -232,9 +239,11 @@ that finds the log line. Branch on the code; the message may be reworded.
 | `PLAN_NO_ADAPTER_MEETS_POLICY` | 409 | No configured adapter can satisfy this spec under host policy (R-024, R-114). |
 | `PLAN_SECURITY_BELOW_THRESHOLD` | 409 | This installation requires a security score, and this app is below it or has never been scanned (R-314). |
 | `PLAN_SLOT_UNFILLED` | 409 | A required dependency has nothing filling it, so the deploy would start an app that cannot connect (R-132). |
+| `STATE_AI_FUNCTION_ASSIGNED` | 409 | Another AI adapter already handles this AI function. Remove it from that adapter first. |
 | `STATE_APP_EXITED` | 409 | The app started and then stopped, so the deploy has nothing to send traffic to. |
 | `STATE_BACKUP_DECISION_REQUIRED` | 409 | The app has storage and the request did not say whether to keep a final backup of it (R-204, R-205). |
 | `STATE_INVALID` | 409 | The object is in a state this action does not apply to. |
+| `STATE_SET_AT_STARTUP` | 409 | This is declared in Pando's startup configuration and cannot be changed through the API while it is. |
 | `BACKUP_DECRYPT_FAILED` | 422 | The backup could not be decrypted with the key supplied. |
 | `BACKUP_INCOMPLETE` | 422 | The backup is missing part of what it claims to hold, so it was not applied (R-215). |
 | `BUILD_FAILED` | 422 | The build ran and did not succeed. Its log is the answer. |

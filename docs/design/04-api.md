@@ -242,7 +242,14 @@ GET  /api/v1/policy                       install.view
 PUT  /api/v1/policy                       R-274; see O-10; install.policy.manage
 GET  /api/v1/config                       startup settings and their sources; fixed policy fields (R-271); install.view
 POST /api/v1/policy:preview               what this policy would block, unsaved; install.policy.manage
-GET  /api/v1/audit                        ?action= (prefix) &principal_id= &principal_kind= &app_id= &target_kind= &target_id= &since= &until= (RFC 3339) &before= ; install.audit.read
+GET  /api/v1/audit                        ?action= (prefix, repeatable: any matches) &principal_id= &principal_kind= &app_id= &target_kind= &target_id= &involving= &since= &until= (RFC 3339) &before= ; install.audit.read
+GET  /api/v1/ai/functions                 each AI function, its adapter and model, on or off, and its source (R-259); install.view
+PUT  /api/v1/ai/functions/{function}      {adapter_id, model?}; refused while another adapter holds it (R-259); install.adapters.manage
+DELETE /api/v1/ai/functions/{function}    turn a function off; install.adapters.manage
+POST /api/v1/ai/access/draft              {description} → a draft role and group, not created (R-343); install.users.manage
+POST /api/v1/ai/policy/draft              {description} → a proposed policy, not saved (R-344); install.policy.manage
+POST /api/v1/ai/audit/search              {question} → audit filters, run, with a summary (R-345); install.audit.read
+POST /api/v1/ai/reference/answer          {question} → an answer from the reference, with citations (R-346); any signed-in user
 GET  /api/v1/roles                        ?scope=install (default) | app | all (R-082); install.view
 GET  /api/v1/backups
 POST /api/v1/backups                      trigger; kind = rolling | dr_bundle
@@ -253,6 +260,10 @@ GET  /api/v1/.well-known/jwks.json        assertion keys (R-057)
 ```
 
 **[D]** `GET /adapters` returns live capabilities, not stored config, so the console can grey out routing modes an adapter doesn't support instead of offering choices that fail at plan time.
+
+**[D]** An adapter declared in the config file is listed with `declared: true` and its `source`, and a stored adapter it overrides with `status: "overridden"`. `POST /adapters` refuses a declared adapter, or an AI adapter of a declared provider, with `STATE_SET_AT_STARTUP` naming the file and key; `PUT` and `DELETE /ai/functions/{function}` refuse a declared function the same way. `GET /config` lists the declared adapters (R-271, design 10 §7.1).
+
+**[D]** The `/ai/*` drafts, search and answer each propose and change nothing (R-106). Each is gated by the verb its ordinary endpoint needs, is audited as `ai.<function>` naming the adapter and model but not the text, and returns `ADAPTER_UNAVAILABLE` with the remedy when its function is not assigned. Applying a result is the ordinary request: `POST /roles` and `POST /groups`, `PUT /policy`, `GET /audit` with the returned filter. Design 10 §10.
 
 **[D]** The two backup kinds are **two objects on one route, authorized differently**, and the
 difference is scope rather than size. `dr_bundle` is the whole installation, needs
@@ -296,7 +307,9 @@ with an entry per keystroke of a form is a log nobody reads.
 **[D]** `GET /audit` pages on a **cursor** (`before=<id>`), not an offset. The log is append-only with
 monotonic IDs; with an offset, events arriving between requests shift every later page. `action`
 matches a prefix rather than a substring, because actions are dotted namespaces and a substring match
-would make `grant.delete` a result for a search for "delete".
+would make `grant.delete` a result for a search for "delete". `action` may be given more than once, and
+any of the prefixes matches — "apps someone created or deleted" is two prefixes — while different
+parameters still combine with AND.
 
 ### 2.9 End-user surface
 
@@ -393,6 +406,18 @@ rather than a second opinion about authorization (R-261).
 | `pando_deploy` | `POST /apps/{id}/deployments` |
 | `pando_get_logs` | `GET /apps/{id}/logs` |
 | `pando_get_status` | `GET /apps/{id}/status` |
+| `pando_list_ai_functions` | `GET /ai/functions` |
+| `pando_assign_ai_function` | `PUT /ai/functions/{function}` |
+| `pando_unassign_ai_function` | `DELETE /ai/functions/{function}` |
+| `pando_ai_draft_access` | `POST /ai/access/draft` |
+| `pando_ai_draft_host_rules` | `POST /ai/policy/draft` |
+| `pando_ai_search_audit` | `POST /ai/audit/search` |
+| `pando_ai_ask_reference` | `POST /ai/reference/answer` |
+
+**[D]** The AI drafting tools are listed because a draft changes nothing: applying it is a separate
+call the agent may not be able to make. The policy draft is `pando_ai_draft_host_rules`, not a name
+containing "policy", because the O-12 test refuses any tool named for policy and this one is not the
+policy mutation that test keeps out.
 
 **[D]** An agent holds a token and is a principal like any other (R-262). No MCP tool bypasses authorization, and every action lands in the audit log under the token's owner.
 

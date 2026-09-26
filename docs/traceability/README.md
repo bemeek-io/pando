@@ -3,7 +3,7 @@
 Requirements §-numbers move; **requirement IDs are stable**. Refer to `R-###`, never to a section
 number.
 
-`requirements-index.md` is generated. It answers three questions for all 207 requirements:
+`requirements-index.md` is generated. It answers three questions for all 242 requirements:
 
 1. **Is it designed?** Which of `docs/design/00`–`08` reference it.
 2. **Is it planned?** Which phase in `docs/plan/` builds it.

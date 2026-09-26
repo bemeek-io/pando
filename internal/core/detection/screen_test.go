@@ -55,9 +55,10 @@ func (f *fakeScreener) Capabilities(context.Context) (api.AICapabilities, error)
 	return f.caps, nil
 }
 
-func (f *fakeScreener) RepairPlan(context.Context, api.ScreenRequest) (api.ScreenResult, error) {
+func (f *fakeScreener) RepairPlan(_ context.Context, req api.ScreenRequest) (api.ScreenResult, error) {
 	f.called++
 	f.fn = api.AIFunctionRepairPlan
+	f.got = req
 	return f.result, f.err
 }
 
@@ -501,5 +502,57 @@ func TestR338_AScreenedAnswerThatCannotBecomeASpecIsRefused(t *testing.T) {
 	require.Equal(t, prose, outcome.Refused[0].Amendment.Value)
 	require.Contains(t, outcome.Refused[0].Reason, "is not one of the ways Pando found to build this app")
 	require.Len(t, p.Questions, 1, "the question is still asked")
+	require.Equal(t, before, p.DraftSpec)
+}
+
+// assigned resolves each function from a map, as the registry does.
+type assigned map[api.AIFunction]struct {
+	s     screening.Screener
+	ref   string
+	model string
+}
+
+func (a assigned) ScreenerFor(fn api.AIFunction) (screening.Screener, string, string, bool) {
+	got, ok := a[fn]
+	return got.s, got.ref, got.model, ok
+}
+
+// TestR259_ScreeningRunsOnTheAssignedAdapterAndModel asserts R-259: a repair
+// goes to the adapter assigned repair_plan, on the model its assignment
+// names, and the outcome records that model (R-337).
+func TestR259_ScreeningRunsOnTheAssignedAdapterAndModel(t *testing.T) {
+	repairer := &fakeScreener{caps: api.AICapabilities{Model: "big", ChoosesModel: true}}
+	answerer := &fakeScreener{}
+	p := failed()
+
+	outcome := (&Runner{Screeners: assigned{
+		api.AIFunctionRepairPlan:      {repairer, "ai_repair", "small"},
+		api.AIFunctionAnswerQuestions: {answerer, "ai_answer", ""},
+	}}).screen(context.Background(), "app_x", &p, checkout)
+
+	require.True(t, outcome.Ran)
+	require.Equal(t, 1, repairer.called)
+	require.Zero(t, answerer.called)
+	require.Equal(t, "small", repairer.got.Model)
+	require.Equal(t, "small", outcome.Model)
+	require.Equal(t, "ai_repair", outcome.AdapterRef)
+}
+
+// TestR259_AnUnassignedFunctionIsSkippedNotFailed asserts R-259 and R-335: an
+// install that assigned answering but not repair leaves a failed plan as the
+// auction produced it, and says why.
+func TestR259_AnUnassignedFunctionIsSkippedNotFailed(t *testing.T) {
+	answerer := &fakeScreener{}
+	p := failed()
+	before := p.DraftSpec
+
+	outcome := (&Runner{Screeners: assigned{
+		api.AIFunctionAnswerQuestions: {answerer, "ai_answer", ""},
+	}}).screen(context.Background(), "app_x", &p, checkout)
+
+	require.False(t, outcome.Ran)
+	require.Equal(t, screening.SkipNotConfigured, outcome.SkipCode)
+	require.Contains(t, outcome.Skipped, "Plan repair is not assigned")
+	require.Zero(t, answerer.called)
 	require.Equal(t, before, p.DraftSpec)
 }

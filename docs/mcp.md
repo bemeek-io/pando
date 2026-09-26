@@ -69,4 +69,11 @@ boundary (O-12), and offering a tool policy will refuse wastes the agent's turn.
 | `pando_get_config` | The configuration the Pando server started with: every non-secret setting, its value and where it was set (an environment variable, the config file, or the default), and the host policy fields fixed there, which cannot be changed through the API while they are set. | none |
 | `pando_get_status` | What an app is doing right now: running, degraded, failed, and why — including each part separately, so a single part that is crash-looping is visible rather than averaged into one word for the app. | `app_id` |
 | `pando_get_usage` | What each part of an app is using right now: CPU (thousandths of a core), memory and disk in bytes, and each mounted volume's size, beside its limits (0 means none). A reading, not a history. | `app_id` |
+| `pando_list_ai_functions` | Each AI function Pando has, the AI adapter that handles it and on which model, whether it is on, and whether the startup configuration assigns it. | none |
+| `pando_assign_ai_function` | Have an AI adapter handle one AI function, optionally on a model of its own. Refused while another adapter handles the function; unassign it there first. | `adapter_id`, `function`, `model` (optional) |
+| `pando_unassign_ai_function` | Turn an AI function off by removing the adapter that handles it. | `function` |
+| `pando_ai_draft_access` | Draft a custom role and a group from a description of who should be able to do what. A draft only: nothing is created. Verbs come from Pando's catalog; anything else is listed as refused. | `description` |
+| `pando_ai_draft_host_rules` | Propose changes to the installation's host policy from a description: the document as it would be saved, and each change. Nothing is saved. Settings fixed in the startup configuration are declined, naming where they are set. | `description` |
+| `pando_ai_search_audit` | Ask a question of the audit log, such as "which apps did Ben Meeker create last month?". Returns a short summary and the filters used, which pando_list_audit takes as-is. | `question` |
+| `pando_ai_ask_reference` | Ask how to do something with Pando. Answered from Pando's API, CLI and MCP reference, citing the endpoints, commands and tools it relies on. Describes; does nothing. | `question` |
 

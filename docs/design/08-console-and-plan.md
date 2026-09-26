@@ -86,6 +86,45 @@ action (prefix), actor (typed: username, email or ID, with suggestions — an in
 combine, and which the CLI (`pando audit`) and MCP (`pando_list_audit`) take too. Its labels use the
 audit vocabulary as is; whoever reads an audit log knows what an actor and a target are.
 
+**[D] AI functions are chosen on the adapter.** Opening an AI adapter from the Adapters screen
+shows *What this adapter handles*: a checkbox per AI function (design 10 §9), and for each ticked
+one an optional model for that function alone. Open the Anthropic adapter and tick what it does,
+then the OpenAI adapter and tick what it does; there is no separate list of functions to manage.
+A function another adapter handles is shown unticked and unavailable, with *Handled by ai_openai.
+Remove it there to handle it here.* — the API refuses a second adapter for a function (R-259), so
+the console states the fix rather than offering a box that would fail. A function the config file
+assigns says where it is set and cannot be changed (R-271). Function choices take effect on save
+without a restart; the adapter's own settings are saved, and need a restart, only when they
+changed. A new AI adapter is not running until Pando restarts, so its dialog says to open it again
+then to choose what it handles. An AI adapter has no default checkbox.
+
+**[D] Asking AI on an admin screen.** Out of the way until wanted. Four screens carry one
+secondary button with the AI mark, *Ask AI*, in the screen's header — never its primary action, and
+shown only when that screen's function is on (*API and tools* shows it unless reference help is
+known to be off, since most people cannot read which functions are on). Everything else happens in a
+dialog the button opens (`ui/AskAI.tsx`): the mark and one line on what AI will do, a field with an
+*Ask AI* button, and the result.
+
+- *Groups and roles* (R-343): a preview of the drafted role — its name, what it applies to, and a
+  checkbox per permission of that scope — and group, with its members. Change it by hand, or say what
+  to change, which re-drafts from what is on screen, hand edits included (`current` in the request).
+  *Accept* creates it through `POST /roles`, `POST /groups` and, for an installation role,
+  `PUT /groups/{id}/role`; *Reject* discards it.
+- *Policy* (R-344): each proposed change with a checkbox to keep it, what it was and what it would be,
+  the changes declined because the startup configuration fixes them, with where, and which apps the
+  kept changes would refuse at their next deploy (`POST /policy/preview`, asked as soon as there is a
+  proposal). Asking again refines from what is kept (`proposed` in the request). *Accept* saves the
+  policy; *Reject* discards the proposal. The button is hidden while the screen has unsaved edits of
+  its own, so the two never race.
+- *Audit log* (R-345): the summary, AI's note on what the log cannot answer, and how many events
+  matched. A search creates nothing, so there is no Accept: *Show these events* puts the filters on
+  the log as ordinary filters and closes the dialog.
+- *API and tools* (R-346): the answer and what it cites. *Close*.
+
+Every answer carries the AI mark and names the adapter and model that wrote it. The AI mark
+(`ui/AiStar.tsx`) is the one used everywhere AI is indicated and nowhere else, so a person can always
+tell a request to AI from an ordinary control.
+
 **[D] Phone width.** At 48em and below (`ui/narrow.css`, `ui/narrow.ts`): the page padding token
 drops to `--space-4`; headings and their actions wrap; the admin sidebar becomes a menu behind a
 button in a top bar that keeps the way home and settings; the launcher's search takes its own line;

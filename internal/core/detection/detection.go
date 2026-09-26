@@ -67,10 +67,14 @@ type Runner struct {
 	PortRangeStart int
 	PortRangeEnd   int
 
-	// Screener reviews the finished proposal against the repository (R-330).
-	// Nil is the ordinary case: an install with no AI adapter configured is not
-	// a degraded install, because everything the auction produced is there
-	// either way (R-106, R-335).
+	// Screeners says which AI adapter performs each function, and on which
+	// model (R-259). Nil is the ordinary case: an install with no AI adapter
+	// configured is not a degraded install, because everything the auction
+	// produced is there either way (R-106, R-335).
+	Screeners Screeners
+
+	// Screener, when Screeners is nil, performs every function under
+	// ScreenerRef. For an embedding with one adapter and nothing to assign.
 	Screener     screening.Screener
 	ScreenerRef  string
 	ScreenPolicy ScreenPolicy

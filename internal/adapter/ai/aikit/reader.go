@@ -1,4 +1,4 @@
-package anthropic
+package aikit
 
 import (
 	"errors"
@@ -12,7 +12,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/api"
 )
 
-// reader is the repository, bounded.
+// Reader is the repository, bounded.
 //
 // Every read goes through here rather than straight to the SourceView, for two
 // reasons that are not the same. The budget (R-339) is one: a screening has a
@@ -20,7 +20,7 @@ import (
 // other is that this is the list of what left the host, which R-337 says the
 // audit event carries — and a count kept beside the reads is a count that
 // cannot disagree with them.
-type reader struct {
+type Reader struct {
 	src      api.SourceView
 	maxFiles int
 	maxBytes int64
@@ -31,14 +31,14 @@ type reader struct {
 	bytes int64
 }
 
-func newReader(src api.SourceView, maxFiles int, maxBytes int64) *reader {
-	return &reader{src: src, maxFiles: maxFiles, maxBytes: maxBytes, read: map[string]bool{}}
+func NewReader(src api.SourceView, maxFiles int, maxBytes int64) *Reader {
+	return &Reader{src: src, maxFiles: maxFiles, maxBytes: maxBytes, read: map[string]bool{}}
 }
 
-var errBudget = errors.New("budget spent")
+var ErrBudget = errors.New("budget spent")
 
-// open reads one file, or says why it did not.
-func (r *reader) open(name string) (string, error) {
+// Open reads one file, or says why it did not.
+func (r *Reader) Open(name string) (string, error) {
 	clean, err := safe(name)
 	if err != nil {
 		return "", err
@@ -53,10 +53,10 @@ func (r *reader) open(name string) (string, error) {
 	// is a model that lost track, not one spending a second file of budget.
 	if !already {
 		if files >= r.maxFiles {
-			return "", fmt.Errorf("%w: %d files is this screening's limit", errBudget, r.maxFiles)
+			return "", fmt.Errorf("%w: %d files is this screening's limit", ErrBudget, r.maxFiles)
 		}
 		if used >= r.maxBytes {
-			return "", fmt.Errorf("%w: %d bytes is this screening's limit", errBudget, r.maxBytes)
+			return "", fmt.Errorf("%w: %d bytes is this screening's limit", ErrBudget, r.maxBytes)
 		}
 	}
 
@@ -68,7 +68,7 @@ func (r *reader) open(name string) (string, error) {
 
 	// Bounded per file as well as in total, so one enormous lockfile cannot
 	// spend the whole budget in a single call.
-	limit := int64(maxFileBytes)
+	limit := int64(MaxFileBytes)
 	if remaining := r.maxBytes - used; remaining < limit {
 		limit = remaining
 	}
@@ -97,12 +97,12 @@ func (r *reader) open(name string) (string, error) {
 	return out, nil
 }
 
-// glob lists paths without counting against the file budget.
+// Glob lists paths without counting against the file budget.
 //
 // Listing is not reading. The budget exists to bound what content leaves the
 // host, and a list of names is how the model decides which of them to spend the
 // budget on — charging for it would make an efficient screening impossible.
-func (r *reader) glob(pattern string) ([]string, error) {
+func (r *Reader) Glob(pattern string) ([]string, error) {
 	clean, err := safe(pattern)
 	if err != nil {
 		return nil, err
@@ -120,8 +120,8 @@ func (r *reader) glob(pattern string) ([]string, error) {
 
 const maxGlobResults = 200
 
-// files is what was read, in the order it was read, for the audit event.
-func (r *reader) files() []string {
+// Files is what was read, in the order it was read, for the audit event.
+func (r *Reader) Files() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]string(nil), r.order...)

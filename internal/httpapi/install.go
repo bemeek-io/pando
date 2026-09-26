@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -430,8 +431,9 @@ func (s *Server) handleListAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// action may repeat: any of them matches.
 	q := audit.Query{
-		Action:      r.URL.Query().Get("action"),
+		Actions:     r.URL.Query()["action"],
 		AppID:       r.URL.Query().Get("app_id"),
 		PrincipalID: r.URL.Query().Get("principal_id"),
 		TargetKind:  r.URL.Query().Get("target_kind"),
@@ -527,12 +529,33 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"settings": []config.Setting{},
 		"policy":   fixed,
 	}
+	// Adapters declared in the file, and the AI functions each handles, with
+	// where each was declared. Credentials by name only: the file names a
+	// variable or a path, never a value (R-190).
+	declared := make([]map[string]any, 0)
 	if s.Startup != nil {
 		out["file"] = s.Startup.File
 		if s.Startup.Settings != nil {
 			out["settings"] = s.Startup.Settings
 		}
+		for _, d := range s.Startup.Adapters {
+			fields := make([]string, 0, len(d.Credentials))
+			for f := range d.Credentials {
+				fields = append(fields, f)
+			}
+			sort.Strings(fields)
+			functions := d.Functions
+			if functions == nil {
+				functions = []config.FunctionDecl{}
+			}
+			declared = append(declared, map[string]any{
+				"id": d.ID, "category": d.Category, "kind": d.Kind, "name": d.Name,
+				"is_default": d.Default, "enabled": d.Enabled, "credentials": fields,
+				"functions": functions, "source": d.Source,
+			})
+		}
 	}
+	out["adapters"] = declared
 	JSON(w, http.StatusOK, out)
 }
 

@@ -19,6 +19,9 @@ type Registry struct {
 	byRef    map[string]Adapter
 	byCat    map[Category][]string
 	defaults map[Category]string
+
+	// assignments is which AI adapter performs each function (R-259).
+	assignments map[AIFunction]AIAssignment
 }
 
 func NewRegistry() *Registry {
@@ -26,6 +29,8 @@ func NewRegistry() *Registry {
 		byRef:    map[string]Adapter{},
 		byCat:    map[Category][]string{},
 		defaults: map[Category]string{},
+
+		assignments: map[AIFunction]AIAssignment{},
 	}
 }
 
@@ -277,26 +282,57 @@ func (r *Registry) AI(ref string) (AIAdapter, bool) {
 	return ai, ok
 }
 
-// DefaultAI returns the install's AI adapter, if it has one.
-//
-// Returning (nil, "", false) is an ordinary outcome, not a failure. R-335: no
-// adapter configured leaves the deterministic proposal exactly as it was, and
-// every caller of this has to be written that way.
-func (r *Registry) DefaultAI() (AIAdapter, string, bool) {
-	ref, ok := r.Default(CategoryAI)
-	if !ok {
-		// An install may have configured one without marking it default.
-		refs := r.ByCategory(CategoryAI)
-		if len(refs) == 0 {
-			return nil, "", false
+// AIAssignment is which adapter performs one AI function, and on which model
+// (R-259). Model is empty to use the adapter's own.
+type AIAssignment struct {
+	Function   AIFunction `json:"function"`
+	AdapterRef string     `json:"adapter_id"`
+	Model      string     `json:"model,omitempty"`
+}
+
+// SetAIAssignments replaces every assignment. Called at startup, and after
+// each change, with what the database and the startup configuration say
+// together; checking an assignment is core's job, not the registry's.
+func (r *Registry) SetAIAssignments(assignments []AIAssignment) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.assignments = make(map[AIFunction]AIAssignment, len(assignments))
+	for _, a := range assignments {
+		r.assignments[a.Function] = a
+	}
+}
+
+// AIAssignments returns every assignment, in AIFunctions order.
+func (r *Registry) AIAssignments() []AIAssignment {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]AIAssignment, 0, len(r.assignments))
+	for _, fn := range AIFunctions() {
+		if a, ok := r.assignments[fn]; ok {
+			out = append(out, a)
 		}
-		ref = refs[0]
 	}
-	ai, ok := r.AI(ref)
+	return out
+}
+
+// AIFor returns the adapter assigned a function, and the assignment.
+//
+// Returning found=false is an ordinary outcome, not a failure. R-335: a
+// function nobody is assigned is off, and every caller of this has to be
+// written that way. An assignment naming an adapter that is not running — it
+// failed to configure, or was removed — is off in the same way.
+func (r *Registry) AIFor(fn AIFunction) (AIAdapter, AIAssignment, bool) {
+	r.mu.RLock()
+	a, ok := r.assignments[fn]
+	r.mu.RUnlock()
 	if !ok {
-		return nil, "", false
+		return nil, AIAssignment{}, false
 	}
-	return ai, ref, true
+	ai, ok := r.AI(a.AdapterRef)
+	if !ok {
+		return nil, a, false
+	}
+	return ai, a, true
 }
 
 // HealthCheckAll reports which adapters are unhealthy, by reference.

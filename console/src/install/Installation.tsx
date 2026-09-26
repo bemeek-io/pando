@@ -11,6 +11,7 @@ import {
   Banner,
   Button,
   EmptyState,
+  Icon,
   Input,
   Radio,
   Select,
@@ -18,13 +19,15 @@ import {
   StatusIndicator,
   Switch,
   Tag,
+  Tooltip,
 } from '@design';
 
 import { api } from '@api/client';
 import { InstallVerb, useInstallVerb } from '../app/principal';
 import { AdapterDialog } from './AdapterDialog';
+import { useAIFunctionOn } from './AIFunctions';
 import { RestartButton } from './Restart';
-import { categoryLabel, orderCategories } from './adapters';
+import { categoryLabel, categoryNote, orderCategories } from './adapters';
 import type { AdapterKind } from './adapters';
 import type { ConfiguredAdapter } from './AdapterDialog';
 import { Quiet, Screen, messageOf } from './Accounts';
@@ -35,10 +38,23 @@ import { BesideField } from '../ui/BesideField';
 import { FieldSkeleton, LineSkeleton } from '../ui/Loading';
 import { ActorField } from './ActorField';
 import type { Person } from './ActorField';
-import { NO_FILTERS, WHEN, auditQuery } from './audit';
+import { NO_FILTERS, WHEN, auditQuery, filtersFromSearch } from './audit';
 import type { AuditFilters } from './audit';
+import { AIButton } from '../ui/AskAI';
+import { AuditAI } from './AuditAI';
+import { PolicyAI } from './PolicyAI';
+
+/** Where the config file declares an adapter, in words. */
+function declaredAt(row: AdapterRow): string {
+  const src = row.source as { name?: string; key?: string } | undefined;
+  return src?.key ? `${src.name ?? 'the config file'}, at ${src.key}` : 'the config file';
+}
 
 interface AdapterRow extends ConfiguredAdapter {
+  /** `overridden` when the config file replaces this stored adapter (R-271). */
+  status?: string;
+  /** Declared in the config file, so read-only here (R-271). */
+  declared?: boolean;
   /** An older name for id, from before GET /adapters settled its shape. */
   ref?: string;
   /** Saved since Pando started, so not yet what runs (R-253). */
@@ -272,6 +288,11 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
 
   const current = draft ?? policy.data ?? {};
 
+  // Drafting a change with AI (R-344), behind one button and in its own
+  // dialog, which saves only when accepted.
+  const draftOn = useAIFunctionOn('draft_policy');
+  const [drafting, setDrafting] = useState(false);
+
   // Fields fixed in the startup configuration (R-271): shown, not editable,
   // and each says where it is set. GET /config is install.view, the same as
   // reading policy, so whoever sees this screen can see why.
@@ -356,6 +377,7 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
             </Button>
           </div>
         )}
+          {canEdit && draftOn && !draft && <AIButton onClick={() => setDrafting(true)} />}
           <SearchField value={query} onChange={setQuery} placeholder="Search policy" />
         </div>
       }
@@ -363,6 +385,8 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
       {/* O-10, stated where the decision is made rather than in a tooltip.
           Saying it plainly is the difference between an administrator who
           knows why nothing happened and one who thinks the save failed. */}
+      {drafting && <PolicyAI onClose={() => setDrafting(false)} />}
+
       <Banner tone="info">
         Saving policy doesn&rsquo;t change apps that are already running. A running app that
         breaks a new rule keeps running, and its next deploy is refused with the reason.
@@ -1026,6 +1050,12 @@ export function Audit({
   const { log, events } = useAuditLog(filters);
   const people = usePeople();
 
+  // Asking a question with AI (R-345), behind one button. Its answer becomes
+  // the filters below, where it can be read and changed; the table is the
+  // same table, so nothing shown depends on the AI's word.
+  const searchOn = useAIFunctionOn('search_audit');
+  const [asking, setAsking] = useState(false);
+
   const custom = filters.when === 'custom';
   const range = (
     <Field>
@@ -1039,7 +1069,9 @@ export function Audit({
   );
 
   return (
-    <Screen heading="Audit log">
+    <Screen heading="Audit log" action={searchOn && <AIButton onClick={() => setAsking(true)} />}>
+      {asking && <AuditAI onClose={() => setAsking(false)} onShow={(f) => change(filtersFromSearch(f))} />}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
         <FilterRow>
           <Field>
@@ -1049,6 +1081,16 @@ export function Audit({
               value={filters.action}
               placeholder="Prefix, e.g. app."
               onChange={(e) => set({ action: e.target.value })}
+            />
+          </Field>
+
+          <Field>
+            <Input
+              label="App ID"
+              mono
+              value={filters.app}
+              placeholder="app_…"
+              onChange={(e) => set({ app: e.target.value })}
             />
           </Field>
 
@@ -1242,6 +1284,9 @@ type GroupedRow = AdapterRow & { first?: boolean; kindName?: string };
 
 /** Reachable or not — or, saved since Pando started, not running yet. */
 function AdapterStatus({ row }: { row: AdapterRow }) {
+  // Replaced by one the config file declares (R-271): not running, and not
+  // broken either. It applies again when the declaration is removed.
+  if (row.status === 'overridden') return <StatusIndicator status="stopped" label="Replaced by config file" />;
   if (row.pending_restart) return <StatusIndicator status="info" label="Restart to apply" />;
   return row.healthy === false ? (
     <StatusIndicator status="failed" label="Unreachable" />
@@ -1250,7 +1295,7 @@ function AdapterStatus({ row }: { row: AdapterRow }) {
   );
 }
 
-// The adapters' columns: name, ID, status, and Change for whoever may.
+// The adapters' columns: name, ID, status, and Edit for whoever may.
 const ADAPTER_GRID = 'minmax(0,1fr) minmax(0,22ch) 16ch 12ch';
 
 /**
@@ -1312,7 +1357,23 @@ function GroupedAdapters({
                 borderBottom: 'var(--border-width) solid var(--rule)',
               }}
             >
-              {categoryLabel(row.category)}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+                {categoryLabel(row.category)}
+                {/* What this kind of adapter is for, on hover or focus, so the
+                    category names explain themselves without a paragraph each. */}
+                {categoryNote(row.category) && (
+                  <Tooltip content={categoryNote(row.category)} side="right">
+                    <span
+                      tabIndex={0}
+                      role="img"
+                      aria-label={`About ${categoryLabel(row.category)} adapters: ${categoryNote(row.category)}`}
+                      style={{ display: 'inline-flex', cursor: 'help' }}
+                    >
+                      <Icon name="info" size={14} />
+                    </span>
+                  </Tooltip>
+                )}
+              </span>
             </div>
           )}
           <div
@@ -1331,10 +1392,19 @@ function GroupedAdapters({
               <AdapterStatus row={row} />
             </span>
             <span style={{ justifySelf: 'end' }}>
-              {canManage && (
-                <Button variant="secondary" onClick={() => onChange(row)}>
-                  Change
-                </Button>
+              {/* Declared in the config file, so read-only here while it is
+                  (R-271); the file is where it changes. */}
+              {row.declared ? (
+                <span title={declaredAt(row)} style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
+                  Set in config file
+                </span>
+              ) : (
+                canManage &&
+                row.status !== 'overridden' && (
+                  <Button variant="secondary" onClick={() => onChange(row)}>
+                    Edit
+                  </Button>
+                )
               )}
             </span>
           </div>
@@ -1345,7 +1415,7 @@ function GroupedAdapters({
 }
 
 /** The adapters table's columns: the category on the first row of each group,
- *  then the adapter by name, its ID, whether it is reachable, and Change. */
+ *  then the adapter by name, its ID, whether it is reachable, and Edit. */
 function adapterColumns(
   canManage: boolean,
   setEditing: (e: { existing?: AdapterRow; category?: string }) => void,
@@ -1385,7 +1455,7 @@ function adapterColumns(
             align: 'right' as const,
             render: (row: Row) => (
               <Button variant="secondary" onClick={() => setEditing({ existing: row })}>
-                Change
+                Edit
               </Button>
             ),
           },

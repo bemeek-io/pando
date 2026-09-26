@@ -547,6 +547,110 @@ var toolList = []tool{
 			return "GET", appPath(id, "/usage"), nil, nil
 		},
 	},
+
+	// The AI functions (R-259, R-343 … R-346). Each draft proposes and
+	// changes nothing, so none of them is the mutation O-12 keeps out of this
+	// list; applying a draft is a separate call the agent may not have.
+	{
+		Name: "pando_list_ai_functions",
+		Description: "Each AI function Pando has, the AI adapter that handles it and on which model, " +
+			"whether it is on, and whether the startup configuration assigns it.",
+		Schema: schema(map[string]any{}),
+		request: func(map[string]any) (string, string, any, error) {
+			return "GET", "/ai/functions", nil, nil
+		},
+	},
+	{
+		Name: "pando_assign_ai_function",
+		Description: "Have an AI adapter handle one AI function, optionally on a model of its own. " +
+			"Refused while another adapter handles the function; unassign it there first.",
+		Schema: schema(map[string]any{
+			"function":   str("The AI function, such as search_audit. pando_list_ai_functions lists them."),
+			"adapter_id": str("The AI adapter's ID, such as ai_anthropic."),
+			"model":      str("A model for this function only. Omit to use the adapter's own."),
+		}, "function", "adapter_id"),
+		request: func(args map[string]any) (string, string, any, error) {
+			fn, err := stringArg(args, "function", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			adapter, err := stringArg(args, "adapter_id", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			model, err := stringArg(args, "model", false)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "PUT", "/ai/functions/" + url.PathEscape(fn), map[string]string{"adapter_id": adapter, "model": model}, nil
+		},
+	},
+	{
+		Name:        "pando_unassign_ai_function",
+		Description: "Turn an AI function off by removing the adapter that handles it.",
+		Schema:      schema(map[string]any{"function": str("The AI function, such as search_audit.")}, "function"),
+		request: func(args map[string]any) (string, string, any, error) {
+			fn, err := stringArg(args, "function", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "DELETE", "/ai/functions/" + url.PathEscape(fn), nil, nil
+		},
+	},
+	{
+		Name: "pando_ai_draft_access",
+		Description: "Draft a custom role and a group from a description of who should be able to do " +
+			"what. A draft only: nothing is created. Verbs come from Pando's catalog; anything else " +
+			"is listed as refused.",
+		Schema: schema(map[string]any{"description": str("Who should be able to do what, in a sentence or two.")}, "description"),
+		request: func(args map[string]any) (string, string, any, error) {
+			d, err := stringArg(args, "description", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "POST", "/ai/access/draft", map[string]string{"description": d}, nil
+		},
+	},
+	{
+		Name: "pando_ai_draft_host_rules",
+		Description: "Propose changes to the installation's host policy from a description: the " +
+			"document as it would be saved, and each change. Nothing is saved. Settings fixed in " +
+			"the startup configuration are declined, naming where they are set.",
+		Schema: schema(map[string]any{"description": str("What the rules should be, in a sentence or two.")}, "description"),
+		request: func(args map[string]any) (string, string, any, error) {
+			d, err := stringArg(args, "description", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "POST", "/ai/policy/draft", map[string]string{"description": d}, nil
+		},
+	},
+	{
+		Name: "pando_ai_search_audit",
+		Description: "Ask a question of the audit log, such as \"which apps did Ben Meeker create last " +
+			"month?\". Returns a short summary and the filters used, which pando_list_audit takes as-is.",
+		Schema: schema(map[string]any{"question": str("The question.")}, "question"),
+		request: func(args map[string]any) (string, string, any, error) {
+			q, err := stringArg(args, "question", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "POST", "/ai/audit/search", map[string]string{"question": q}, nil
+		},
+	},
+	{
+		Name: "pando_ai_ask_reference",
+		Description: "Ask how to do something with Pando. Answered from Pando's API, CLI and MCP " +
+			"reference, citing the endpoints, commands and tools it relies on. Describes; does nothing.",
+		Schema: schema(map[string]any{"question": str("What you want to do.")}, "question"),
+		request: func(args map[string]any) (string, string, any, error) {
+			q, err := stringArg(args, "question", true)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return "POST", "/ai/reference/answer", map[string]string{"question": q}, nil
+		},
+	},
 }
 
 var toolsByName = func() map[string]tool {

@@ -13,9 +13,10 @@ import (
 
 // Config is Pando's configuration, from YAML, environment, and flags (R-271).
 //
-// Adapter configuration is deliberately absent: configured adapter instances
-// live in the database (adapter_configs), not here, so they can be changed
-// through the API without a restart or a file edit.
+// Adapters usually live in the database (adapter_configs), so they can be
+// changed through the API. An install kept as code may declare them in the
+// file instead (Adapters, see adapters.go), and those are read-only elsewhere
+// while declared.
 type Config struct {
 	Server     Server     `mapstructure:"server"`
 	Bootstrap  Bootstrap  `mapstructure:"bootstrap"`
@@ -32,6 +33,10 @@ type Config struct {
 	// startup, which override the stored policy (see sources.go).
 	Settings []Setting       `mapstructure:"-"`
 	Policy   []PolicySetting `mapstructure:"-"`
+
+	// Adapters are the adapters declared in the config file, with the AI
+	// functions each handles (adapters.go).
+	Adapters []AdapterDecl `mapstructure:"-"`
 }
 
 // Reconciler tunes R-149's retry backoff and R-150's give-up rule.
@@ -261,6 +266,11 @@ func Load(path string) (*Config, error) {
 	cfg.File = path
 	cfg.Settings = settingsOf(v, path)
 	cfg.Policy = policyOf(v, path)
+	adapters, err := adaptersOf(v, path)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Adapters = adapters
 	return &cfg, cfg.validate()
 }
 

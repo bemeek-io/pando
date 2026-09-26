@@ -87,7 +87,9 @@ func sourceOf(v *viper.Viper, key, path string) Source {
 func settingsOf(v *viper.Viper, path string) []Setting {
 	var out []Setting
 	for _, key := range v.AllKeys() {
-		if secret[key] || strings.HasPrefix(key, "policy.") || key == "policy" {
+		// Policy and adapters are reported on their own, with what they fix.
+		if secret[key] || strings.HasPrefix(key, "policy.") || key == "policy" ||
+			strings.HasPrefix(key, "adapters.") || key == "adapters" {
 			continue
 		}
 		value := v.Get(key)

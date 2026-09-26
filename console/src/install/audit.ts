@@ -6,7 +6,10 @@
 // to roles in the last day" is one query.
 
 export interface AuditFilters {
+  /** One action prefix, or several separated by commas: any of them matches. */
   action: string;
+  /** An app ID: events about that app. */
+  app: string;
   /** A principal ID, or `kind:<kind>` for a whole kind of actor. */
   actor: string;
   targetKind: string;
@@ -22,6 +25,7 @@ export interface AuditFilters {
 
 export const NO_FILTERS: AuditFilters = {
   action: '',
+  app: '',
   actor: '',
   targetKind: '',
   targetID: '',
@@ -43,7 +47,8 @@ export const WHEN: { value: string; label: string; hours?: number }[] = [
 /** The GET /audit query string for a set of filters, times resolved now. */
 export function auditQuery(f: AuditFilters, before?: string, now = Date.now()): string {
   const q = new URLSearchParams();
-  if (f.action) q.set('action', f.action);
+  for (const a of actionsOf(f.action)) q.append('action', a);
+  if (f.app) q.set('app_id', f.app.trim());
   // A whole kind of actor — the system, anonymous — is a kind, not an ID.
   if (f.actor.startsWith('kind:')) q.set('principal_kind', f.actor.slice('kind:'.length));
   else if (f.actor) q.set('principal_id', f.actor);
@@ -67,6 +72,7 @@ export function auditQuery(f: AuditFilters, before?: string, now = Date.now()): 
 // opened), and the names are the screen's fields rather than the wire's.
 const LINK_KEYS: (keyof AuditFilters)[] = [
   'action',
+  'app',
   'actor',
   'targetKind',
   'targetID',
@@ -94,4 +100,54 @@ export function filtersFrom(query: string | undefined): AuditFilters {
     f.until = '';
   }
   return f;
+}
+
+/** The prefixes in an action filter: comma-separated, blanks dropped. */
+export function actionsOf(action: string): string[] {
+  return action
+    .split(',')
+    .map((a) => a.trim())
+    .filter(Boolean);
+}
+
+/** A filter as POST /ai/audit/search returns it (R-345). */
+export interface SearchFilter {
+  actions?: string[];
+  app_id?: string;
+  principal_id?: string;
+  principal_kind?: string;
+  target_kind?: string;
+  target_id?: string;
+  involving?: string;
+  since?: string;
+  until?: string;
+}
+
+/** A datetime-local value, in the viewer's own clock, for an RFC 3339 time. */
+function localInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * An AI search's filter as the screen's own filters, so what the AI searched
+ * for is shown, and can be changed, in the fields a person would have used.
+ */
+export function filtersFromSearch(f: SearchFilter): AuditFilters {
+  const out: AuditFilters = { ...NO_FILTERS };
+  out.action = (f.actions ?? []).join(', ');
+  out.app = f.app_id ?? '';
+  if (f.principal_id) out.actor = f.principal_id;
+  else if (f.principal_kind) out.actor = `kind:${f.principal_kind}`;
+  out.targetKind = f.target_kind ?? '';
+  out.targetID = f.target_id ?? '';
+  out.involving = f.involving ?? '';
+  if (f.since || f.until) {
+    out.when = 'custom';
+    out.since = f.since ? localInput(f.since) : '';
+    out.until = f.until ? localInput(f.until) : '';
+  }
+  return out;
 }

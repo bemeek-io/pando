@@ -356,7 +356,7 @@ itself, to a registry or a daemon, and the daemon is forbidden.
 
 **R-105 [D]** **Every question must be self-contained and pasteable.** It states what is being asked, why, what a valid answer looks like, and enough context that a model which cannot see the repo can answer it. The expected workflow for a non-technical user is to paste the question into the assistant that wrote the app and paste the answer back. This is a hard requirement on question text, and it is what makes AI support useful without making it required.
 
-**R-106 [D]** AI assistance is optional supporting functionality, never required. It may be applied to reading README prose, disambiguating monorepo entrypoints, proposing repairs from a failed build log or a failed detection, and answering the questions detection could not. It emits the same spec object and passes the same review gate. With no model configured, each tap degrades to a question, not a dead end.
+**R-106 [D]** AI assistance is optional supporting functionality, never required. It may be applied to reading README prose, disambiguating monorepo entrypoints, proposing repairs from a failed build log or a failed detection, and answering the questions detection could not; there it emits the same spec object and passes the same review gate. It may also draft custom roles and groups (R-343), propose host policy changes (R-344), turn a question about the audit log into filters (R-345), and answer how-to questions from the generated reference (R-346). Each of those proposes and a person applies: a draft takes effect only when a person creates or saves it through the ordinary endpoint, under their own authority. With no model configured, or with a function assigned to no adapter (R-259), each tap degrades to a question or to the screen without AI, not a dead end.
 
 **R-107 [D]** The correct failure: a repo needs Postgres and never mentions it anywhere — no compose service, no `DATABASE_URL` in any sample. The trial run crashes. Pando shows the log and stops. That is the right outcome, not a gap to close with inference.
 
@@ -398,8 +398,8 @@ unreachable provider, an expired budget, a timeout, an answer that does not pars
 deterministic proposal exactly as it was (R-106). Screening runs after the proposal is complete, so
 when it fails the proposal is the one Pando would have produced without it.
 
-**R-336 [P]** **Screening runs only when detection needs it or a person asks, and is on when an AI
-adapter is configured.** Detection needs it in two cases. When the proposal failed — the trial run
+**R-336 [P]** **Screening runs only when detection needs it or a person asks, and is on when its
+functions are assigned to an AI adapter (R-259).** Detection needs it in two cases. When the proposal failed — the trial run
 crashed, or no detector could read the repository — the adapter is asked to repair it. Otherwise, when
 detection has questions for a person, the adapter is asked to answer them, and may change nothing else.
 A detection that produced a plan without failing or asking anything makes no call at all: no latency,
@@ -407,9 +407,11 @@ no cost, and no repository contents leaving the host on the common path. At most
 detection; a repair is handed the questions too. The third case is a person reviewing the proposal
 telling the adapter what is wrong with it; the adapter checks that against the repository and changes
 what the repository supports, under the same closed set, evidence and refusals (R-332 – R-334), and
-replies. Each such request is one call, made only because the person asked. Configuring an adapter means supplying a credential, which is the
-deliberate act; asking a second time would charge the setup cost twice (R-002). Host policy may forbid
-screening install-wide, and an install may turn it off per adapter.
+replies. Each such request is one call, made only because the person asked. Configuring an adapter, which means supplying a
+credential, and assigning it these functions are the deliberate act; asking a second time would charge the setup
+cost twice (R-002). An install that was screening before functions were assigned keeps them assigned.
+Host policy may forbid screening install-wide, and an install may turn it off per adapter or per
+function.
 
 **R-337 [D]** **Screening sends repository contents to the adapter's provider, and records that it did.**
 Every screening writes an audit event naming the adapter, the model, and the files that were read. The
@@ -425,6 +427,41 @@ settle in passing.
 
 **R-339 [P]** Screening is bounded by files read, bytes read, and wall clock, declared per adapter and
 capped by the install. An exhausted budget ends the screening and keeps what it produced, under R-335.
+
+### 7.5 AI assistance outside detection
+
+R-106 also allows four administrative uses. Each is an AI function (R-259), assigned to an adapter
+like screening and off until it is, and each is an API endpoint first (R-261). None of them changes
+anything: each returns a draft, a filter or an answer, and a person acts on it through the endpoint
+that already exists for that action, under their own authority.
+
+**R-343 [D]** **An AI adapter may draft access.** Given a description of who should be able to do
+what, `draft_access` returns a custom role, a group with its members, or both. Verbs come only from
+what the requester could grant — every app verb, and the install verbs they hold themselves — and core
+refuses a verb outside that set, a role mixing install and app verbs (R-080), a role name that already
+exists or is built in (R-081, R-082), and a member who is not an account on the install. A person
+creates the draft through the ordinary role and group endpoints. Asking requires
+`install.users.manage`, the verb that creates them.
+
+**R-344 [D]** **An AI adapter may propose host policy.** `draft_policy` returns the policy document as
+it would be saved and each change in it. A change to a field fixed by the startup configuration
+(R-271) is declined whatever the model returned, with a reason naming the file and key, or the
+variable, that fixes it; core enforces this, not the model. A value that does not read as its field,
+or a verb list naming a verb that does not exist, is refused. Nothing is saved until a person saves
+the proposal through the ordinary policy endpoint. Asking requires `install.policy.manage`.
+
+**R-345 [D]** **An AI adapter may search the audit log for a person.** `search_audit` turns a
+question into one audit filter: actions, app, actor, target, an ID involved, and a time range in UTC.
+Core runs the filter and returns it as ordinary audit parameters, so the result can be checked and
+changed without AI. The adapter never reads the log (R-027, R-226); it is given the accounts, apps and
+action names it needs to write the filter, and afterward the records the filter found, to summarize.
+The summary is written from those records alone, and says so when the log does not record what was
+asked. Asking requires `install.audit.read`.
+
+**R-346 [D]** **An AI adapter may answer "How can I…" from the reference.** `answer_reference`
+answers from the generated API, CLI and MCP reference, cites the endpoints, commands and tools it
+relies on, and says so when the reference does not cover the question. A citation that is not in the
+reference is dropped. It describes and never acts. Any signed-in user may ask.
 
 ---
 
@@ -643,7 +680,7 @@ without touching core (O-6 resolved).
 
 **R-226 [D]** The audit log is in core and cannot be written or rewritten by an adapter (R-027).
 
-**R-227 [P]** Auditable events: every spec mutation, every grant change, every deploy, every secret write, every token creation and use, every exec session, every policy change, every delete.
+**R-227 [P]** Auditable events: every spec mutation, every grant change, every deploy, every secret write, every token creation and use, every exec session, every policy change, every delete, and every call that sends data to an AI adapter's provider, naming the function, the adapter and the model but not what was sent (R-337).
 
 **R-228 [P]** Exec sessions are audited as a distinct event type — principal, app, workload, start and end. Command contents are **not** recorded. **[O-7]**
 
@@ -709,9 +746,17 @@ proposal against this source"; what that costs and how it is asked is the adapte
 
 **R-259 [D]** An AI adapter declares which **functions** it performs as capabilities data. Repairing a
 failed detection (`repair_plan`) and answering detection's questions (`answer_questions`) are the
-first two, and together they are §7.4's screening. Reading README prose, disambiguating monorepo
+first two, and together they are §7.4's screening; revising a plan when a person asks (`revise_plan`)
+is the third, and R-343 – R-346 add four more. Reading README prose, disambiguating monorepo
 entrypoints and repairing a failed deploy-time build are the others R-106 names, and an adapter that
-cannot do one of them says so rather than failing when asked.
+cannot do one of them says so rather than failing when asked. Each function is **assigned** to at most
+one AI adapter, and one adapter may be assigned any number of functions. The database enforces the
+first, and assigning a function that another adapter handles is refused with a message naming that
+adapter. An adapter may be assigned only functions it advertises. An install has at most one AI
+adapter per provider. When an adapter advertises that it can choose a model, an assignment may name a
+model for that one function, and otherwise uses the adapter's own; an assignment naming a model on an
+adapter that cannot choose one is refused. A function assigned to no adapter is off, which degrades as
+R-106 describes and is not an error.
 
 **R-257 [D]** A runtime adapter may be swapped under an existing app, and it is **neither a migration nor a plain redeploy**: it is a destructive spec change requiring explicit confirmation, with volumes resolved through the keep-or-discard flow (R-204). Pando does not move volume contents between adapters — it cannot know what is inside a volume (R-206), and relocating running workloads is one step from the scheduling R-010 forbids.
 
@@ -745,7 +790,7 @@ cannot do one of them says so rather than failing when asked.
 
 **R-270 [D]** **Pando ships permissive defaults.** Configuration narrows them.
 
-**R-271 [D]** Configuration may be supplied by: a YAML file loaded at startup, environment variables, the CLI, or the console.
+**R-271 [D]** Configuration may be supplied by: a YAML file loaded at startup, environment variables, the CLI, or the console. Host policy fields may be fixed at startup in the file or the environment; adapters and AI function assignments (R-259) may be declared in the file. A declared item overrides what is stored and is read-only through the API, console, CLI and MCP while it is declared: a refusal to change it names the file and key, or the variable, that sets it, and `GET /config` reports each one. Removing the declaration and restarting brings back what was stored, and declared and console-managed adapters may be mixed. A declaration that contradicts itself in any category — two defaults in one category, two AI adapters of one provider, one AI function under two adapters, two services adapters providing the same kind of service — stops startup with an error naming both declarations. A declared credential is a reference to an environment variable or a file, never the value (R-190).
 
 **R-272 [D]** **The general pattern, applied throughout:** a setting has a permissive default; host policy can raise the floor; app-level configuration can only move within what policy allows. This applies to isolation class, egress mode, exec, anonymous grants, routing override, resource limits, token expiry, and data destruction.
 

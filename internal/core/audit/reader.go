@@ -48,6 +48,11 @@ type Query struct {
 	// "grant.delete" a result for a search for "delete".
 	Action string
 
+	// Actions are more prefixes, any of which matches, alongside Action:
+	// "apps someone added or deleted" is app.create or app.delete, and filters
+	// otherwise combine with AND.
+	Actions []string
+
 	AppID       string
 	PrincipalID string
 
@@ -122,10 +127,16 @@ func (r *Reader) List(ctx context.Context, q Query) ([]Record, error) {
 		return fmt.Sprintf("$%d", len(args))
 	}
 
-	if q.Action != "" {
-		// The prefix is escaped: an action containing % or _ would otherwise
-		// widen the filter rather than narrow it.
-		where = append(where, "action LIKE "+arg(escapeLike(q.Action))+" || '%' ESCAPE '\\'")
+	var prefixes []string
+	for _, a := range append([]string{q.Action}, q.Actions...) {
+		if a != "" {
+			// The prefix is escaped: an action containing % or _ would
+			// otherwise widen the filter rather than narrow it.
+			prefixes = append(prefixes, "action LIKE "+arg(escapeLike(a))+" || '%' ESCAPE '\\'")
+		}
+	}
+	if len(prefixes) > 0 {
+		where = append(where, "("+strings.Join(prefixes, " OR ")+")")
 	}
 	if q.AppID != "" {
 		where = append(where, "app_id = "+arg(q.AppID))
@@ -193,6 +204,25 @@ func (r *Reader) List(ctx context.Context, q Query) ([]Record, error) {
 			}
 		}
 		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+// ActionNames lists the actions the log holds, so a question can be turned
+// into filters that match something.
+func (r *Reader) ActionNames(ctx context.Context) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT DISTINCT action FROM audit_events ORDER BY action LIMIT 500`)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the audit log.", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the audit log.", err)
+		}
+		out = append(out, a)
 	}
 	return out, rows.Err()
 }

@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -21,6 +23,8 @@ import (
 	"go.uber.org/zap"
 
 	aianthropic "github.com/bemeek-io/pando/internal/adapter/ai/anthropic"
+	ailocal "github.com/bemeek-io/pando/internal/adapter/ai/local"
+	aiopenai "github.com/bemeek-io/pando/internal/adapter/ai/openai"
 	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
 	backuplocal "github.com/bemeek-io/pando/internal/adapter/backup/local"
 	buildkitadapter "github.com/bemeek-io/pando/internal/adapter/builder/buildkit"
@@ -37,6 +41,7 @@ import (
 	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/console"
 	"github.com/bemeek-io/pando/internal/core/assertion"
+	"github.com/bemeek-io/pando/internal/core/assist"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/backup"
@@ -56,6 +61,7 @@ import (
 	"github.com/bemeek-io/pando/internal/httpapi"
 	"github.com/bemeek-io/pando/internal/log"
 	"github.com/bemeek-io/pando/internal/proxy"
+	"github.com/bemeek-io/pando/internal/reference"
 	"github.com/bemeek-io/pando/internal/secret"
 )
 
@@ -306,7 +312,7 @@ func serve(ctx context.Context, configPath string) error {
 
 	notifications := state.NewNotifications(db)
 
-	registry, adapterCredentials, err := registerAdapters(ctx, db, adapters, notifications, logger)
+	registry, adapterCredentials, err := registerAdapters(ctx, db, adapters, notifications, cfg.Adapters, logger)
 	if err != nil {
 		return err
 	}
@@ -421,15 +427,28 @@ func serve(ctx context.Context, configPath string) error {
 		},
 	}
 
+	// Which AI adapter handles each AI function (R-259): the stored
+	// assignments with the config file's laid over them. Loaded into the
+	// registry now and after every change, so a call asks the registry.
+	aiFunctions := &assist.Assignments{
+		Store:    state.NewAIAssignments(db),
+		Registry: registry,
+		Declared: declaredAssignments(cfg.Adapters),
+		Name:     adapterNames(ctx, adapters, cfg.Adapters),
+	}
+	if err := aiFunctions.Load(ctx); err != nil {
+		return err
+	}
+
 	// Screening (R-330, design 10). Optional in the strong sense: an install
-	// with no AI adapter configured is not a degraded install, because
+	// with no AI function assigned is not a degraded install, because
 	// everything the auction produced is in the proposal either way (R-335).
-	if ai, ref, found := registry.DefaultAI(); found {
-		detector.Screener = ai
-		detector.ScreenerRef = ref
-		detector.ScreenPolicy = hostPolicy
-		detector.Auditor = detectionAuditor{auditor}
-		logger.Info("an AI adapter will repair failed detections and answer their questions", zap.String("adapter", ref))
+	detector.Screeners = detection.RegistryScreeners{Registry: registry}
+	detector.ScreenPolicy = hostPolicy
+	detector.Auditor = detectionAuditor{auditor}
+	for _, a := range registry.AIAssignments() {
+		logger.Info("AI function assigned", zap.String("function", string(a.Function)),
+			zap.String("adapter", a.AdapterRef), zap.String("model", a.Model))
 	}
 
 	// Assertions are what an app can actually trust about a caller (R-051).
@@ -505,8 +524,24 @@ func serve(ctx context.Context, configPath string) error {
 		Auditor:  auditor,
 		Policy:   hostPolicy,
 
-		Registry:     registry,
-		Adapters:     adapters,
+		Registry:    registry,
+		Adapters:    adapters,
+		AIFunctions: aiFunctions,
+		Assist: &assist.Service{
+			Registry: registry,
+			Users:    users,
+			Apps:     apps,
+			Roles:    state.NewRoles(db),
+			Groups:   state.NewGroups(db),
+			Verbs:    authzStore,
+			Policy:   policyStore,
+			Overlay:  policyOverlay,
+			Audit:    audit.NewReader(db.Pool),
+
+			// Built once: the reference is the binary's, and does not change
+			// while it runs.
+			Reference: sync.OnceValue(func() string { return reference.Markdown(httpapi.Reference()) }),
+		},
 		AdapterKinds: adapterKinds(),
 		StartedAt:    startedAt,
 		Restart: func() {
@@ -796,28 +831,74 @@ func (a detectionAuditor) Write(ctx context.Context, e detection.AuditEvent) err
 // preventing startup: one broken adapter should not take the whole install
 // offline, and the planner already refuses to plan against an adapter it cannot
 // reach (R-254).
-func registerAdapters(ctx context.Context, db *state.DB, store *state.Adapters, notifications *state.Notifications, logger *zap.Logger) (*adapterapi.Registry, *state.AdapterCredentials, error) {
+func registerAdapters(ctx context.Context, db *state.DB, store *state.Adapters, notifications *state.Notifications, declared []config.AdapterDecl, logger *zap.Logger) (*adapterapi.Registry, *state.AdapterCredentials, error) {
 	if err := seedDefaultAdapters(ctx, store); err != nil {
 		return nil, nil, err
 	}
 
-	configured, err := store.List(ctx)
+	stored, err := store.List(ctx)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// One list, stored and declared together. A declaration overrides a
+	// stored adapter with its ID, a stored AI adapter of its provider (one
+	// per provider, R-259), and a stored default in its category (R-271):
+	// the file is what the operator wrote most recently and most
+	// deliberately, and the stored row applies again once the declaration is
+	// removed.
+	type entry struct {
+		c    state.AdapterConfig
+		decl *config.AdapterDecl
+	}
+	declaredIDs := map[string]bool{}
+	declaredAIKinds := map[string]bool{}
+	declaredDefaults := map[string]bool{}
+	var entries []entry
+	for i := range declared {
+		d := &declared[i]
+		declaredIDs[d.ID] = true
+		if d.Category == string(adapterapi.CategoryAI) && d.Enabled {
+			declaredAIKinds[d.Kind] = true
+		}
+		if d.Default && d.Enabled {
+			declaredDefaults[d.Category] = true
+		}
+		entries = append(entries, entry{
+			c: state.AdapterConfig{ID: d.ID, Category: d.Category, Kind: d.Kind, Name: d.Name,
+				IsDefault: d.Default, Enabled: d.Enabled},
+			decl: d,
+		})
+	}
+	for _, c := range stored {
+		switch {
+		case declaredIDs[c.ID]:
+			logger.Info("stored adapter is overridden by the config file", zap.String("id", c.ID))
+			continue
+		case c.Category == string(adapterapi.CategoryAI) && declaredAIKinds[c.Kind]:
+			logger.Info("stored AI adapter is overridden by one of its provider in the config file",
+				zap.String("id", c.ID), zap.String("kind", c.Kind))
+			continue
+		}
+		if declaredDefaults[c.Category] {
+			c.IsDefault = false
+		}
+		entries = append(entries, entry{c: c})
 	}
 
 	// Secrets adapters first. Every other adapter's credentials are sealed by
 	// one (O-20), so it has to be configured before they can be opened. A
 	// secrets adapter's own configuration never carries credentials — there is
 	// nothing to open them with — and the create handler refuses them.
-	sort.SliceStable(configured, func(i, j int) bool {
-		return configured[i].Category == string(adapterapi.CategorySecrets) &&
-			configured[j].Category != string(adapterapi.CategorySecrets)
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].c.Category == string(adapterapi.CategorySecrets) &&
+			entries[j].c.Category != string(adapterapi.CategorySecrets)
 	})
 
 	registry := adapterapi.NewRegistry()
 	var credentials *state.AdapterCredentials
-	for _, c := range configured {
+	for _, e := range entries {
+		c := e.c
 		if !c.Enabled {
 			continue
 		}
@@ -826,54 +907,43 @@ func registerAdapters(ctx context.Context, db *state.DB, store *state.Adapters, 
 			credentials = adapterCredentialsFor(db, registry)
 		}
 
-		var adapter adapterapi.Adapter
-		switch {
-		case c.Category == string(adapterapi.CategoryRuntime) && c.Kind == dockerruntime.Kind:
-			adapter = dockerruntime.New()
-		case c.Category == string(adapterapi.CategoryRouting) && c.Kind == loopback.Kind:
-			adapter = loopback.New()
-		case c.Category == string(adapterapi.CategorySecrets) && c.Kind == secretslocal.Kind:
-			adapter = secretslocal.New()
-		case c.Category == string(adapterapi.CategoryBuilder) && c.Kind == buildkitadapter.Kind:
-			adapter = buildkitadapter.New()
-		case c.Category == string(adapterapi.CategoryBackup) && c.Kind == backuplocal.Kind:
-			adapter = backuplocal.New()
-		case c.Category == string(adapterapi.CategoryServices) && c.Kind == servicesdocker.Kind:
-			adapter = servicesdocker.New()
-		case c.Category == string(adapterapi.CategoryRouting) && c.Kind == traefik.Kind:
-			adapter = traefik.New()
-		case c.Category == string(adapterapi.CategoryScanner) && c.Kind == trivyscanner.Kind:
-			adapter = trivyscanner.New()
-		case c.Category == string(adapterapi.CategoryAI) && c.Kind == aianthropic.Kind:
-			// Not seeded (design 10 §7): there is no AI adapter that works
-			// without a credential, and seeding one would put a permanently
-			// unhealthy adapter in every install's console. An install that
-			// wants screening configures this row itself.
-			adapter = aianthropic.New()
-		case c.Category == string(adapterapi.CategoryNotify) && c.Kind == notifyconsole.Kind:
-			// The sink is supplied by core. The adapter stores nothing itself,
-			// which is R-027 — an adapter never touches state.
-			adapter = notifyconsole.New(notifications)
-		default:
+		adapter := newAdapter(c.Category, c.Kind, notifications)
+		if adapter == nil {
 			logger.Warn("skipping adapter of unknown kind",
 				zap.String("id", c.ID), zap.String("category", c.Category), zap.String("kind", c.Kind))
 			continue
 		}
 
-		raw := c.Config
-		if c.Category != string(adapterapi.CategorySecrets) {
-			// Decrypted here and handed over in memory only (O-20). Nothing on
-			// this path is logged: a failure is reported by adapter ID alone.
-			creds, err := credentials.Resolve(ctx, c.ID)
-			if err != nil {
-				logger.Error("adapter credentials could not be opened, so the adapter was skipped",
-					zap.String("id", c.ID))
+		var raw json.RawMessage
+		var creds map[string]secret.Value
+		if e.decl != nil {
+			// Read from where the file says, at startup, and held in memory
+			// only (R-190). A variable that is unset or a file that is missing
+			// is a failure to configure, like a bad key: logged and skipped.
+			if raw, err = json.Marshal(e.decl.Config); err != nil || e.decl.Config == nil {
+				raw = json.RawMessage(`{}`)
+			}
+			if creds, err = declaredCredentials(e.decl.Credentials); err != nil {
+				logger.Error("declared adapter's credentials could not be read, so the adapter was skipped",
+					zap.String("id", c.ID), zap.String("reason", err.Error()))
 				continue
 			}
-			if raw, err = withCredentials(c.Config, creds); err != nil {
-				logger.Error("adapter could not be configured and was skipped", zap.String("id", c.ID))
-				continue
+		} else {
+			raw = c.Config
+			if c.Category != string(adapterapi.CategorySecrets) {
+				// Decrypted here and handed over in memory only (O-20). Nothing
+				// on this path is logged: a failure is reported by adapter ID
+				// alone.
+				if creds, err = credentials.Resolve(ctx, c.ID); err != nil {
+					logger.Error("adapter credentials could not be opened, so the adapter was skipped",
+						zap.String("id", c.ID))
+					continue
+				}
 			}
+		}
+		if raw, err = withCredentials(raw, creds); err != nil {
+			logger.Error("adapter could not be configured and was skipped", zap.String("id", c.ID))
+			continue
 		}
 
 		if err := adapter.Configure(ctx, raw); err != nil {
@@ -889,12 +959,136 @@ func registerAdapters(ctx context.Context, db *state.DB, store *state.Adapters, 
 				return nil, nil, err
 			}
 		}
-		logger.Info("adapter registered", zap.String("id", c.ID), zap.String("kind", c.Kind))
+		logger.Info("adapter registered", zap.String("id", c.ID), zap.String("kind", c.Kind),
+			zap.Bool("declared", e.decl != nil))
 	}
 	if credentials == nil {
 		credentials = adapterCredentialsFor(db, registry)
 	}
+
+	if err := declaredServicesOverlap(registry, declared); err != nil {
+		return nil, nil, err
+	}
 	return registry, credentials, nil
+}
+
+// declaredAssignments are the AI functions the config file assigns.
+func declaredAssignments(decls []config.AdapterDecl) []assist.Declared {
+	var out []assist.Declared
+	for _, d := range decls {
+		if !d.Enabled {
+			continue
+		}
+		for _, f := range d.Functions {
+			out = append(out, assist.Declared{
+				Function: adapterapi.AIFunction(f.Function), Adapter: d.ID, Model: f.Model,
+				Source: assist.Source{Kind: f.Source.Kind, Name: f.Source.Name, Key: f.Source.Key},
+			})
+		}
+	}
+	return out
+}
+
+// adapterNames names adapters for refusals, from the file and the database.
+// Read once: a name is for a sentence, and a stale one costs nothing.
+func adapterNames(ctx context.Context, store *state.Adapters, decls []config.AdapterDecl) func(string) string {
+	names := map[string]string{}
+	if stored, err := store.List(ctx); err == nil {
+		for _, c := range stored {
+			names[c.ID] = c.Name
+		}
+	}
+	for _, d := range decls {
+		names[d.ID] = d.Name
+	}
+	return func(ref string) string { return names[ref] }
+}
+
+// newAdapter is an unconfigured adapter of a category and kind this build can
+// run, or nil.
+func newAdapter(category, kind string, notifications *state.Notifications) adapterapi.Adapter {
+	switch {
+	case category == string(adapterapi.CategoryRuntime) && kind == dockerruntime.Kind:
+		return dockerruntime.New()
+	case category == string(adapterapi.CategoryRouting) && kind == loopback.Kind:
+		return loopback.New()
+	case category == string(adapterapi.CategorySecrets) && kind == secretslocal.Kind:
+		return secretslocal.New()
+	case category == string(adapterapi.CategoryBuilder) && kind == buildkitadapter.Kind:
+		return buildkitadapter.New()
+	case category == string(adapterapi.CategoryBackup) && kind == backuplocal.Kind:
+		return backuplocal.New()
+	case category == string(adapterapi.CategoryServices) && kind == servicesdocker.Kind:
+		return servicesdocker.New()
+	case category == string(adapterapi.CategoryRouting) && kind == traefik.Kind:
+		return traefik.New()
+	case category == string(adapterapi.CategoryScanner) && kind == trivyscanner.Kind:
+		return trivyscanner.New()
+	case category == string(adapterapi.CategoryAI) && kind == aianthropic.Kind:
+		// Not seeded (design 10 §7): there is no AI adapter that works
+		// without a credential, and seeding one would put a permanently
+		// unhealthy adapter in every install's console. An install that
+		// wants AI configures one itself.
+		return aianthropic.New()
+	case category == string(adapterapi.CategoryAI) && kind == aiopenai.Kind:
+		return aiopenai.New()
+	case category == string(adapterapi.CategoryAI) && kind == ailocal.Kind:
+		// A model on the install's own hardware: nothing is sent to a
+		// provider. Not seeded either — it needs a server and a model named.
+		return ailocal.New()
+	case category == string(adapterapi.CategoryNotify) && kind == notifyconsole.Kind:
+		// The sink is supplied by core. The adapter stores nothing itself,
+		// which is R-027 — an adapter never touches state.
+		return notifyconsole.New(notifications)
+	}
+	return nil
+}
+
+// declaredCredentials reads a declared adapter's credentials from the
+// environment variables and files the config file names (R-190).
+func declaredCredentials(refs map[string]config.CredentialRef) (map[string]secret.Value, error) {
+	out := make(map[string]secret.Value, len(refs))
+	for field, ref := range refs {
+		switch {
+		case ref.Env != "":
+			v := os.Getenv(ref.Env)
+			if v == "" {
+				return nil, fmt.Errorf("credential %s names the environment variable %s, which is not set", field, ref.Env)
+			}
+			out[field] = secret.New(v)
+		case ref.File != "":
+			body, err := os.ReadFile(ref.File)
+			if err != nil {
+				return nil, fmt.Errorf("credential %s names the file %s, which could not be read", field, ref.File)
+			}
+			out[field] = secret.New(strings.TrimSpace(string(body)))
+		}
+	}
+	return out, nil
+}
+
+// declaredServicesOverlap refuses two declared services adapters that fill the
+// same kind of slot (R-271). ServicesFor would otherwise pick one by default
+// or by name, and the file would not say which.
+func declaredServicesOverlap(registry *adapterapi.Registry, declared []config.AdapterDecl) error {
+	claimed := map[spec.SlotType]config.AdapterDecl{}
+	for _, d := range declared {
+		if d.Category != string(adapterapi.CategoryServices) || !d.Enabled {
+			continue
+		}
+		sa, ok := registry.Services(d.ID)
+		if !ok {
+			continue
+		}
+		for _, t := range sa.Supports() {
+			if other, dup := claimed[t]; dup {
+				return fmt.Errorf("the config file %s declares two services adapters that both provide %s, at %s and %s. "+
+					"Each kind of service has one adapter: remove one of them", d.Source.Name, t, other.Source.Key, d.Source.Key)
+			}
+			claimed[t] = d
+		}
+	}
+	return nil
 }
 
 // adapterCredentialsFor is the credential store, sealed by the install's
@@ -1269,6 +1463,8 @@ func startupPolicy(cfg *config.Config) (*corepolicy.Overlay, error) {
 func adapterKinds() []adapterapi.KindInfo {
 	return []adapterapi.KindInfo{
 		aianthropic.Info(),
+		aiopenai.Info(),
+		ailocal.Info(),
 		dockerruntime.Info(),
 		loopback.Info(),
 		traefik.Info(),

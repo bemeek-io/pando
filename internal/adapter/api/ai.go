@@ -51,7 +51,75 @@ const (
 	// AIFunctionReadReadme is R-106's remaining name. Declared so the reason
 	// this is a list is visible; not built.
 	AIFunctionReadReadme AIFunction = "read_readme"
+
+	// AIFunctionDraftAccess drafts a custom role, a group, or both, from a
+	// description of who should be able to do what (R-343). A draft only: an
+	// administrator reviews it and creates it through the ordinary endpoints.
+	AIFunctionDraftAccess AIFunction = "draft_access"
+
+	// AIFunctionDraftPolicy proposes changes to host policy from a description
+	// (R-344). Core refuses any change to a field fixed in the startup
+	// configuration, whatever the model says.
+	AIFunctionDraftPolicy AIFunction = "draft_policy"
+
+	// AIFunctionSearchAudit turns a question into audit filters, and
+	// summarizes the records core found with them (R-345). The adapter never
+	// reads the audit log (R-027): core runs the query.
+	AIFunctionSearchAudit AIFunction = "search_audit"
+
+	// AIFunctionAnswerReference answers "How can I…" from the generated API,
+	// CLI and MCP reference (R-346). It describes; it never acts.
+	AIFunctionAnswerReference AIFunction = "answer_reference"
 )
+
+// AIFunctions is every function Pando calls an AI adapter for, in the order
+// the console lists them. read_readme is absent: nothing calls it, so there is
+// nothing to assign it to (R-259).
+func AIFunctions() []AIFunction {
+	return []AIFunction{
+		AIFunctionRepairPlan,
+		AIFunctionAnswerQuestions,
+		AIFunctionRevisePlan,
+		AIFunctionDraftAccess,
+		AIFunctionDraftPolicy,
+		AIFunctionSearchAudit,
+		AIFunctionAnswerReference,
+	}
+}
+
+// IsAssignable reports whether f is a function an adapter can be assigned.
+func IsAssignable(f AIFunction) bool {
+	for _, have := range AIFunctions() {
+		if have == f {
+			return true
+		}
+	}
+	return false
+}
+
+// Title is how a function is named in a sentence a person reads, following
+// the R-105 standard: "Audit search is already handled by …".
+func (f AIFunction) Title() string {
+	switch f {
+	case AIFunctionRepairPlan:
+		return "Plan repair"
+	case AIFunctionAnswerQuestions:
+		return "Answering detection questions"
+	case AIFunctionRevisePlan:
+		return "Plan revision"
+	case AIFunctionDraftAccess:
+		return "Access drafting"
+	case AIFunctionDraftPolicy:
+		return "Policy drafting"
+	case AIFunctionSearchAudit:
+		return "Audit search"
+	case AIFunctionAnswerReference:
+		return "Reference help"
+	case AIFunctionReadReadme:
+		return "README reading"
+	}
+	return string(f)
+}
 
 // Turn is one message in a conversation about a plan, from a person or from
 // the AI adapter.
@@ -68,7 +136,21 @@ type AICapabilities struct {
 	// Model is shown in the review. "Anthropic (claude-opus-5-5) read 7 files and
 	// changed 3 things" is the honest account of what happened, and it is not
 	// available if the model is a config value core never sees.
+	//
+	// It is the adapter's own default. An assignment may name another model
+	// for one function when ChoosesModel is set (R-259); the model that ran is
+	// then the one each result reports.
 	Model string
+
+	// ChoosesModel says an assignment may name a model other than Model for
+	// one function, so lighter work can go to a cheaper model. An assignment
+	// naming a model on an adapter that cannot choose is refused (R-259).
+	ChoosesModel bool
+
+	// Models, when set, are the only models an assignment may name. Empty
+	// with ChoosesModel set means any model the provider serves; a name it
+	// does not serve fails the call, not the assignment.
+	Models []string
 
 	// MaxFiles and MaxBytes are what this adapter will read from a source. Core
 	// lowers them to the install's own limits; it never raises them.
@@ -112,6 +194,23 @@ type AIAdapter interface {
 	// set may be proposed, and ScreenResult.Reply says what it did and why —
 	// including that the repository does not support what was asked.
 	RevisePlan(ctx context.Context, req ScreenRequest) (ScreenResult, error)
+
+	// DraftAccess drafts a role, a group, or both (R-343). Verbs come from
+	// req.Verbs only; core refuses anything else.
+	DraftAccess(ctx context.Context, req AccessRequest) (AccessDraft, error)
+
+	// DraftPolicy proposes changes to host policy (R-344).
+	DraftPolicy(ctx context.Context, req PolicyRequest) (PolicyDraft, error)
+
+	// SearchAudit turns a question into one audit filter (R-345).
+	SearchAudit(ctx context.Context, req AuditSearchRequest) (AuditSearch, error)
+
+	// SummarizeAudit summarizes the records core found with that filter,
+	// from those records alone.
+	SummarizeAudit(ctx context.Context, req AuditSummaryRequest) (AuditSummary, error)
+
+	// AnswerReference answers a question from the generated reference (R-346).
+	AnswerReference(ctx context.Context, req ReferenceRequest) (ReferenceAnswer, error)
 }
 
 // ScreenRequest is a finished proposal, and the repository it came from. Both
@@ -168,6 +267,10 @@ type ScreenRequest struct {
 	Known []string
 
 	Budget ScreenBudget
+
+	// Model is the model this call runs on, from the function's assignment.
+	// Empty means the adapter's own (R-259).
+	Model string
 }
 
 // TrialSummary is the trial run's output (R-097), as a screener sees it.

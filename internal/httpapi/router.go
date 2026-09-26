@@ -15,6 +15,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/core/assertion"
+	"github.com/bemeek-io/pando/internal/core/assist"
 	"github.com/bemeek-io/pando/internal/core/audit"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/backup"
@@ -54,6 +55,14 @@ type Server struct {
 
 	Registry *api.Registry
 	Adapters *state.Adapters
+
+	// AIFunctions is which AI adapter handles each AI function (R-259). Nil
+	// means the endpoints say assignment is not set up.
+	AIFunctions *assist.Assignments
+
+	// Assist runs the administrative AI functions. Nil means the endpoints
+	// say AI assistance is not set up.
+	Assist *assist.Service
 
 	// TeardownNow asks for a deleted app's bundle to be torn down now rather
 	// than at the collector's next pass. Nil leaves it to the pass.
@@ -404,6 +413,21 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/adapters", s.handleListAdapters)
 		r.Post("/adapters", s.handleCreateAdapter)
 		r.Get("/adapters/kinds", s.handleAdapterKinds)
+
+		// Which AI adapter handles each AI function, and on which model
+		// (R-259). Read with install.view, changed with
+		// install.adapters.manage, like the adapters themselves.
+		r.Get("/ai/functions", s.handleListAIFunctions)
+		r.Put("/ai/functions/{function}", s.handleAssignAIFunction)
+		r.Delete("/ai/functions/{function}", s.handleUnassignAIFunction)
+
+		// The AI functions themselves (R-343 … R-346). Each proposes and
+		// none applies, and each is behind the verb its ordinary endpoint
+		// needs: drafting a role is install.users.manage, like creating one.
+		r.Post("/ai/access/draft", s.handleDraftAccess)
+		r.Post("/ai/policy/draft", s.handleDraftPolicy)
+		r.Post("/ai/audit/search", s.handleSearchAudit)
+		r.Post("/ai/reference/answer", s.handleAnswerReference)
 		r.Post("/restart", s.handleRestart)
 		r.Get("/capacity", s.handleCapacity)
 
