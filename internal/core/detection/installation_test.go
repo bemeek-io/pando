@@ -145,3 +145,7 @@ func TestAnOverriddenFallbackIsUsedForWhatAdaptersDoNotAnswer(t *testing.T) {
 func TestTheInstallationSatisfiesTheInterfaceDetectionAsksFor(t *testing.T) {
 	var _ detection.Installation = detection.NewInstallation(nil, "")
 }
+
+func (routingStub) Edge(context.Context, api.EdgeRequest) (api.EdgePlan, bool, error) {
+	return api.EdgePlan{}, false, nil
+}

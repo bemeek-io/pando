@@ -616,3 +616,13 @@ func TestR105_AnUnsupportedBuildMethodNamesWhatIsAvailable(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, []string{"dockerfile"}, supported)
 }
+
+func (f *fakeRuntime) ApplyEdge(context.Context, api.EdgePlan) error { return nil }
+func (f *fakeRuntime) ObserveEdge(context.Context, string) (api.EdgeState, error) {
+	return api.EdgeState{}, nil
+}
+func (f *fakeRuntime) RemoveEdge(context.Context, string) error { return nil }
+func (f *fakeRuntime) Edges(context.Context) ([]string, error)  { return nil, nil }
+func (f *fakeRouting) Edge(context.Context, api.EdgeRequest) (api.EdgePlan, bool, error) {
+	return api.EdgePlan{}, false, nil
+}

@@ -76,3 +76,7 @@ func (stubRouting) Remove(context.Context, api.RouteHandle) error { return nil }
 func (stubRouting) Observe(context.Context, api.RouteHandle) (api.RouteState, error) {
 	return api.RouteState{}, nil
 }
+
+func (stubRouting) Edge(context.Context, api.EdgeRequest) (api.EdgePlan, bool, error) {
+	return api.EdgePlan{}, false, nil
+}

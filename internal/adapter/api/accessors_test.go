@@ -303,3 +303,10 @@ func TestCapabilitySupportsIsAMembershipTest(t *testing.T) {
 	require.False(t, builder.Supports(spec.BuildBuildpack))
 	require.False(t, api.BuilderCapabilities{}.Supports(spec.BuildDockerfile))
 }
+
+func (stubRuntime) ApplyEdge(context.Context, api.EdgePlan) error { return nil }
+func (stubRuntime) ObserveEdge(context.Context, string) (api.EdgeState, error) {
+	return api.EdgeState{}, nil
+}
+func (stubRuntime) RemoveEdge(context.Context, string) error { return nil }
+func (stubRuntime) Edges(context.Context) ([]string, error)  { return nil, nil }
