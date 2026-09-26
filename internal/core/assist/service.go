@@ -370,7 +370,7 @@ func (s *Service) DraftPolicy(ctx context.Context, description string, proposed 
 	for _, key := range policy.Fields() {
 		t, _ := policy.FieldType(key)
 		_, isFixed := fixed[key]
-		fields = append(fields, api.PolicyField{Key: key, Type: t, Fixed: isFixed})
+		fields = append(fields, api.PolicyField{Key: key, Type: t, Meaning: policy.Describe(key), Fixed: isFixed})
 	}
 	var verbs []api.VerbInfo
 	for _, v := range authz.Verbs {

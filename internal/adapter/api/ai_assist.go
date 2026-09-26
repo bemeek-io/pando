@@ -108,6 +108,10 @@ type PolicyField struct {
 	// Type is "boolean", "whole number", "list" or "text".
 	Type string `json:"type"`
 
+	// Meaning is what the field does, in the words the Policy screen uses, so
+	// a request can be matched to the setting a person means.
+	Meaning string `json:"meaning,omitempty"`
+
 	// Fixed is set when the startup configuration sets this field (R-271).
 	// Core refuses a change to it whatever the model returns; it is included
 	// so the model can say so rather than propose it.

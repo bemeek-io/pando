@@ -93,9 +93,11 @@ func (a *Adapter) DraftAccess(ctx context.Context, req api.AccessRequest) (api.A
 func (a *Adapter) DraftPolicy(ctx context.Context, req api.PolicyRequest) (api.PolicyDraft, error) {
 	system := "You propose changes to the host policy of Pando, a self-hosted app platform, from an " +
 		"administrator's description. Propose only fields from the list given, with values of the " +
-		"field's type. A field marked fixed is set in Pando's startup configuration and cannot be " +
-		"changed here: never propose it, and say in your reply that it is fixed. Change nothing the " +
-		"description does not ask for. You propose; an administrator reviews and saves. " + voice
+		"field's type. Each field says what it does; find the setting the person means by that. A field " +
+		"marked fixed is set in Pando's startup configuration and cannot be changed here: never propose " +
+		"it, and say in your reply that it is fixed. Change nothing the description does not ask for. " +
+		"In your reply, name each setting the way its meaning does (\"Turned off terminal access for the " +
+		"whole installation\"), not by its field name. You propose; an administrator reviews and saves. " + voice
 
 	user := "## Description\n\n" + req.Description +
 		"\n\n## Current policy\n\n```json\n" + string(req.Current) + "\n```" +

@@ -16,6 +16,7 @@ import { api } from '@api/client';
 import { AIDialog, AIHeading, AIPrompt, AnsweredBy } from '../ui/AskAI';
 import { AI_PHRASES, AiThinking } from '../ui/AiThinking';
 import { Quiet, refusal } from './Accounts';
+import { describeChange } from './policyChange';
 
 type Doc = Record<string, unknown>;
 
@@ -35,7 +36,7 @@ interface Violation {
   message: string;
 }
 
-const show = (v: unknown) => (v === null || v === undefined ? 'unset' : JSON.stringify(v));
+
 
 /** The proposal with the changes left out put back as they were. */
 function kept(p: PolicyProposal, left: Set<string>): Doc {
@@ -119,8 +120,13 @@ export function PolicyAI({ onClose }: { onClose: () => void }) {
               proposal.changes.map((c) => (
                 <Checkbox
                   key={c.key}
-                  label={c.key}
-                  description={`${show(c.from)} to ${show(c.to)}`}
+                  label={describeChange(c)
+                    .map((d) => d.title)
+                    .filter((t, i, all) => all.indexOf(t) === i)
+                    .join('; ')}
+                  description={describeChange(c)
+                    .map((d) => d.detail)
+                    .join(' ')}
                   checked={!left.has(c.key)}
                   onChange={(e) => {
                     const next = new Set(left);
