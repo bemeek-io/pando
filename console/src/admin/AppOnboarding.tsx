@@ -498,6 +498,8 @@ export function AppOnboarding({
               />
             )}
 
+            {outcome?.ran && <AiNotes notes={outcome.notes ?? []} />}
+
             {plan && <ThePlan spec={plan} marks={marks} answers={effective} source={app.source} commit={data.commit} />}
           </div>
         )}
@@ -915,14 +917,6 @@ function Notices({
     rows.push(
       <NoticeRow key="skipped" status="info" title="AI didn’t run.">
         {outcome.skipped}
-      </NoticeRow>,
-    );
-  }
-
-  for (const note of outcome?.notes ?? []) {
-    rows.push(
-      <NoticeRow key={`note-${note}`} ai title="A note from AI.">
-        {note}
       </NoticeRow>,
     );
   }
@@ -1396,6 +1390,39 @@ function VariableLine({
       </div>
       <div style={{ flex: '2 1 20rem', minWidth: 0 }}>{children}</div>
     </div>
+  );
+}
+
+/**
+ * What the AI adapter said that changes nothing (design 10 §2: notes are never
+ * warnings). After the variables and before the plan: read once the person has
+ * settled the answers and values, as context for the plan below.
+ */
+function AiNotes({ notes }: { notes: string[] }) {
+  if (notes.length === 0) return null;
+  return (
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <AiStar size={20} />
+        <h3 style={{ font: 'var(--type-h3)', margin: 0 }}>Notes from AI</h3>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {notes.map((note) => (
+          <p
+            key={note}
+            style={{
+              margin: 0,
+              padding: 'var(--space-3) 0',
+              borderTop: 'var(--border-width) solid var(--rule)',
+              color: 'var(--ink)',
+              textWrap: 'pretty',
+            } as React.CSSProperties}
+          >
+            {note}
+          </p>
+        ))}
+      </div>
+    </section>
   );
 }
 

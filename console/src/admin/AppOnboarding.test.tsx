@@ -58,6 +58,7 @@ const detection = {
     function: 'answer_questions',
     answers: { build_strategy: 'compose' },
     files_read: ['README.md'],
+    notes: ['The README says the app expects a mounted uploads folder.'],
     applied: [
       {
         summary: 'answered build_strategy: compose',
@@ -88,6 +89,14 @@ describe('AppOnboarding', () => {
     expect(html).toContain('The plan');
     expect(html).toContain('Accept and deploy');
     expect(html).toContain('1 answer needed');
+
+    // AI's notes sit after the variables and before the plan.
+    const variables = html.indexOf('>Variables<');
+    const notes = html.indexOf('Notes from AI');
+    const plan = html.indexOf('The plan');
+    expect(variables).toBeGreaterThan(-1);
+    expect(notes).toBeGreaterThan(variables);
+    expect(plan).toBeGreaterThan(notes);
   });
 
   it('renders the discovery view while detection runs, with no review', () => {

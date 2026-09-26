@@ -180,7 +180,8 @@ page, not a one-tab app screen (`AppOnboarding.tsx`, from the repo-discovery des
 2. **Ready.** The headline becomes "Plan ready" at display size and the red summit mark lands on the
    terrain. Held 2.4s, and only when the page watched detection finish.
 3. **Done.** The column widens from 45 to 55rem, the steps fold behind "How Pando got here", and the
-   review rises: notices, questions, variables, the plan, and a sticky bar with **Reject plan**,
+   review rises: notices, questions, variables, *Notes from AI* (only when an adapter ran and left
+   notes), the plan, and a sticky bar with **Reject plan**,
    **Accept plan** and **Accept and deploy** (disabled while a question is unanswered). Opening an
    app whose detection already finished lands here directly.
 
