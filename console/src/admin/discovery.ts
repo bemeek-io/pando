@@ -631,6 +631,36 @@ export function planSpec(proposal: Partial<Proposal>, answers: Record<string, st
   return proposal.draft_spec as AppSpec | undefined;
 }
 
+// --- Compose notes ----------------------------------------------------------------
+
+/** The warning code the compose importer writes for a construct it rewrote. */
+export const COMPOSE_REWRITTEN = 'WARN_COMPOSE_CONSTRUCT_REWRITTEN';
+
+export interface ComposeNote {
+  service?: string;
+  construct?: string;
+  /** The first sentence of the explanation: what Pando did instead. */
+  gist: string;
+  /** The whole message, as the importer wrote it. */
+  full: string;
+}
+
+/**
+ * A compose rewrite, split for a compact list: the service, the construct, and
+ * the first sentence of why. A compose file with a proxy and a database
+ * produced eight paragraphs nobody read; the paragraph stays one hover away.
+ * A message not in the importer's shape is kept whole.
+ */
+export function composeNote(message: string): ComposeNote {
+  const match = /^In the compose service "([^"]+)", `([^`]+)` was not carried over as written\.\s*(.*)$/s.exec(
+    message.trim(),
+  );
+  if (!match) return { gist: message, full: message };
+  const rest = match[3] ?? '';
+  const sentence = /^(.+?[.!?])(\s|$)/s.exec(rest);
+  return { service: match[1], construct: match[2], gist: (sentence?.[1] ?? rest).trim(), full: message };
+}
+
 // --- Terrain --------------------------------------------------------------------
 
 /** FNV-1a: the terrain is the same every time for the same app and commit. */

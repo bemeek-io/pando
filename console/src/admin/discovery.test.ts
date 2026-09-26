@@ -6,6 +6,7 @@ import {
   aiFrom,
   answerFor,
   answerState,
+  composeNote,
   discoverySteps,
   dwellFor,
   elevation,
@@ -222,6 +223,23 @@ describe('the scan step (R-310)', () => {
 
   it('is absent on an install with no scanner', () => {
     expect(discoverySteps({ status: 'ready', proposal: found, source }).some((s) => s.id === 'scan')).toBe(false);
+  });
+});
+
+describe('composeNote', () => {
+  it('splits the importer’s sentence into service, construct and the first sentence of why', () => {
+    const note = composeNote(
+      'In the compose service "proxy", `ports: 80:80` was not carried over as written. Pando gives the app its own address and routes to it, so the app does not need a port published on the host. The container’s port is kept.',
+    );
+    expect(note).toMatchObject({
+      service: 'proxy',
+      construct: 'ports: 80:80',
+      gist: 'Pando gives the app its own address and routes to it, so the app does not need a port published on the host.',
+    });
+  });
+
+  it('keeps a message in another shape whole', () => {
+    expect(composeNote('Something else.')).toEqual({ gist: 'Something else.', full: 'Something else.' });
   });
 });
 

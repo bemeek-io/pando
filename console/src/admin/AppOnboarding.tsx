@@ -47,12 +47,15 @@ import { api, RequestFailed } from '@api/client';
 import type { Amendment, AppSpec, Question, Report, Source } from '@api/types.gen';
 import { Loading } from '../ui/Loading';
 import { ScoreBadge } from '../ui/ScoreBadge';
+import { looksSensitive } from './sensitive';
 import { Security } from './Security';
 import { deletePath } from './delete-app';
 import { Blocked, DetectionFailed, Failure, type DetectionResponse } from './DetectionReview';
 import {
+  COMPOSE_REWRITTEN,
   aiFrom,
   answerFor,
+  composeNote,
   answerState,
   askedQuestions,
   currentStep,
@@ -669,7 +672,7 @@ export function AppOnboarding({
           </Button>
         }
       >
-        {viewingScan && <Security appID={appID} />}
+        {viewingScan && <Security appID={appID} everything />}
       </Dialog>
     </div>
   );
@@ -686,21 +689,22 @@ function SecurityScore({ report, onView }: { report: Report; onView: () => void 
   return (
     <div
       className="pando-onboard-enter"
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-1)', marginLeft: 'auto' }}
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-2)', marginLeft: 'auto' }}
     >
-      <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>Security score</span>
+      <span style={{ font: 'var(--type-label)', color: 'var(--ink-secondary)' }}>Security score</span>
       <ScoreBadge
         score={report.scan?.score}
         verdict={report.standing.verdict as never}
         threshold={report.standing.threshold}
         full
+        size={28}
       />
       {total > 0 ? (
-        <button type="button" className="pando-link" onClick={onView}>
+        <button type="button" className="pando-link" style={{ font: 'var(--type-body-ui)' }} onClick={onView}>
           {total === 1 ? 'View 1 vulnerability' : `View ${total} vulnerabilities`}
         </button>
       ) : (
-        <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>No known vulnerabilities</span>
+        <span style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)' }}>No known vulnerabilities</span>
       )}
     </div>
   );
@@ -712,20 +716,48 @@ function SourceTags({ source, commit }: { source: Source | undefined; commit?: s
   if (!source) return null;
   const short = commit ? commit.slice(0, 7) : undefined;
   const repo = source.url ? repoName(source.url) : undefined;
+  const href = source.url ? repoPage(source.url) : undefined;
+  const repoTag = repo && (
+    <Tag mono icon={<Icon name="git-branch" size={12} />} title={source.url}>
+      {repo}
+    </Tag>
+  );
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
       {source.type === 'image' && source.image && <Tag mono>{source.image}</Tag>}
       {source.type === 'upload' && <Tag>An uploaded archive</Tag>}
-      {repo && (
-        <Tag mono icon={<Icon name="git-branch" size={12} />} title={source.url}>
-          {repo}
-        </Tag>
-      )}
+      {repoTag &&
+        (href ? (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`Open ${repo} in a new tab`}
+            style={{ textDecoration: 'none', color: 'inherit' }}
+          >
+            {repoTag}
+          </a>
+        ) : (
+          repoTag
+        ))}
       {source.ref && <Tag mono>{source.ref}</Tag>}
       {source.subdir && <Tag mono>{source.subdir}</Tag>}
       {short && <Tag mono>{short}</Tag>}
     </div>
   );
+}
+
+/**
+ * The repository's page, for a link: an https clone URL without its `.git`,
+ * and an SSH one (`git@host:owner/repo`) turned into the host's https address.
+ * Anything else — a local path, a scheme a browser won't open — has no link.
+ */
+export function repoPage(url: string): string | undefined {
+  const trimmed = url.trim().replace(/\.git$/, '').replace(/\/+$/, '');
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  const ssh = /^(?:ssh:\/\/)?git@([^:/]+)[:/](.+)$/.exec(trimmed);
+  if (ssh) return `https://${ssh[1]}/${ssh[2]}`;
+  return undefined;
 }
 
 /** `owner/repo` from a clone URL, which is how people name a repository. */
@@ -1100,7 +1132,45 @@ function Notices({
     );
   }
 
+  // The compose importer's rewrites, as one row: each is a construct Pando
+  // handled its own way, and eight paragraphs of that is a wall nobody reads.
+  // The list is one click away, one line each, the full sentence on hover.
+  const rewrites = (spec?.warnings ?? []).filter((w) => w.code === COMPOSE_REWRITTEN).map((w) => composeNote(w.message));
+  if (rewrites.length > 0) {
+    rows.push(
+      <NoticeRow
+        key="compose"
+        status="info"
+        title={
+          rewrites.length === 1
+            ? 'Pando adapted one setting from the compose file to run here.'
+            : `Pando adapted ${rewrites.length} settings from the compose file to run here.`
+        }
+        detail={
+          <ul style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', margin: 0, padding: 0, listStyle: 'none' }}>
+            {rewrites.map((note, i) => (
+              <li
+                key={`${note.full}-${i}`}
+                title={note.full}
+                style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 14rem) minmax(0, 1fr)', gap: 'var(--space-3)' }}
+              >
+                <span style={{ font: 'var(--type-code-sm)', color: 'var(--ink)', overflowWrap: 'anywhere' }}>
+                  {note.service ? `${note.service} · ${note.construct}` : ''}
+                </span>
+                <span style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>{note.gist}</span>
+              </li>
+            ))}
+          </ul>
+        }
+        detailLabel="what changed"
+      >
+        Each is listed with what Pando does instead.
+      </NoticeRow>,
+    );
+  }
+
   for (const warning of spec?.warnings ?? []) {
+    if (warning.code === COMPOSE_REWRITTEN) continue;
     const ai = warning.code === SCREENING_ADVISORY;
     const amendment = ai ? marks.warnings[warning.message.trim()] : undefined;
     rows.push(
@@ -1397,6 +1467,9 @@ function Variables({
 }) {
   const workloads = spec.workloads ?? [];
   const many = workloads.length > 1;
+  // Rows Pando would fill that the person has chosen to point elsewhere, by
+  // row id: their field is shown even before anything is typed in it.
+  const [overriding, setOverriding] = useState<Set<string>>(() => new Set());
   if (rows.length === 0 && !canEdit) return null;
 
   return (
@@ -1418,32 +1491,46 @@ function Variables({
             const changed = !isNew && row.value !== row.original;
             const slot = row.slot;
             const service = slot?.service ? slotLabel(slot.type) : undefined;
+            // Pando fills it, and nobody has chosen to point it elsewhere: no
+            // field at all, so it cannot be overwritten by accident.
+            const pandoFills = Boolean(slot && service && slot.provisioned && !changed && !overriding.has(row.id));
             let source: React.ReactNode;
             let placeholder = row.secret ? 'Stored as a secret' : 'No value yet';
             if (slot && service && slot.provisioned) {
               // Pando creates the service at the first deploy and writes its
               // address here then. A value typed now points the app at one the
               // person already runs instead.
-              placeholder = `Filled in when Pando creates ${service}`;
-              source = changed ? (
+              placeholder = `The address of your own ${service}`;
+              source = pandoFills ? (
+                <span>{`From ${service}, which Pando creates`}</span>
+              ) : (
                 <>
-                  <span>{`Your value. Pando won’t create ${service}.`}</span>
+                  <span>{`Your own ${service}. Pando won’t create one.`}</span>
                   {canEdit && (
-                    <button type="button" className="pando-link" onClick={() => onEdit(row, { value: '' })}>
+                    <button
+                      type="button"
+                      className="pando-link"
+                      onClick={() => {
+                        onEdit(row, { value: '' });
+                        setOverriding((all) => {
+                          const next = new Set(all);
+                          next.delete(row.id);
+                          return next;
+                        });
+                      }}
+                    >
                       {`Use Pando’s ${service}`}
                     </button>
                   )}
                 </>
-              ) : (
-                <span>{`Pando fills this when it creates ${service}`}</span>
               );
             } else if (slot) {
               placeholder = slot.required ? 'Needed before this app can deploy' : 'Optional';
               source = changed ? (
-                <span>Your value</span>
+                <span>Your value. Kept as a secret.</span>
               ) : (
                 <span style={{ color: slot.required ? 'var(--ink)' : undefined }}>
-                  {slot.required ? 'Needs a value' : 'Optional, no value yet'}
+                  {slot.required ? 'Needs a value. Kept as a secret.' : 'No value yet. Kept as a secret.'}
                 </span>
               );
             } else if (isNew) source = <span>Added by you</span>;
@@ -1487,34 +1574,56 @@ function Variables({
                   )
                 }
                 workload={many && !isNew ? row.workload : undefined}
+                required={Boolean(slot?.required) && !pandoFills}
                 source={source}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <Input
-                      aria-label={`Value of ${row.key || 'the new variable'}`}
-                      mono
-                      type={row.secret ? 'password' : 'text'}
-                      autoComplete="off"
-                      placeholder={placeholder}
-                      value={row.value}
-                      disabled={!canEdit}
-                      onChange={(e) => onEdit(row, { value: e.target.value })}
-                    />
+                {pandoFills ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2) var(--space-4)' }}>
+                    <StatusIndicator status="info" label="Filled in by Pando" />
+                    {canEdit && (
+                      <button
+                        type="button"
+                        className="pando-link"
+                        onClick={() => setOverriding((all) => new Set(all).add(row.id))}
+                      >
+                        {`Use your own ${service}`}
+                      </button>
+                    )}
                   </div>
-                  <Checkbox
-                    label="Secret"
-                    checked={row.secret || Boolean(slot)}
-                    // A slot's value is always stored as a secret.
-                    disabled={!canEdit || !canSecrets || Boolean(slot)}
-                    onChange={(e) => onEdit(row, { secret: e.target.checked })}
-                  />
-                  {isNew && canEdit && (
-                    <IconButton label="Remove this variable" onClick={() => onRemove(row)}>
-                      <Icon name="x" size={16} />
-                    </IconButton>
-                  )}
-                </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <Input
+                        aria-label={`Value of ${row.key || 'the new variable'}`}
+                        mono
+                        // A slot's value is kept as a secret whatever is shown;
+                        // hidden as typed only when the name reads like one.
+                        type={(slot ? looksSensitive(row.key) : row.secret) ? 'password' : 'text'}
+                        autoComplete="off"
+                        placeholder={placeholder}
+                        value={row.value}
+                        disabled={!canEdit}
+                        onChange={(e) => onEdit(row, { value: e.target.value })}
+                      />
+                    </div>
+                    {/* A slot's value is always stored as a secret (the server
+                        writes it to the secrets adapter), so there is no
+                        choice to offer — the line above says so instead. */}
+                    {!slot && (
+                      <Checkbox
+                        label="Secret"
+                        checked={row.secret}
+                        disabled={!canEdit || !canSecrets}
+                        onChange={(e) => onEdit(row, { secret: e.target.checked })}
+                      />
+                    )}
+                    {isNew && canEdit && (
+                      <IconButton label="Remove this variable" onClick={() => onRemove(row)}>
+                        <Icon name="x" size={16} />
+                      </IconButton>
+                    )}
+                  </div>
+                )}
               </VariableLine>
             );
           })}
@@ -1541,12 +1650,15 @@ function VariableLine({
   first,
   name,
   workload,
+  required,
   source,
   children,
 }: {
   first: boolean;
   name: React.ReactNode;
   workload?: string;
+  /** The app can't deploy without a value (R-132): said beside the name. */
+  required?: boolean;
   source: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -1564,6 +1676,7 @@ function VariableLine({
       <div style={{ flex: '1 1 15rem', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'calc(var(--space-1) / 2)' }}>
         <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2)', font: 'var(--type-code-sm)', color: 'var(--ink)', overflowWrap: 'anywhere' }}>
           {name}
+          {required && <Tag>Required</Tag>}
           {workload && <Tag mono>{workload}</Tag>}
         </span>
         <span
@@ -1877,7 +1990,7 @@ function ActionBar({
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>{children}</div>
+        <div className="pando-actionbar-buttons">{children}</div>
       </div>
     </div>
   );

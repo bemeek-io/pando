@@ -9,7 +9,7 @@ vi.hoisted(() => {
 import { renderToString } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { AppOnboarding } from './AppOnboarding';
+import { AppOnboarding, repoPage } from './AppOnboarding';
 import type { DetectionResponse } from './DetectionReview';
 import type { AppWithVerbs } from './verbs';
 
@@ -143,13 +143,29 @@ describe('AppOnboarding', () => {
     const variables = html.slice(html.indexOf('>Variables<'), html.indexOf('The plan'));
     expect(variables).toContain('CREW_TOKEN_ENC_KEY');
     expect(variables).toContain('Needs a value');
-    expect(variables).toContain('Pando fills this when it creates PostgreSQL');
+    expect(variables).toContain('Required');
+    // What Pando fills is said plainly, with no field to overwrite by accident.
+    expect(variables).toContain('Filled in by Pando');
+    expect(variables).toContain('Use your own PostgreSQL');
     expect(variables).not.toContain('runs one inside this app');
-    expect((variables.match(/<input/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    // A slot's value is always kept as a secret: said, not a locked checkbox.
+    expect(variables).toContain('Kept as a secret');
+    expect(variables).not.toContain('>Secret<');
+
+    // The repository opens in a new tab.
+    expect(html).toContain('href="https://github.com/acme/crewmate"');
+    expect(html).toContain('target="_blank"');
 
     // Deploying waits for the required value; accepting does not.
     const bar = html.slice(html.indexOf('pando-actionbar'));
     expect(bar).toContain('1 value needed to deploy');
+  });
+
+  it('links a repository to its page, and nothing else', () => {
+    expect(repoPage('https://github.com/acme/crewmate.git')).toBe('https://github.com/acme/crewmate');
+    expect(repoPage('git@github.com:acme/crewmate.git')).toBe('https://github.com/acme/crewmate');
+    expect(repoPage('/srv/repos/crewmate')).toBeUndefined();
+    expect(repoPage('javascript:alert(1)')).toBeUndefined();
   });
 
   it('renders the discovery view while detection runs, with no review', () => {

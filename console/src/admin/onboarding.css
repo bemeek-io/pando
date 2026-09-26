@@ -301,16 +301,36 @@
   border-top: var(--border-width) solid var(--rule-strong);
 }
 
+/* Two columns, so the buttons stay where they are: the status beside them
+   changes length as answers and values come in ("2 values needed to deploy",
+   then "Ready to deploy"), and in a wrapping row a longer sentence pushed the
+   buttons onto a line of their own. The text wraps inside its column instead. */
 .pando-actionbar > div {
   box-sizing: border-box;
   max-width: 55rem;
   margin: 0 auto;
   padding: var(--space-3) var(--space-5);
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-3) var(--space-5);
-  flex-wrap: wrap;
+}
+
+.pando-actionbar-buttons {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+@media (max-width: 40rem) {
+  .pando-actionbar > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pando-actionbar-buttons {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
 }
 
 /* A text button inside a sentence: "Use suggestion", "Show". */
