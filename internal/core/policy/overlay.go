@@ -268,6 +268,18 @@ func asMap(doc Document) map[string]json.RawMessage {
 	return m
 }
 
+// SameValue reports whether two encodings of the field key hold the same
+// setting, treating absent as the zero value: a document that omits
+// require_backup_before_destroy and one that sets it false say the same
+// thing. An unknown key compares as the raw JSON.
+func SameValue(key string, a, b json.RawMessage) bool {
+	t, ok := fields[key]
+	if !ok {
+		return string(a) == string(b)
+	}
+	return sameJSON(a, b, t)
+}
+
 // sameJSON compares two encodings of one field, treating absent as the zero
 // value — omitempty drops zeros, so "not there" and "0" are the same setting.
 func sameJSON(a, b json.RawMessage, t reflect.Type) bool {

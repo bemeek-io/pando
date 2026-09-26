@@ -17,3 +17,27 @@ func TestEveryPolicyFieldIsDescribed(t *testing.T) {
 		}
 	}
 }
+
+// TestSameValueTreatsAbsentAsZero asserts a field omitted from a document and
+// the same field at its zero value are one setting.
+func TestSameValueTreatsAbsentAsZero(t *testing.T) {
+	cases := []struct {
+		key  string
+		a, b string
+		same bool
+	}{
+		{"require_backup_before_destroy", "", "false", true},
+		{"require_backup_before_destroy", "null", "true", false},
+		{"insecure_grace_hours", "", "0", true},
+		{"disabled_verbs", "", "[]", true},
+		{"disabled_verbs", `["app.exec"]`, `["app.exec"]`, true},
+		{"disabled_verbs", "", `["app.exec"]`, false},
+		{"not_a_field", `1`, `1`, true},
+		{"not_a_field", `1`, `2`, false},
+	}
+	for _, c := range cases {
+		if got := SameValue(c.key, []byte(c.a), []byte(c.b)); got != c.same {
+			t.Errorf("SameValue(%s, %q, %q) = %v, want %v", c.key, c.a, c.b, got, c.same)
+		}
+	}
+}

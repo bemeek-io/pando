@@ -435,7 +435,9 @@ func (s *Service) DraftPolicy(ctx context.Context, description string, proposed 
 	// Every field that differs from the stored policy, whichever call changed
 	// it, so a refined proposal still lists what was kept from before.
 	for _, key := range policy.Fields() {
-		if !sameValue(stored[key], doc[key]) {
+		// Absent and zero are the same setting (omitempty drops zeros), so
+		// proposing false for an unset switch is not a change.
+		if !policy.SameValue(key, stored[key], doc[key]) {
 			out.Changes = append(out.Changes, PolicyChange{Key: key, From: orNull(stored[key]), To: orNull(doc[key])})
 		}
 	}
@@ -474,15 +476,6 @@ func badVerbs(key string, value json.RawMessage) string {
 		}
 	}
 	return ""
-}
-
-func sameValue(a, b json.RawMessage) bool {
-	var x, y any
-	_ = json.Unmarshal(orNull(a), &x)
-	_ = json.Unmarshal(orNull(b), &y)
-	xb, _ := json.Marshal(x)
-	yb, _ := json.Marshal(y)
-	return string(xb) == string(yb)
 }
 
 func orNull(r json.RawMessage) json.RawMessage {
