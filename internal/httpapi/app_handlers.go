@@ -580,12 +580,36 @@ func (s *Server) handleCreateSpec(w http.ResponseWriter, r *http.Request) {
 		s.Defaults.Defaults(r.Context()).Apply(&body, app.Slug)
 	}
 
+	// R-163 holds for a spec written whole, not only for PUT /routing: a
+	// mode the adapter does not default to needs app.routing.override, unless
+	// the app already had it. Checked against the pinned spec, and ModeSource
+	// set from the adapter rather than taken on the author's word.
+	p := PrincipalFrom(r.Context())
+	if s.Address != nil {
+		var current *spec.Routing
+		if app.PinnedSpecID != "" {
+			if pinned, found, err := s.Apps.RevisionByID(r.Context(), app.PinnedSpecID); err == nil && found && pinned.Body != nil {
+				current = &pinned.Body.Routing
+			}
+		}
+		override, err := s.Address.Overrides(r.Context(), current, &body.Routing)
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		if override {
+			if err := s.Authz.CheckControl(r.Context(), p, app.ID, authz.AppRoutingOverride); err != nil {
+				Error(w, r, err)
+				return
+			}
+		}
+	}
+
 	if err := spec.Validate(&body); err != nil {
 		Error(w, r, err)
 		return
 	}
 
-	p := PrincipalFrom(r.Context())
 	rev, err := s.Apps.CreateRevision(r.Context(), app.ID, &body, origin, p.ID)
 	if err != nil {
 		Error(w, r, err)

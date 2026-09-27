@@ -387,6 +387,17 @@ one Pando. What makes an install feel like one topology or the other is the rout
 adapter's default; `ModeSource` records whether the mode was inherited or deliberately chosen, so the
 console can later show which apps deviate and host policy can restrict overrides (R-274, O-10).
 
+**[D] Changing a configured app's address** is `PUT /apps/{id}/routing` (`internal/core/address`),
+and the console's Change beside Address on the app's Overview. It writes a revision the next deploy
+ships, like any edit (R-152). Moving to another adapter takes that adapter's default mode and a
+hostname in its domain; a path is always the app's slug, because the proxy finds a path-mode app by
+slug; a port is allocated (§4.2). Two gates, both on the server so every client meets them: a mode the
+adapter does not default to needs `app.routing.override` (R-163) — checked on `POST /specs` as well,
+so a whole spec is not a way around it, and `ModeSource` is set from the adapter rather than taken
+from the author — and any change needs `confirm`, because the old address stops working and bookmarks
+to it break (R-165, design 01 §6). Re-running Configuration keeps the app's routing (`spec.Carry`):
+the repository has nothing to say about it.
+
 ### 4.2 Host ports in port mode
 
 **[D] Resolved (O-15): the lowest free port in a configured range, held as a durable allocation.**

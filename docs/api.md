@@ -91,7 +91,9 @@ one verb says nothing about another (R-082).
 | Endpoint | Verb | What it does |
 | --- | --- | --- |
 | `GET /api/v1/apps/{appID}/specs` | `app.view` | Every spec revision, and which one is pinned. Revisions are append-only (R-152). |
-| `POST /api/v1/apps/{appID}/specs` | `app.spec.edit` | Write a new spec revision. It does not deploy and does not become pinned. |
+| `POST /api/v1/apps/{appID}/specs` | `app.spec.edit` | Write a new spec revision. It does not deploy and does not become pinned. A routing mode other than its adapter's default, where the app did not already have one, also needs app.routing.override (R-163). |
+| `GET /api/v1/apps/{appID}/routing` | `app.view` | Where the app is reached, where it will be after the next deploy when a change is saved (`next_address`), and the routing adapters it could move to, with the modes each serves and defaults to. |
+| `PUT /api/v1/apps/{appID}/routing` | `app.spec.edit` | Change where a configured app is reached: `adapter_ref`, `mode` and `hostname`, each defaulting to the adapter's own. Writes a revision the next deploy ships. A change needs `confirm: true`, since the old address stops working; a mode the adapter does not default to also needs app.routing.override (R-163). |
 | `GET /api/v1/apps/{appID}/specs/{rev}` | `app.view` | One revision, in full. |
 | `POST /api/v1/apps/{appID}/specs/{rev}/pin` | `app.spec.edit` | Pin a revision: what the reconciler converges to, and what the next deploy ships. |
 | `GET /api/v1/apps/{appID}/specs/{a}/diff/{b}` | `app.view` | The classified difference between two revisions — what a deploy of it would restart, rebuild or leave alone. |

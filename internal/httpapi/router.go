@@ -14,6 +14,7 @@ import (
 
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/config"
+	"github.com/bemeek-io/pando/internal/core/address"
 	"github.com/bemeek-io/pando/internal/core/assertion"
 	"github.com/bemeek-io/pando/internal/core/assist"
 	"github.com/bemeek-io/pando/internal/core/audit"
@@ -56,6 +57,10 @@ type Server struct {
 
 	Registry *api.Registry
 	Adapters *state.Adapters
+
+	// Address resolves changes to where an app is reached (R-162, R-163).
+	// Nil means the address cannot be changed after configuration.
+	Address *address.Service
 
 	// Edges reports whether each routing adapter's edge is running (R-174).
 	// Nil means no adapter's edge is reported.
@@ -575,6 +580,9 @@ func (s *Server) Routes() http.Handler {
 					// it are different levels of trust.
 					r.Get("/{key}/value", s.handleReadSecretValue)
 				})
+
+				r.Get("/routing", s.handleGetRouting)
+				r.Put("/routing", s.handleSetRouting)
 
 				r.Route("/specs", func(r chi.Router) {
 					r.Get("/", s.handleListSpecs)
