@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/deploy"
+	"github.com/trypando/pando/internal/core/deploy"
 )
 
 // collect drains a follow channel until it closes or the deadline passes.

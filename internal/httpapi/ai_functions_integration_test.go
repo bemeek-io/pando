@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
-	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
-	"github.com/bemeek-io/pando/internal/errs"
+	adapterapi "github.com/trypando/pando/internal/adapter/api"
+	corepolicy "github.com/trypando/pando/internal/core/policy"
+	"github.com/trypando/pando/internal/errs"
 )
 
 func assignAll(t *testing.T, i *install, s *session, ref string) {

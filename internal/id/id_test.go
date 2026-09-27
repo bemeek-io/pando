@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/id"
+	"github.com/trypando/pando/internal/id"
 )
 
 func TestNewIsPrefixedAndParseable(t *testing.T) {

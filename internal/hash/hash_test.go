@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/hash"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/hash"
+	"github.com/trypando/pando/internal/secret"
 )
 
 func TestRoundTrip(t *testing.T) {

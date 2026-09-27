@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // Drift is the difference between what a spec says and what is running.

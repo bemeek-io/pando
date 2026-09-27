@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/proxy"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/proxy"
 )
 
 // TestR075a_PublicWithAPasscode asserts the whole API side of it: sharing with

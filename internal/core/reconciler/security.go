@@ -7,9 +7,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/core/policy"
-	"github.com/bemeek-io/pando/internal/core/security"
-	"github.com/bemeek-io/pando/internal/core/state"
+	"github.com/trypando/pando/internal/core/policy"
+	"github.com/trypando/pando/internal/core/security"
+	"github.com/trypando/pando/internal/core/state"
 )
 
 // The security pass (R-315, R-316, design 09 §4.2).

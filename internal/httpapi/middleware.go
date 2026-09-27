@@ -7,8 +7,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/id"
-	"github.com/bemeek-io/pando/internal/log"
+	"github.com/trypando/pando/internal/id"
+	"github.com/trypando/pando/internal/log"
 )
 
 type ctxKeyRequestID struct{}

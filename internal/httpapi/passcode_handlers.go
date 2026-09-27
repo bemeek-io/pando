@@ -9,13 +9,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/bemeek-io/pando/internal/core/audit"
-	"github.com/bemeek-io/pando/internal/core/authz"
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/hash"
-	"github.com/bemeek-io/pando/internal/id"
-	"github.com/bemeek-io/pando/internal/proxy"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/core/audit"
+	"github.com/trypando/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/hash"
+	"github.com/trypando/pando/internal/id"
+	"github.com/trypando/pando/internal/proxy"
+	"github.com/trypando/pando/internal/secret"
 )
 
 // Public with a passcode (R-075a).

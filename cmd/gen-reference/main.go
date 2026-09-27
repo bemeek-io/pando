@@ -14,8 +14,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bemeek-io/pando/internal/httpapi"
-	"github.com/bemeek-io/pando/internal/reference"
+	"github.com/trypando/pando/internal/httpapi"
+	"github.com/trypando/pando/internal/reference"
 )
 
 func main() {

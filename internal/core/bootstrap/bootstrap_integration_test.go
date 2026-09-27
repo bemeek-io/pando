@@ -13,11 +13,11 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/bemeek-io/pando/internal/core/audit"
-	"github.com/bemeek-io/pando/internal/core/bootstrap"
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/hash"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/core/audit"
+	"github.com/trypando/pando/internal/core/bootstrap"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/hash"
+	"github.com/trypando/pando/internal/secret"
 )
 
 func newInstall(t *testing.T) (*state.DB, *state.Users, *state.Grants, *audit.Writer) {

@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	anthropicadapter "github.com/bemeek-io/pando/internal/adapter/ai/anthropic"
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	anthropicadapter "github.com/trypando/pando/internal/adapter/ai/anthropic"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // TestInfoDescribesTheAnthropicAdapter asserts the form that configures one

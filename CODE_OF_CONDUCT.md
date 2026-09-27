@@ -30,7 +30,7 @@ affects someone's ability to take part in them.
 ## Reporting
 
 Report a problem through [GitHub's private reporting
-form](https://github.com/bemeek-io/pando/security/advisories/new) — the same channel as a security
+form](https://github.com/trypando/pando/security/advisories/new) — the same channel as a security
 report, because it is the one private channel this project has that is definitely monitored. Start
 the report with "Code of conduct" so it is not triaged as a vulnerability. Reports are kept
 confidential, and you will get an acknowledgment within three business days.

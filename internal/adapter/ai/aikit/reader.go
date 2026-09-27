@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // Reader is the repository, bounded.

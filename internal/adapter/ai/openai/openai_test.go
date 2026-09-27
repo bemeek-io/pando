@@ -12,9 +12,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/ai/aikit/aitest"
-	openaiadapter "github.com/bemeek-io/pando/internal/adapter/ai/openai"
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/ai/aikit/aitest"
+	openaiadapter "github.com/trypando/pando/internal/adapter/ai/openai"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // fakeAPI stands in for the Responses API, replaying one scripted reply per

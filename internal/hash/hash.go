@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/crypto/argon2"
 
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/secret"
 )
 
 // Parameters. argon2id, tuned for an interactive login on a single host.

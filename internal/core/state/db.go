@@ -17,10 +17,10 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/log"
-	"github.com/bemeek-io/pando/internal/secret"
-	"github.com/bemeek-io/pando/migrations"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/log"
+	"github.com/trypando/pando/internal/secret"
+	"github.com/trypando/pando/migrations"
 )
 
 // AppRole is the Postgres role Pando serves traffic as.

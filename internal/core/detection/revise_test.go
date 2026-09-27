@@ -8,12 +8,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/clock"
-	"github.com/bemeek-io/pando/internal/core/screening"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/detect"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/clock"
+	"github.com/trypando/pando/internal/core/screening"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/detect"
+	"github.com/trypando/pando/internal/errs"
 )
 
 var when = time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)

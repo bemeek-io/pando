@@ -80,7 +80,7 @@ Download the tarball, `checksums.txt` and `checksums.txt.sigstore.json` from the
 ```bash
 cosign verify-blob checksums.txt \
   --bundle checksums.txt.sigstore.json \
-  --certificate-identity-regexp '^https://github\.com/bemeek-io/pando/\.github/workflows/release\.yml@refs/(heads/main|tags/v)' \
+  --certificate-identity-regexp '^https://github\.com/(bemeek-io|trypando)/pando/\.github/workflows/release\.yml@refs/(heads/main|tags/v)' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 
 sha256sum --check --ignore-missing checksums.txt
@@ -100,7 +100,7 @@ The first command establishes that `checksums.txt` came from Pando's release wor
 establishes that the file you have is the one it describes. Running the second without the first is
 the case this section exists to warn about.
 
-Homebrew checks the cask's own SHA-256 on install, so `brew install bemeek-io/tap/pando` covers the
+Homebrew checks the cask's own SHA-256 on install, so `brew install trypando/tap/pando` covers the
 second step but not the first — the cask is written by the same release that wrote the artifact.
 
 ## Verifying the image
@@ -111,7 +111,7 @@ separate workflow, and a keyless certificate names the workflow that ran.
 
 ```bash
 cosign verify trypando/pando:0.3.1 \
-  --certificate-identity-regexp '^https://github\.com/bemeek-io/pando/\.github/workflows/image\.yml@refs/(heads/main|tags/v)' \
+  --certificate-identity-regexp '^https://github\.com/(bemeek-io|trypando)/pando/\.github/workflows/image\.yml@refs/(heads/main|tags/v)' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 ```
 

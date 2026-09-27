@@ -9,10 +9,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	servicesdocker "github.com/bemeek-io/pando/internal/adapter/services/docker"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/adapter/api"
+	servicesdocker "github.com/trypando/pando/internal/adapter/services/docker"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/secret"
 )
 
 func configured(t *testing.T) *servicesdocker.Adapter {

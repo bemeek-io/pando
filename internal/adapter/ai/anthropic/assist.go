@@ -8,8 +8,8 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/bemeek-io/pando/internal/adapter/ai/aikit"
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/ai/aikit"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // The administrative functions (R-343 … R-346): the tasks are aikit's, shared

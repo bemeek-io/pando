@@ -11,10 +11,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	backuplocal "github.com/bemeek-io/pando/internal/adapter/backup/local"
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/adapter/api"
+	backuplocal "github.com/trypando/pando/internal/adapter/backup/local"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/secret"
 )
 
 // In-package: destination, pgEnv and the small readers are unexported, and they

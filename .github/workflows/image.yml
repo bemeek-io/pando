@@ -152,7 +152,7 @@ jobs:
             org.opencontainers.image.title=Pando
             org.opencontainers.image.description=Deploy and share apps on a host you own
             org.opencontainers.image.url=https://trypando.ai
-            org.opencontainers.image.source=https://github.com/bemeek-io/pando
+            org.opencontainers.image.source=https://github.com/trypando/pando
             org.opencontainers.image.version=${{ steps.v.outputs.version }}
             org.opencontainers.image.revision=${{ env.commit }}
             org.opencontainers.image.created=${{ env.build_date }}

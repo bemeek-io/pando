@@ -14,9 +14,9 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/tonistiigi/fsutil"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Kind is the adapter's kind string.

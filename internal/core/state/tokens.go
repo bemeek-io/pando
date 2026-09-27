@@ -10,10 +10,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/hash"
-	"github.com/bemeek-io/pando/internal/id"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/hash"
+	"github.com/trypando/pando/internal/id"
+	"github.com/trypando/pando/internal/secret"
 )
 
 // Token kinds (R-058, R-060).

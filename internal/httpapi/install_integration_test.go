@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/authz"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Paging is by cursor rather than offset: the log is append-only with

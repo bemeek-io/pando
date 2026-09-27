@@ -18,16 +18,16 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/audit"
-	"github.com/bemeek-io/pando/internal/core/planner"
-	"github.com/bemeek-io/pando/internal/core/security"
-	"github.com/bemeek-io/pando/internal/core/source"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/log"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/audit"
+	"github.com/trypando/pando/internal/core/planner"
+	"github.com/trypando/pando/internal/core/security"
+	"github.com/trypando/pando/internal/core/source"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/log"
+	"github.com/trypando/pando/internal/secret"
 )
 
 // Secrets resolves an app's stored secrets into values.

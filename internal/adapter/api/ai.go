@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/spec"
 )
 
 // The AI category (R-258), and the two functions it performs (R-330 … R-339):

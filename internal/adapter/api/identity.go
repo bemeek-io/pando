@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/secret"
 )
 
 // Category names an adapter category.

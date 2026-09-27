@@ -12,8 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/adapter/scanner/trivy"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/scanner/trivy"
 )
 
 func adapter(t *testing.T) *trivy.Adapter {

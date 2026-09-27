@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/httpapi"
+	"github.com/trypando/pando/internal/httpapi"
 )
 
 // TestR046_TheFirstVisitorSetsUpTheAdministrator asserts first-run setup over

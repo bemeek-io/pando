@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/core/assertion"
-	"github.com/bemeek-io/pando/internal/core/clock"
-	"github.com/bemeek-io/pando/internal/httpapi"
+	"github.com/trypando/pando/internal/core/assertion"
+	"github.com/trypando/pando/internal/core/clock"
+	"github.com/trypando/pando/internal/httpapi"
 )
 
 // marker is a handler that identifies itself in the body, so a test can say

@@ -10,7 +10,7 @@ tests and why. This file is how to run it without harming the machine it runs on
 The last full run and the fixes it asked for are issue #55.
 
 The test sources (the generated apps and the lists of public repositories and
-images) are in bemeek-io/pando-qa-fixtures, cloned at the commit pinned as
+images) are in trypando/pando-qa-fixtures, cloned at the commit pinned as
 `FIXTURES_REF` in `qa.py`. Never add app configs, Dockerfiles or compose files
 for test apps to this repository; to add or change a case, commit to the
 fixtures repository and move the pin.

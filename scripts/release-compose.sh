@@ -29,7 +29,7 @@ if [ "$count" != 1 ]; then
 fi
 
 cat <<EOF
-# Pando ${version}, from https://github.com/bemeek-io/pando/releases/tag/v${version}
+# Pando ${version}, from https://github.com/trypando/pando/releases/tag/v${version}
 #
 # Runs the published image ${image}:${version}. To upgrade, download the
 # compose file of the newer release over this one and run \`docker compose up -d\`

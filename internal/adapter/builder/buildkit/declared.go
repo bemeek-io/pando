@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // What a repository says about how it is built, and how much that is worth.

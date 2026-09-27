@@ -5,7 +5,7 @@ import (
 	"io"
 	"path"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // faultySource is a memSource that fails where a test says it should.

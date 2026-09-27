@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/spec"
 )
 
 // Probe checks public registries for an image matching a source repository.

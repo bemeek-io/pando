@@ -6,8 +6,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/log"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/log"
 )
 
 // JSON writes a successful response.

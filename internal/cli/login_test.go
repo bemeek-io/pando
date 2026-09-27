@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/cli"
+	"github.com/trypando/pando/internal/cli"
 )
 
 // R-058: `pando login` stores a token, not a session. A session is bound to a

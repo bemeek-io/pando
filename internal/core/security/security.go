@@ -13,8 +13,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/policy"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/policy"
 )
 
 // The weights (R-313).

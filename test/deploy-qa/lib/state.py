@@ -17,7 +17,7 @@ PANDO = f"{PROJECT}-pando-1"
 BUILDKIT = f"{PROJECT}-buildkit-1"
 POSTGRES = f"{PROJECT}-postgres-1"
 # Every test source (the generated apps and the lists of public repositories
-# and images) lives in bemeek-io/pando-qa-fixtures, so Pando's repository does
+# and images) lives in trypando/pando-qa-fixtures, so Pando's repository does
 # not carry their Dockerfiles, compose files and app configs. `qa.py up` clones
 # it here at the commit pinned in qa.py.
 FIXTURES = os.path.join(OUT, "fixtures")

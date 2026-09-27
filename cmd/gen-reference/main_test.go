@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/httpapi"
-	"github.com/bemeek-io/pando/internal/reference"
+	"github.com/trypando/pando/internal/httpapi"
+	"github.com/trypando/pando/internal/reference"
 )
 
 // The docs are generated so they cannot drift from the code (R-261), and

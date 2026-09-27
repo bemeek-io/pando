@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/errs"
 	"github.com/stretchr/testify/require"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // TestR023_TheUpstreamIsTheContainerNameOnItsBundleNetwork asserts that Docker

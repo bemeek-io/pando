@@ -3,7 +3,7 @@ package detect_test
 import (
 	"testing"
 
-	"github.com/bemeek-io/pando/internal/detect"
+	"github.com/trypando/pando/internal/detect"
 )
 
 // FuzzImportCompose feeds arbitrary YAML to the compose importer.

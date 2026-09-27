@@ -5,8 +5,8 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/secret"
 )
 
 // The generator's alphabet, by class. The symbols leave out quotes, backslash,

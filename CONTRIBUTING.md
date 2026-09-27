@@ -4,13 +4,13 @@
 
 **Found a security vulnerability?** Do not open an issue or a pull request for it — a pull request
 that fixes a security bug describes the bug in public before anyone can upgrade. Use
-[the advisory form](https://github.com/bemeek-io/pando/security/advisories/new), and see
+[the advisory form](https://github.com/trypando/pando/security/advisories/new), and see
 [`SECURITY.md`](SECURITY.md) for what to include and what response to expect.
 
 ## Getting set up
 
 ```bash
-git clone https://github.com/bemeek-io/pando.git
+git clone https://github.com/trypando/pando.git
 cd pando
 make check        # vet, lint, unit tests — what CI runs on a pull request
 ```
@@ -209,7 +209,7 @@ or **Actions → Release → Run workflow** in the browser. That creates the tag
 
 - tarballs for macOS and Linux, `amd64` and `arm64`, with a `checksums.txt`
 - `.deb`, `.rpm` and `.apk` packages
-- a Homebrew cask pushed to `bemeek-io/homebrew-tap`, which is what `brew install bemeek-io/tap/pando`
+- a Homebrew cask pushed to `trypando/homebrew-tap`, which is what `brew install trypando/tap/pando`
   reads
 
 The version in `pando version` and in the manifest is stamped from the tag, so a build made any other
@@ -233,10 +233,10 @@ and the fix is to re-run the failed job.
 
 ### What the release depends on
 
-- **The tap.** `bemeek-io/homebrew-tap`, public. GoReleaser writes `Casks/pando.rb` into it and
+- **The tap.** `trypando/homebrew-tap`, public. GoReleaser writes `Casks/pando.rb` into it and
   overwrites it on every release; nothing in that repository is edited by hand.
 - **`HOMEBREW_TAP_TOKEN`.** A repository secret here holding a fine-grained token owned by
-  `bemeek-io`, scoped to the tap, with `contents: write`. The workflow's own `GITHUB_TOKEN` is scoped
+  `trypando`, scoped to the tap, with `contents: write`. The workflow's own `GITHUB_TOKEN` is scoped
   to this repository and cannot push to another one, so without this the release fails at the cask
   step — after the artifacts have been uploaded. When the token expires that is how it will show up.
 

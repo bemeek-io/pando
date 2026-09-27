@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/cli"
+	"github.com/trypando/pando/internal/cli"
 )
 
 // R-340, R-261: an agent sets an app's image through MCP, and what reaches the

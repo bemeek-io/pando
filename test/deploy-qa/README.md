@@ -15,7 +15,7 @@ screening helps or hurts on top of it; success is not meant to depend on it.
 ## What is tested
 
 The test sources live in their own repository,
-[bemeek-io/pando-qa-fixtures](https://github.com/bemeek-io/pando-qa-fixtures),
+[trypando/pando-qa-fixtures](https://github.com/trypando/pando-qa-fixtures),
 so this one does not carry their Dockerfiles, compose files and app configs.
 `qa.py up` clones it into `out/fixtures` at the commit pinned in `qa.py`
 (`FIXTURES_REF`).
@@ -83,7 +83,7 @@ evidence, so the causes keep adding up to the failure count. Environment
 failures (transient pulls, build OOM kills, the git-fetch hang) are re-run once
 automatically.
 
-To add a case, commit it to bemeek-io/pando-qa-fixtures (an entry in one of its
+To add a case, commit it to trypando/pando-qa-fixtures (an entry in one of its
 `cases/*.json` files, and for a generated app its directory under `apps/`, after
 checking it runs on its own), then move `FIXTURES_REF` in `qa.py` to that
 commit.

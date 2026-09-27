@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/config"
+	"github.com/trypando/pando/internal/config"
 )
 
 // TestExternalURLIsCheckedAtStartup covers O-19's configuration half.

@@ -17,9 +17,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/clock"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/clock"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Status is the last thing Pando found out about one routing adapter's edge.

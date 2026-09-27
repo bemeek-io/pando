@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/detect"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/detect"
 )
 
 func workloadsByName(d detect.Draft) map[string]spec.Workload {

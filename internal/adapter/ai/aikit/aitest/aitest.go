@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // Source is a repository in memory, keyed by path.

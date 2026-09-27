@@ -1,6 +1,6 @@
 package api
 
-import "github.com/bemeek-io/pando/internal/secret"
+import "github.com/trypando/pando/internal/secret"
 
 // --- edge ------------------------------------------------------------------
 //

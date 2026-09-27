@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/hash"
+	"github.com/trypando/pando/internal/hash"
 )
 
 // TestR046_GeneratedPasswordsAreLongAndMixed asserts the generator: 18 to 22

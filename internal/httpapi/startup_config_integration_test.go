@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/config"
-	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
+	"github.com/trypando/pando/internal/config"
+	corepolicy "github.com/trypando/pando/internal/core/policy"
 )
 
 // TestR271_PolicySetAtStartupIsFixedAndSaysWhere asserts R-271's startup

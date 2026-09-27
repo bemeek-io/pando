@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bemeek-io/pando/internal/core/assertion"
+	"github.com/trypando/pando/internal/core/assertion"
 )
 
 // FuzzVerifyToken feeds arbitrary strings to the assertion verifier.

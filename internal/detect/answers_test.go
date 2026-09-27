@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/detect"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/detect"
 )
 
 // proposalFor is a winner's draft with one primary workload, which is the shape

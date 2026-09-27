@@ -10,9 +10,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/core/assertion"
-	"github.com/bemeek-io/pando/internal/core/authz"
-	"github.com/bemeek-io/pando/internal/log"
+	"github.com/trypando/pando/internal/core/assertion"
+	"github.com/trypando/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/log"
 )
 
 // reauthorizing wraps a ResponseWriter so that a hijacked connection — a

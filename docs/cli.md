@@ -16,16 +16,16 @@ does can also be done in the console.
 **macOS, and Linux with Homebrew:**
 
 ```
-brew install bemeek-io/tap/pando
+brew install trypando/tap/pando
 ```
 
 **Debian, Ubuntu, Fedora, Alpine:** every release attaches `.deb`, `.rpm` and `.apk` packages, named
 `pando_<version>_linux_<arch>.<format>`. Take a version from the
-[releases page](https://github.com/bemeek-io/pando/releases) and download it:
+[releases page](https://github.com/trypando/pando/releases) and download it:
 
 ```
 VERSION=0.2.0   # the release you want
-curl -LO https://github.com/bemeek-io/pando/releases/download/v${VERSION}/pando_${VERSION}_linux_amd64.deb
+curl -LO https://github.com/trypando/pando/releases/download/v${VERSION}/pando_${VERSION}_linux_amd64.deb
 sudo apt install ./pando_${VERSION}_linux_amd64.deb
 ```
 
@@ -36,7 +36,7 @@ For `.rpm`, `dnf install` the same file; for `.apk`,
 
 ```
 VERSION=0.2.0   # the release you want
-curl -LO https://github.com/bemeek-io/pando/releases/download/v${VERSION}/pando_${VERSION}_darwin_arm64.tar.gz
+curl -LO https://github.com/trypando/pando/releases/download/v${VERSION}/pando_${VERSION}_darwin_arm64.tar.gz
 tar xzf pando_${VERSION}_darwin_arm64.tar.gz
 sudo mv pando /usr/local/bin/
 ```
@@ -47,7 +47,7 @@ verifying it is described in [releasing.md](releasing.md).
 **From source**, with a Go toolchain:
 
 ```
-go install github.com/bemeek-io/pando/cmd/pando@latest
+go install github.com/trypando/pando/cmd/pando@latest
 ```
 
 **Or install nothing.** A Compose installation already has the binary in it:

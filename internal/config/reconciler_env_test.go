@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/config"
+	"github.com/trypando/pando/internal/config"
 )
 
 // TestReconcilerTuningComesFromTheEnvironment asserts the knobs that make the

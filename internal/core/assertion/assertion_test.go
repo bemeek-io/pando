@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/assertion"
-	"github.com/bemeek-io/pando/internal/core/clock"
+	"github.com/trypando/pando/internal/core/assertion"
+	"github.com/trypando/pando/internal/core/clock"
 )
 
 func TestMintAndVerify(t *testing.T) {

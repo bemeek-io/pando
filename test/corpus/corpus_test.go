@@ -23,9 +23,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/source"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/detect"
+	"github.com/trypando/pando/internal/core/source"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/detect"
 )
 
 type manifest struct {

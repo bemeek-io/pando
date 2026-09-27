@@ -25,9 +25,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/bemeek-io/pando/internal/cli"
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/mcp"
+	"github.com/trypando/pando/internal/cli"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/mcp"
 )
 
 // Document is everything a person or an agent needs to use Pando without the

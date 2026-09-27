@@ -38,13 +38,13 @@ type Install struct {
 
 func install() Install {
 	return Install{
-		Repo:        "https://github.com/bemeek-io/pando",
-		Module:      "github.com/bemeek-io/pando/cmd/pando",
-		Homebrew:    "bemeek-io/tap/pando",
+		Repo:        "https://github.com/trypando/pando",
+		Module:      "github.com/trypando/pando/cmd/pando",
+		Homebrew:    "trypando/tap/pando",
 		Packages:    []string{"deb", "rpm", "apk"},
 		Archive:     "pando_<version>_<os>_<arch>.tar.gz",
 		Package:     "pando_<version>_linux_<arch>.<format>",
-		Download:    "https://github.com/bemeek-io/pando/releases/download/v<version>/",
+		Download:    "https://github.com/trypando/pando/releases/download/v<version>/",
 		Platforms:   []string{"darwin/amd64", "darwin/arm64", "linux/amd64", "linux/arm64"},
 		InContainer: "docker compose exec pando pando",
 	}

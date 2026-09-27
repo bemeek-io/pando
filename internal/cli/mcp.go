@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/bemeek-io/pando/internal/mcp"
+	"github.com/trypando/pando/internal/mcp"
 )
 
 // MCPCommand runs the MCP server over stdio (R-262, design 04 §3).

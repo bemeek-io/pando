@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/cli"
+	"github.com/trypando/pando/internal/cli"
 )
 
 // The draft commands send the description as one string and print what came

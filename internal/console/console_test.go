@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/console"
+	"github.com/trypando/pando/internal/console"
 )
 
 // The console is built by `make console` and embedded. A developer running

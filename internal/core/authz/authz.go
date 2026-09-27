@@ -3,7 +3,7 @@ package authz
 import (
 	"context"
 
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // PrincipalKind identifies what is making a request.

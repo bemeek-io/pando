@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/cli"
+	"github.com/trypando/pando/internal/cli"
 )
 
 // TestR262_AMachineCanAuthenticateFromTheEnvironment asserts that a minted

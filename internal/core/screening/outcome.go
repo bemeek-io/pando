@@ -3,7 +3,7 @@ package screening
 import (
 	"time"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // Outcome is what a screening did, recorded on the proposal.
