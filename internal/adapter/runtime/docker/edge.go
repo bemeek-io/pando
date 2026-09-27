@@ -169,6 +169,16 @@ func (a *Adapter) ApplyEdge(ctx context.Context, p api.EdgePlan) error {
 // on. By far the likeliest cause is a port something else already holds.
 func edgeStartFailure(p api.EdgePlan, err error) error {
 	msg := err.Error()
+	low := false
+	for _, port := range p.Ports {
+		low = low || port.Host < 1024
+	}
+	if low && (strings.Contains(msg, "permission denied") || strings.Contains(msg, "rootlessport")) {
+		// Rootless Podman: an unprivileged user cannot bind below 1024.
+		return errs.Wrap(errs.AdapterFailed,
+			fmt.Sprintf("The %s edge could not start because this container runtime is not allowed to use ports below 1024.", p.Name), err).
+			WithRemedy("Set net.ipv4.ip_unprivileged_port_start=80 with sysctl on this machine, or set the routing adapter's HTTP and HTTPS ports to 8080 and 8443 or higher, then restart Pando.")
+	}
 	if strings.Contains(msg, "address already in use") || strings.Contains(msg, "port is already allocated") {
 		ports := make([]string, 0, len(p.Ports))
 		for _, port := range p.Ports {

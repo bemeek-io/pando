@@ -8,6 +8,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -88,9 +89,22 @@ type Proxy struct {
 	Authz         *authz.Authorizer
 	Minter        *assertion.Minter
 	Upstreams     Upstreams
-	Auditor       *audit.Writer
+	Auditor       AuditWriter
 	Metrics       Metrics
 	Logger        *zap.Logger
+
+	// UsePolicy says whether anonymous use is recorded (R-227). Nil records
+	// it, which is the default.
+	UsePolicy UsePolicy
+
+	// ExternalURL is how a browser reaches this installation, which decides
+	// whether the visit cookie is marked Secure — the same rule as the session
+	// cookie (O-19). Nil falls back to whether the request arrived over TLS.
+	ExternalURL *url.URL
+
+	visitsOnce sync.Once
+	visits     *visits
+	clock      func() time.Time
 
 	// LoginPath is where an unauthenticated caller is sent.
 	//
@@ -174,6 +188,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Who used the app, once per visit (R-227). After the decision, so only an
+	// allowed use is recorded as one, and before the request is forwarded, so
+	// it is recorded whatever the app does with it (design 06 §6).
+	ctx = context.WithValue(ctx, ctxKeyPrefix{}, prefix)
+	r = r.WithContext(ctx)
+	p.visitsOnce.Do(func() { p.visits = newVisits() })
+	visit := p.recordUse(r, principal, app.ID)
+
 	// 6. Mint the assertion.
 	token, err := p.Minter.Mint(assertion.Claims{
 		Sub:    subjectOf(principal),
@@ -200,11 +222,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p.forward(w, r, target, token, principal, prefix)
+	p.forward(w, r, target, token, principal, prefix, visit)
 }
 
-// forward sets the headers and proxies the request.
-func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, target *url.URL, token string, principal authz.Principal, prefix string) {
+// forward sets the headers and proxies the request. visit, when set, is the
+// cookie marking this browser's visit, added to the app's response.
+func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, target *url.URL, token string, principal authz.Principal, prefix string, visit *http.Cookie) {
 	rp := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
@@ -253,6 +276,16 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, target *url.URL,
 			}
 
 			pr.SetXForwarded()
+		},
+
+		// The visit cookie rides on the app's response, in Pando's namespace:
+		// the browser returns it, and stripCookies takes it off again before
+		// the app sees a request.
+		ModifyResponse: func(resp *http.Response) error {
+			if visit != nil {
+				resp.Header.Add("Set-Cookie", visit.String())
+			}
+			return nil
 		},
 
 		// R-170: streaming must work. FlushInterval -1 disables response

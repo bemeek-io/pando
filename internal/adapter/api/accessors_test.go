@@ -61,6 +61,9 @@ func (stubRuntime) Logs(context.Context, api.WorkloadRef, api.LogOptions) (io.Re
 func (stubRuntime) Exec(context.Context, api.WorkloadRef, api.ExecRequest) (api.ExecSession, error) {
 	return nil, nil
 }
+func (stubRuntime) Upstream(context.Context, api.WorkloadRef, int) (api.Upstream, error) {
+	return api.Upstream{}, nil
+}
 func (stubRuntime) Trial(context.Context, api.TrialRequest) (api.TrialResult, error) {
 	return api.TrialResult{}, nil
 }

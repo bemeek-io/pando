@@ -25,6 +25,8 @@ var descriptions = map[string]string{
 	"max_log_disk_bytes":      "Total disk for app logs across every app, in bytes. 0 means no limit.",
 	"disable_ai_screening": "Turn off AI screening of deployment plans: AI is never sent a repository to " +
 		"repair a plan or answer detection's questions.",
+	"disable_anonymous_use_audit": "Don't record visits from people who aren't signed in: app.use is written " +
+		"to the audit log for signed-in people and tokens only, not for anonymous visitors to public apps.",
 	"min_security_score": "Minimum security score a deploy must reach, 0 to 100. 0 means off.",
 	"insecure_action": "What happens to a running app that falls below the minimum security score: " +
 		"warn, or stop (after the grace period).",

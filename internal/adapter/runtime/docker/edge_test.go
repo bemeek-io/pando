@@ -193,6 +193,21 @@ func TestAnEdgeWhosePortIsTakenSaysWhichPort(t *testing.T) {
 	require.Contains(t, e.Remedy, "restart Pando")
 }
 
+// TestOnRootlessPodmanALowPortSaysHowToAllowIt: an unprivileged runtime cannot
+// bind :80, which is the edge's default.
+func TestOnRootlessPodmanALowPortSaysHowToAllowIt(t *testing.T) {
+	f, a, _, _ := edgeDaemon(t)
+	f.on("POST /containers/edge1/start", respond(http.StatusInternalServerError, map[string]string{
+		"message": "rootlessport cannot expose privileged port 80: listen tcp 0.0.0.0:80: bind: permission denied",
+	}))
+
+	err := a.ApplyEdge(context.Background(), traefikEdge())
+	var e *errs.Error
+	require.ErrorAs(t, err, &e)
+	require.Contains(t, e.Message, "below 1024")
+	require.Contains(t, e.Remedy, "ip_unprivileged_port_start")
+}
+
 func TestWithPandoOnTheHostTheEdgeReachesItThroughTheGateway(t *testing.T) {
 	f, a, got, _ := edgeDaemon(t)
 	f.on("POST /networks/edge-net/connect", respond(http.StatusNotFound, map[string]string{"message": "No such container: pando-self"}))

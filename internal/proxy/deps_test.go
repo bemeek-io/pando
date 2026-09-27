@@ -3,11 +3,13 @@ package proxy
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
@@ -16,16 +18,41 @@ import (
 
 func app() state.App { return state.App{ID: "app_01HQ8", Slug: "notes"} }
 
-func specWith(workloads ...spec.Workload) *spec.AppSpec {
-	return &spec.AppSpec{Workloads: workloads}
+// addressingRuntime is a runtime that answers Upstream in a shape no other
+// runtime would, and records what it was asked.
+type addressingRuntime struct {
+	api.RuntimeAdapter
+	asked []api.WorkloadRef
+	ports []int
 }
 
-// The address comes from the workload's name on the bundle network rather than
-// being assembled from a container ID or an IP: how a workload is addressed is
-// the provider vocabulary core must not learn (R-251), and a name survives the
-// app being recreated.
-func TestR251_ThePrimaryAddressIsTheWorkloadNameAndItsPort(t *testing.T) {
-	u := NewRuntimeUpstreams(nil)
+func (r *addressingRuntime) Kind() string           { return "fake" }
+func (r *addressingRuntime) Category() api.Category { return api.CategoryRuntime }
+
+func (r *addressingRuntime) Upstream(_ context.Context, ref api.WorkloadRef, port int) (api.Upstream, error) {
+	r.asked = append(r.asked, ref)
+	r.ports = append(r.ports, port)
+	return api.Upstream{URL: fmt.Sprintf("http://%s.%s.example:%d", ref.Workload, ref.BundleID, port)}, nil
+}
+
+func upstreams(t *testing.T) (*RuntimeUpstreams, *addressingRuntime) {
+	t.Helper()
+	rt := &addressingRuntime{}
+	registry := api.NewRegistry()
+	require.NoError(t, registry.Register("rt_fake", rt))
+	return NewRuntimeUpstreams(registry), rt
+}
+
+func specWith(workloads ...spec.Workload) *spec.AppSpec {
+	return &spec.AppSpec{Runtime: spec.RuntimeRef{AdapterRef: "rt_fake"}, Workloads: workloads}
+}
+
+// Where a workload is reachable is the runtime's answer, not the proxy's: how a
+// workload is addressed is provider vocabulary core must not learn (R-251). The
+// proxy assembled a Docker container name here, which no other runtime could
+// have answered to.
+func TestR251_TheProxyAsksTheAppsRuntimeWhereItsWorkloadIs(t *testing.T) {
+	u, rt := upstreams(t)
 
 	got, err := u.PrimaryAddress(context.Background(), app(), specWith(spec.Workload{
 		Name: "web", Primary: true,
@@ -33,14 +60,16 @@ func TestR251_ThePrimaryAddressIsTheWorkloadNameAndItsPort(t *testing.T) {
 	}))
 
 	require.NoError(t, err)
-	require.Equal(t, "http://pando-app_01HQ8-web:3000", got)
-	require.NotContains(t, got, "127.0.0.1")
+	require.Equal(t, "http://web.app_01HQ8.example:3000", got)
+	require.Equal(t, []api.WorkloadRef{{BundleID: "app_01HQ8", Workload: "web"}}, rt.asked,
+		"the bundle is the app, and the workload is the primary one")
 }
 
 func TestTheHTTPPortIsPreferredOverWhateverComesFirst(t *testing.T) {
-	u := NewRuntimeUpstreams(nil)
+	u, rt := upstreams(t)
+	ctx := context.Background()
 
-	got, err := u.PrimaryAddress(context.Background(), app(), specWith(spec.Workload{
+	_, err := u.PrimaryAddress(ctx, app(), specWith(spec.Workload{
 		Name: "web", Primary: true,
 		Ports: []spec.Port{
 			{Number: 9000, Protocol: "tcp"},
@@ -48,26 +77,25 @@ func TestTheHTTPPortIsPreferredOverWhateverComesFirst(t *testing.T) {
 		},
 	}))
 	require.NoError(t, err)
-	require.Equal(t, "http://pando-app_01HQ8-web:3000", got)
 
 	// A port with no protocol stated is treated as HTTP, which is what a spec
 	// that only says "3000" means.
-	got, err = u.PrimaryAddress(context.Background(), app(), specWith(spec.Workload{
+	_, err = u.PrimaryAddress(ctx, app(), specWith(spec.Workload{
 		Name: "web", Primary: true, Ports: []spec.Port{{Number: 3000}},
 	}))
 	require.NoError(t, err)
-	require.Equal(t, "http://pando-app_01HQ8-web:3000", got)
 
 	// Nothing declares HTTP, so the first port is the best guess available.
-	got, err = u.PrimaryAddress(context.Background(), app(), specWith(spec.Workload{
+	_, err = u.PrimaryAddress(ctx, app(), specWith(spec.Workload{
 		Name: "web", Primary: true, Ports: []spec.Port{{Number: 9000, Protocol: "tcp"}},
 	}))
 	require.NoError(t, err)
-	require.Equal(t, "http://pando-app_01HQ8-web:9000", got)
+
+	require.Equal(t, []int{3000, 3000, 9000}, rt.ports)
 }
 
 func TestAnAppWithNothingToProxyToSaysWhichPartIsMissing(t *testing.T) {
-	u := NewRuntimeUpstreams(nil)
+	u, rt := upstreams(t)
 	ctx := context.Background()
 
 	_, err := u.PrimaryAddress(ctx, app(), nil)
@@ -80,12 +108,21 @@ func TestAnAppWithNothingToProxyToSaysWhichPartIsMissing(t *testing.T) {
 	_, err = u.PrimaryAddress(ctx, app(), specWith(spec.Workload{Name: "web", Primary: true}))
 	require.Equal(t, errs.StateInvalid, errs.CodeOf(err))
 	require.NotEmpty(t, errs.As(err).Remedy, "R-105: it says what to do about it")
+
+	require.Empty(t, rt.asked, "the runtime is asked only once there is a workload and a port")
 }
 
-func TestAWorkloadIsAddressedByNameInsideItsBundle(t *testing.T) {
-	require.Equal(t, "pando-app_01HQ8-web", workloadHost("app_01HQ8", "web"))
-	require.NotEqual(t, workloadHost("app_01HQ8", "web"), workloadHost("app_01HQ9", "web"))
-	require.NotEqual(t, workloadHost("app_01HQ8", "web"), workloadHost("app_01HQ8", "worker"))
+// A spec naming a runtime this install does not have is refused, never
+// answered with a guess at an address.
+func TestAnAppOnARuntimeThatIsNotConfiguredHasNoAddress(t *testing.T) {
+	u, _ := upstreams(t)
+
+	s := specWith(spec.Workload{Name: "web", Primary: true, Ports: []spec.Port{{Number: 3000}}})
+	s.Runtime.AdapterRef = "rt_gone"
+
+	got, err := u.PrimaryAddress(context.Background(), app(), s)
+	require.Equal(t, errs.PlanAdapterNotConfigured, errs.CodeOf(err))
+	require.Empty(t, got)
 }
 
 // R-023 says there is no bypass, and a counter every request increments —

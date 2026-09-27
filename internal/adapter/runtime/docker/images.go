@@ -33,8 +33,13 @@ const pulledMarker = "pulled"
 // ownedRepo is the repository an image reference's ownership tags live in.
 // Hashed because a reference may hold characters no tag can: a registry host
 // and port, a digest.
+//
+// Of the familiar form (engine.go), because the reference a plan names and the
+// one an engine reports must hash alike: Docker says "busybox:1.36", Podman
+// "docker.io/library/busybox:1.36", and hashed as written the image Pando
+// claimed was never recognized as that image again.
 func ownedRepo(ref string) string {
-	sum := sha256.Sum256([]byte(ref))
+	sum := sha256.Sum256([]byte(familiarRef(ref)))
 	return pulledRepo + "/" + hex.EncodeToString(sum[:8])
 }
 
@@ -108,6 +113,7 @@ func (a *Adapter) releaseImages(ctx context.Context, bundleID string) {
 	}
 	for _, img := range claimed {
 		for _, rt := range img.RepoTags {
+			rt = familiarRef(rt) // Podman reports "localhost/pando-pulled/…"
 			repo, t, found := strings.Cut(rt, ":")
 			if !found || t != tag || !strings.HasPrefix(repo, pulledRepo+"/") {
 				continue
@@ -145,6 +151,7 @@ func (a *Adapter) removeIfUnclaimed(ctx context.Context, imageID, repo string) {
 // Pando fetched it, and whether any app still claims it.
 func unclaimedRefs(repoTags []string, repo string) (refs []string, fetched, claimed bool) {
 	for _, rt := range repoTags {
+		rt = familiarRef(rt)
 		r, t, _ := strings.Cut(rt, ":")
 		switch {
 		case r == repo && t == pulledMarker:

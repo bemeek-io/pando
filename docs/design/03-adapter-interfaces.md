@@ -115,8 +115,28 @@ type RuntimeAdapter interface {
 
     Logs(ctx context.Context, ref WorkloadRef, opts LogOptions) (io.ReadCloser, error)
     Exec(ctx context.Context, ref WorkloadRef, req ExecRequest) (ExecSession, error)
+
+    // Where Pando's proxy sends a request for one port of one workload (R-023).
+    // Called on every proxied request.
+    Upstream(ctx context.Context, ref WorkloadRef, port int) (Upstream, error)
+}
+
+type Upstream struct {
+    URL string // scheme, host and port; the proxy keeps the request's path
 }
 ```
+
+**[D]** The runtime says where a workload is reachable; the proxy never assembles the address. How a
+workload is addressed is provider vocabulary (R-251), and it is the runtime that made the workload
+reachable — by joining Pando to the bundle network, or by whatever stands in for that. Core still
+chooses *which* port (the primary workload's HTTP port), because that is a reading of the spec. The
+proxy built a Docker container name itself until this was moved, which would have sent every request
+for an app on any other runtime to a host that does not exist.
+
+**[P]** `Upstream` is a struct holding only a URL. A runtime whose workloads are not directly
+addressable from Pando — a remote host, a cluster Pando runs outside of — will need to hand the proxy a
+way to dial as well, and gets a field here then rather than a second interface change. Nothing needs it
+yet, so nothing has it.
 
 ### 2.1 The plan
 
@@ -850,7 +870,7 @@ func (r *Registry) Default(c Category) (Adapter, error)
 | routing | `traefik` | subdomain and path, TLS; Pando runs it by default (§4.4) |
 | routing | `cloudflare` | Cloudflare Tunnel; subdomain and path, TLS at Cloudflare's edge (§4.5) |
 | builder | `buildkit` | rootless, containerized, no socket (R-111) |
-| runtime | `docker` | container isolation class |
+| runtime | `docker` | container isolation class; `sandboxed` when `oci_runtime` names gVisor (`runsc`) or a Kata runtime (R-115), which the daemon must have registered or the adapter reports itself unavailable. A sandboxed trial run still reports whether the app started, but not its ports or writes — both are read from outside the container, and a sandbox hides them. Also drives rootless Podman through its Docker-compatible socket (see below). |
 | secrets | `local` | encrypted at rest, key on disk (R-190) |
 | backup | `local` | a filesystem path; retention owned by Pando |
 | services | `docker` | postgres, mysql, redis in-bundle |
@@ -858,3 +878,26 @@ func (r *Registry) Default(c Category) (Adapter, error)
 | ai | `anthropic` | performs the AI functions assigned to it, each on its own model if the assignment names one (design 10 §9). Not seeded — needs a credential. One per install, like any AI provider. |
 | ai | `openai` | the same functions with OpenAI's models, through the Responses API (design 10 §6.2). Not seeded — needs a credential. |
 | ai | `local` | the same functions with a model on the install's own hardware, through any OpenAI-compatible server such as Ollama (design 10 §6.3). Not seeded — needs a server and a model. |
+
+**[P] Podman is the Docker adapter pointed at a different socket, not an adapter of its own.** Its
+Docker-compatible API does what this adapter asks, and the adapter's integration suite passes against
+rootless Podman 4.9 with the same tests it passes against Docker. A second adapter would have been a
+copy of this one. What differs is how the two engines *answer*, and each difference had become a
+wrong result before it was handled; they live in `internal/adapter/runtime/docker/engine.go`:
+
+- Podman spells images fully qualified (`docker.io/library/alpine:3.20`) and local tags under
+  `localhost/`. Compared as written, every Apply recreated its containers and no pulled image was ever
+  released (R-224). References are compared in their familiar form.
+- It returns an empty health status for a container with no health check, which read as unhealthy
+  (R-221).
+- Its one-shot stats carry no previous sample, and its system CPU counter is not the all-CPU total
+  Docker's arithmetic divides by. CPU is sampled twice and measured against wall time (R-245).
+- It refuses a taken address block in words of its own, and its image-load answer lacks the line
+  ending the old parser trimmed.
+- It accepts a `HostConfig.Runtime`, lists that runtime, and does not apply it. `oci_runtime` is
+  therefore refused on Podman when the adapter is checked, and every container that runs app code is
+  checked for the runtime it actually got before it starts (R-255).
+
+Installing Pando itself on Podman — the Compose file mounts Docker's socket, and `docker compose
+--build` cannot build through rootless Podman — is the install-topology question in design 00 §1.1,
+still open; this note covers only the runtime adapter.
