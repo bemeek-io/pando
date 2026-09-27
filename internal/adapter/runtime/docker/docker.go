@@ -104,6 +104,18 @@ type Config struct {
 	// /26 blocks. Empty uses 10.213.0.0/16; "off" leaves allocation to Docker's
 	// default pool, which holds about thirty networks (see subnets.go).
 	NetworkPool string `json:"network_pool,omitempty"`
+
+	// OCIRuntime is the runtime Docker starts app containers with, by the name
+	// the daemon registered it under: "runsc" for gVisor, "kata" for Kata
+	// Containers. Empty is the daemon's default, which is runc.
+	//
+	// It decides the isolation class this adapter reports (isolationOf), and
+	// that class is what host policy floors compare against (R-024, R-114).
+	// So the class is derived from the name here, never stated by the operator,
+	// and HealthCheck refuses a name the daemon does not have — a policy floor
+	// of `sandboxed` satisfied by a runtime that was never installed would
+	// admit exactly the work it was set to keep out.
+	OCIRuntime string `json:"oci_runtime,omitempty"`
 }
 
 // New builds an unconfigured adapter.
@@ -139,15 +151,99 @@ func (a *Adapter) HealthCheck(ctx context.Context) error {
 	if _, err := a.cli.Ping(ctx); err != nil {
 		return errs.Wrap(errs.AdapterUnavailable, "Docker is not responding.", err)
 	}
+
+	if a.config.OCIRuntime != "" {
+		// Podman lists runtimes it will not apply through this API (engine.go,
+		// verifyRuntime), so asking it which runtimes it has proves nothing.
+		// Refused here, where the planner turns it into a readable refusal
+		// before anything is created, rather than at the first container.
+		if v, err := a.cli.ServerVersion(ctx); err == nil && isPodman(v) {
+			return errs.Newf(errs.AdapterUnavailable,
+				"The Docker runtime is set to start apps with %q, and this is Podman, whose Docker-compatible API does not apply a container runtime.",
+				a.config.OCIRuntime).
+				WithRemedy("Clear the container runtime setting to run apps on Podman under its default runtime. " +
+					"To run apps under gVisor or Kata, use Docker with the runtime registered in /etc/docker/daemon.json.")
+		}
+
+		info, err := a.cli.Info(ctx)
+		if err != nil {
+			return errs.Wrap(errs.AdapterUnavailable, "Could not ask Docker which container runtimes it has.", err)
+		}
+		if _, ok := info.Runtimes[a.config.OCIRuntime]; !ok {
+			return errs.Newf(errs.AdapterUnavailable,
+				"The Docker runtime is set to start apps with %q, and Docker has no container runtime by that name.",
+				a.config.OCIRuntime).
+				WithRemedy("Install it and register it under \"runtimes\" in /etc/docker/daemon.json, then " +
+					"restart Docker — for gVisor, `runsc install` does both. Or clear the container runtime " +
+					"setting to use Docker's default.")
+		}
+	}
 	return nil
+}
+
+// observes reports whether the trial run can see what an app did.
+//
+// Both observations look at the container from outside: ports from a sidecar
+// sharing its network namespace, writes from Docker's diff of its filesystem
+// layer. A sandboxed runtime keeps its own network stack and its own filesystem
+// overlay, so from outside there is nothing to see — and an observation that
+// reports "no ports" when there are some is worse than none. Without them
+// detection asks the port question instead of answering it (R-097).
+func (a *Adapter) observes() bool {
+	return isolationOf(a.config.OCIRuntime) == spec.IsolationContainer
+}
+
+// runsUnder reports whether a container created under ociRuntime is under the
+// runtime this adapter is configured for.
+//
+// Part of matchesPlan because the class Capabilities reports changes the moment
+// the setting does, and the containers do not. Without it, switching to runsc
+// and redeploying an app compared image and environment, found them unchanged,
+// and left the app on runc while the adapter called it sandboxed — which a
+// policy floor would then have believed (R-114).
+//
+// Docker records a container created with no runtime under its default's name,
+// usually "runc", so an unset setting matches any runtime that shares the
+// kernel and refuses only a sandbox: switching the setting off moves apps out
+// of the sandbox on their next deploy, and a daemon whose default is crun is
+// not a reason to recreate anything.
+func (a *Adapter) runsUnder(ociRuntime string) bool {
+	if a.config.OCIRuntime == "" {
+		return isolationOf(ociRuntime) == spec.IsolationContainer
+	}
+	return ociRuntime == a.config.OCIRuntime
+}
+
+// isolationOf is the class an OCI runtime provides (R-115).
+//
+// Only runtimes known to put a boundary between the app and the host kernel
+// raise it: gVisor intercepts system calls in a user-space kernel, and Kata
+// runs each container in a lightweight VM. R-115 places both in `sandboxed`.
+// Any other name — crun, a GPU runtime — shares the kernel like runc, and
+// reporting more than that would let a hardened install run work it meant to
+// exclude.
+func isolationOf(ociRuntime string) spec.IsolationClass {
+	name := strings.ToLower(ociRuntime)
+	switch {
+	case name == "runsc" || strings.HasPrefix(name, "runsc-"):
+		return spec.IsolationSandboxed
+	case strings.HasPrefix(name, "kata") || strings.Contains(name, ".kata."):
+		return spec.IsolationSandboxed
+	default:
+		return spec.IsolationContainer
+	}
 }
 
 // Capabilities reports what this adapter can do (R-254).
 func (a *Adapter) Capabilities(context.Context) (api.RuntimeCapabilities, error) {
+	class := isolationOf(a.config.OCIRuntime)
+	observes := a.observes()
+
 	return api.RuntimeCapabilities{
-		// Shared kernel. Stated honestly: a policy floor above this must
-		// exclude this adapter, and it can only do that if the class is true.
-		IsolationClass: spec.IsolationContainer,
+		// Shared kernel, unless the configured runtime is a sandbox. Stated
+		// honestly: a policy floor above this must exclude this adapter, and it
+		// can only do that if the class is true.
+		IsolationClass: class,
 
 		SupportsPersistentVolumes: true,
 		SupportsCarriedFiles:      true,
@@ -188,9 +284,10 @@ func (a *Adapter) Capabilities(context.Context) (api.RuntimeCapabilities, error)
 		// one with no shell, because the sockets are read from a sidecar sharing
 		// the container's network namespace rather than by exec-ing inside it.
 		// Write observation is ContainerDiff, which the daemon computes itself.
+		// Neither sees into a sandbox (above).
 		SupportsTrialRun:         true,
-		SupportsPortObservation:  true,
-		SupportsWriteObservation: true,
+		SupportsPortObservation:  observes,
+		SupportsWriteObservation: observes,
 
 		// An edge in front of Pando (R-174, edge.go).
 		SupportsEdge: true,
@@ -359,6 +456,11 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 		// fifteen seconds rather than instant, and that is the trade: a paced
 		// restart Pando knows about beats an instant one it does not.
 		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyDisabled},
+
+		// The isolation class Capabilities reported (R-114). Empty is the
+		// daemon's default.
+		Runtime: a.config.OCIRuntime,
+
 		Resources: container.Resources{
 			NanoCPUs: int64(w.Resources.CPUMillis) * 1_000_000,
 			Memory:   w.Resources.MemoryBytes,
@@ -378,6 +480,9 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 	created, err := a.cli.ContainerCreate(ctx, cfg, hostCfg, netCfg, nil, name)
 	if err != nil {
 		return createFailure(w, err)
+	}
+	if err := a.verifyRuntime(ctx, created.ID, w.Name); err != nil {
+		return err
 	}
 
 	// Configuration files, placed before the workload runs.
@@ -559,7 +664,7 @@ func (a *Adapter) Observe(ctx context.Context, ref api.BundleRef) (api.ObservedB
 		// Healthy stays nil when there is no health check. "No signal" and
 		// "unhealthy" are different states and must not collapse (R-221): an
 		// app with no health check is running, not perpetually degraded.
-		if inspect.State.Health != nil {
+		if reportsHealth(inspect.State.Health) {
 			healthy := inspect.State.Health.Status == "healthy"
 			w.Healthy = &healthy
 		}
@@ -854,16 +959,41 @@ func (a *Adapter) ImportImage(ctx context.Context, r io.Reader) (string, error) 
 // parseLoadedRef pulls the image reference out of Docker's load output, which
 // is a stream of JSON objects whose stream field reads
 // "Loaded image: name:tag".
+//
+// Decoded as JSON rather than cut out of the text. Cutting it out trimmed the
+// exact ending Docker writes — an escaped newline before the closing quote —
+// and Podman writes no newline there, so the reference came back with `"}`
+// on the end and every built image failed to start as an invalid reference.
 func parseLoadedRef(body string) string {
-	const marker = "Loaded image: "
+	dec := json.NewDecoder(strings.NewReader(body))
+	for {
+		var msg struct {
+			Stream string `json:"stream"`
+		}
+		if err := dec.Decode(&msg); err != nil {
+			break
+		}
+		if ref, ok := loadedRef(msg.Stream); ok {
+			return ref
+		}
+	}
+	// Not a JSON stream: read it as text.
 	for _, line := range strings.Split(body, "\n") {
-		if i := strings.Index(line, marker); i >= 0 {
-			rest := line[i+len(marker):]
-			rest = strings.TrimSuffix(strings.TrimSpace(rest), `\n"}`)
-			return strings.Trim(strings.TrimSpace(rest), `"`)
+		if ref, ok := loadedRef(line); ok {
+			return ref
 		}
 	}
 	return ""
+}
+
+func loadedRef(s string) (string, bool) {
+	const marker = "Loaded image: "
+	i := strings.Index(s, marker)
+	if i < 0 {
+		return "", false
+	}
+	ref := strings.TrimSpace(s[i+len(marker):])
+	return ref, ref != ""
 }
 
 func (a *Adapter) Logs(ctx context.Context, ref api.WorkloadRef, opts api.LogOptions) (io.ReadCloser, error) {
@@ -959,6 +1089,23 @@ func (a *Adapter) Exec(ctx context.Context, ref api.WorkloadRef, req api.ExecReq
 	}
 
 	return &execSession{cli: a.cli, execID: created.ID, hijacked: attached}, nil
+}
+
+// Upstream is the workload's container name on its bundle network (R-023).
+//
+// The name, not the workload's alias. Pando's container is joined to every
+// bundle network (attachProxy), so "web" would mean a different container on
+// each of them; the container name is unique across all of them. It is also a
+// name rather than an address, so it survives the container being recreated.
+//
+// Computed, not looked up: this runs on every proxied request.
+func (a *Adapter) Upstream(_ context.Context, ref api.WorkloadRef, port int) (api.Upstream, error) {
+	if port <= 0 {
+		return api.Upstream{}, errs.Newf(errs.ValidInvalid, "%d is not a usable port.", port)
+	}
+	return api.Upstream{
+		URL: fmt.Sprintf("http://%s:%d", containerName(ref.BundleID, ref.Workload), port),
+	}, nil
 }
 
 var _ api.RuntimeAdapter = (*Adapter)(nil)
@@ -1235,10 +1382,13 @@ func (a *Adapter) matchesPlan(ctx context.Context, containerID string, w api.Wor
 	if inspect.Config == nil {
 		return false, nil
 	}
-	if inspect.Config.Image != w.Image {
+	if !sameImage(inspect.Config.Image, w.Image) {
 		return false, nil
 	}
 	if inspect.Config.Labels[labelFiles] != fileDigest(w.Files) {
+		return false, nil
+	}
+	if inspect.HostConfig != nil && !a.runsUnder(inspect.HostConfig.Runtime) {
 		return false, nil
 	}
 
@@ -1316,7 +1466,7 @@ func (a *Adapter) settled(ctx context.Context, bundleID, workload string) bool {
 		return true
 	}
 	inspect, err := a.cli.ContainerInspect(ctx, c.ID)
-	if err != nil || inspect.State == nil || !inspect.State.Running || inspect.State.Health == nil {
+	if err != nil || inspect.State == nil || !inspect.State.Running || !reportsHealth(inspect.State.Health) {
 		return true
 	}
 	return inspect.State.Health.Status == "healthy"
@@ -1427,6 +1577,7 @@ func Info() api.KindInfo {
 			{Key: "total_memory_bytes", Label: "Memory available", Type: "int", Help: "Bytes Pando may allocate.", Default: "The whole machine"},
 			{Key: "total_disk_bytes", Label: "Disk available", Type: "int", Help: "Bytes of disk Pando may allocate."},
 			{Key: "network_pool", Label: "App network range", Type: "string", Help: "The IPv4 range each app's private network takes 64 addresses from. \"off\" uses Docker's own pool, which holds about 30 networks.", Default: defaultNetworkPool},
+			{Key: "oci_runtime", Label: "Container runtime", Type: "string", Help: "The runtime Docker starts apps with, by the name it is registered under in daemon.json. \"runsc\" (gVisor) or a Kata runtime makes this a sandboxed runtime, which host policy can require; the port and file-write checks when an app is added then cannot see inside the sandbox, so Pando asks for the port instead.", Default: "Docker's default, runc"},
 		},
 	}
 }

@@ -770,7 +770,7 @@ exist are refused. The proposal is saved only by `PUT /policy`, which runs its o
 
 `POST /api/v1/ai/audit/search {question}`, `install.audit.read`. Two calls:
 
-1. `SearchAudit` receives the question, the current UTC time, the accounts (ID, name, email), the apps
+1. `SearchAudit` receives the question, the current UTC time, the accounts (ID, username, name, email), the apps
    (ID, name) and the action names present in the log, and returns one filter — `actions` (prefixes,
    any of which matches), `app_id`, `principal_id`, `principal_kind`, `target_kind`, `target_id`,
    `involving`, `since`, `until` — and a `note`. Core trims it, drops an unknown principal kind, keeps
@@ -786,10 +786,11 @@ them matches.
 **[D] The adapter never reads the log** (R-027, R-226). It proposes a filter; core runs it and decides
 how many records to send.
 
-**[P] "Accessed" is answered from what is recorded, and says so.** A successful use of an app writes
-no event; `session.create` records a sign-in and the proxy records `app.use.denied`. The adapter is
-told this and, asked what someone accessed, filters on what is recorded and says in its `note` that
-successful use is not. Whether to add an `app.use` event is O-22.
+**[D] "Accessed" is `app.use`** (O-22, R-227): the proxy records each visit to an app, anonymous ones
+included unless host policy turns that off. The adapter is told what a visit is, and uses its `note`
+for what the log cannot answer, such as individual requests within a visit. A person named by
+username, email or name in the filter is resolved to their ID by core, so "admin" finds admin's
+events whether or not the model looked the ID up.
 
 ### 10.4 Reference help (`answer_reference`, R-346)
 

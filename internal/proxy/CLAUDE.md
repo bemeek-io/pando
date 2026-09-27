@@ -26,6 +26,7 @@ adding a fast path, you are adding a security hole.
       passcode required  → 302 /.pando/login?passcode=<app>
       denied + anonymous → 302 login
       denied + authed    → 403
+ 5a. Record app.use, once per visit (R-227; see use.go)
  6. Mint assertion (R-051)
  7. STRIP all inbound X-Pando-* headers        ← see below
  8. Set assertion + convenience headers

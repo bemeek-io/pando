@@ -86,18 +86,67 @@ func (a *Adapter) workloadUsage(ctx context.Context, id, name string) api.Worklo
 		return u
 	}
 
+	s, ok := a.readStats(ctx, id)
+	if !ok {
+		return u
+	}
+
+	u.CPUMillis = cpuMillis(s)
+	u.MemoryBytes = memoryInUse(s.MemoryStats)
+
+	// Docker's one-shot reading carries the previous sample to diff against.
+	// Podman's does not — no preread, no previous CPU — and diffed against
+	// nothing, CPU came out as its average since the container started over
+	// the machine's since it booted: near zero for a loop pinned at its limit.
+	// So take the second sample here, a second later, as Docker would have.
+	if s.PreRead.IsZero() && s.PreCPUStats.CPUUsage.TotalUsage == 0 {
+		select {
+		case <-ctx.Done():
+			return u
+		case <-time.After(statsSampleGap):
+		}
+		if next, ok := a.readStats(ctx, id); ok {
+			u.CPUMillis = cpuMillisBetween(s, next)
+			u.MemoryBytes = memoryInUse(next.MemoryStats)
+		}
+	}
+	return u
+}
+
+// cpuMillisBetween is the CPU a container used between two readings Pando took
+// itself, per second of the wall time between them.
+//
+// Against wall time rather than the engine's system counter, which is what
+// cpuMillis divides by: Docker's counts every CPU's time, so the ratio times
+// the CPU count is cores in use, but Podman's (4.9) advances by about the
+// container's own use — measured, a loop limited to half a core moved it
+// 517ms in a second — and that ratio read as every core the host has. The
+// clocks between two readings are the engine's own timestamps, so a slow
+// round trip does not stretch the interval.
+func cpuMillisBetween(first, second container.StatsResponse) int {
+	used := float64(second.CPUStats.CPUUsage.TotalUsage) - float64(first.CPUStats.CPUUsage.TotalUsage)
+	wall := float64(second.Read.Sub(first.Read))
+	if used <= 0 || wall <= 0 {
+		return 0
+	}
+	return int(used / wall * 1000)
+}
+
+// statsSampleGap is how far apart two CPU samples are when the engine does not
+// take them itself: Docker's own gap for a one-shot reading.
+const statsSampleGap = time.Second
+
+func (a *Adapter) readStats(ctx context.Context, id string) (container.StatsResponse, bool) {
 	stats, err := a.cli.ContainerStats(ctx, id, false)
 	if err != nil {
-		return u
+		return container.StatsResponse{}, false
 	}
 	defer func() { _ = stats.Body.Close() }()
 	var s container.StatsResponse
 	if err := json.NewDecoder(stats.Body).Decode(&s); err != nil {
-		return u
+		return container.StatsResponse{}, false
 	}
-	u.CPUMillis = cpuMillis(s)
-	u.MemoryBytes = memoryInUse(s.MemoryStats)
-	return u
+	return s, true
 }
 
 // cpuMillis is the CPU a container used between the daemon's two readings, in

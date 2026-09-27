@@ -96,6 +96,29 @@ func TestR025_ABlockSomethingElseTookIsSkipped(t *testing.T) {
 	require.Equal(t, []string{"10.213.0.0/26", "10.213.0.64/26"}, subnets)
 }
 
+// The same, in Podman's words. Podman also refuses a block the host's routes
+// already use, which is what another engine's network on the same machine
+// looks like to it — and it does not say "overlap".
+func TestR025_ABlockPodmanSaysIsTakenIsSkipped(t *testing.T) {
+	f, a := newFakeDaemon(t, nil)
+	f.on("GET /networks", respond(http.StatusOK, []any{}))
+	var subnets []string
+	f.on("POST /networks/create", func(w http.ResponseWriter, r *http.Request) {
+		req := decodeNetwork(t, r)
+		subnets = append(subnets, req.subnet())
+		if req.subnet() == "10.213.0.0/26" {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"message": "subnet 10.213.0.0/26 is already used on the host or by another config"})
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]string{"Id": "net1"})
+	})
+
+	_, err := a.createNetwork(context.Background(), "test-podman-taken", networkRequestOptions())
+	require.NoError(t, err)
+	require.Equal(t, []string{"10.213.0.0/26", "10.213.0.64/26"}, subnets)
+}
+
 func TestAfterEightRefusedBlocksDockerChoosesTheAddresses(t *testing.T) {
 	f, a := newFakeDaemon(t, nil)
 	f.on("GET /networks", respond(http.StatusOK, []any{}))
