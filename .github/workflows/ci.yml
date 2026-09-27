@@ -13,6 +13,14 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # id-token to prove to Codecov which repository and workflow this upload
+    # comes from (OIDC), instead of a stored upload token. A token is a secret
+    # that can be lost — it was, when the repository moved to trypando — and a
+    # protected branch refuses a tokenless upload. Nothing here writes to the
+    # repository; contents stays read.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -53,7 +61,7 @@ jobs:
         if: always()
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           files: coverage.out
           flags: unit
           fail_ci_if_error: false
@@ -129,6 +137,14 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
+    # id-token to prove to Codecov which repository and workflow this upload
+    # comes from (OIDC), instead of a stored upload token. A token is a secret
+    # that can be lost — it was, when the repository moved to trypando — and a
+    # protected branch refuses a tokenless upload. Nothing here writes to the
+    # repository; contents stays read.
+    permissions:
+      contents: read
+      id-token: write
     # Real Postgres and real Docker, via testcontainers. The four sequences in
     # docs/design/07-sequences.md are the acceptance criteria for v1.
     #
@@ -174,7 +190,7 @@ jobs:
         if: always()
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           files: coverage.integration.out
           flags: integration
           fail_ci_if_error: false
