@@ -613,14 +613,38 @@ func (a *Apps) Pin(ctx context.Context, appID, specID, newState, pinnedBy string
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Where the revision says the app is reached, claimed in the same
+	// transaction as the pin, so the address and the pinned spec cannot
+	// disagree (migration 35).
+	var body []byte
+	if err := tx.QueryRow(ctx, `SELECT body FROM spec_revisions WHERE id = $1`, specID).Scan(&body); err != nil {
+		return errs.Wrap(errs.Internal, "Could not pin the spec.", err)
+	}
+	var pinned spec.AppSpec
+	if err := json.Unmarshal(body, &pinned); err != nil {
+		return errs.Wrap(errs.Internal, "Could not read the spec being pinned.", err)
+	}
+	if err := checkAddress(ctx, tx, appID, pinned.Routing); err != nil {
+		return err
+	}
+	hostname, path := addressOf(pinned.Routing)
+
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO spec_pins (app_id, spec_id, pinned_by) VALUES ($1, $2, $3)`,
 		appID, specID, pinnedBy); err != nil {
 		return errs.Wrap(errs.Internal, "Could not pin the spec.", err)
 	}
 	if _, err := tx.Exec(ctx,
-		`UPDATE apps SET pinned_spec_id = $2, state = $3, updated_at = now() WHERE id = $1`,
-		appID, specID, newState); err != nil {
+		`UPDATE apps SET pinned_spec_id = $2, state = $3, updated_at = now(),
+		        address_hostname = NULLIF($4, ''), address_path = NULLIF($5, '')
+		 WHERE id = $1`,
+		appID, specID, newState, hostname, path); err != nil {
+		if isUniqueViolation(err) {
+			// Two pins of the same address raced past checkAddress; the
+			// index decided.
+			return errs.New(errs.StateAddressTaken, "Another app took this address a moment ago.").
+				WithRemedy("Choose another address for this app.")
+		}
 		return errs.Wrap(errs.Internal, "Could not pin the spec.", err)
 	}
 
@@ -1000,6 +1024,8 @@ func (a *Apps) ByRouting(ctx context.Context, by, value string) (App, *spec.AppS
 		where = `r.body->'routing'->>'hostname' = $1`
 	case "slug":
 		where = `a.slug = $1`
+	case "id":
+		where = `a.id = $1`
 	case "port":
 		// The mode is part of the match, not just the number. A port-mode app's
 		// routing block is the only place a port means "this app's address";

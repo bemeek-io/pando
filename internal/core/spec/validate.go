@@ -399,8 +399,8 @@ func validateRouting(s *AppSpec, add func(*errs.Error)) {
 		if s.Routing.PathPrefix == "" {
 			add(errs.New(errs.ValidInvalid, "This app is set to be reached at a path, but no path was given.").
 				WithRemedy("Provide the path prefix, for example /notes."))
-		} else if !strings.HasPrefix(s.Routing.PathPrefix, "/") {
-			add(errs.Newf(errs.ValidInvalid, "The path prefix %q must start with /.", s.Routing.PathPrefix))
+		} else if err := CheckPathPrefix(s.Routing.PathPrefix); err != nil {
+			add(err)
 		}
 	case RoutingPort:
 		if s.Routing.Port <= 0 || s.Routing.Port > 65535 {

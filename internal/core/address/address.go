@@ -26,10 +26,16 @@ type Ports interface {
 	Allocate(ctx context.Context, adapterRef, appID string, from, to int) (int, error)
 }
 
+// Taken reports whether another app already holds an address.
+type Taken interface {
+	CheckAddress(ctx context.Context, appID string, r spec.Routing) error
+}
+
 // Service resolves routing changes against the configured routing adapters.
 type Service struct {
 	Registry *api.Registry
 	Ports    Ports
+	Taken    Taken
 
 	// PortRangeStart and PortRangeEnd are the install's port range.
 	PortRangeStart, PortRangeEnd int
@@ -40,13 +46,13 @@ type Service struct {
 }
 
 // Request is the address somebody asked for. Empty fields take the adapter's
-// default: its default mode, and the hostname or port that mode implies. A
-// hostname is the only part of an address a person names; a path is the app's
-// slug and a port is allocated.
+// default: its default mode, and the hostname, path or port that mode implies.
+// A port is always allocated, never named.
 type Request struct {
 	AdapterRef string           `json:"adapter_ref,omitempty"`
 	Mode       spec.RoutingMode `json:"mode,omitempty"`
 	Hostname   string           `json:"hostname,omitempty"`
+	PathPrefix string           `json:"path_prefix,omitempty"`
 }
 
 // Decision is a resolved routing change.
@@ -132,10 +138,23 @@ func (s *Service) Resolve(ctx context.Context, appID, slug string, current spec.
 		next.Hostname = probe.Routing.Hostname
 
 	case spec.RoutingPath:
-		// Always the app's slug. The proxy finds a path-mode app by the first
-		// segment of the path, matched against slugs (proxy.resolve), so a
-		// prefix chosen here would be stored and never served.
-		next.PathPrefix = "/" + slug
+		// What was asked for, or the path the app already has, or its slug.
+		// The proxy finds a path-mode app by its path (proxy.resolve), so any
+		// path that passes CheckPathPrefix and is free is served.
+		prefix := ""
+		if strings.TrimSpace(req.PathPrefix) != "" {
+			prefix = spec.NormalizePathPrefix(req.PathPrefix)
+		}
+		if prefix == "" && same {
+			prefix = current.PathPrefix
+		}
+		if prefix == "" {
+			prefix = "/" + slug
+		}
+		if err := spec.CheckPathPrefix(prefix); err != nil {
+			return Decision{}, err
+		}
+		next.PathPrefix = prefix
 
 	case spec.RoutingPort:
 		// Allocated, never typed: two apps must not be handed one port, and
@@ -154,9 +173,18 @@ func (s *Service) Resolve(ctx context.Context, appID, slug string, current spec.
 		next.Port = port
 	}
 
+	changed := !equal(current, next)
+	if changed && s.Taken != nil {
+		// Said now, to the person choosing, rather than at the pin a deploy
+		// makes later — where it is also checked, and decided (state.Pin).
+		if err := s.Taken.CheckAddress(ctx, appID, next); err != nil {
+			return Decision{}, err
+		}
+	}
+
 	return Decision{
 		Routing: next,
-		Changed: !equal(current, next),
+		Changed: changed,
 		// Asked only when the change introduces the deviation: an app already
 		// on a non-default mode that only changes its path is not deviating
 		// anew.

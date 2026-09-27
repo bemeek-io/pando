@@ -98,6 +98,35 @@ func TestAHostnameCanBeChosenAndIsChecked(t *testing.T) {
 	require.False(t, d.Changed, "asking for nothing new changes nothing")
 }
 
+// TestR167_APathCanBeChosen asserts R-167 for a chosen path: any depth up to
+// four, normalized, never one of Pando's own, and checked as free.
+func TestR167_APathCanBeChosen(t *testing.T) {
+	s, _ := service(t)
+	onPath := spec.Routing{AdapterRef: "rte_loopback", Mode: spec.RoutingPath, PathPrefix: "/notes"}
+
+	d, err := s.Resolve(context.Background(), "app_1", "notes", onPath, Request{PathPrefix: " Team/Notes/ "})
+	require.NoError(t, err)
+	require.Equal(t, "/team/notes", d.Routing.PathPrefix)
+	require.True(t, d.Changed)
+
+	for _, bad := range []string{"/api/notes", "/admin", "/.pando", "/a/b/c/d/e", "/no spaces", "/under_score"} {
+		_, err := s.Resolve(context.Background(), "app_1", "notes", onPath, Request{PathPrefix: bad})
+		require.Error(t, err, bad)
+	}
+
+	s.Taken = takenStub{}
+	_, err = s.Resolve(context.Background(), "app_1", "notes", onPath, Request{PathPrefix: "/crm"})
+	var e *errs.Error
+	require.ErrorAs(t, err, &e)
+	require.Equal(t, errs.StateAddressTaken, e.Code)
+}
+
+type takenStub struct{}
+
+func (takenStub) CheckAddress(context.Context, string, spec.Routing) error {
+	return errs.New(errs.StateAddressTaken, "/crm can't be this app's address: CRM is already reached at it.")
+}
+
 // TestAPortIsAllocatedNeverTyped: design 03 §4.2.
 func TestAPortIsAllocatedNeverTyped(t *testing.T) {
 	s, ports := service(t)

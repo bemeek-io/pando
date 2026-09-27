@@ -104,6 +104,7 @@ function ChangeAddress({ app, view, onClose }: { app: App; view: RoutingView; on
   const sameAdapter = adapterRef === current.adapter_ref;
   const [mode, setMode] = useState(current.mode);
   const [hostname, setHostname] = useState(current.hostname ?? '');
+  const [path, setPath] = useState(current.path_prefix ?? `/${app.slug}`);
 
   const pickAdapter = (ref: string) => {
     setAdapterRef(ref);
@@ -126,6 +127,7 @@ function ChangeAddress({ app, view, onClose }: { app: App; view: RoutingView; on
         adapter_ref: adapterRef,
         mode,
         hostname: mode === 'subdomain' ? hostname.trim() : undefined,
+        path_prefix: mode === 'path' ? path.trim() : undefined,
         // The dialog is the confirmation: it says what stops working before
         // the button is pressed.
         confirm: true,
@@ -153,7 +155,13 @@ function ChangeAddress({ app, view, onClose }: { app: App; view: RoutingView; on
           </Button>
           <Button
             variant="primary"
-            disabled={change.isPending || !option || blocked || (mode === 'subdomain' && hostname.trim() === '')}
+            disabled={
+              change.isPending ||
+              !option ||
+              blocked ||
+              (mode === 'subdomain' && hostname.trim() === '') ||
+              (mode === 'path' && path.trim() === '')
+            }
             onClick={() => change.mutate()}
           >
             {change.isPending ? 'Changing' : 'Change address'}
@@ -210,7 +218,7 @@ function ChangeAddress({ app, view, onClose }: { app: App; view: RoutingView; on
                     locked
                       ? 'Choosing something other than this adapter’s default needs permission to override routing.'
                       : m === 'path'
-                        ? `/${app.slug}/ on the address Pando is served at.`
+                        ? 'A path on the address Pando is served at, such as /notes.'
                         : m === 'port'
                           ? 'Pando assigns a port from the installation’s range.'
                           : undefined
@@ -234,6 +242,19 @@ function ChangeAddress({ app, view, onClose }: { app: App; view: RoutingView; on
             placeholder={option?.base_domain ? `${app.slug}.${option.base_domain}` : 'notes.example.com'}
             helper={option?.base_domain ? `A name ending in ${option.base_domain}.` : undefined}
             onChange={(e) => setHostname(e.target.value)}
+          />
+        )}
+
+        {mode === 'path' && (
+          <Input
+            label="Path"
+            mono
+            autoComplete="off"
+            spellCheck={false}
+            value={path}
+            placeholder={`/${app.slug}`}
+            helper="Lowercase letters, digits and hyphens, up to four parts, such as /team/notes. The app receives requests with this part removed, and is told it in X-Forwarded-Prefix."
+            onChange={(e) => setPath(e.target.value)}
           />
         )}
 

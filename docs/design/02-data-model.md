@@ -173,6 +173,8 @@ CREATE TABLE apps (
     desired_state  text NOT NULL,             -- running | stopped
     unobservable_since timestamptz,           -- adapter unreachable; NOT an app state
     applied_env_fingerprint text,             -- see 2.4, secret rotation
+    address_hostname text,                    -- the pinned spec's hostname, unique among live apps
+    address_path     text,                    -- the pinned spec's path, unique among live apps (design 03 §4.1)
     created_at     timestamptz NOT NULL DEFAULT now(),
     updated_at     timestamptz NOT NULL DEFAULT now(),
     deleted_at     timestamptz

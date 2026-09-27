@@ -43,7 +43,7 @@ func withRouting(t *testing.T) (*install, *session, *session, string) {
 	require.NoError(t, reg.Register("rte_loopback", routingStub{caps: adapterapi.RoutingCapabilities{
 		Modes: []spec.RoutingMode{spec.RoutingPort, spec.RoutingPath}, DefaultMode: spec.RoutingPort}}))
 	require.NoError(t, reg.SetDefault(adapterapi.CategoryRouting, "rte_cf"))
-	i.Server.Address = &address.Service{Registry: reg, Ports: state.NewPorts(i.db),
+	i.Server.Address = &address.Service{Registry: reg, Ports: state.NewPorts(i.db), Taken: i.Apps,
 		PortRangeStart: 9000, PortRangeEnd: 9019, BaseDomain: "apps.test"}
 
 	admin := i.admin()
@@ -136,6 +136,71 @@ func TestR261_WhoeverEditsAnAppCanSeeWhereItCanMove(t *testing.T) {
 	require.Equal(t, http.StatusCreated, changed.Code, changed.String())
 	i.do(ops, http.MethodGet, "/apps/"+appID+"/routing", nil).JSON(t, &got)
 	require.Equal(t, "https://crew.bemeek.io/", got.NextAddress)
+}
+
+// pinNewest pins an app's newest revision, as a deploy of it would.
+func (i *install) pinNewest(s *session, appID string) reply {
+	i.t.Helper()
+	var list struct {
+		Revisions []struct {
+			Revision int `json:"revision"`
+		} `json:"revisions"`
+	}
+	i.do(s, http.MethodGet, "/apps/"+appID+"/specs", nil).JSON(i.t, &list)
+	require.NotEmpty(i.t, list.Revisions)
+	return i.do(s, http.MethodPost, "/apps/"+appID+"/specs/"+strconv.Itoa(list.Revisions[0].Revision)+"/pin", map[string]any{})
+}
+
+// TestR167_ACustomPathBelongsToOneApp asserts R-167 for chosen paths: one app
+// per path, none inside or around another's, none that takes another app's
+// slug — refused when chosen, and decided when pinned.
+func TestR167_ACustomPathBelongsToOneApp(t *testing.T) {
+	i, admin, _, first := withRouting(t)
+	second := i.appWithSpec(admin, "wiki")
+
+	moved := i.do(admin, http.MethodPut, "/apps/"+first+"/routing",
+		map[string]any{"mode": "path", "path_prefix": "/team/notes", "confirm": true})
+	require.Equal(t, http.StatusCreated, moved.Code, moved.String())
+	pinned := i.pinNewest(admin, first)
+	require.Equal(t, http.StatusOK, pinned.Code, pinned.String())
+
+	var got struct {
+		Address string `json:"address"`
+	}
+	i.do(admin, http.MethodGet, "/apps/"+first+"/routing", nil).JSON(t, &got)
+	require.Equal(t, "/team/notes/", got.Address)
+
+	for _, clash := range []string{"/team/notes", "/team/notes/x", "/team"} {
+		refused := i.do(admin, http.MethodPut, "/apps/"+second+"/routing",
+			map[string]any{"mode": "path", "path_prefix": clash, "confirm": true})
+		require.Equal(t, http.StatusConflict, refused.Code, clash+": "+refused.String())
+		require.Equal(t, "STATE_ADDRESS_TAKEN", refused.ErrorCode(), clash)
+	}
+
+	var firstApp struct {
+		Slug string `json:"slug"`
+	}
+	i.do(admin, http.MethodGet, "/apps/"+first, nil).JSON(t, &firstApp)
+	refused := i.do(admin, http.MethodPut, "/apps/"+second+"/routing",
+		map[string]any{"mode": "path", "path_prefix": "/" + firstApp.Slug, "confirm": true})
+	require.Equal(t, http.StatusConflict, refused.Code, "another app's slug: "+refused.String())
+
+	reserved := i.do(admin, http.MethodPut, "/apps/"+second+"/routing",
+		map[string]any{"mode": "path", "path_prefix": "/api/wiki", "confirm": true})
+	require.Equal(t, http.StatusBadRequest, reserved.Code, reserved.String())
+
+	ok := i.do(admin, http.MethodPut, "/apps/"+second+"/routing",
+		map[string]any{"mode": "path", "path_prefix": "/team-wiki", "confirm": true})
+	require.Equal(t, http.StatusCreated, ok.Code, ok.String())
+	require.Equal(t, http.StatusOK, i.pinNewest(admin, second).Code)
+
+	// Decided at the pin too: a spec written whole, past the early check,
+	// is still refused there.
+	whole := minimalSpec()
+	whole["routing"] = map[string]any{"adapter_ref": "rte_loopback", "mode": "path", "path_prefix": "/team/notes"}
+	i.writeSpec(admin, second, whole)
+	conflict := i.pinNewest(admin, second)
+	require.Equal(t, http.StatusConflict, conflict.Code, conflict.String())
 }
 
 // TestR163_AnOperatorCannotMoveAnAppOffTheAdaptersDefaultMode asserts R-163

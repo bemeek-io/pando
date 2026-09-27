@@ -523,6 +523,7 @@ func serve(ctx context.Context, configPath string) error {
 		Address: &address.Service{
 			Registry:       registry,
 			Ports:          state.NewPorts(db),
+			Taken:          apps,
 			PortRangeStart: cfg.Server.PortRangeStart,
 			PortRangeEnd:   cfg.Server.PortRangeEnd,
 			BaseDomain:     cfg.Server.BaseDomain,
