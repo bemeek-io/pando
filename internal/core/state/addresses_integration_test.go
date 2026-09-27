@@ -11,6 +11,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/bemeek-io/pando/internal/proxy"
 )
 
 // pinRouting pins a revision of app with the given routing.
@@ -45,6 +46,12 @@ func TestR167_APathIsFoundByItsLongestPrefix(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, notes.ID, app.ID)
+	require.Equal(t, "/team/notes", prefix)
+
+	// The same lookup as the proxy makes it.
+	_, _, prefix, found, err = proxy.NewStateResolver(apps).ByPath(ctx, "/team/notes")
+	require.NoError(t, err)
+	require.True(t, found)
 	require.Equal(t, "/team/notes", prefix)
 
 	for _, miss := range []string{"/team/notes-archive", "/team", "/Team/notes/x", "/other"} {

@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -15,6 +17,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/address"
 	"github.com/bemeek-io/pando/internal/core/spec"
 	"github.com/bemeek-io/pando/internal/core/state"
+	"github.com/bemeek-io/pando/internal/httpapi"
 )
 
 type routingStub struct {
@@ -201,6 +204,70 @@ func TestR167_ACustomPathBelongsToOneApp(t *testing.T) {
 	i.writeSpec(admin, second, whole)
 	conflict := i.pinNewest(admin, second)
 	require.Equal(t, http.StatusConflict, conflict.Code, conflict.String())
+}
+
+// doRaw is do with a body sent exactly as given, for a request that is not
+// JSON at all.
+func (i *install) doRaw(s *session, method, path, body string) reply {
+	i.t.Helper()
+	req := httptest.NewRequest(method, "/api/v1"+path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if s != nil && s.cookie != "" {
+		req.Header.Set("Cookie", httpapi.SessionCookie+"="+s.cookie)
+	}
+	rec := httptest.NewRecorder()
+	i.handler.ServeHTTP(rec, req)
+	return reply{Code: rec.Code, Body: rec.Body.Bytes(), Hdr: rec.Header()}
+}
+
+// TestTheRoutingEndpointsRefuseWhatTheyCannotDo covers each refusal, and the
+// request that changes nothing.
+func TestTheRoutingEndpointsRefuseWhatTheyCannotDo(t *testing.T) {
+	i, admin, ops, appID := withRouting(t)
+
+	// Named as an administrator named it, where there is a name.
+	require.NoError(t, i.Adapters.Upsert(context.Background(), state.AdapterConfig{
+		ID: "rte_cf", Category: "routing", Kind: "cloudflare", Name: "Cloudflare", Enabled: true}))
+	var view struct {
+		Options []struct {
+			AdapterRef string `json:"adapter_ref"`
+			Name       string `json:"name"`
+		} `json:"options"`
+	}
+	i.do(ops, http.MethodGet, "/apps/"+appID+"/routing", nil).JSON(t, &view)
+	names := map[string]string{}
+	for _, o := range view.Options {
+		names[o.AdapterRef] = o.Name
+	}
+	require.Equal(t, "Cloudflare", names["rte_cf"])
+	require.Equal(t, "rte_loopback", names["rte_loopback"], "no stored name, so its ID")
+
+	// Somebody with no grant on the app cannot learn it exists.
+	stranger := i.user("stranger")
+	require.Equal(t, http.StatusNotFound, i.do(stranger, http.MethodGet, "/apps/"+appID+"/routing", nil).Code)
+	require.Equal(t, http.StatusNotFound, i.do(stranger, http.MethodPut, "/apps/"+appID+"/routing", map[string]any{}).Code)
+
+	unchanged := i.do(ops, http.MethodPut, "/apps/"+appID+"/routing", map[string]any{})
+	require.Equal(t, http.StatusOK, unchanged.Code, unchanged.String())
+	require.Contains(t, unchanged.String(), `"changed":false`)
+
+	garbled := i.doRaw(ops, http.MethodPut, "/apps/"+appID+"/routing", "{")
+	require.Equal(t, http.StatusBadRequest, garbled.Code, garbled.String())
+
+	unknown := i.do(ops, http.MethodPut, "/apps/"+appID+"/routing", map[string]any{"adapter_ref": "rte_gone", "confirm": true})
+	require.Equal(t, http.StatusBadRequest, unknown.Code, unknown.String())
+
+	draft := i.createApp(admin, "draft")
+	notYet := i.do(admin, http.MethodPut, "/apps/"+draft+"/routing", map[string]any{"confirm": true})
+	require.Equal(t, http.StatusBadRequest, notYet.Code, notYet.String())
+	require.Contains(t, notYet.String(), "isn't configured yet")
+	require.Equal(t, http.StatusOK, i.do(admin, http.MethodGet, "/apps/"+draft+"/routing", nil).Code)
+
+	i.Server.Address = nil
+	off := i.do(ops, http.MethodPut, "/apps/"+appID+"/routing", map[string]any{"confirm": true})
+	require.Equal(t, http.StatusInternalServerError, off.Code)
+	require.Equal(t, http.StatusOK, i.do(ops, http.MethodGet, "/apps/"+appID+"/routing", nil).Code,
+		"reading still works, with nothing to choose from")
 }
 
 // TestR163_AnOperatorCannotMoveAnAppOffTheAdaptersDefaultMode asserts R-163

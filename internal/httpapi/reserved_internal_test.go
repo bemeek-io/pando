@@ -53,3 +53,8 @@ func TestR167_EveryPandoPathIsReserved(t *testing.T) {
 
 	require.Error(t, spec.CheckPathPrefix("/api"), "and the check refuses them")
 }
+
+func TestAnAddressReadsAsASentence(t *testing.T) {
+	require.Equal(t, "no address", describeAddress(""))
+	require.Equal(t, "https://n.test/", describeAddress("https://n.test/"))
+}
