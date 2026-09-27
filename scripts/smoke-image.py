@@ -67,7 +67,9 @@ def api(method, path, body=None):
         return code, {"raw": raw[:500]}
 
 
-def wait(what, fn, timeout, every=3):
+# Once a second: every check is a request to a server on this machine, and a
+# longer interval was only ever time spent after the thing had happened.
+def wait(what, fn, timeout, every=1):
     deadline = time.time() + timeout
     last = None
     while time.time() < deadline:
@@ -149,7 +151,7 @@ def run(args):
     def deployed():
         _, dd = api("GET", f"/apps/{app_id}/deployments/{dep['id']}")
         return dd.get("status") in ("succeeded", "failed", "canceled"), dd
-    dd = wait("the deploy did not finish", deployed, 420, every=5)
+    dd = wait("the deploy did not finish", deployed, 420)
     if dd.get("status") != "succeeded":
         raise SystemExit(f"FAIL: the deploy ended {dd.get('status')}: {json.dumps(dd)[:800]}")
     step("deployed")
