@@ -141,25 +141,16 @@ func connectAsApp(ctx context.Context, ownerURL string, appPassword secret.Value
 }
 
 // readSchemaVersion is the migration a database is at, for one that was not
-// migrated by this call. Zero when it has never been migrated.
+// migrated by this call.
+//
+// A database that was never migrated is an error here rather than version
+// zero: nothing Pando does next — granting on its tables, checking the audit
+// log — can succeed on it either.
 func readSchemaVersion(ctx context.Context, owner *pgxpool.Pool) (uint, error) {
-	// Two queries, because a name in a query is resolved before any WHERE
-	// runs: one statement that guarded the table's existence would still fail
-	// on a database without it.
-	var migrated bool
-	if err := owner.QueryRow(ctx, `SELECT to_regclass('schema_migrations') IS NOT NULL`).Scan(&migrated); err != nil {
-		return 0, errs.Wrap(errs.Internal, "Could not read the database schema version.", err)
-	}
-	if !migrated {
-		return 0, nil
-	}
 	var version int64
-	err := owner.QueryRow(ctx, `SELECT version FROM schema_migrations LIMIT 1`).Scan(&version)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, errs.Wrap(errs.Internal, "Could not read the database schema version.", err)
+	if err := owner.QueryRow(ctx, `SELECT version FROM schema_migrations LIMIT 1`).Scan(&version); err != nil {
+		return 0, errs.Wrap(errs.Internal, "Could not read the database schema version.", err).
+			WithRemedy("Run `pando migrate` against this database, or start Pando without skipping migrations.")
 	}
 	return uint(version), nil //nolint:gosec // G115: a migration version is a small positive number.
 }
