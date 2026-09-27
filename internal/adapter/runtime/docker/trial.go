@@ -138,6 +138,9 @@ func (a *Adapter) startTrialContainer(ctx context.Context, req api.TrialRequest,
 	if err != nil {
 		return "", errs.Wrap(errs.AdapterFailed, "Could not create the trial container.", err)
 	}
+	if err := a.verifyRuntime(ctx, created.ID, "the trial run"); err != nil {
+		return "", err
+	}
 
 	if err := a.cli.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
 		_ = a.removeContainer(context.WithoutCancel(ctx), created.ID)

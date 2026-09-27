@@ -76,7 +76,7 @@ func (a *Adapter) createNetwork(ctx context.Context, name string, opts network.C
 		if err == nil {
 			return created, nil
 		}
-		if !strings.Contains(strings.ToLower(err.Error()), "overlap") {
+		if !blockTaken(err) {
 			return created, err
 		}
 		if tried++; tried >= attempts {
@@ -84,6 +84,21 @@ func (a *Adapter) createNetwork(ctx context.Context, name string, opts network.C
 		}
 	}
 	return a.cli.NetworkCreate(ctx, name, opts)
+}
+
+// blockTaken reports a refusal that means only "that block is in use", which
+// is a reason to try the next one rather than to fail the deploy.
+//
+// In the engine's words, because nothing else says which refusal it was. Docker
+// answers "Pool overlaps with other one on this address space". Podman
+// checks the host's routes as well as its own networks and answers "subnet …
+// is already used on the host or by another config" — and a block another
+// engine on the same machine holds is exactly what it finds there. Reading
+// only Docker's wording failed every deploy on such a Podman at the first
+// taken block.
+func blockTaken(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "overlap") || strings.Contains(msg, "already used on the host")
 }
 
 // usedSubnets lists every IPv4 subnet any Docker network on this host holds.

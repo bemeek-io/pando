@@ -88,9 +88,33 @@ func TestR255_ARuntimeDockerDoesNotHaveMakesTheAdapterUnavailable(t *testing.T) 
 	require.Zero(t, f.called("GET /info"), "no runtime configured, nothing to check")
 }
 
+// TestR255_PodmanCannotBeTheSandbox asserts that a sandboxed runtime on Podman
+// is refused when the adapter is checked, which is before anything is planned.
+// Podman lists runsc among its runtimes and does not apply it through this API,
+// so the runtimes check alone would have passed.
+func TestR255_PodmanCannotBeTheSandbox(t *testing.T) {
+	ctx := context.Background()
+	podman := respond(http.StatusOK, map[string]any{
+		"Version": "4.9.3", "Components": []any{map[string]any{"Name": "Podman Engine", "Version": "4.9.3"}},
+	})
+
+	f, sandboxed := newFakeDaemon(t, map[string]any{"oci_runtime": "runsc"})
+	f.on("GET /version", podman)
+	f.on("GET /info", respond(http.StatusOK, map[string]any{"Runtimes": map[string]any{"runsc": map[string]any{}}}))
+	err := sandboxed.HealthCheck(ctx)
+	require.Equal(t, errs.AdapterUnavailable, errs.CodeOf(err))
+	require.Contains(t, errs.As(err).Message, "Podman")
+	require.Contains(t, errs.As(err).Remedy, "Clear the container runtime setting")
+
+	f, plain := newFakeDaemon(t, nil)
+	f.on("GET /version", podman)
+	require.NoError(t, plain.HealthCheck(ctx), "Podman under its own runtime is fine")
+}
+
 // createdRuntimes records the OCI runtime of every container the adapter asks
-// the daemon to create.
-func createdRuntimes(f *fakeDaemon) *[]string {
+// the daemon to create, and inspects each as created under the runtime it asked
+// for — as Docker does — unless applied says otherwise.
+func createdRuntimes(f *fakeDaemon, applied ...string) *[]string {
 	var mu sync.Mutex
 	got := &[]string{}
 	f.on("GET /containers/json", respond(http.StatusOK, []any{}))
@@ -105,8 +129,45 @@ func createdRuntimes(f *fakeDaemon) *[]string {
 		mu.Unlock()
 		writeJSON(w, http.StatusCreated, map[string]any{"Id": "c1", "Warnings": []string{}})
 	})
+	f.on("GET /containers/c1/json", func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		runtime := (*got)[len(*got)-1]
+		mu.Unlock()
+		if len(applied) > 0 {
+			runtime = applied[0]
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"Id": "c1", "HostConfig": map[string]any{"Runtime": runtime}})
+	})
+	f.on("DELETE /containers/c1", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	f.on("POST /containers/c1/start", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	return got
+}
+
+// TestR255_AnEngineThatIgnoresTheRuntimeRunsNothing asserts that a container
+// created under a runtime other than the configured one is removed before it
+// starts, for a deploy and for a trial alike.
+//
+// Podman's Docker-compatible API does exactly this: it accepts "runsc",
+// lists runsc among its runtimes so HealthCheck passes, and creates the
+// container under its default ("oci"). Without the check, the adapter reported
+// `sandboxed` and ran the app on the host's kernel.
+func TestR255_AnEngineThatIgnoresTheRuntimeRunsNothing(t *testing.T) {
+	ctx := context.Background()
+	f, a := newFakeDaemon(t, map[string]any{"oci_runtime": "runsc"})
+	createdRuntimes(f, "oci")
+
+	plan := api.BundlePlan{BundleID: "app_01HQ8", Network: api.NetworkPlan{Private: true}}
+	err := a.applyWorkload(ctx, plan, api.WorkloadPlan{Name: "web", Image: "nginx:1"}, "net1")
+	require.Equal(t, errs.AdapterFailed, errs.CodeOf(err))
+	require.Contains(t, errs.As(err).Message, `"runsc"`, "R-105: it names what was asked for")
+	require.Contains(t, errs.As(err).Message, `"oci"`, "and what the engine did instead")
+	require.NotEmpty(t, errs.As(err).Remedy)
+
+	_, err = a.startTrialContainer(ctx, api.TrialRequest{TrialID: "tr1", Image: "nginx:1"}, "net2")
+	require.Equal(t, errs.AdapterFailed, errs.CodeOf(err))
+
+	require.Zero(t, f.called("POST /containers/c1/start"), "nothing ran outside the sandbox")
+	require.Equal(t, 2, f.called("DELETE /containers/c1"), "and what was created is gone")
 }
 
 // TestR255_AppCodeRunsUnderTheConfiguredRuntime asserts that both places an
