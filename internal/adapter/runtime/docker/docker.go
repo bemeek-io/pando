@@ -153,6 +153,18 @@ func (a *Adapter) HealthCheck(ctx context.Context) error {
 	}
 
 	if a.config.OCIRuntime != "" {
+		// Podman lists runtimes it will not apply through this API (engine.go,
+		// verifyRuntime), so asking it which runtimes it has proves nothing.
+		// Refused here, where the planner turns it into a readable refusal
+		// before anything is created, rather than at the first container.
+		if v, err := a.cli.ServerVersion(ctx); err == nil && isPodman(v) {
+			return errs.Newf(errs.AdapterUnavailable,
+				"The Docker runtime is set to start apps with %q, and this is Podman, whose Docker-compatible API does not apply a container runtime.",
+				a.config.OCIRuntime).
+				WithRemedy("Clear the container runtime setting to run apps on Podman under its default runtime. " +
+					"To run apps under gVisor or Kata, use Docker with the runtime registered in /etc/docker/daemon.json.")
+		}
+
 		info, err := a.cli.Info(ctx)
 		if err != nil {
 			return errs.Wrap(errs.AdapterUnavailable, "Could not ask Docker which container runtimes it has.", err)
@@ -466,6 +478,9 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 	if err != nil {
 		return createFailure(w, err)
 	}
+	if err := a.verifyRuntime(ctx, created.ID, w.Name); err != nil {
+		return err
+	}
 
 	// Configuration files, placed before the workload runs.
 	//
@@ -646,7 +661,7 @@ func (a *Adapter) Observe(ctx context.Context, ref api.BundleRef) (api.ObservedB
 		// Healthy stays nil when there is no health check. "No signal" and
 		// "unhealthy" are different states and must not collapse (R-221): an
 		// app with no health check is running, not perpetually degraded.
-		if inspect.State.Health != nil {
+		if reportsHealth(inspect.State.Health) {
 			healthy := inspect.State.Health.Status == "healthy"
 			w.Healthy = &healthy
 		}
@@ -941,16 +956,41 @@ func (a *Adapter) ImportImage(ctx context.Context, r io.Reader) (string, error) 
 // parseLoadedRef pulls the image reference out of Docker's load output, which
 // is a stream of JSON objects whose stream field reads
 // "Loaded image: name:tag".
+//
+// Decoded as JSON rather than cut out of the text. Cutting it out trimmed the
+// exact ending Docker writes — an escaped newline before the closing quote —
+// and Podman writes no newline there, so the reference came back with `"}`
+// on the end and every built image failed to start as an invalid reference.
 func parseLoadedRef(body string) string {
-	const marker = "Loaded image: "
+	dec := json.NewDecoder(strings.NewReader(body))
+	for {
+		var msg struct {
+			Stream string `json:"stream"`
+		}
+		if err := dec.Decode(&msg); err != nil {
+			break
+		}
+		if ref, ok := loadedRef(msg.Stream); ok {
+			return ref
+		}
+	}
+	// Not a JSON stream: read it as text.
 	for _, line := range strings.Split(body, "\n") {
-		if i := strings.Index(line, marker); i >= 0 {
-			rest := line[i+len(marker):]
-			rest = strings.TrimSuffix(strings.TrimSpace(rest), `\n"}`)
-			return strings.Trim(strings.TrimSpace(rest), `"`)
+		if ref, ok := loadedRef(line); ok {
+			return ref
 		}
 	}
 	return ""
+}
+
+func loadedRef(s string) (string, bool) {
+	const marker = "Loaded image: "
+	i := strings.Index(s, marker)
+	if i < 0 {
+		return "", false
+	}
+	ref := strings.TrimSpace(s[i+len(marker):])
+	return ref, ref != ""
 }
 
 func (a *Adapter) Logs(ctx context.Context, ref api.WorkloadRef, opts api.LogOptions) (io.ReadCloser, error) {
@@ -1339,7 +1379,7 @@ func (a *Adapter) matchesPlan(ctx context.Context, containerID string, w api.Wor
 	if inspect.Config == nil {
 		return false, nil
 	}
-	if inspect.Config.Image != w.Image {
+	if !sameImage(inspect.Config.Image, w.Image) {
 		return false, nil
 	}
 	if inspect.Config.Labels[labelFiles] != fileDigest(w.Files) {
@@ -1423,7 +1463,7 @@ func (a *Adapter) settled(ctx context.Context, bundleID, workload string) bool {
 		return true
 	}
 	inspect, err := a.cli.ContainerInspect(ctx, c.ID)
-	if err != nil || inspect.State == nil || !inspect.State.Running || inspect.State.Health == nil {
+	if err != nil || inspect.State == nil || !inspect.State.Running || !reportsHealth(inspect.State.Health) {
 		return true
 	}
 	return inspect.State.Health.Status == "healthy"
