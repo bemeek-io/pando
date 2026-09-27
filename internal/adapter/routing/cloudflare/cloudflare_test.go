@@ -367,21 +367,20 @@ func TestAHostnameOutsideTheZoneIsRefusedWithTheFix(t *testing.T) {
 	var e *errs.Error
 	require.ErrorAs(t, err, &e)
 	require.Contains(t, e.Message, "example.com")
-	require.Contains(t, e.Remedy, "base domain")
+	require.Contains(t, e.Remedy, "ending in example.com")
 }
 
-// TestR254_TLSIsClaimedOnlyWhereCloudflaresCertificateReaches.
-func TestR254_TLSIsClaimedOnlyWhereCloudflaresCertificateReaches(t *testing.T) {
+// TestR162_AppsAreNamedOneLevelBelowTheZone: the zone is the base domain, so
+// every app is where Cloudflare's included certificate reaches, and the
+// console may sit anywhere in the zone.
+func TestR162_AppsAreNamedOneLevelBelowTheZone(t *testing.T) {
 	_, srv := newFake(t)
-	caps, err := configured(t, srv, "").Capabilities(context.Background())
+	caps, err := configured(t, srv, `,"console_hostname":"pando.example.com"`).Capabilities(context.Background())
 	require.NoError(t, err)
+	require.Equal(t, "example.com", caps.BaseDomain)
 	require.True(t, caps.SupportsTLS)
 	require.False(t, caps.RequiresPublicReachability)
 	require.Equal(t, spec.RoutingSubdomain, caps.DefaultMode)
-
-	caps, err = configured(t, srv, `,"base_domain":"apps.example.com"`).Capabilities(context.Background())
-	require.NoError(t, err)
-	require.False(t, caps.SupportsTLS, "*.example.com does not cover notes.apps.example.com")
 }
 
 // TestR190_ATokenStoredInTheClearIsRefused asserts R-190.
@@ -396,10 +395,10 @@ func TestR190_ATokenStoredInTheClearIsRefused(t *testing.T) {
 
 func TestConfigurationMistakesAreNamed(t *testing.T) {
 	cases := map[string]string{
-		`{"account_id":"` + account + `","zone":"example.com"}`:                                                           "API token",
-		`{"account_id":"nope","zone":"example.com","credentials":{"api_token":"t"}}`:                                      "account ID",
-		`{"account_id":"` + account + `","zone":"example.com","tunnel_id":"x","credentials":{"api_token":"t"}}`:           "tunnel ID",
-		`{"account_id":"` + account + `","zone":"example.com","base_domain":"other.org","credentials":{"api_token":"t"}}`: "not in the Cloudflare zone",
+		`{"account_id":"` + account + `","zone":"example.com"}`:                                                                      "API token",
+		`{"account_id":"nope","zone":"example.com","credentials":{"api_token":"t"}}`:                                                 "account ID",
+		`{"account_id":"` + account + `","zone":"example.com","tunnel_id":"x","credentials":{"api_token":"t"}}`:                      "tunnel ID",
+		`{"account_id":"` + account + `","zone":"example.com","console_hostname":"pando.other.org","credentials":{"api_token":"t"}}`: "not in the Cloudflare zone",
 	}
 	for raw, want := range cases {
 		err := New().Configure(context.Background(), json.RawMessage(raw))

@@ -42,16 +42,14 @@ const ManagedComment = "Managed by Pando — changes are reset"
 type Config struct {
 	AccountID string `json:"account_id"`
 
-	// Zone is the Cloudflare zone apps are named in, such as example.com.
+	// Zone is the Cloudflare zone apps are named in, such as example.com. An
+	// app is <app>.<zone>, never deeper: Cloudflare's included certificate
+	// covers *.zone and nothing below it, so a deeper name would have no
+	// HTTPS. There is deliberately no setting for one.
 	Zone string `json:"zone"`
 
-	// BaseDomain is what an app's hostname is carved out of. Empty is the
-	// zone itself. Deeper than the zone costs TLS: Cloudflare's included
-	// certificate covers *.zone and nothing below it.
-	BaseDomain string `json:"base_domain,omitempty"`
-
 	// ConsoleHostname is where the console is served, and the host path-mode
-	// apps are served under. Empty is the base domain.
+	// apps are served under. Empty is the zone itself.
 	ConsoleHostname string `json:"console_hostname,omitempty"`
 
 	// TunnelID attaches to an existing tunnel instead of creating one. Pando
@@ -115,7 +113,6 @@ func (a *Adapter) Configure(_ context.Context, raw json.RawMessage) error {
 	}
 
 	cfg.Zone = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(cfg.Zone), "."))
-	cfg.BaseDomain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(cfg.BaseDomain), "."))
 	cfg.ConsoleHostname = strings.ToLower(strings.TrimSpace(cfg.ConsoleHostname))
 
 	switch {
@@ -129,15 +126,8 @@ func (a *Adapter) Configure(_ context.Context, raw json.RawMessage) error {
 	case cfg.TunnelID != "" && !uuidPattern.MatchString(cfg.TunnelID):
 		return errs.Newf(errs.ValidInvalid, "%q is not a Cloudflare tunnel ID. A tunnel ID looks like 6ff42ae2-765d-4adf-8112-31c55c1551ef.", cfg.TunnelID)
 	}
-	if cfg.BaseDomain == "" {
-		cfg.BaseDomain = cfg.Zone
-	}
-	if !within(cfg.BaseDomain, cfg.Zone) {
-		return errs.Newf(errs.ValidInvalid, "The base domain %s is not in the Cloudflare zone %s.", cfg.BaseDomain, cfg.Zone).
-			WithRemedy("Set a base domain that ends in " + cfg.Zone + ", or leave it empty to use the zone itself.")
-	}
 	if cfg.ConsoleHostname == "" {
-		cfg.ConsoleHostname = cfg.BaseDomain
+		cfg.ConsoleHostname = cfg.Zone
 	}
 	if !within(cfg.ConsoleHostname, cfg.Zone) {
 		return errs.Newf(errs.ValidInvalid, "The console hostname %s is not in the Cloudflare zone %s.", cfg.ConsoleHostname, cfg.Zone)
@@ -160,17 +150,15 @@ func (a *Adapter) HealthCheck(ctx context.Context) error {
 
 // Capabilities: subdomain by default, path under the console hostname (R-164).
 //
-// TLS is Cloudflare's, and its included certificate covers the zone and one
-// level below. A base domain deeper than that gets hostnames no browser will
-// accept, and the adapter says so rather than claiming TLS it cannot give.
+// TLS is Cloudflare's: its included certificate covers the zone and one level
+// below, which is exactly where apps are named.
 func (a *Adapter) Capabilities(context.Context) (api.RoutingCapabilities, error) {
-	covered := a.config.BaseDomain == a.config.Zone
 	return api.RoutingCapabilities{
 		Modes:               []api.RoutingMode{spec.RoutingSubdomain, spec.RoutingPath},
 		DefaultMode:         spec.RoutingSubdomain,
-		BaseDomain:          a.config.BaseDomain,
-		SupportsTLS:         covered,
-		SupportsWildcardTLS: covered,
+		BaseDomain:          a.config.Zone,
+		SupportsTLS:         true,
+		SupportsWildcardTLS: true,
 
 		// The tunnel dials out. Nothing here needs to be reachable.
 		RequiresPublicReachability: false,
@@ -416,7 +404,7 @@ func (a *Adapter) rule(r api.RouteRequest) (ingressRule, error) {
 		if !within(host, a.config.Zone) {
 			return ingressRule{}, errs.Newf(errs.AdapterFailed,
 				"This app's hostname, %s, is not in the Cloudflare zone %s, so the tunnel cannot serve it.", host, a.config.Zone).
-				WithRemedy("Set the app's hostname to one ending in " + a.config.Zone + ", or set Pando's base domain to " + a.config.BaseDomain + ".")
+				WithRemedy("Set the app's hostname to one ending in " + a.config.Zone + ".")
 		}
 		return ingressRule{Hostname: host, Service: r.ProxyUpstream}, nil
 
@@ -553,15 +541,12 @@ func Info() api.KindInfo {
 			{Key: "account_id", Label: "Account ID", Type: "string", Required: true,
 				Help: "Shown on the account's overview page in Cloudflare's dashboard.", Placeholder: "0123456789abcdef0123456789abcdef"},
 			{Key: "zone", Label: "Zone", Type: "string", Required: true,
-				Help: "The domain in Cloudflare that apps are named in. Apps are served at <app>.<zone>.", Placeholder: "example.com"},
+				Help: "Your domain in Cloudflare. Apps are served at <app>.<zone>.", Placeholder: "example.com"},
 			{Key: "console_hostname", Label: "Console hostname", Type: "string",
 				Help: "Where the console is served, and the hostname apps on a path are served under. Empty is the zone itself.", Placeholder: "pando.example.com"},
 			{Key: "tunnel_id", Label: "Existing tunnel", Type: "string",
 				Help:        "Leave empty and Pando creates a tunnel of its own. Or give a tunnel's ID to use that one: Pando adds its rules and leaves the rest alone.",
 				Placeholder: "6ff42ae2-765d-4adf-8112-31c55c1551ef"},
-			{Key: "base_domain", Label: "Base domain", Type: "string",
-				Help:        "Serve apps under a name below the zone instead, such as apps.example.com. Cloudflare's included certificate does not cover names that deep, so apps would have no HTTPS.",
-				Placeholder: "apps.example.com"},
 			{Key: "image", Label: "cloudflared image", Type: "string", Default: DefaultImage,
 				Help: "Set to run a different cloudflared release than this Pando ships with."},
 		},
