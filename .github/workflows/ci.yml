@@ -242,31 +242,20 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - if: steps.dhi.outputs.available == 'true'
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Build date
-        if: steps.dhi.outputs.available == 'true'
-        run: echo "build_date=$(git log -1 --format=%cI)" >> "$GITHUB_ENV"
-
-      # Through buildx for its layer cache, which a plain `docker build` on a
-      # fresh runner does not have: every run downloaded the Go modules, ran
-      # npm ci and compiled from nothing. The same cache the release workflow
-      # writes for its amd64 build.
+      # A plain docker build, deliberately, not buildx with the Actions layer
+      # cache. That was tried (#31): the layers worth caching — npm run build
+      # and the Go build — rerun on any source change, buildx's container
+      # builder ran them about 40% slower than the daemon's, and exporting the
+      # cache added nearly a minute. A pull request's build took 2m52s against
+      # this one's 1m32s.
       - name: Build
         if: steps.dhi.outputs.available == 'true'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          platforms: linux/amd64
-          load: true
-          tags: trypando/pando:0.0.0-ci
-          build-args: |
-            VERSION=0.0.0-ci
-            COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ env.build_date }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        run: |
+          docker build \
+            --build-arg VERSION=0.0.0-ci \
+            --build-arg COMMIT="$GITHUB_SHA" \
+            --build-arg BUILD_DATE="$(git log -1 --format=%cI)" \
+            -t trypando/pando:0.0.0-ci .
 
       - name: Smoke test
         if: steps.dhi.outputs.available == 'true'
