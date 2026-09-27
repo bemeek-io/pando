@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/httpapi"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/httpapi"
 )
 
 type fakeDB struct{ err error }

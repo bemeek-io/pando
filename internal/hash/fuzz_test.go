@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bemeek-io/pando/internal/hash"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/hash"
+	"github.com/trypando/pando/internal/secret"
 )
 
 // FuzzVerifyEncodedHash feeds arbitrary strings to the encoded-hash parser.

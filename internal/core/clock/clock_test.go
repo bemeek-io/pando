@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/clock"
+	"github.com/trypando/pando/internal/core/clock"
 )
 
 func TestSystemClockIsUTC(t *testing.T) {

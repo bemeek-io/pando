@@ -7,14 +7,14 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/clock"
-	"github.com/bemeek-io/pando/internal/core/screening"
-	"github.com/bemeek-io/pando/internal/core/source"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/detect"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/clock"
+	"github.com/trypando/pando/internal/core/screening"
+	"github.com/trypando/pando/internal/core/source"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/detect"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Revising a plan because a person asked (R-336's third trigger, design 10

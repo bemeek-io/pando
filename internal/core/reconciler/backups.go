@@ -6,8 +6,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/core/backup"
-	"github.com/bemeek-io/pando/internal/core/state"
+	"github.com/trypando/pando/internal/core/backup"
+	"github.com/trypando/pando/internal/core/state"
 )
 
 // Rolling per-app backups (R-210, R-211) and expiry.

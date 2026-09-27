@@ -11,8 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/audit"
+	adapterapi "github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/audit"
 )
 
 // blockingScanner is a scanner that holds each scan until the test lets it go.

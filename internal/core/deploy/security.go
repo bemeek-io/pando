@@ -6,11 +6,11 @@ import (
 	"io"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/audit"
-	"github.com/bemeek-io/pando/internal/core/security"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/core/state"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/audit"
+	"github.com/trypando/pando/internal/core/security"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/state"
 )
 
 // The security score, in the deploy path (R-312, R-314, design 09 §4.1).

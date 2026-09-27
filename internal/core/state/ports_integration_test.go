@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/id"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/id"
 )
 
 // O-15: ports are allocated, not derived.

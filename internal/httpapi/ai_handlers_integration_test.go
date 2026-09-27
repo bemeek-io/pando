@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/errs"
+	adapterapi "github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // failingAI is an AI adapter that is reached and fails at every

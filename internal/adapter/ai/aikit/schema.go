@@ -1,7 +1,7 @@
 package aikit
 
 import (
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // itemSchema is what one submitted amendment may look like for fn.

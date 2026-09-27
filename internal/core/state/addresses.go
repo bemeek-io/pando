@@ -7,8 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Where each app is reached: apps.address_hostname and apps.address_path,

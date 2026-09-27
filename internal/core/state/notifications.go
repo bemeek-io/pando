@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/id"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/id"
 )
 
 // Notifications stores console notifications (R-231).

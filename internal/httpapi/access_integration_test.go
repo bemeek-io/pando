@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/bootstrap"
+	"github.com/trypando/pando/internal/core/bootstrap"
 )
 
 // --- accounts --------------------------------------------------------------

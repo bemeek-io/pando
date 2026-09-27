@@ -7,11 +7,11 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/core/authz"
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/log"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/log"
+	"github.com/trypando/pando/internal/secret"
 )
 
 type ctxKeyPrincipal struct{}

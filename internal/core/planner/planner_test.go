@@ -10,12 +10,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	servicesdocker "github.com/bemeek-io/pando/internal/adapter/services/docker"
-	"github.com/bemeek-io/pando/internal/core/planner"
-	"github.com/bemeek-io/pando/internal/core/policy"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	servicesdocker "github.com/trypando/pando/internal/adapter/services/docker"
+	"github.com/trypando/pando/internal/core/planner"
+	"github.com/trypando/pando/internal/core/policy"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // --- adapter doubles -------------------------------------------------------

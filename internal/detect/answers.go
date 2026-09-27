@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Question keys detection produces. Answers are matched back by these, so they

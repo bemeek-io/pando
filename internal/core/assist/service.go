@@ -9,12 +9,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/audit"
-	"github.com/bemeek-io/pando/internal/core/authz"
-	"github.com/bemeek-io/pando/internal/core/policy"
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/audit"
+	"github.com/trypando/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/core/policy"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // MaxAsk is the longest description or question accepted, in characters. A

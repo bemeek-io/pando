@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/httpapi"
+	"github.com/trypando/pando/internal/httpapi"
 )
 
 // rawJSON sends a body that is not the JSON the endpoint wants.

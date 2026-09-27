@@ -9,11 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/clock"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/clock"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // In-package, because teardown is the one part of the janitor that destroys

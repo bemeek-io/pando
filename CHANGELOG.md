@@ -48,11 +48,19 @@ Unreleased above it. -->
   questions and plan revision on upgrade; the new functions start off.
 - Pando sets a `pando_visit_<app>` cookie on responses from apps, to recognize a visit. Like every
   cookie named `pando_…`, it never reaches the app.
+- Pando moved to the `trypando` GitHub organization. The repository is
+  `github.com/trypando/pando`, the Go module path is `github.com/trypando/pando`, and the Homebrew tap
+  is `trypando/tap/pando`. Old `github.com/bemeek-io/...` URLs redirect.
 
 ### Upgrade notes
 
 - An install with more than one AI adapter of the same provider must remove all but one before
   upgrading; the migration stops with a message naming the provider otherwise.
+- `go install github.com/bemeek-io/pando/cmd/pando@latest` keeps installing the last version
+  released before the move. Use `go install github.com/trypando/pando/cmd/pando@latest`.
+- A Homebrew install from the old tap: `brew untap bemeek-io/tap && brew install trypando/tap/pando`.
+- `cosign` verification in `docs/releasing.md` accepts both the old and the new signing identity, so
+  releases from before the move still verify.
 
 ## [0.3.0] - 2026-09-24
 
@@ -462,7 +470,7 @@ review the proposal as usual.
 The first release. Its notes were generated from the commit log, which is what this file now exists
 to replace; see the release page for the artifact list.
 
-[Unreleased]: https://github.com/bemeek-io/pando/compare/v0.2.0...main
-[0.2.0]: https://github.com/bemeek-io/pando/compare/v0.1.1...v0.2.0
-[0.1.1]: https://github.com/bemeek-io/pando/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/bemeek-io/pando/releases/tag/v0.1.0
+[Unreleased]: https://github.com/trypando/pando/compare/v0.2.0...main
+[0.2.0]: https://github.com/trypando/pando/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/trypando/pando/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/trypando/pando/releases/tag/v0.1.0

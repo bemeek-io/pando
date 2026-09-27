@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // The tools a repair, an answering or a revision call gets: two to read the

@@ -8,9 +8,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/bemeek-io/pando/internal/core/backup"
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/id"
+	"github.com/trypando/pando/internal/core/backup"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/id"
 )
 
 // Backups records what has been backed up and where (design 02 §2.8).

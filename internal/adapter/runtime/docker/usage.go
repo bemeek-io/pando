@@ -12,8 +12,8 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/volume"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // volumeSizesFor is how long a reading of volume sizes is reused. Docker

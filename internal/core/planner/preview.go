@@ -3,10 +3,10 @@ package planner
 import (
 	"context"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/policy"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/policy"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Inventory is every live app, with what a policy preview needs to judge it.

@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 type stubAI struct{ base }

@@ -7,11 +7,11 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/audit"
-	"github.com/bemeek-io/pando/internal/core/policy"
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/audit"
+	"github.com/trypando/pando/internal/core/policy"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Service runs scans and answers "where does this app stand".

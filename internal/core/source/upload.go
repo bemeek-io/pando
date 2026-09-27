@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Uploaded source (R-262).

@@ -10,9 +10,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/edge"
-	"github.com/bemeek-io/pando/internal/core/state"
+	adapterapi "github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/edge"
+	"github.com/trypando/pando/internal/core/state"
 )
 
 type edgeRouting struct{ adapterapi.RoutingAdapter }

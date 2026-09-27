@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/bemeek-io/pando/internal/core/authz"
-	"github.com/bemeek-io/pando/internal/reference"
+	"github.com/trypando/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/reference"
 )
 
 // The API's own description (R-261).

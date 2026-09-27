@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/mcp"
+	"github.com/trypando/pando/internal/mcp"
 )
 
 // A command's subcommands are nested under it, and a flag is rendered with its
@@ -81,7 +81,7 @@ func TestTheMCPPageMarksOptionalArguments(t *testing.T) {
 // is genuinely theirs — which release — as a shell variable above the command.
 func TestR002_TheInstallRecipesAreRunnableAsPrinted(t *testing.T) {
 	in := Install{
-		Download: "https://github.com/bemeek-io/pando/releases/download/v<version>/",
+		Download: "https://github.com/trypando/pando/releases/download/v<version>/",
 		Package:  "pando_<version>_linux_<arch>.<format>",
 		Archive:  "pando_<version>_<os>_<arch>.tar.gz",
 	}

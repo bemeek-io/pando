@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/spec"
 )
 
 // installDefaults is a filled-in Defaults, so a test can assert that a field

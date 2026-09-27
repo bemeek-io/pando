@@ -1,4 +1,4 @@
-module github.com/bemeek-io/pando
+module github.com/trypando/pando
 
 go 1.27.1
 

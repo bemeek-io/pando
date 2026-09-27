@@ -15,12 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/core/assertion"
-	"github.com/bemeek-io/pando/internal/core/audit"
-	"github.com/bemeek-io/pando/internal/core/authz"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/proxy"
+	"github.com/trypando/pando/internal/core/assertion"
+	"github.com/trypando/pando/internal/core/audit"
+	"github.com/trypando/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/proxy"
 )
 
 // auditLog records what the proxy writes.

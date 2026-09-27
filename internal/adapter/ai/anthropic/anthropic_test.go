@@ -11,9 +11,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	anthropicadapter "github.com/bemeek-io/pando/internal/adapter/ai/anthropic"
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/secret"
+	anthropicadapter "github.com/trypando/pando/internal/adapter/ai/anthropic"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/secret"
 )
 
 type memSource map[string]string

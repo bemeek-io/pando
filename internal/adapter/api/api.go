@@ -5,8 +5,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/secret"
 )
 
 // IsolationClass is ordered, so policy floors can be compared (R-114, R-255).

@@ -1,4 +1,4 @@
 # Everything a run writes: state, logs, results, reports, and the clone of the
-# test sources (bemeek-io/pando-qa-fixtures).
+# test sources (trypando/pando-qa-fixtures).
 /out/
 __pycache__/

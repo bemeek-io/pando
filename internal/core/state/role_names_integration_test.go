@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/authz"
-	"github.com/bemeek-io/pando/internal/core/state"
+	"github.com/trypando/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/core/state"
 )
 
 // TestR082_ACustomRoleCannotTakeAnExistingRolesName asserts role names are

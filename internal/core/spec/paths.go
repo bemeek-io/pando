@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // ReservedPaths are the first path segments Pando answers itself, on every

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/core/authz"
 )
 
 // TestR261_EveryRouteIsDocumented is the mechanism that keeps the reference

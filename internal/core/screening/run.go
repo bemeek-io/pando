@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // Default budget (R-339). Overridden downward by an adapter's own capabilities

@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/secret"
 )
 
 const canary = "hunter2-THE-ACTUAL-SECRET"

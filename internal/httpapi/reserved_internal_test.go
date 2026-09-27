@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/spec"
 )
 
 // TestR167_EveryPandoPathIsReserved asserts that no app can be given a path

@@ -9,9 +9,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/bemeek-io/pando/internal/core/planner"
-	"github.com/bemeek-io/pando/internal/core/policy"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/core/planner"
+	"github.com/trypando/pando/internal/core/policy"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // AdapterConfig is a configured adapter instance.

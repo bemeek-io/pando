@@ -8,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/ai/aikit"
-	"github.com/bemeek-io/pando/internal/adapter/ai/aikit/aitest"
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/ai/aikit"
+	"github.com/trypando/pando/internal/adapter/ai/aikit/aitest"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // TestSystemPromptDiffersByFunction asserts each screening function gets its

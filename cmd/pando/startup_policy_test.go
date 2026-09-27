@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/config"
+	"github.com/trypando/pando/internal/config"
 )
 
 // R-271: a startup policy that would not do what it says stops startup — an

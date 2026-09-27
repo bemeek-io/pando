@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/bemeek-io/pando/internal/core/address"
-	"github.com/bemeek-io/pando/internal/core/audit"
-	"github.com/bemeek-io/pando/internal/core/authz"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/core/address"
+	"github.com/trypando/pando/internal/core/audit"
+	"github.com/trypando/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // handleSetRouting changes where a configured app is reached (R-162, R-163,

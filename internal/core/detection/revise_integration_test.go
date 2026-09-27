@@ -9,12 +9,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
-	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/detect"
-	"github.com/bemeek-io/pando/internal/errs"
+	adapterapi "github.com/trypando/pando/internal/adapter/api"
+	corepolicy "github.com/trypando/pando/internal/core/policy"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/detect"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // reviser is an AI adapter that revises plans, as a test needs it to.

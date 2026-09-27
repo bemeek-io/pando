@@ -3,8 +3,8 @@ package anthropic
 import (
 	"github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/bemeek-io/pando/internal/adapter/ai/aikit"
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/ai/aikit"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // tools are aikit's screening tools as the Messages API takes them. The tools

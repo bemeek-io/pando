@@ -6,10 +6,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/id"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/id"
+	"github.com/trypando/pando/internal/secret"
 )
 
 // Secrets stores an app's secret values through a secrets adapter.

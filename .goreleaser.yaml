@@ -99,7 +99,7 @@ changelog:
       - '^test:'
       - '^chore:'
 
-# brew install bemeek-io/tap/pando
+# brew install trypando/tap/pando
 #
 # A tap rather than homebrew-core: core has notability requirements a new
 # project does not meet, and core builds from source, which for Pando means a
@@ -109,12 +109,12 @@ homebrew_casks:
   - name: pando
     ids: [pando]
     repository:
-      owner: bemeek-io
+      owner: trypando
       name: homebrew-tap
       # A PAT with contents:write on the tap repository. The default
       # GITHUB_TOKEN cannot push to another repository.
       token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
-    homepage: https://github.com/bemeek-io/pando
+    homepage: https://github.com/trypando/pando
     description: Deploy applications to a host you own
     license: AGPL-3.0-only
     binaries:
@@ -146,7 +146,7 @@ nfpms:
     # checks the documentation against this line.
     file_name_template: '{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     vendor: Bemeek
-    homepage: https://github.com/bemeek-io/pando
+    homepage: https://github.com/trypando/pando
     maintainer: Ben Meeker <ben@benmeeker.com>
     description: |
       Deploy applications to a host you own.
@@ -168,7 +168,7 @@ nfpms:
 
 release:
   github:
-    owner: bemeek-io
+    owner: trypando
     name: pando
   # A tag with a suffix (v1.0.0-rc.1) is published as a prerelease, and a
   # prerelease is not what `brew upgrade` or a package manager should pick up.

@@ -9,10 +9,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/config"
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/secret"
+	adapterapi "github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/config"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/secret"
 )
 
 // TestO20_AnAdapterStartsFromAnEncryptedCredentialOnly asserts O-20's

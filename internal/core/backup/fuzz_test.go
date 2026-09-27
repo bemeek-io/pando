@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/bemeek-io/pando/internal/core/backup"
+	"github.com/trypando/pando/internal/core/backup"
 )
 
 // Header layout, from the format comment in crypt.go: 8 bytes of magic, 16 of

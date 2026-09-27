@@ -13,8 +13,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/httpapi"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/httpapi"
 )
 
 // --- deployments -----------------------------------------------------------

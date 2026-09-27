@@ -4,7 +4,7 @@
 
 Report vulnerabilities privately through GitHub's advisory form:
 
-**<https://github.com/bemeek-io/pando/security/advisories/new>**
+**<https://github.com/trypando/pando/security/advisories/new>**
 
 That form is private between you and the maintainers until an advisory is published. Do not open a
 public issue for a vulnerability, and do not report one in a pull request — a pull request that fixes

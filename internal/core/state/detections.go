@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Detection statuses. The first is Pando's; the rest come from the auction.

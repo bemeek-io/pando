@@ -7,8 +7,8 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/bemeek-io/pando/internal/adapter/ai/aikit"
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/ai/aikit"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // RepairPlan reads a failed proposal and proposes amendments that might make

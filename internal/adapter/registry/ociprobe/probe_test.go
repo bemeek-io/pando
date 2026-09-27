@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/registry/ociprobe"
-	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/adapter/registry/ociprobe"
+	"github.com/trypando/pando/internal/core/spec"
 )
 
 // registry stands in for ghcr.io and hub.docker.com. The probe's URLs are

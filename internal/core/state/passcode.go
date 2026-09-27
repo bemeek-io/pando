@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Public with a passcode (R-075a): the anonymous grant carries an argon2id

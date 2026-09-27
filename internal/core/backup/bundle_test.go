@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/backup"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/core/backup"
+	"github.com/trypando/pando/internal/errs"
 )
 
 func build(t *testing.T) []byte {

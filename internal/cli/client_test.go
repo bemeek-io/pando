@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/cli"
+	"github.com/trypando/pando/internal/cli"
 )
 
 // isolateConfig points XDG_CONFIG_HOME at a temporary directory, so a test

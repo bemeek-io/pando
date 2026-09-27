@@ -8,11 +8,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/bemeek-io/pando/internal/core/authz"
-	"github.com/bemeek-io/pando/internal/core/planner"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/id"
+	"github.com/trypando/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/core/planner"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/id"
 )
 
 // App lifecycle states (design 05 §1.1).

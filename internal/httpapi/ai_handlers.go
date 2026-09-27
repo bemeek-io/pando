@@ -7,12 +7,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/assist"
-	"github.com/bemeek-io/pando/internal/core/audit"
-	"github.com/bemeek-io/pando/internal/core/authz"
-	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/assist"
+	"github.com/trypando/pando/internal/core/audit"
+	"github.com/trypando/pando/internal/core/authz"
+	corepolicy "github.com/trypando/pando/internal/core/policy"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // handleListAIFunctions reports every AI function, which adapter handles it

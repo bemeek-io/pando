@@ -9,8 +9,8 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
 
-	"github.com/bemeek-io/pando/internal/adapter/ai/aikit"
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/ai/aikit"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // errDone ends a conversation from inside a call handler: the model answered.

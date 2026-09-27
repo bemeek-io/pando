@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/policy"
+	"github.com/trypando/pando/internal/core/policy"
 )
 
 func env(key, value string) policy.Setting {

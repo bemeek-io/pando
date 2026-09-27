@@ -9,10 +9,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/adapter/secrets/local"
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/secrets/local"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/secret"
 )
 
 func keyConfig(t *testing.T, path string) json.RawMessage {

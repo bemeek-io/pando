@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/hash"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/hash"
 )
 
 // Kind is the adapter's kind string.

@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/config"
-	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/config"
+	"github.com/trypando/pando/internal/core/spec"
 )
 
 // TestR240_TheHostSetsWhatEveryNewAppIsGiven asserts R-240.

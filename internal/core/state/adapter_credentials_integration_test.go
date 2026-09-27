@@ -11,9 +11,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	secretslocal "github.com/bemeek-io/pando/internal/adapter/secrets/local"
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/secret"
+	secretslocal "github.com/trypando/pando/internal/adapter/secrets/local"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/secret"
 )
 
 func credentialStore(t *testing.T, db *state.DB) *state.AdapterCredentials {

@@ -25,7 +25,7 @@ from lib import cleanup, state  # noqa: E402
 
 # Every test source: the generated apps and the lists of public repositories and
 # images. Pinned so a run is reproducible; move the pin to pick up changes there.
-FIXTURES_REPO = "https://github.com/bemeek-io/pando-qa-fixtures"
+FIXTURES_REPO = "https://github.com/trypando/pando-qa-fixtures"
 FIXTURES_REF = "d4597f7bc0ee5063b173ee660fccbec768a92d9e"
 SENTINEL_LABEL = "io.pando.qa.sentinel"
 MIN_FREE_GB = 40

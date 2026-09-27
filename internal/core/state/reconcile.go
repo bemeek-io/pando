@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Reconcilable is an app the loop should look at, with the bookkeeping it needs.

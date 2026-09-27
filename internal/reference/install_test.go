@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/bemeek-io/pando/internal/reference"
+	"github.com/trypando/pando/internal/reference"
 )
 
 // TestInstallInstructionsMatchWhatATagPublishes keeps the install page honest.

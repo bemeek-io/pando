@@ -8,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/screening"
-	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/screening"
+	"github.com/trypando/pando/internal/core/spec"
 )
 
 // Every amendment kind, landing and refused. The closed set (R-332) is only a

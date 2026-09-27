@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // TestR259_AnAssignedModelIsTheModelThatRuns asserts R-259: a call runs on

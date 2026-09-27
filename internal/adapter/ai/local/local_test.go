@@ -14,9 +14,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/ai/aikit/aitest"
-	localadapter "github.com/bemeek-io/pando/internal/adapter/ai/local"
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/ai/aikit/aitest"
+	localadapter "github.com/trypando/pando/internal/adapter/ai/local"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // fakeServer stands in for an OpenAI-compatible server such as Ollama.

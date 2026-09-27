@@ -6,11 +6,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/adapter/identity/local"
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/hash"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/identity/local"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/hash"
+	"github.com/trypando/pando/internal/secret"
 )
 
 type users map[string]local.Record

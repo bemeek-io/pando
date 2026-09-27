@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Idempotency for infrastructure-creating requests.

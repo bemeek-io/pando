@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/secret"
 )
 
 func secretOf(s string) secret.Value { return secret.New(s) }

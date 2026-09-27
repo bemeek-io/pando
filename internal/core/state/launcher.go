@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/id"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/id"
 )
 
 // Launcher sections (R-342): groupings a person makes in their own launcher.

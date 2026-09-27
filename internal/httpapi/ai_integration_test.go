@@ -10,9 +10,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/config"
-	"github.com/bemeek-io/pando/internal/errs"
+	adapterapi "github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/config"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // fakeAI is an AI adapter whose answers a test sets, and which records what it

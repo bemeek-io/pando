@@ -46,17 +46,17 @@ linters:
           files:
             - '**/internal/adapter/**'
           deny:
-            - pkg: github.com/bemeek-io/pando/internal/core/authz
+            - pkg: github.com/trypando/pando/internal/core/authz
               desc: 'R-027: adapters must not import core/authz. Core authorizes; adapters translate.'
-            - pkg: github.com/bemeek-io/pando/internal/core/audit
+            - pkg: github.com/trypando/pando/internal/core/audit
               desc: 'R-027: adapters must not import core/audit. The audit log is written by core only.'
-            - pkg: github.com/bemeek-io/pando/internal/core/state
+            - pkg: github.com/trypando/pando/internal/core/state
               desc: 'R-027: adapters must not import core/state. Adapters receive fully-resolved requests.'
-            - pkg: github.com/bemeek-io/pando/internal/core/policy
+            - pkg: github.com/trypando/pando/internal/core/policy
               desc: 'R-027: adapters must not evaluate policy. The planner does, before the adapter is called.'
-            - pkg: github.com/bemeek-io/pando/internal/core/detection
+            - pkg: github.com/trypando/pando/internal/core/detection
               desc: 'R-027: adapters must not import core/detection. It orchestrates them; the dependency runs one way.'
-            - pkg: github.com/bemeek-io/pando/internal/detect
+            - pkg: github.com/trypando/pando/internal/detect
               desc: 'R-027: adapters must not import internal/detect. A type an adapter and detection both need belongs in internal/adapter/api, which is the only core-adjacent package an adapter may import. The OCI registry probe reached across this before the rule existed.'
 
         # The adapter interface package is a contract, not a place for logic
@@ -74,9 +74,9 @@ linters:
           files:
             - '**/internal/adapter/api/**'
           deny:
-            - pkg: github.com/bemeek-io/pando/internal/core/planner
+            - pkg: github.com/trypando/pando/internal/core/planner
               desc: 'internal/adapter/api holds interface definitions only (design 03).'
-            - pkg: github.com/bemeek-io/pando/internal/core/reconciler
+            - pkg: github.com/trypando/pando/internal/core/reconciler
               desc: 'internal/adapter/api holds interface definitions only (design 03).'
 
   exclusions:

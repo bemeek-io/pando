@@ -8,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/bootstrap"
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/httpapi"
+	"github.com/trypando/pando/internal/core/bootstrap"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/httpapi"
 )
 
 // R-046: the first run creates one administrative account, and it must change

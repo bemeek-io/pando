@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/spec"
 )
 
 // Config is Pando's configuration, from YAML, environment, and flags (R-271).

@@ -8,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/adapter/identity/local"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/identity/local"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // R-041: the local adapter is what a fresh install authenticates against, and

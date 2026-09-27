@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/spec"
 )
 
 // A draft with nothing left to run is only backing services when it provisions

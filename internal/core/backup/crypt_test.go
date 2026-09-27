@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/backup"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/core/backup"
+	"github.com/trypando/pando/internal/secret"
 )
 
 func pass(s string) secret.Value { return secret.New(s) }

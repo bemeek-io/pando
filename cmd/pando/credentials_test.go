@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/secret"
 )
 
 // TestO20_CredentialsReachTheAdapterInMemoryOnly asserts the startup half of

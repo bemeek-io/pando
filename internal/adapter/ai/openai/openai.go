@@ -21,8 +21,8 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/secret"
 )
 
 // Kind is what adapter_configs stores.

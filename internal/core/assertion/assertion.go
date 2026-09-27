@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/core/clock"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/core/clock"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Lifetime is how long an assertion is valid (R-055).

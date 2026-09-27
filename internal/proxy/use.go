@@ -11,9 +11,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/core/audit"
-	"github.com/bemeek-io/pando/internal/core/authz"
-	"github.com/bemeek-io/pando/internal/log"
+	"github.com/trypando/pando/internal/core/audit"
+	"github.com/trypando/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/log"
 )
 
 // Recording who used an app (R-227, O-22).

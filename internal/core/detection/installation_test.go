@@ -8,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/detection"
-	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/detection"
+	"github.com/trypando/pando/internal/core/spec"
 )
 
 // routingStub declares a default mode, which is the whole question R-162 puts

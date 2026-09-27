@@ -6,13 +6,13 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/core/audit"
-	"github.com/bemeek-io/pando/internal/core/authz"
-	"github.com/bemeek-io/pando/internal/core/security"
-	"github.com/bemeek-io/pando/internal/core/source"
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/core/audit"
+	"github.com/trypando/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/core/security"
+	"github.com/trypando/pando/internal/core/source"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // The security score (R-310 – R-320, design 09 §6).

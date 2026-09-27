@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/state"
-	"github.com/bemeek-io/pando/internal/detect"
+	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/detect"
 )
 
 // A client can tell "waiting for answers" from "answered, ready to accept".

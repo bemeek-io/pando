@@ -10,9 +10,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	"github.com/bemeek-io/pando/internal/adapter/backup/local"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/backup/local"
+	"github.com/trypando/pando/internal/errs"
 )
 
 func configured(t *testing.T) (*local.Adapter, string) {

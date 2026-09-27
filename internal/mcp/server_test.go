@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/mcp"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/mcp"
 )
 
 // apiCall is one call the server made on the agent's behalf.

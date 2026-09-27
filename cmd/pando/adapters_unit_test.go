@@ -7,10 +7,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	adapterapi "github.com/bemeek-io/pando/internal/adapter/api"
-	servicesdocker "github.com/bemeek-io/pando/internal/adapter/services/docker"
-	"github.com/bemeek-io/pando/internal/config"
-	"github.com/bemeek-io/pando/internal/core/assist"
+	adapterapi "github.com/trypando/pando/internal/adapter/api"
+	servicesdocker "github.com/trypando/pando/internal/adapter/services/docker"
+	"github.com/trypando/pando/internal/config"
+	"github.com/trypando/pando/internal/core/assist"
 )
 
 // TestR190_DeclaredCredentialsAreReadFromWhereTheFileSays asserts R-190: a

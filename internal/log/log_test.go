@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
-	"github.com/bemeek-io/pando/internal/log"
+	"github.com/trypando/pando/internal/log"
 )
 
 // A context without a logger must not panic. Losing a log line is bad; taking

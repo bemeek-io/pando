@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/bemeek-io/pando/internal/httpapi"
+	"github.com/trypando/pando/internal/httpapi"
 )
 
 // TestEveryEndpointInDesign04Exists walks the API design document and asserts

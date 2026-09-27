@@ -13,10 +13,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	dockeradapter "github.com/bemeek-io/pando/internal/adapter/runtime/docker"
-	"github.com/bemeek-io/pando/internal/core/spec"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/adapter/api"
+	dockeradapter "github.com/trypando/pando/internal/adapter/runtime/docker"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/secret"
 )
 
 func adapter(t *testing.T) *dockeradapter.Adapter {

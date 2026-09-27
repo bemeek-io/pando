@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/errs"
-	"github.com/bemeek-io/pando/internal/secret"
+	"github.com/trypando/pando/internal/errs"
+	"github.com/trypando/pando/internal/secret"
 )
 
 func TestStatusMappingByPrefix(t *testing.T) {

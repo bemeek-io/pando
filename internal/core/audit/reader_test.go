@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/audit"
+	"github.com/trypando/pando/internal/core/audit"
 )
 
 // The page size is bounded by the cap whatever the caller asks for, and is what

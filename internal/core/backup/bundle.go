@@ -11,7 +11,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // BundleVersion is the on-disk format version.

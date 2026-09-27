@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/registry/ociprobe"
-	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/adapter/registry/ociprobe"
+	"github.com/trypando/pando/internal/core/spec"
 )
 
 // The owner/name convention is the whole basis of tier 1, so what it does and

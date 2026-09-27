@@ -11,9 +11,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/ai/aikit/aitest"
-	openaiadapter "github.com/bemeek-io/pando/internal/adapter/ai/openai"
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/ai/aikit/aitest"
+	openaiadapter "github.com/trypando/pando/internal/adapter/ai/openai"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // configure returns an adapter configured with cfg against a server that

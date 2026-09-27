@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/spec"
 )
 
 // pinnedApp is an app somebody has deployed and then configured: a couple of

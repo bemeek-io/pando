@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
-	notifyconsole "github.com/bemeek-io/pando/internal/adapter/notify/console"
-	"github.com/bemeek-io/pando/internal/errs"
+	"github.com/trypando/pando/internal/adapter/api"
+	notifyconsole "github.com/trypando/pando/internal/adapter/notify/console"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // recorded is one call to the sink.

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/stretchr/testify/require"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // TestR221_TheHealthProbeUsesWhateverTheImageHas asserts that the probe does

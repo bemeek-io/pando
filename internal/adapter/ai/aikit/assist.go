@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bemeek-io/pando/internal/adapter/api"
+	"github.com/trypando/pando/internal/adapter/api"
 )
 
 // The administrative functions (R-343 … R-346), as tasks any provider can run.

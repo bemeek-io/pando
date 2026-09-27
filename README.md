@@ -8,12 +8,12 @@
 
 [trypando.ai](https://trypando.ai)
 
-[![CI](https://github.com/bemeek-io/pando/actions/workflows/ci.yml/badge.svg)](https://github.com/bemeek-io/pando/actions/workflows/ci.yml)
+[![CI](https://github.com/trypando/pando/actions/workflows/ci.yml/badge.svg)](https://github.com/trypando/pando/actions/workflows/ci.yml)
 [![Docker Hub](https://img.shields.io/docker/v/trypando/pando?sort=semver&label=docker%20hub&color=1D63ED)](https://hub.docker.com/r/trypando/pando)
-[![codecov](https://codecov.io/gh/bemeek-io/pando/branch/main/graph/badge.svg)](https://codecov.io/gh/bemeek-io/pando)
+[![codecov](https://codecov.io/gh/trypando/pando/branch/main/graph/badge.svg)](https://codecov.io/gh/trypando/pando)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Go 1.27](https://img.shields.io/badge/go-1.27-00ADD8)](go.mod)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/bemeek-io/pando/badge)](https://scorecard.dev/viewer/?uri=github.com/bemeek-io/pando)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/trypando/pando/badge)](https://scorecard.dev/viewer/?uri=github.com/trypando/pando)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14626/badge)](https://www.bestpractices.dev/projects/14626)
 
 </div>
@@ -87,7 +87,7 @@ Requires Docker and Docker Compose. Nothing else — no Go, no Node, no Postgres
 
 ```bash
 mkdir pando && cd pando
-curl -fsSLO https://github.com/bemeek-io/pando/releases/latest/download/docker-compose.yml
+curl -fsSLO https://github.com/trypando/pando/releases/latest/download/docker-compose.yml
 docker compose up -d
 ```
 
@@ -114,16 +114,16 @@ on your own machine rather than on the host, and everything it does can also be 
 macOS, and Linux with Homebrew 4.5 or newer:
 
 ```bash
-brew install bemeek-io/tap/pando
+brew install trypando/tap/pando
 ```
 
 Debian and Ubuntu: take a version from the
-[releases page](https://github.com/bemeek-io/pando/releases) and download the `.deb` for your
+[releases page](https://github.com/trypando/pando/releases) and download the `.deb` for your
 architecture.
 
 ```bash
 VERSION=0.2.0   # the release you want
-curl -LO https://github.com/bemeek-io/pando/releases/download/v${VERSION}/pando_${VERSION}_linux_amd64.deb
+curl -LO https://github.com/trypando/pando/releases/download/v${VERSION}/pando_${VERSION}_linux_amd64.deb
 sudo apt install ./pando_${VERSION}_linux_amd64.deb
 ```
 
@@ -132,7 +132,7 @@ architectures. Every command and flag: [`docs/cli.md`](docs/cli.md). To build it
 instead:
 
 ```bash
-go install github.com/bemeek-io/pando/cmd/pando@latest
+go install github.com/trypando/pando/cmd/pando@latest
 ```
 
 Or skip installing it and use the copy already inside the container, via
@@ -305,11 +305,11 @@ and will break under a path prefix, Pando says so; it does not rewrite the app's
 ## Reporting a problem
 
 - **A bug**, or something that does not work as documented: [open an
-  issue](https://github.com/bemeek-io/pando/issues/new/choose).
+  issue](https://github.com/trypando/pando/issues/new/choose).
 - **A security vulnerability**: privately, through [the advisory
-  form](https://github.com/bemeek-io/pando/security/advisories/new) — not as an issue. See
+  form](https://github.com/trypando/pando/security/advisories/new) — not as an issue. See
   [`SECURITY.md`](SECURITY.md) for what to include and what response to expect.
-- **A question**: [Discussions](https://github.com/bemeek-io/pando/discussions).
+- **A question**: [Discussions](https://github.com/trypando/pando/discussions).
 
 ## Contributing
 
