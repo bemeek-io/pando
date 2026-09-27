@@ -37,6 +37,7 @@ func buildTestImage(t *testing.T, name, dockerfile string, labels ...string) {
 // for an app are found by the builder's label and all of them go with it
 // (issue #55).
 func TestR224_DeletingAnAppRemovesEveryImageBuiltForIt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 	stamp := time.Now().Format("150405.000")
@@ -62,6 +63,7 @@ func TestR224_DeletingAnAppRemovesEveryImageBuiltForIt(t *testing.T) {
 // there. A trial gives each declared path throwaway storage, so the app starts
 // the way it will when deployed with a volume (issue #55).
 func TestATrialMountsThrowawayStorageWhereTheImageDeclaresAVolume(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 
@@ -84,6 +86,7 @@ func TestATrialMountsThrowawayStorageWhereTheImageDeclaresAVolume(t *testing.T) 
 // app's network looks empty; removing it left the app unable to start again
 // (issue #55). Only an owned network no container belongs to is reclaimed.
 func TestR025_StartupReclaimsOnlyNetworksNoContainerBelongsTo(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 

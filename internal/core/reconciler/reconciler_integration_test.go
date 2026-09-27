@@ -12,15 +12,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"go.uber.org/zap"
 
 	"github.com/trypando/pando/internal/adapter/api"
 	"github.com/trypando/pando/internal/core/reconciler"
 	"github.com/trypando/pando/internal/core/spec"
 	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/core/state/statetest"
 	"github.com/trypando/pando/internal/hash"
 	"github.com/trypando/pando/internal/id"
 	"github.com/trypando/pando/internal/secret"
@@ -28,25 +26,10 @@ import (
 
 // --- harness ----------------------------------------------------------------
 
+// connected is a fresh, migrated database of the test's own (statetest).
 func connected(t *testing.T) *state.DB {
 	t.Helper()
-	ctx := context.Background()
-
-	container, err := postgres.Run(ctx, "postgres:17-alpine",
-		postgres.WithDatabase("pando"), postgres.WithUsername("pando"),
-		postgres.WithPassword("test-password"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second)))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(container) })
-
-	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-
-	db, err := state.Connect(ctx, state.ConnectOptions{OwnerURL: dsn})
-	require.NoError(t, err)
-	t.Cleanup(db.Close)
+	db, _ := statetest.Connect(t)
 	return db
 }
 
@@ -273,6 +256,7 @@ func healthy() api.ObservedBundle {
 // alone would pass even if it were being observed, corrected and coincidentally
 // left where it was.
 func TestR151_AFailedAppIsNeverTouched(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, state.StateFailed)
 	h.runtime.setObserved(api.ObservedBundle{Exists: false})
 
@@ -290,6 +274,7 @@ func TestR151_AFailedAppIsNeverTouched(t *testing.T) {
 
 // An app that is running and matches its spec needs nothing done to it.
 func TestARunningAppThatMatchesIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, state.StateRunning)
 	h.runtime.setObserved(healthy())
 
@@ -303,6 +288,7 @@ func TestARunningAppThatMatchesIsLeftAlone(t *testing.T) {
 
 // The phase's "done when", first half: killing a container by hand restores it.
 func TestAKilledWorkloadIsRestored(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, state.StateRunning)
 	h.runtime.setObserved(api.ObservedBundle{Exists: true})
 
@@ -325,6 +311,7 @@ func TestAKilledWorkloadIsRestored(t *testing.T) {
 // The second half, and the one that matters: killing it repeatedly reaches
 // failed and stays there (R-150, R-151).
 func TestR150_RepeatedFailureReachesFailedAndStops(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, state.StateRunning)
 	h.runtime.setObserved(api.ObservedBundle{Exists: true})
 	h.runtime.applyErr = errApplyFailed
@@ -360,6 +347,7 @@ func TestR150_RepeatedFailureReachesFailedAndStops(t *testing.T) {
 // kept looping underneath the message — the restart count climbing on a screen
 // that said nothing was trying any more.
 func TestR150_GivingUpStopsTheApp(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, state.StateRunning)
 	h.runtime.setObserved(api.ObservedBundle{Exists: true})
 	h.runtime.applyErr = errApplyFailed
@@ -381,6 +369,7 @@ func TestR150_GivingUpStopsTheApp(t *testing.T) {
 // An adapter being down is a platform problem, not app failure. Otherwise
 // restarting the Docker daemon marks every app on the host as failed.
 func TestAnUnreachableAdapterDoesNotMoveAnAppTowardFailed(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, state.StateRunning)
 	h.runtime.observeErr = errAdapterDown
 	h.rec.Clock = &steppingClock{now: time.Now().UTC()}
@@ -413,6 +402,7 @@ func TestAnUnreachableAdapterDoesNotMoveAnAppTowardFailed(t *testing.T) {
 // the presence of one unreconcilable difference stops the whole app being
 // touched — the reconcilable half might be what destroys the evidence.
 func TestR148_UnreconcilableDriftIsReportedAndNothingIsApplied(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := newHarness(t, state.StateRunning)
 
@@ -443,6 +433,7 @@ func TestR148_UnreconcilableDriftIsReportedAndNothingIsApplied(t *testing.T) {
 
 // desired_state is what a person asked for, and it outranks everything.
 func TestAStoppedAppIsKeptStopped(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := newHarness(t, state.StateRunning)
 	require.NoError(t, h.apps.SetDesiredState(ctx, h.appID, "stopped"))
@@ -504,6 +495,7 @@ func (c *steppingClock) advance(d time.Duration) {
 // ones. This is not hypothetical — the first version of the failure path
 // dereferenced the nil that errs.As returns for an unenveloped error.
 func TestAPanickingAdapterDoesNotTakeDownTheLoop(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, state.StateRunning)
 	h.runtime.panicOnObserve = true
 
@@ -526,6 +518,7 @@ func TestAPanickingAdapterDoesNotTakeDownTheLoop(t *testing.T) {
 // reaches R-150's threshold. What is counted is attempts; what clears them is
 // the app actually running with health passing.
 func TestR150_ACrashLoopingAppReachesFailed(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, state.StateRunning)
 	h.rec.Clock = &steppingClock{now: time.Now().UTC()}
 
@@ -548,6 +541,7 @@ func TestR150_ACrashLoopingAppReachesFailed(t *testing.T) {
 
 // The counter measures attempts, and only a working app clears it.
 func TestACorrectionThatHoldsClearsTheCounter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := newHarness(t, state.StateRunning)
 
@@ -574,6 +568,7 @@ func TestACorrectionThatHoldsClearsTheCounter(t *testing.T) {
 // An app that is unhealthy but matches its spec has nothing to converge, and
 // must still not sit in degraded forever.
 func TestAPermanentlyUnhealthyAppReachesFailed(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, state.StateRunning)
 	h.rec.Clock = &steppingClock{now: time.Now().UTC()}
 
@@ -602,6 +597,7 @@ func TestAPermanentlyUnhealthyAppReachesFailed(t *testing.T) {
 // recovery clears the failure count, and the app then never reaches `failed`:
 // every glimpse of it up undoes the progress toward giving up on it.
 func TestAnAppSeenBrieflyUpBetweenCrashesIsNotCountedAsRecovered(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	h := newHarness(t, state.StateRunning)
 	h.rec.Clock = &steppingClock{now: now}
@@ -623,6 +619,7 @@ func TestAnAppSeenBrieflyUpBetweenCrashesIsNotCountedAsRecovered(t *testing.T) {
 
 // And once it stays up, it is recovered.
 func TestAnAppThatStaysUpAfterRestartingIsRecovered(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	h := newHarness(t, state.StateRunning)
 	h.rec.Clock = &steppingClock{now: now}
@@ -645,6 +642,7 @@ func TestAnAppThatStaysUpAfterRestartingIsRecovered(t *testing.T) {
 // twenty restarts: Running=true, Restarting=true, StartedAt 40 seconds ago, and
 // the failure count reset instead of climbing.
 func TestARuntimeReportingRestartingOutranksTheSettleWindow(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	h := newHarness(t, state.StateRunning)
 	h.rec.Clock = &steppingClock{now: now}

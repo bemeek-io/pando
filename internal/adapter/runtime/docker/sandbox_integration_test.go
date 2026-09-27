@@ -46,6 +46,7 @@ func kernelOf(t *testing.T, container string) string {
 // deploy will, and that it reports what it can see through that boundary
 // rather than what it cannot.
 func TestR255_ASandboxedTrialRunsInsideTheSandbox(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := sandboxedAdapter(t)
 
@@ -74,6 +75,7 @@ func TestR255_ASandboxedTrialRunsInsideTheSandbox(t *testing.T) {
 // TestR255_ASandboxedDeployRunsInsideTheSandbox asserts the same of an app's
 // deploy: the container the reported class describes is the one running.
 func TestR255_ASandboxedDeployRunsInsideTheSandbox(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := sandboxedAdapter(t)
 

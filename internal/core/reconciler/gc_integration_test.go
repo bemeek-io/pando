@@ -24,6 +24,7 @@ import (
 // at it. Getting this wrong costs history that cannot be recovered, which is
 // why the saving is never worth a doubt.
 func TestR152_PruningNeverRemovesARevisionThatWasEverPinned(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	apps := state.NewApps(db)
@@ -80,6 +81,7 @@ func TestR152_PruningNeverRemovesARevisionThatWasEverPinned(t *testing.T) {
 
 // Pruning is idempotent and safe to run on an install with nothing to prune.
 func TestPruningAnAppWithLittleHistoryDoesNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	apps := state.NewApps(db)

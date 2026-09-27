@@ -52,6 +52,7 @@ func bundle(bundleID string, env map[string]secret.Value) api.BundlePlan {
 // Caddyfile` into a volume Docker refuses to mount. Nothing is read from the
 // repository at deploy time: these bytes came out of the pinned revision.
 func TestR020_ACarriedFileIsInTheContainer(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 	id := "test-files-" + time.Now().Format("150405")
@@ -126,6 +127,7 @@ func dockerCLI(args ...string) (string, error) {
 // outlived it: one more per redeploy, and all of them after the app was
 // deleted (issue #55).
 func TestR224_AnAnonymousVolumeGoesWithItsContainer(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 
@@ -156,6 +158,7 @@ func TestR224_AnAnonymousVolumeGoesWithItsContainer(t *testing.T) {
 // pulled for an app stayed after it was deleted (issue #55); one another app
 // still runs must stay, and so must one that was on the host before.
 func TestR224_AnImagePandoPulledGoesWithTheLastAppThatRanIt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 
@@ -201,6 +204,7 @@ func cleanup(t *testing.T, a *dockeradapter.Adapter, bundleID string) {
 // (issue #55). A dependency with a health check now holds its dependents back
 // until it reports healthy.
 func TestR096_ADependentStartsOnceItsDependencyIsHealthy(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 	id := "test-depends-" + time.Now().Format("150405")
@@ -240,6 +244,7 @@ func TestR096_ADependentStartsOnceItsDependencyIsHealthy(t *testing.T) {
 }
 
 func TestApplyThenObserve(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 	id := "test-apply-" + time.Now().Format("150405")
@@ -264,6 +269,7 @@ func TestApplyThenObserve(t *testing.T) {
 // Apply is idempotent: the reconciler calls it freely, so a satisfied plan must
 // touch nothing.
 func TestApplyIsIdempotent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 	id := "test-idem-" + time.Now().Format("150405")
@@ -298,6 +304,7 @@ func TestApplyIsIdempotent(t *testing.T) {
 // endpoint until the console grew a logs tab, which is why the framing had
 // never been noticed.
 func TestR071_LogsArriveWithoutDockerFraming(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 	id := "test-logs-" + time.Now().Format("150405")
@@ -329,6 +336,7 @@ func TestR071_LogsArriveWithoutDockerFraming(t *testing.T) {
 }
 
 func TestR193_ChangedEnvironmentCausesRecreate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 	id := "test-env-" + time.Now().Format("150405")
@@ -352,6 +360,7 @@ func TestR193_ChangedEnvironmentCausesRecreate(t *testing.T) {
 // R-026: workloads are reachable only inside the bundle's own network. Nothing
 // is published to the host, because traffic arrives through Pando's proxy.
 func TestR026_NoPortsArePublishedToTheHost(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 	id := "test-ports-" + time.Now().Format("150405")
@@ -376,6 +385,7 @@ func TestR026_NoPortsArePublishedToTheHost(t *testing.T) {
 
 // R-025: each bundle gets its own network, so no app can reach another's.
 func TestR025_EachBundleGetsItsOwnNetwork(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 
@@ -400,6 +410,7 @@ func TestR025_EachBundleGetsItsOwnNetwork(t *testing.T) {
 // R-204: volumes outlive the apps that mount them, so the default teardown
 // keeps them.
 func TestR204_DestroyKeepsVolumesByDefault(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 	id := "test-vol-" + time.Now().Format("150405")
@@ -428,6 +439,7 @@ func TestR204_DestroyKeepsVolumesByDefault(t *testing.T) {
 // R-026 again, from the plan side: an adapter must refuse a plan that asks for a
 // shared network rather than quietly complying.
 func TestApplyRefusesANonPrivateNetwork(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 
@@ -474,6 +486,7 @@ func TestLogsAndExec(t *testing.T) {
 // R-243: capacity is adapter-reported. The adapter answers for itself rather
 // than core reading /proc.
 func TestR243_CapacityIsAdapterReported(t *testing.T) {
+	t.Parallel()
 	capacity, err := adapter(t).Capacity(context.Background())
 	require.NoError(t, err)
 	require.Positive(t, capacity.TotalCPUMillis)
@@ -485,6 +498,7 @@ func TestR243_CapacityIsAdapterReported(t *testing.T) {
 // floor above `container` must exclude this adapter, which it can only do if the
 // class is true.
 func TestR254_CapabilitiesAreHonest(t *testing.T) {
+	t.Parallel()
 	caps, err := adapter(t).Capabilities(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, spec.IsolationContainer, caps.IsolationClass, "docker is a shared kernel")

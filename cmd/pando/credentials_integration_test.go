@@ -111,6 +111,7 @@ func TestR271_ADeclaredAdapterOverridesAStoredOne(t *testing.T) {
 // declared services adapters that provide the same kind of service stop
 // startup, naming both.
 func TestR271_DeclaredServicesAdaptersThatOverlapStopStartup(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	store := state.NewAdapters(db)
