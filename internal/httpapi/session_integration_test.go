@@ -4,6 +4,7 @@ package httpapi_test
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -126,8 +127,12 @@ func TestAnUnparseableAuthorizationHeaderIsRefused(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, got.Code)
 
 	// Not a bearer scheme at all.
-	req := i.anon(http.MethodGet, "/me", nil)
-	require.Equal(t, http.StatusUnauthorized, req.Code)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.Header.Set("Authorization", "Basic YWRtaW46cGFzc3dvcmQ=")
+	rec := httptest.NewRecorder()
+	i.handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.Contains(t, rec.Body.String(), "bearer token")
 }
 
 func TestAnUnknownTokenIsRefused(t *testing.T) {

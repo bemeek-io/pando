@@ -234,6 +234,11 @@ func migrateUp(ctx context.Context, ownerURL string) (uint, error) {
 	if err != nil {
 		return 0, errs.Wrap(errs.Internal, "Could not prepare the database for migration.", err)
 	}
+	// The driver holds a connection of its own, which closing db above does
+	// not reclaim: without this every migration left one open for the life of
+	// the process, and a database cannot be copied while anything is
+	// connected to it (issue #31).
+	defer func() { _, _ = m.Close() }()
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return 0, errs.Wrap(errs.Internal, "Database migration failed.", err)

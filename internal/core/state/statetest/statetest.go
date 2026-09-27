@@ -111,8 +111,13 @@ func setup(ctx context.Context) (string, secret.Value, error) {
 		return "", secret.Value{}, err
 	}
 	// A copy cannot be made while anything is connected to the template, so
-	// nothing is allowed to be.
+	// nothing is allowed to be, and a backend still on its way out is ended
+	// rather than waited for.
 	if err := exec(ctx, base, `ALTER DATABASE `+templateName+` WITH ALLOW_CONNECTIONS false`); err != nil {
+		return "", secret.Value{}, err
+	}
+	if err := exec(ctx, base, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+		WHERE datname = '`+templateName+`' AND pid <> pg_backend_pid()`); err != nil {
 		return "", secret.Value{}, err
 	}
 	return base, password, nil
