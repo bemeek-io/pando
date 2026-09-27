@@ -30,6 +30,10 @@ type RestoreRequest struct {
 type RestoreResult struct {
 	Manifest       Manifest
 	VolumesApplied int
+
+	// EdgeVolumesApplied counts the edge's storage put back — Traefik's
+	// certificates (EdgesPrefix).
+	EdgeVolumesApplied int
 }
 
 // Restore decrypts, verifies, and only then applies (Sequence D, R-215).
@@ -153,6 +157,12 @@ func (s *Service) apply(ctx context.Context, bundle io.Reader, v Verified) (Rest
 			}
 			result.VolumesApplied++
 
+		case strings.HasPrefix(header.Name, EdgesPrefix):
+			if err := s.restoreEdgeVolume(ctx, header.Name, tr); err != nil {
+				return result, err
+			}
+			result.EdgeVolumesApplied++
+
 		case header.Name == AdaptersName || header.Name == PolicyName:
 			// Both live in the database and arrived with the dump. They are in
 			// the bundle as a readable copy for an operator reconstructing an
@@ -223,6 +233,24 @@ func (s *Service) restoreSecretsKey(r io.Reader) error {
 // The volume is created if it is not there — after a database restore onto a
 // fresh machine it never is — and the runtime is the one the restored database
 // now says holds it.
+// restoreEdgeVolume puts an edge's storage back, into the default runtime.
+//
+// Before the edge starts is the point: the edge service mounts this same
+// storage, finds the certificates already there, and issues nothing new.
+func (s *Service) restoreEdgeVolume(ctx context.Context, entryName string, r io.Reader) error {
+	handle := strings.TrimSuffix(strings.TrimPrefix(entryName, EdgesPrefix), ".tar")
+	if !safeHandle(handle) {
+		return errs.Newf(errs.ValidInvalid, "The backup names an edge's storage %q, which Pando will not restore into.", handle)
+	}
+	rt, ok := s.edgeRuntime(ctx)
+	if !ok {
+		// Not fatal: the certificates are re-issued when the edge starts,
+		// which costs time and rate limit, not data.
+		return nil
+	}
+	return rt.RestoreVolume(ctx, api.VolumeHandle{Handle: handle}, r)
+}
+
 func (s *Service) restoreVolume(ctx context.Context, entryName string, r io.Reader) error {
 	volumeID := strings.TrimSuffix(strings.TrimPrefix(entryName, VolumesPrefix), ".tar")
 	if volumeID == "" {

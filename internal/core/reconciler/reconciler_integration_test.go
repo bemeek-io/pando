@@ -666,3 +666,13 @@ func TestARuntimeReportingRestartingOutranksTheSettleWindow(t *testing.T) {
 	require.Equal(t, 1, failures)
 	require.Equal(t, state.StateDegraded, h.state(t))
 }
+
+func (f *fakeRuntime) ApplyEdge(context.Context, api.EdgePlan) error { return nil }
+func (f *fakeRuntime) ObserveEdge(context.Context, string) (api.EdgeState, error) {
+	return api.EdgeState{}, nil
+}
+func (f *fakeRuntime) RemoveEdge(context.Context, string) error { return nil }
+func (f *fakeRuntime) Edges(context.Context) ([]string, error)  { return nil, nil }
+func (f *fakeRuntime) EdgeVolumes(context.Context) ([]api.VolumeHandle, error) {
+	return nil, nil
+}

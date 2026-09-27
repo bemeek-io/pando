@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { adapterRequest, blankForm, categoryLabel, fieldPlaceholder, formProblems, orderCategories, sortKinds } from './adapters';
+import {
+  adapterRequest,
+  blankForm,
+  boolValue,
+  categoryLabel,
+  effectiveText,
+  fieldPlaceholder,
+  formProblems,
+  isShown,
+  orderCategories,
+  sortKinds,
+} from './adapters';
 import type { AdapterKind } from './adapters';
 
 const anthropic: AdapterKind = {
@@ -102,5 +113,74 @@ describe('an empty field', () => {
     expect(fieldPlaceholder({ key: 'base_domain', label: 'Base domain', type: 'string', placeholder: 'apps.example.com' })).toBe(
       'apps.example.com',
     );
+  });
+});
+
+// A cut of the Traefik kind: a bool that defaults on, a choice, and settings
+// that apply only under some of its answers.
+const traefik: AdapterKind = {
+  category: 'routing',
+  kind: 'traefik',
+  name: 'Traefik',
+  description: 'Gives apps their own hostnames.',
+  id_prefix: 'rte_',
+  fields: [
+    {
+      key: 'certificates',
+      label: 'Certificates',
+      type: 'select',
+      default: 'none',
+      options: [
+        { value: 'http', label: 'One per hostname' },
+        { value: 'dns', label: 'One wildcard for the base domain' },
+        { value: 'none', label: 'None' },
+      ],
+    },
+    { key: 'acme_email', label: 'Certificate email', type: 'string', shown_when: { key: 'certificates', values: ['http', 'dns'] } },
+    {
+      key: 'dns_provider',
+      label: 'DNS provider',
+      type: 'select',
+      other: true,
+      required: true,
+      options: [{ value: 'cloudflare', label: 'Cloudflare' }],
+      shown_when: { key: 'certificates', values: ['dns'] },
+    },
+    { key: 'dns_credentials', label: 'DNS provider credentials', type: 'string', credential: true, multiline: true, shown_when: { key: 'certificates', values: ['dns'] } },
+    { key: 'managed', label: 'Pando runs Traefik', type: 'bool', default: 'true' },
+    { key: 'entrypoint', label: 'Entry point', type: 'string', shown_when: { key: 'managed', values: ['false'] } },
+  ],
+};
+
+describe('settings that depend on others', () => {
+  const field = (key: string) => traefik.fields!.find((f) => f.key === key)!;
+
+  it('shows a setting only under the answers it applies to, counting defaults', () => {
+    expect(isShown(traefik, field('acme_email'), {})).toBe(false);
+    expect(isShown(traefik, field('acme_email'), { certificates: 'http' })).toBe(true);
+    expect(isShown(traefik, field('entrypoint'), {}), 'managed defaults on').toBe(false);
+    expect(isShown(traefik, field('entrypoint'), { managed: false })).toBe(true);
+  });
+
+  it('neither checks nor sends a hidden setting', () => {
+    const form = { ...blankForm(traefik, true), values: { certificates: 'none', dns_credentials: 'CF_DNS_API_TOKEN=x' } };
+    expect(formProblems(traefik, form)).toEqual({});
+    expect(adapterRequest(traefik, form).credentials).toBeUndefined();
+
+    const dns = { ...form, values: { certificates: 'dns', dns_credentials: 'CF_DNS_API_TOKEN=x' } };
+    expect(formProblems(traefik, dns)).toEqual({ dns_provider: 'DNS provider is required.' });
+    expect(adapterRequest(traefik, dns).credentials).toEqual({ dns_credentials: 'CF_DNS_API_TOKEN=x' });
+  });
+
+  it('sends a bool that defaults on when it is turned off, and not when left on (R-174)', () => {
+    expect(boolValue(field('managed'), undefined)).toBe(true);
+    expect(adapterRequest(traefik, { ...blankForm(traefik, true), values: {} }).config).not.toHaveProperty('managed');
+    expect(adapterRequest(traefik, { ...blankForm(traefik, true), values: { managed: false } }).config.managed).toBe(false);
+  });
+
+  it('sends a provider typed in under Other as it was typed', () => {
+    const form = { ...blankForm(traefik, true), values: { certificates: 'dns', dns_provider: ' ovh ' } };
+    expect(adapterRequest(traefik, form).config.dns_provider).toBe('ovh');
+    expect(effectiveText(field('certificates'), undefined)).toBe('none');
   });
 });

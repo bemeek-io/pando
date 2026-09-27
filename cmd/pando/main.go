@@ -31,6 +31,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/identity/local"
 	notifyconsole "github.com/bemeek-io/pando/internal/adapter/notify/console"
 	"github.com/bemeek-io/pando/internal/adapter/registry/ociprobe"
+	"github.com/bemeek-io/pando/internal/adapter/routing/cloudflare"
 	"github.com/bemeek-io/pando/internal/adapter/routing/loopback"
 	"github.com/bemeek-io/pando/internal/adapter/routing/traefik"
 	dockerruntime "github.com/bemeek-io/pando/internal/adapter/runtime/docker"
@@ -49,6 +50,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/clock"
 	"github.com/bemeek-io/pando/internal/core/deploy"
 	"github.com/bemeek-io/pando/internal/core/detection"
+	"github.com/bemeek-io/pando/internal/core/edge"
 	"github.com/bemeek-io/pando/internal/core/planner"
 	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
 	"github.com/bemeek-io/pando/internal/core/reconciler"
@@ -509,7 +511,17 @@ func serve(ctx context.Context, configPath string) error {
 
 	// Built once and used twice: as the front door, and as what a port-mode
 	// app's own listener falls back to for Pando's reserved path (R-172).
+	// What routing adapters need running in front of Pando — a Traefik on
+	// :80 and :443, a cloudflared — run through the runtime adapter (R-174).
+	edges := &edge.Service{
+		Registry:      registry,
+		ProxyUpstream: proxyUpstream,
+		Logger:        logger,
+		Clock:         clock.System{},
+	}
+
 	apiHandler := (&httpapi.Server{
+		Edges: edges,
 		TeardownNow: func() {
 			select {
 			case teardownNow <- struct{}{}:
@@ -666,6 +678,10 @@ func serve(ctx context.Context, configPath string) error {
 	loopCtx, stopLoop := context.WithCancel(ctx)
 	defer stopLoop()
 	go loop.Run(loopCtx)
+
+	// Once a minute: an edge somebody removed by hand comes back, and one no
+	// adapter asks for any more goes. Docker restarts one that crashed.
+	go edges.Run(loopCtx, time.Minute)
 
 	// Auto-deploy is a separate job on its own clock (R-141). It never modifies
 	// a running app — it creates a revision and enqueues a deployment, and
@@ -1026,6 +1042,8 @@ func newAdapter(category, kind string, notifications *state.Notifications) adapt
 		return servicesdocker.New()
 	case category == string(adapterapi.CategoryRouting) && kind == traefik.Kind:
 		return traefik.New()
+	case category == string(adapterapi.CategoryRouting) && kind == cloudflare.Kind:
+		return cloudflare.New()
 	case category == string(adapterapi.CategoryScanner) && kind == trivyscanner.Kind:
 		return trivyscanner.New()
 	case category == string(adapterapi.CategoryAI) && kind == aianthropic.Kind:
@@ -1472,6 +1490,7 @@ func adapterKinds() []adapterapi.KindInfo {
 		dockerruntime.Info(),
 		loopback.Info(),
 		traefik.Info(),
+		cloudflare.Info(),
 		buildkitadapter.Info(),
 		trivyscanner.Info(),
 		secretslocal.Info(),

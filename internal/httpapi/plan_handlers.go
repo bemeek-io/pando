@@ -9,6 +9,7 @@ import (
 	"github.com/bemeek-io/pando/internal/adapter/api"
 	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/core/authz"
+	"github.com/bemeek-io/pando/internal/core/edge"
 	"github.com/bemeek-io/pando/internal/core/state"
 	"github.com/bemeek-io/pando/internal/errs"
 )
@@ -213,6 +214,20 @@ func (s *Server) handleListAdapters(w http.ResponseWriter, r *http.Request) {
 					entry["capabilities"] = caps
 				}
 			}
+			// The process Pando runs in front of itself for this adapter
+			// (R-174). Whether it runs is for anyone; why it does not is
+			// operator detail — a port, an image — held back like the
+			// health error above.
+			if st, ok := s.edgeStatus(c.ID); ok {
+				view := map[string]any{"running": st.Running, "checked_at": st.CheckedAt.UTC().Format(time.RFC3339)}
+				if showConfig && st.Message != "" {
+					view["message"] = st.Message
+				}
+				entry["edge"] = view
+				if !st.Running && entry["status"] == nil {
+					entry["status"] = "edge_down"
+				}
+			}
 		case api.CategoryBuilder:
 			if b, ok := s.Registry.Builder(c.ID); ok {
 				if caps, err := b.Capabilities(r.Context()); err == nil {
@@ -278,4 +293,12 @@ func (s *Server) declaredAdapters() []config.AdapterDecl {
 		return nil
 	}
 	return s.Startup.Adapters
+}
+
+// edgeStatus is a routing adapter's edge, when there is a service to ask.
+func (s *Server) edgeStatus(ref string) (edge.Status, bool) {
+	if s.Edges == nil {
+		return edge.Status{}, false
+	}
+	return s.Edges.Status(ref)
 }

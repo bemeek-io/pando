@@ -93,6 +93,12 @@ type RuntimeCapabilities struct {
 	// what lets the persistence warning name the directory (R-202) instead of
 	// being generic (R-201).
 	SupportsWriteObservation bool
+
+	// SupportsEdge means the runtime can run an edge — the install-scoped
+	// workload a routing adapter puts in front of Pando (R-174, edge.go). A
+	// routing adapter that needs one is refused a start on a runtime without
+	// it, rather than configured and silently unreachable.
+	SupportsEdge bool
 }
 
 // RoutingCapabilities describes what a routing adapter can do.
@@ -103,6 +109,13 @@ type RoutingCapabilities struct {
 	// makes an install feel like proxy mode or per-hostname — neither topology
 	// is a global setting (design 03 §4.1).
 	DefaultMode RoutingMode
+
+	// BaseDomain is what a new app's hostname is carved out of under this
+	// adapter — <app>.<base domain> — when the adapter has one: a Cloudflare
+	// zone, a Traefik's configured domain. Empty leaves it to the install's
+	// server.base_domain. Data, like DefaultMode, so adding an app on
+	// Cloudflare names it in the zone without a second setting to keep in step.
+	BaseDomain string
 
 	SupportsTLS         bool
 	SupportsWildcardTLS bool
@@ -217,6 +230,22 @@ type RuntimeAdapter interface {
 	// type assertion — a missing capability and a missing adapter must not look
 	// alike.
 	Trial(ctx context.Context, req TrialRequest) (TrialResult, error)
+
+	// ApplyEdge converges an edge toward its plan: a matching edge is left
+	// running, a changed plan recreates it. Only called when SupportsEdge is
+	// true. A separate entry point from Apply on purpose (edge.go).
+	ApplyEdge(ctx context.Context, p EdgePlan) error
+	ObserveEdge(ctx context.Context, name string) (EdgeState, error)
+	RemoveEdge(ctx context.Context, name string) error
+
+	// Edges names every edge that exists, so one no routing adapter asks for
+	// any more can be removed.
+	Edges(ctx context.Context) ([]string, error)
+
+	// EdgeVolumes is the storage edges own — a certificate store — for the
+	// full-host backup (R-212). Each handle works with SnapshotVolume and
+	// RestoreVolume, and restoring into one that does not exist yet creates it.
+	EdgeVolumes(ctx context.Context) ([]VolumeHandle, error)
 }
 
 // TrialRequest asks a runtime to start something once and watch it.
@@ -599,6 +628,12 @@ type RoutingAdapter interface {
 	Ensure(ctx context.Context, r RouteRequest) (RouteHandle, error)
 	Remove(ctx context.Context, h RouteHandle) error
 	Observe(ctx context.Context, h RouteHandle) (RouteState, error)
+
+	// Edge describes the workload this adapter needs running in front of
+	// Pando, if any (R-174, edge.go). false means none — loopback, or a
+	// Traefik somebody else runs. An adapter may prepare files it owns here,
+	// such as the route that sends every other hostname to the console.
+	Edge(ctx context.Context, r EdgeRequest) (EdgePlan, bool, error)
 }
 
 // RouteRequest tells an adapter where to send traffic.

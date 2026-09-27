@@ -288,6 +288,9 @@ func (a *Adapter) Capabilities(context.Context) (api.RuntimeCapabilities, error)
 		SupportsTrialRun:         true,
 		SupportsPortObservation:  observes,
 		SupportsWriteObservation: observes,
+
+		// An edge in front of Pando (R-174, edge.go).
+		SupportsEdge: true,
 	}, nil
 }
 

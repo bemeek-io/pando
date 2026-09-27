@@ -55,8 +55,16 @@ func (i *RegistryInstallation) Defaults(ctx context.Context) spec.Defaults {
 		// the adapter does not advertise would fail the planner's capability
 		// check (R-254) with an error about something nobody chose.
 		if routing, found := i.Registry.Routing(ref); found {
-			if caps, err := routing.Capabilities(ctx); err == nil && caps.DefaultMode != "" {
-				d.RoutingMode = caps.DefaultMode
+			if caps, err := routing.Capabilities(ctx); err == nil {
+				if caps.DefaultMode != "" {
+					d.RoutingMode = caps.DefaultMode
+				}
+				// The adapter's own domain wins over the install's: a
+				// Cloudflare zone is the only place its tunnel can name an
+				// app, so an app named anywhere else is one it must refuse.
+				if caps.BaseDomain != "" {
+					d.BaseDomain = caps.BaseDomain
+				}
 			}
 		}
 	}

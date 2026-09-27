@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -235,6 +236,12 @@ func (s *Service) assemble(ctx context.Context, w io.Writer) (Manifest, error) {
 		}
 	}
 
+	edgeVolumes, err := s.addEdgeVolumes(ctx, b)
+	if err != nil {
+		return Manifest{}, err
+	}
+	b.Count("edge_volumes", edgeVolumes)
+
 	// Provisioned services (R-212).
 	//
 	// This was the last thing a bundle promised and did not contain. A restore
@@ -341,7 +348,61 @@ func (s *Service) addVolume(ctx context.Context, b *Writer, v VolumeRef) error {
 		return errs.Newf(errs.AdapterFailed,
 			"The runtime holding %s is not configured, so its data cannot be backed up.", v.VolumeID)
 	}
+	return s.addSnapshot(ctx, b, rt, api.VolumeHandle{VolumeID: v.VolumeID, Handle: v.Handle}, VolumesPrefix+v.VolumeID+".tar")
+}
 
+// addEdgeVolumes adds the storage of every edge the default runtime runs, and
+// returns how many. None on a runtime that runs no edges.
+func (s *Service) addEdgeVolumes(ctx context.Context, b *Writer) (int, error) {
+	rt, ok := s.edgeRuntime(ctx)
+	if !ok {
+		return 0, nil
+	}
+	handles, err := rt.EdgeVolumes(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for _, h := range handles {
+		if !safeHandle(h.Handle) {
+			// The name becomes a path in the bundle and on restore; one
+			// that could climb out of edges/ is not written.
+			return 0, errs.Newf(errs.Internal, "The runtime named an edge's storage %q, which Pando will not write into a backup.", h.Handle)
+		}
+		if err := s.addSnapshot(ctx, b, rt, h, EdgesPrefix+h.Handle+".tar"); err != nil {
+			return 0, err
+		}
+	}
+	return len(handles), nil
+}
+
+// edgeRuntime is the default runtime, when it runs edges.
+func (s *Service) edgeRuntime(ctx context.Context) (api.RuntimeAdapter, bool) {
+	if s.Registry == nil {
+		return nil, false
+	}
+	ref, ok := s.Registry.Default(api.CategoryRuntime)
+	if !ok {
+		return nil, false
+	}
+	rt, ok := s.Registry.Runtime(ref)
+	if !ok {
+		return nil, false
+	}
+	caps, err := rt.Capabilities(ctx)
+	if err != nil || !caps.SupportsEdge {
+		return nil, false
+	}
+	return rt, true
+}
+
+var safeHandlePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+
+func safeHandle(h string) bool {
+	return safeHandlePattern.MatchString(h) && !strings.Contains(h, "..")
+}
+
+// addSnapshot stages one volume's snapshot and adds it to the bundle as name.
+func (s *Service) addSnapshot(ctx context.Context, b *Writer, rt api.RuntimeAdapter, h api.VolumeHandle, name string) error {
 	staged, err := os.CreateTemp(s.WorkDir, "pando-vol-*.tar")
 	if err != nil {
 		return errs.Wrap(errs.Internal, "Pando could not stage the app's data.", err)
@@ -351,7 +412,7 @@ func (s *Service) addVolume(ctx context.Context, b *Writer, v VolumeRef) error {
 		_ = os.Remove(staged.Name())
 	}()
 
-	if err := rt.SnapshotVolume(ctx, api.VolumeHandle{VolumeID: v.VolumeID, Handle: v.Handle}, staged); err != nil {
+	if err := rt.SnapshotVolume(ctx, h, staged); err != nil {
 		return err
 	}
 	info, err := staged.Stat()
@@ -361,7 +422,7 @@ func (s *Service) addVolume(ctx context.Context, b *Writer, v VolumeRef) error {
 	if _, err := staged.Seek(0, io.SeekStart); err != nil {
 		return errs.Wrap(errs.Internal, "Pando could not stage the app's data.", err)
 	}
-	return b.Add(VolumesPrefix+v.VolumeID+".tar", info.Size(), staged)
+	return b.Add(name, info.Size(), staged)
 }
 
 // dumpDatabase runs pg_dump into a temporary file and returns its path.

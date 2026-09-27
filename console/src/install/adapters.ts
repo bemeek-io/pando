@@ -6,12 +6,20 @@
 // knows what an Anthropic or a Traefik adapter takes; a kind added to Pando is
 // configurable here without this file changing (R-261).
 
+/** One choice a `select` setting offers. */
+export interface KindOption {
+  value: string;
+  label: string;
+  /** What choosing it means, shown under a radio button. */
+  description?: string;
+}
+
 /** One setting a kind of adapter takes. */
 export interface KindField {
   key: string;
   label: string;
   help?: string;
-  type: 'string' | 'int' | 'bool';
+  type: 'string' | 'int' | 'bool' | 'select';
   required?: boolean;
   /** A secret such as an API key: sent in `credentials`, never in `config`
    *  (R-190), and never shown again. */
@@ -21,6 +29,36 @@ export interface KindField {
   default?: string;
   /** An example, for a setting with no default. */
   placeholder?: string;
+  /** What a `select` offers. */
+  options?: KindOption[];
+  /** A `select` that also takes a value it does not list, typed in. */
+  other?: boolean;
+  /** Asks for a text area, such as credentials given as NAME=value lines. */
+  multiline?: boolean;
+  /** Shown only while another setting has one of these values. */
+  shown_when?: { key: string; values: string[] };
+}
+
+/** A bool setting as it stands: what was set, or the kind's default. */
+export function boolValue(f: KindField, v: string | boolean | undefined): boolean {
+  return typeof v === 'boolean' ? v : f.default === 'true';
+}
+
+/** A setting as the adapter will read it, as text: what was entered, or the
+ *  kind's default. A bool is "true" or "false". */
+export function effectiveText(f: KindField, v: string | boolean | undefined): string {
+  if (f.type === 'bool') return String(boolValue(f, v));
+  const text = typeof v === 'string' ? v.trim() : '';
+  return text || f.default || '';
+}
+
+/** Whether a setting applies, given the others. A hidden one is neither
+ *  checked nor sent: a DNS provider means nothing without DNS certificates. */
+export function isShown(kind: AdapterKind, f: KindField, values: Record<string, string | boolean>): boolean {
+  if (!f.shown_when) return true;
+  const on = (kind.fields ?? []).find((x) => x.key === f.shown_when!.key);
+  if (!on) return true;
+  return f.shown_when.values.includes(effectiveText(on, values[on.key]));
 }
 
 /** The text an empty field shows: the default when there is one, since
@@ -138,7 +176,7 @@ export function formProblems(
   if (!form.id.trim()) problems.id = `An adapter needs an ID, for example ${kind.id_prefix}${kind.kind}.`;
   for (const f of kind.fields ?? []) {
     const v = form.values[f.key];
-    if (f.type === 'bool') continue;
+    if (f.type === 'bool' || !isShown(kind, f, form.values)) continue;
     const text = typeof v === 'string' ? v.trim() : '';
     if (text === '') {
       const kept = f.credential && credentialsSet.includes(f.key);
@@ -159,8 +197,10 @@ export function formProblems(
  * `config`, which is stored in the clear (R-190). An empty field is left out:
  * an empty credential keeps the stored one (a "" would remove it), and an empty
  * setting is the adapter's own default. Ints go as JSON numbers, because the
- * adapter reads its config as typed JSON. A bool is sent only when on, since
- * off is what an absent one means.
+ * adapter reads its config as typed JSON. A bool is sent only when it differs
+ * from its default, since the default is what an absent one means — which for
+ * most is off, and for some, such as Pando running Traefik, is on. A setting
+ * hidden by another's value is not sent.
  *
  * Call formProblems first; a field it would refuse is not sent correctly here.
  */
@@ -169,8 +209,10 @@ export function adapterRequest(kind: AdapterKind, form: AdapterForm, enabled?: b
   const credentials: Record<string, string> = {};
   for (const f of kind.fields ?? []) {
     const v = form.values[f.key];
+    if (!isShown(kind, f, form.values)) continue;
     if (f.type === 'bool') {
-      if (v === true) config[f.key] = true;
+      const on = boolValue(f, v);
+      if (on !== (f.default === 'true')) config[f.key] = on;
       continue;
     }
     const text = typeof v === 'string' ? v.trim() : '';

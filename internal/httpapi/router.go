@@ -20,6 +20,7 @@ import (
 	"github.com/bemeek-io/pando/internal/core/authz"
 	"github.com/bemeek-io/pando/internal/core/backup"
 	"github.com/bemeek-io/pando/internal/core/deploy"
+	"github.com/bemeek-io/pando/internal/core/edge"
 	"github.com/bemeek-io/pando/internal/core/planner"
 	corepolicy "github.com/bemeek-io/pando/internal/core/policy"
 	"github.com/bemeek-io/pando/internal/core/spec"
@@ -55,6 +56,10 @@ type Server struct {
 
 	Registry *api.Registry
 	Adapters *state.Adapters
+
+	// Edges reports whether each routing adapter's edge is running (R-174).
+	// Nil means no adapter's edge is reported.
+	Edges *edge.Service
 
 	// AIFunctions is which AI adapter handles each AI function (R-259). Nil
 	// means the endpoints say assignment is not set up.
