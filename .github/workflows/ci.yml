@@ -141,7 +141,23 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.27'
-          cache: true
+          # Not setup-go's cache: its key is go.sum alone, shared with every
+          # other job and saved only when that key is new, so what this job
+          # restored was whichever job ran first on the day go.sum last
+          # changed — none of the race-built, coverage-instrumented packages
+          # this job compiles. Compiling was two minutes of every run (#31).
+          cache: false
+      # A build cache of this job's own, saved on every run and restored from
+      # the most recent one, so a run recompiles what changed since.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-integration-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-integration-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-integration-${{ runner.os }}-
       # Runners have Docker, so testcontainers works without extra setup.
       - run: make test-integration COVERPROFILE=coverage.integration.out
 
