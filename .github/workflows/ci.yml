@@ -31,7 +31,10 @@ jobs:
           # integration job has one: setup-go's is keyed on go.sum alone and
           # shared by every job, so it rarely holds what this job compiles.
           cache: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Restored on every run; saved only from main (the last step). A pull
+      # request starts from main's latest and recompiles what it changed, and
+      # does not spend the repository's cache space on a copy of its own.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -106,6 +109,14 @@ jobs:
           git diff --exit-code docs/api.md docs/cli.md docs/mcp.md \
             || { echo "::error::Run 'make reference' and commit the result."; exit 1; }
 
+      - if: github.event_name == 'push'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-check-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+
   console:
     runs-on: ubuntu-latest
     # The console's checks are its own job because they need Node rather than
@@ -175,9 +186,9 @@ jobs:
           # changed — none of the race-built, coverage-instrumented packages
           # this job compiles. Compiling was two minutes of every run (#31).
           cache: false
-      # A build cache of this job's own, saved on every run and restored from
-      # the most recent one, so a run recompiles what changed since.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # A build cache of this job's own, restored from main's most recent run
+      # and saved only from main, as the check job's is.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -206,6 +217,14 @@ jobs:
           files: coverage.integration.out
           flags: integration
           fail_ci_if_error: false
+
+      - if: github.event_name == 'push'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-integration-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
 
   # The server image, built from this change and run the way an operator runs a
   # release: from the compose file a release ships, made to deploy an app and
@@ -242,39 +261,50 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Go's build and module caches and npm's, kept between runs. The
-      # Dockerfile mounts them as cache mounts, which no layer holds, so a
-      # layer cache cannot carry them: a source change reruns the stages that
-      # compile, and without these they compiled every dependency from nothing.
-      # (A layer cache was tried first, #31, and was slower than no cache: those
-      # stages rerun anyway and exporting it cost nearly a minute.)
+      # Go's build cache, kept between runs. The Dockerfile mounts it as a
+      # cache mount, which no layer holds, so a layer cache cannot carry it: a
+      # source change reruns the stages that compile, and without it they
+      # compiled every dependency from nothing. (A layer cache was tried first,
+      # #31, and was slower than no cache: those stages rerun anyway and
+      # exporting it cost nearly a minute.)
+      #
+      # The build cache only. The module and npm caches mostly hold what `go
+      # mod download` and `npm ci` fetch in seconds, and moving a directory
+      # into and out of the builder costs time in proportion to its size.
       - if: steps.dhi.outputs.available == 'true'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - if: steps.dhi.outputs.available == 'true'
+      # Saved only from main, like the Go jobs' caches: a pull request restores
+      # main's latest. Here that also skips taking the cache back out of the
+      # builder, which is the slow half.
+      - if: steps.dhi.outputs.available == 'true' && github.event_name == 'push'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            image-cache/go-mod
-            image-cache/go-build
-            image-cache/npm
-          key: image-build-${{ hashFiles('go.sum', 'console/package-lock.json') }}-${{ github.sha }}
+          path: image-cache/go-build
+          key: image-go-build-${{ hashFiles('go.sum') }}-${{ github.sha }}
           restore-keys: |
-            image-build-${{ hashFiles('go.sum', 'console/package-lock.json') }}-
-            image-build-
+            image-go-build-${{ hashFiles('go.sum') }}-
+            image-go-build-
+      - if: steps.dhi.outputs.available == 'true' && github.event_name != 'push'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: image-cache/go-build
+          key: image-go-build-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            image-go-build-${{ hashFiles('go.sum') }}-
+            image-go-build-
 
-      # Moves those directories into the builder's cache mounts before the
-      # build and back out after it. The utility image is pinned like every
+      # Moves that directory into the builder's cache mount before the build,
+      # and on main back out after it. The utility image is pinned like every
       # other image this repository runs; the action's default is a moving tag.
       - if: steps.dhi.outputs.available == 'true'
         uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
         with:
           utility-image: busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+          skip-extraction: ${{ github.event_name != 'push' }}
           cache-map: |
             {
-              "image-cache/go-mod": "/cache/go-mod",
-              "image-cache/go-build": "/cache/go-build",
-              "image-cache/npm": "/cache/npm"
+              "image-cache/go-build": "/cache/go-build"
             }
 
       - name: Build date

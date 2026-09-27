@@ -35,8 +35,8 @@
 # Go's module and build caches, and npm's, are cache mounts at fixed paths:
 # they persist in the builder between builds without entering any layer, so a
 # source change recompiles what changed rather than every dependency. CI keeps
-# them between runs too (the image job in ci.yml). The paths are set rather
-# than left to each image's defaults because CI names them.
+# the Go build cache between runs too (the image job in ci.yml). The paths are
+# set rather than left to each image's defaults because CI names them.
 FROM --platform=$BUILDPLATFORM dhi.io/golang:1.27-alpine3.24-dev@sha256:0fbbb101cb3c451453aa0d3e7a87c378c6bd784d8cfbfd4958f97dd3bd0197e6 AS console
 ENV GOMODCACHE=/cache/go-mod GOCACHE=/cache/go-build npm_config_cache=/cache/npm
 WORKDIR /src
