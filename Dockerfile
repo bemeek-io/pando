@@ -31,7 +31,7 @@
 # to run on the platform it is for. The release builds amd64 and arm64 in one
 # go (issue #52), and running npm and the Go toolchain under emulation for the
 # other one took the better part of an hour.
-FROM --platform=$BUILDPLATFORM dhi.io/golang:1.27-alpine3.24-dev@sha256:8690ed7def62c94fec567dcd9803922f7c77fcfbd87f51106233c3ee2c81c705 AS console
+FROM --platform=$BUILDPLATFORM dhi.io/golang:1.27-alpine3.24-dev@sha256:0fbbb101cb3c451453aa0d3e7a87c378c6bd784d8cfbfd4958f97dd3bd0197e6 AS console
 WORKDIR /src
 RUN apk add --no-cache nodejs npm
 
@@ -46,7 +46,7 @@ COPY . .
 # go:embed reads.
 RUN cd console && npm run build
 
-FROM --platform=$BUILDPLATFORM dhi.io/golang:1.27-alpine3.24-dev@sha256:8690ed7def62c94fec567dcd9803922f7c77fcfbd87f51106233c3ee2c81c705 AS build
+FROM --platform=$BUILDPLATFORM dhi.io/golang:1.27-alpine3.24-dev@sha256:0fbbb101cb3c451453aa0d3e7a87c378c6bd784d8cfbfd4958f97dd3bd0197e6 AS build
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
