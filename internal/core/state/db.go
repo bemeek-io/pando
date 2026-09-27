@@ -231,18 +231,22 @@ func migrateUp(ctx context.Context, ownerURL string) (uint, error) {
 	// connected to it (issue #31).
 	defer func() { _, _ = m.Close() }()
 
+	// A dirty schema is refused by Up itself, so it is recognized here. It used
+	// to be checked after Up, on a path Up never let it reach, which reported
+	// "migration failed" without the one thing worth knowing.
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		var dirty migrate.ErrDirty
+		if errors.As(err, &dirty) {
+			return 0, errs.New(errs.Internal,
+				fmt.Sprintf("The database schema is marked dirty at version %d, which means a previous migration failed partway.", dirty.Version)).
+				WithRemedy("Restore from a backup, or resolve the failed migration manually before starting Pando again.")
+		}
 		return 0, errs.Wrap(errs.Internal, "Database migration failed.", err)
 	}
 
-	version, dirty, err := m.Version()
+	version, _, err := m.Version()
 	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
 		return 0, errs.Wrap(errs.Internal, "Could not read the database schema version.", err)
-	}
-	if dirty {
-		return 0, errs.New(errs.Internal,
-			fmt.Sprintf("The database schema is marked dirty at version %d, which means a previous migration failed partway.", version)).
-			WithRemedy("Restore from a backup, or resolve the failed migration manually before starting Pando again.")
 	}
 
 	log.From(ctx).Info("migrations applied", zap.Uint("version", version))
