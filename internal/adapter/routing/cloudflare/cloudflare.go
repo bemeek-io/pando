@@ -118,7 +118,7 @@ func (a *Adapter) Configure(_ context.Context, raw json.RawMessage) error {
 	switch {
 	case cfg.Credentials.APIToken.IsZero():
 		return errs.New(errs.ValidInvalid, "Cloudflare routing needs an API token, and none is set.").
-			WithRemedy("Create a token with Account → Cloudflare Tunnel: Edit, Zone → DNS: Edit and Zone → Zone: Read for the zone, and set it as this adapter's API token.")
+			WithRemedy(tokenRemedy)
 	case !accountPattern.MatchString(cfg.AccountID):
 		return errs.New(errs.ValidInvalid, "Cloudflare routing needs the account ID, a 32-character code shown on the account's overview page in Cloudflare's dashboard.")
 	case cfg.Zone == "" || !strings.Contains(cfg.Zone, "."):
@@ -526,6 +526,24 @@ func hostOf(upstream string) string {
 
 var _ api.RoutingAdapter = (*Adapter)(nil)
 
+// tokenHelp says how to make the one credential this adapter takes. Each
+// permission is used, and none is spare:
+//
+//   - Account, Cloudflare Tunnel, Edit: create the tunnel, write its ingress,
+//     and read the token cloudflared runs with.
+//   - Zone, DNS, Edit: point each app's hostname at the tunnel.
+//   - Zone, Zone, Read: find the zone's ID from its name.
+const tokenPermissions = "Account / Cloudflare Tunnel / Edit; Zone / DNS / Edit; Zone / Zone / Read"
+
+const tokenHelp = "In Cloudflare, go to My Profile, API Tokens, Create Token, Create Custom Token. " +
+	"Permissions: " + tokenPermissions + ". " +
+	"Account Resources: your account. Zone Resources: the zone below. " +
+	"Pando uses it to create the tunnel and to point each app's hostname at it."
+
+// tokenRemedy is what a refused or missing token's error says to do.
+const tokenRemedy = "Create a custom API token in Cloudflare with these permissions: " + tokenPermissions +
+	", for your account and the zone. Set it as this adapter's API token."
+
 // Info describes this kind of adapter for the forms that configure one
 // (api.KindInfo, R-261).
 func Info() api.KindInfo {
@@ -537,7 +555,7 @@ func Info() api.KindInfo {
 		IDPrefix:    "rte_",
 		Fields: []api.Field{
 			{Key: "api_token", Label: "API token", Type: "string", Credential: true, Required: true,
-				Help: "A Cloudflare API token with Account → Cloudflare Tunnel: Edit, Zone → DNS: Edit and Zone → Zone: Read for the zone."},
+				Help: tokenHelp},
 			{Key: "account_id", Label: "Account ID", Type: "string", Required: true,
 				Help: "Shown on the account's overview page in Cloudflare's dashboard.", Placeholder: "0123456789abcdef0123456789abcdef"},
 			{Key: "zone", Label: "Zone", Type: "string", Required: true,

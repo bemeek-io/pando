@@ -93,7 +93,7 @@ func (c *client) do(ctx context.Context, method, path string, query url.Values, 
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return errs.Newf(errs.AdapterFailed, "Cloudflare refused the API token: %s", joinErrors(env.Errors)).
-			WithRemedy("Create a token with Account → Cloudflare Tunnel: Edit, Zone → DNS: Edit and Zone → Zone: Read for the zone, and set it as this adapter's API token.")
+			WithRemedy(tokenRemedy)
 	}
 	if !env.Success || resp.StatusCode >= 300 {
 		return errs.Newf(errs.AdapterFailed, "Cloudflare refused %s %s: %s", method, path, joinErrors(env.Errors))

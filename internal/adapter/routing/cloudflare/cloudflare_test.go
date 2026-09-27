@@ -415,6 +415,6 @@ func TestR105_ARefusedTokenSaysWhichPermissionsItNeeds(t *testing.T) {
 	var e *errs.Error
 	require.ErrorAs(t, err, &e)
 	require.Contains(t, e.Message, "Authentication error")
-	require.Contains(t, e.Remedy, "Cloudflare Tunnel: Edit")
+	require.Contains(t, e.Remedy, "Account / Cloudflare Tunnel / Edit; Zone / DNS / Edit; Zone / Zone / Read")
 	require.NotContains(t, e.Message+e.Remedy, "tok-cf")
 }
