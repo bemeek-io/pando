@@ -33,6 +33,14 @@ import (
 
 func connected(t *testing.T) *state.DB {
 	t.Helper()
+	db, _ := connectedURL(t)
+	return db
+}
+
+// connectedURL is connected, and the URL it connected to, for a command that
+// opens its own connection from configuration.
+func connectedURL(t *testing.T) (*state.DB, string) {
+	t.Helper()
 	ctx := context.Background()
 
 	container, err := postgres.Run(ctx, "postgres:17-alpine",
@@ -53,7 +61,7 @@ func connected(t *testing.T) *state.DB {
 	db, err := state.Connect(ctx, state.ConnectOptions{OwnerURL: dsn})
 	require.NoError(t, err)
 	t.Cleanup(db.Close)
-	return db
+	return db, dsn
 }
 
 // recorded returns a logger whose lines a test can read back.
