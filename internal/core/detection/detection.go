@@ -47,6 +47,10 @@ type Runner struct {
 	Detections *state.Detections
 	Job        *detect.Job
 
+	// Sources fetches the source detection reads, including an uploaded one
+	// (R-262).
+	Sources source.Sources
+
 	// Policy is checked again here, not only at app creation. The allowlist can
 	// change between the two, and a re-detection (R-022) of an app whose source
 	// is no longer allowed must not clone it.
@@ -204,7 +208,7 @@ func (r *Runner) check(ctx context.Context, appID string) (state.App, error) {
 
 func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (detect.Proposal, error) {
 	detect.Report(ctx, detect.StageFetching, nil)
-	checkout, err := source.Fetch(ctx, src)
+	checkout, err := r.Sources.Fetch(ctx, src)
 	if err != nil {
 		return detect.Proposal{}, err
 	}

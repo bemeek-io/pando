@@ -16,6 +16,7 @@ import (
 // R-046: the first run creates one administrative account, and it must change
 // its password at first sign-in.
 func TestR046_TheFirstRunAccountSignsInAndIsToldToChangeItsPassword(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	s, got := i.signIn(bootstrap.AdminUsername, i.adminPassword)
@@ -40,6 +41,7 @@ func TestR046_TheFirstRunAccountSignsInAndIsToldToChangeItsPassword(t *testing.T
 }
 
 func TestTheSessionCookieIsHTTPOnlyAndScopedToTheWholeSite(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	_, got := i.signIn(bootstrap.AdminUsername, i.adminPassword)
 
@@ -57,6 +59,7 @@ func TestTheSessionCookieIsHTTPOnlyAndScopedToTheWholeSite(t *testing.T) {
 }
 
 func TestABadPasswordIsRefusedWithoutSayingWhichHalfWasWrong(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	_, got := i.signIn(bootstrap.AdminUsername, "not the password")
@@ -70,6 +73,7 @@ func TestABadPasswordIsRefusedWithoutSayingWhichHalfWasWrong(t *testing.T) {
 }
 
 func TestAMalformedLoginBodyIsRejected(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	req := i.anon(http.MethodPost, "/sessions", nil)
@@ -80,6 +84,7 @@ func TestAMalformedLoginBodyIsRejected(t *testing.T) {
 // A session is a credential: signing out has to stop it working immediately,
 // not merely clear the browser's copy.
 func TestSigningOutRevokesTheSessionServerSide(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	s := i.admin()
 
@@ -94,6 +99,7 @@ func TestSigningOutRevokesTheSessionServerSide(t *testing.T) {
 }
 
 func TestSigningOutWithNoSessionIsNotAnError(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	got := i.anon(http.MethodDelete, "/sessions", nil)
 	require.Contains(t, []int{http.StatusOK, http.StatusNoContent}, got.Code, got.String())
@@ -102,6 +108,7 @@ func TestSigningOutWithNoSessionIsNotAnError(t *testing.T) {
 // Anonymous is a principal, not an absence: R-075's anonymous grant is checked
 // on the same path as any other, and there is no branch that skips the check.
 func TestR075_AnAnonymousCallerIsRefusedByAuthorizationRatherThanAtTheDoor(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	got := i.anon(http.MethodGet, "/me", nil)
@@ -112,6 +119,7 @@ func TestR075_AnAnonymousCallerIsRefusedByAuthorizationRatherThanAtTheDoor(t *te
 }
 
 func TestAnUnparseableAuthorizationHeaderIsRefused(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	got := i.do(&session{token: ""}, http.MethodGet, "/me", nil)
@@ -123,6 +131,7 @@ func TestAnUnparseableAuthorizationHeaderIsRefused(t *testing.T) {
 }
 
 func TestAnUnknownTokenIsRefused(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	got := i.do(&session{token: "tok_does_not_exist"}, http.MethodGet, "/me", nil)
@@ -132,6 +141,7 @@ func TestAnUnknownTokenIsRefused(t *testing.T) {
 // GET /me is what the console asks to find out who it is talking to and what
 // that person may do install-wide.
 func TestMeReportsTheSignedInAccount(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	got := i.do(i.admin(), http.MethodGet, "/me", nil)
@@ -145,6 +155,7 @@ func TestMeReportsTheSignedInAccount(t *testing.T) {
 
 // R-058: a delegated token acts as its owner and holds nothing they do not.
 func TestR058_ATokenActsAsItsOwner(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	agent := i.tokenFor(admin)
@@ -160,6 +171,7 @@ func TestR058_ATokenActsAsItsOwner(t *testing.T) {
 // The secret is shown once, at creation. A token that could be read back would
 // make the list endpoint a credential store.
 func TestATokenSecretIsShownOnceAndNeverListed(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -181,6 +193,7 @@ func TestATokenSecretIsShownOnceAndNeverListed(t *testing.T) {
 }
 
 func TestARevokedTokenStopsWorkingImmediately(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -205,6 +218,7 @@ func TestARevokedTokenStopsWorkingImmediately(t *testing.T) {
 // Self-service, because a token holds nothing its owner does not — it is a
 // second credential for power already held, not new power.
 func TestOnePersonsTokensAreNotAnothersToSeeOrRevoke(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")
@@ -236,6 +250,7 @@ func TestOnePersonsTokensAreNotAnothersToSeeOrRevoke(t *testing.T) {
 // principal, in grants and in the audit log under its own name, outliving
 // whoever created it (R-060) — so minting one is administration.
 func TestR060_AServiceTokenIsItsOwnPrincipalAndTakesAnInstallVerbToMint(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	ordinary := i.user("ordinary")
@@ -292,6 +307,7 @@ func TestR060_AServiceTokenIsItsOwnPrincipalAndTakesAnInstallVerbToMint(t *testi
 // achieves nothing. The rule holds for the kind that takes a verb, where a
 // stolen token holding install.users.manage would otherwise be permanent.
 func TestR060_AServiceTokenCannotMintAnotherToken(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -312,6 +328,7 @@ func TestR060_AServiceTokenCannotMintAnotherToken(t *testing.T) {
 // Every response carries the request ID, so a user reporting a failure hands
 // over one string that finds the log line.
 func TestEveryAPIResponseCarriesARequestID(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	for _, got := range []reply{
@@ -325,6 +342,7 @@ func TestEveryAPIResponseCarriesARequestID(t *testing.T) {
 
 // An error crossing the API boundary carries the envelope from design 00 §3.2.
 func TestAnErrorCarriesTheEnvelopeWithItsRequestID(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	got := i.anon(http.MethodGet, "/me", nil)

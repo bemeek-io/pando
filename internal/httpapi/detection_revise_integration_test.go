@@ -40,6 +40,7 @@ func proposalWithRouting(appID string, routing spec.Routing) detect.Proposal {
 // detection comes back with the plan's address, and a body that is not a
 // message is refused before anything is asked.
 func TestR336_AskingAIToChangeThePlanGoesThroughTheAPI(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	appID := i.createApp(admin, "notes")
@@ -68,6 +69,7 @@ func TestR336_AskingAIToChangeThePlanGoesThroughTheAPI(t *testing.T) {
 // and that accept applies a hostname the person chose in subdomain mode and
 // refuses one where the address is a port Pando allocates.
 func TestR166_TheReviewShowsWhereTheAppWillBeAndAcceptSetsItsHostname(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	i := newInstall(t)
 	admin := i.admin()

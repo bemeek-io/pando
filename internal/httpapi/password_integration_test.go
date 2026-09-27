@@ -16,6 +16,7 @@ import (
 // the API: public while there is no account, signs the new administrator in,
 // and refused from then on.
 func TestR046_TheFirstVisitorSetsUpTheAdministrator(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	// Set up already, by the harness; nothing to claim.
 	require.JSONEq(t, `{"needed":false}`, i.do(nil, http.MethodGet, "/setup", nil).String())
@@ -56,6 +57,7 @@ func TestR046_TheFirstVisitorSetsUpTheAdministrator(t *testing.T) {
 // resetting an account with a generated password: must-change by default,
 // every session ended on reset, and not for your own account.
 func TestR046_AdministratorsHandOverGeneratedPasswords(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 

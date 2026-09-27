@@ -29,6 +29,7 @@ func minimalSpec() *spec.AppSpec {
 // TestR073_AppCreationWritesTwoGrants asserts R-073: one row per plane,
 // independently revocable, written atomically with the app.
 func TestR073_AppCreationWritesTwoGrants(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -59,6 +60,7 @@ func TestR073_AppCreationWritesTwoGrants(t *testing.T) {
 // Rollback is repointing at a revision that provably existed, which is only
 // true if a revision can never be edited after the fact.
 func TestR152_SpecRevisionsCannotBeEdited(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -86,6 +88,7 @@ func TestR152_SpecRevisionsCannotBeEdited(t *testing.T) {
 // TestR152_RevisionsAreNumberedMonotonically asserts that editing produces a new
 // revision rather than modifying one.
 func TestR152_RevisionsAreNumberedMonotonically(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -112,6 +115,7 @@ func TestR152_RevisionsAreNumberedMonotonically(t *testing.T) {
 // depends on: a revision that was ever live is kept, even after a rollback has
 // moved the pointer on.
 func TestR152_PinningMarksARevisionEverPinned(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -147,6 +151,7 @@ func TestR152_PinningMarksARevisionEverPinned(t *testing.T) {
 // ON DELETE RESTRICT: the delete flow must resolve volumes explicitly rather
 // than cascading silently.
 func TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -185,6 +190,7 @@ func TestR204_AnAppCannotBeDeletedOutFromUnderItsVolumes(t *testing.T) {
 // reconciler as "could not list apps for rolling backups", on every pass, and
 // no app on the installation was backed up.
 func TestR210_AnAppWithNoVolumesDoesNotStopTheRollingBackupSweep(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -212,6 +218,7 @@ func TestR210_AnAppWithNoVolumesDoesNotStopTheRollingBackupSweep(t *testing.T) {
 // TestR264_LauncherListIsDataPlaneScoped asserts that the two list endpoints
 // answer different questions (R-070, R-071, R-264).
 func TestR264_LauncherListIsDataPlaneScoped(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -249,6 +256,7 @@ func TestR264_LauncherListIsDataPlaneScoped(t *testing.T) {
 // is the sole record of how an app runs, so a lossy round trip is a data loss
 // bug rather than a formatting one.
 func TestSpecRoundTripsThroughJSONB(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -290,6 +298,7 @@ func TestSpecRoundTripsThroughJSONB(t *testing.T) {
 // TestARevisionIDFromAnotherAppDoesNotResolve asserts that revision lookup is
 // scoped, so a guessed ID cannot read another app's spec.
 func TestARevisionIDFromAnotherAppDoesNotResolve(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")

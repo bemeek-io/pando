@@ -13,6 +13,7 @@ import (
 // app role shared with the group and an installation role given to it reach
 // whoever is added, and leave with whoever is removed (R-079, live).
 func TestR078_ANewTeamMemberGetsWhatTheTeamHas(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	appID := i.createApp(admin, "team-wiki")
@@ -77,6 +78,7 @@ func TestR078_ANewTeamMemberGetsWhatTheTeamHas(t *testing.T) {
 // people-based lockout check on membership: a group holding the administrator
 // role counts only while someone is in it.
 func TestR088_TheLastAdministratorCannotBeTakenOutOfTheirGroup(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	ada := i.user("ada")
@@ -104,6 +106,7 @@ func TestR088_TheLastAdministratorCannotBeTakenOutOfTheirGroup(t *testing.T) {
 // Editing an account's username, name and email: an administrator may; the
 // account holder may change their own name and email but not their username.
 func TestAnAccountsProfileCanBeEdited(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	dana := i.user("dana")

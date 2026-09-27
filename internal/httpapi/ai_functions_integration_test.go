@@ -37,6 +37,7 @@ func auditActions(t *testing.T, i *install, s *session, action string) []map[str
 // R-082: a drafted role holds only catalog verbs of its own scope, never a
 // built-in's name, and nothing is created until a person creates it.
 func TestR343_AccessDraftProposesFromTheCatalogOnly(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	ai := withAI(t, i, "ai_anthropic", everything("anthropic"))
@@ -97,6 +98,7 @@ func TestR343_AccessDraftProposesFromTheCatalogOnly(t *testing.T) {
 // policy draft that changes a field the config file fixes is declined by
 // core, citing the file and key, whatever the adapter proposed.
 func TestR271_AIPolicyDraftRefusesConfigFixedField(t *testing.T) {
+	t.Parallel()
 	overlay, err := corepolicy.NewOverlay([]corepolicy.Setting{{
 		Key: "disabled_verbs", Value: []any{"app.exec"},
 		Source: corepolicy.Source{Kind: "file", Name: "/etc/pando/pando.yaml", Key: "policy.disabled_verbs"},
@@ -158,6 +160,7 @@ func TestR271_AIPolicyDraftRefusesConfigFixedField(t *testing.T) {
 // a verb list naming a verb Pando does not have, or a value of the wrong type,
 // is refused rather than proposed, and asking changes nothing that is stored.
 func TestR344_PolicyDraftRefusesWhatWouldNotReadAndSavesNothing(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	ai := withAI(t, i, "ai_anthropic", everything("anthropic"))
@@ -189,6 +192,7 @@ func TestR344_PolicyDraftRefusesWhatWouldNotReadAndSavesNothing(t *testing.T) {
 // the proposal so far, the model changes that draft, and the changes reported
 // are every difference from the stored policy — what was kept earlier stays.
 func TestR344_RefiningAProposalKeepsWhatWasKept(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	ai := withAI(t, i, "ai_anthropic", everything("anthropic"))
@@ -225,6 +229,7 @@ func TestR344_RefiningAProposalKeepsWhatWasKept(t *testing.T) {
 // hand edits reach the model with the change they asked for, and the answer
 // is checked like any other draft.
 func TestR343_RefiningAnAccessDraftSendsTheDraftSoFar(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	ai := withAI(t, i, "ai_anthropic", everything("anthropic"))
@@ -246,6 +251,7 @@ func TestR343_RefiningAnAccessDraftSendsTheDraftSoFar(t *testing.T) {
 // adapter returns a filter, core runs it with the caller's authority, and
 // the summary is written from the records core found.
 func TestR345_AuditSearchRunsTheFilterInCore(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	ai := withAI(t, i, "ai_anthropic", everything("anthropic"))
@@ -300,6 +306,7 @@ func TestR345_AuditSearchRunsTheFilterInCore(t *testing.T) {
 // is given each account's username, and a filter naming someone by username
 // is resolved to their ID by core, so "admin" filters on admin's events.
 func TestR345_AuditSearchResolvesAUsernameToTheAccount(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	ai := withAI(t, i, "ai_anthropic", everything("anthropic"))
@@ -328,6 +335,7 @@ func TestR345_AuditSearchResolvesAUsernameToTheAccount(t *testing.T) {
 // comes from the generated reference, and a citation that is not in it is
 // dropped.
 func TestR346_ReferenceAnswersCiteOnlyTheReference(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	ai := withAI(t, i, "ai_anthropic", everything("anthropic"))
@@ -360,6 +368,7 @@ func TestR346_ReferenceAnswersCiteOnlyTheReference(t *testing.T) {
 // adapter assigned, each function answers with what to do instead, not a
 // dead end.
 func TestR106_AnUnassignedAIFunctionSaysHowToTurnItOn(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	got := i.do(admin, http.MethodPost, "/ai/reference/answer", map[string]any{"question": "How can I make a group?"})

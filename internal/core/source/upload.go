@@ -27,19 +27,33 @@ import (
 // deploy time, and the same logic applies here — the deploy reads what was
 // uploaded, not whatever is on somebody's laptop now.
 
-// UploadDir is where uploaded sources are kept. Set at startup.
-var UploadDir = "/var/lib/pando/uploads"
+// DefaultUploadDir is where a server keeps uploaded sources.
+const DefaultUploadDir = "/var/lib/pando/uploads"
+
+// uploadPath is where an app's uploaded archive is kept.
+//
+// An empty UploadDir is refused rather than joined, which would put every
+// upload in whatever the working directory happens to be.
+func (s Sources) uploadPath(appID string) (string, error) {
+	if s.UploadDir == "" {
+		return "", errs.New(errs.Internal, "Pando has no directory configured for uploaded source.")
+	}
+	return filepath.Join(s.UploadDir, appID+".tar.gz"), nil
+}
 
 // StoreUpload writes an uploaded archive for an app and returns its path.
-func StoreUpload(appID string, r io.Reader) (string, error) {
-	if err := os.MkdirAll(UploadDir, 0o700); err != nil {
+func (s Sources) StoreUpload(appID string, r io.Reader) (string, error) {
+	final, err := s.uploadPath(appID)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(s.UploadDir, 0o700); err != nil {
 		return "", errs.Wrap(errs.Internal, "Pando could not store the upload.", err)
 	}
 
 	// Written to a temporary name and renamed, so a deploy that runs while an
 	// upload is in flight reads the previous archive rather than half of the
 	// new one.
-	final := filepath.Join(UploadDir, appID+".tar.gz")
 	tmp := final + ".partial"
 
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
@@ -73,11 +87,14 @@ func StoreUpload(appID string, r io.Reader) (string, error) {
 // a restore goes to an app created again, with an upload of its own (R-206).
 // It had been kept forever (issue #55). A missing archive is not an error — an
 // app built from git never had one.
-func DiscardUpload(appID string) error {
+func (s Sources) DiscardUpload(appID string) error {
 	if appID == "" || strings.ContainsAny(appID, `/\`) || strings.HasPrefix(appID, ".") {
 		return errs.Newf(errs.ValidInvalid, "%q does not name an app.", appID)
 	}
-	final := filepath.Join(UploadDir, appID+".tar.gz")
+	final, err := s.uploadPath(appID)
+	if err != nil {
+		return err
+	}
 	for _, p := range []string{final, final + ".partial"} {
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 			return errs.Wrap(errs.Internal, "Pando could not remove the app's uploaded source.", err)
@@ -87,8 +104,11 @@ func DiscardUpload(appID string) error {
 }
 
 // fetchUpload expands a stored upload into a checkout.
-func fetchUpload(_ context.Context, src spec.Source) (*Checkout, error) {
-	archive := filepath.Join(UploadDir, src.UploadID+".tar.gz")
+func (s Sources) fetchUpload(_ context.Context, src spec.Source) (*Checkout, error) {
+	archive, err := s.uploadPath(src.UploadID)
+	if err != nil {
+		return nil, err
+	}
 	f, err := os.Open(archive)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, errs.New(errs.ValidInvalid,

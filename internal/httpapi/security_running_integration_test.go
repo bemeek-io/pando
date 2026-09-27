@@ -44,6 +44,7 @@ func (b *blockingScanner) Scan(ctx context.Context, _ adapterapi.ScanRequest) (a
 // app's security report and on its row in the app list, and stops showing when
 // it ends (R-261: the state comes from the API, not from the client that asked).
 func TestR310_AScanInProgressIsVisibleWhoeverStartedIt(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	owner := i.admin()
 	app := i.createApp(owner, "notes")

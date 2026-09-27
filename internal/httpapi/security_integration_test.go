@@ -18,6 +18,7 @@ import (
 // score decides whether the next deploy is allowed — which makes it a write
 // however much it looks like a refresh.
 func TestR310_TheScoreIsReadableByAnyoneWhoCanSeeTheApp(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	owner := i.admin()
 	stranger := i.user("stranger")

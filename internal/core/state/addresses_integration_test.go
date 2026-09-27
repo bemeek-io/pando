@@ -33,6 +33,7 @@ func onPath(p string) spec.Routing {
 // the longest whole-segment prefix, case-sensitive, and nothing for a path
 // that merely starts with the same characters.
 func TestR167_APathIsFoundByItsLongestPrefix(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -65,6 +66,7 @@ func TestR167_APathIsFoundByItsLongestPrefix(t *testing.T) {
 // per hostname and path, no path inside or around another's, and none that
 // takes another app's slug. A deleted app gives its address up.
 func TestR167_APinClaimsTheAddress(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")

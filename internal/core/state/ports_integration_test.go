@@ -22,6 +22,7 @@ import (
 // the same answer before either had written anything down. Two apps ended up
 // holding port 9001 and nothing anywhere noticed.
 func TestO15_ConcurrentAllocationNeverHandsOutTheSamePort(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	owner := seedUser(t, db, "port-owner")
 	apps := state.NewApps(db)
@@ -65,6 +66,7 @@ func TestO15_ConcurrentAllocationNeverHandsOutTheSamePort(t *testing.T) {
 // Re-detection must not consume a second port and leave bookmarks pointing at
 // nothing (R-022 makes re-detection explicit, not free).
 func TestO15_AllocatingTwiceForOneAppReturnsTheSamePort(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	owner := seedUser(t, db, "port-owner")
 	apps := state.NewApps(db)
@@ -83,6 +85,7 @@ func TestO15_AllocatingTwiceForOneAppReturnsTheSamePort(t *testing.T) {
 
 // A full range is a capacity error naming the setting to change, not a crash.
 func TestO15_AFullRangeSaysWhatToDoAboutIt(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	owner := seedUser(t, db, "port-owner")
 	apps := state.NewApps(db)
@@ -104,6 +107,7 @@ func TestO15_AFullRangeSaysWhatToDoAboutIt(t *testing.T) {
 
 // A port belongs to an app, and goes when the app does.
 func TestO15_DeletingAnAppReleasesItsPort(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	owner := seedUser(t, db, "port-owner")
 	apps := state.NewApps(db)
@@ -135,6 +139,7 @@ func TestO15_DeletingAnAppReleasesItsPort(t *testing.T) {
 // them, and was told every port was assigned to an app — by which the ports
 // were held by apps that no longer existed.
 func TestO15_ArchivingAnAppReleasesItsPort(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	owner := seedUser(t, db, "port-owner")
 	apps := state.NewApps(db)
@@ -165,6 +170,7 @@ func TestO15_ArchivingAnAppReleasesItsPort(t *testing.T) {
 // them. InUse has always ignored them, so nothing was listening on those
 // ports either.
 func TestO15_AllocationReclaimsPortsLeftByDeletedApps(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	owner := seedUser(t, db, "port-owner")
 	apps := state.NewApps(db)

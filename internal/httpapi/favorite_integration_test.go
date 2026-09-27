@@ -33,6 +33,7 @@ func (i *install) launcher(s *session) map[string]bool {
 // apps they can open, sees them marked in their own launcher and nobody
 // else's, and cannot pin — or learn of — an app they cannot open.
 func TestR341_FavoritesArePerPersonAndGrantNothing(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	notes := i.createApp(admin, "notes")
@@ -81,6 +82,7 @@ func TestR341_FavoritesArePerPersonAndGrantNothing(t *testing.T) {
 
 // Favorites need a person. The anonymous principal has no launcher.
 func TestR341_FavoritesNeedASignedInPerson(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	notes := i.createApp(i.admin(), "notes")
 

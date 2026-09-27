@@ -20,6 +20,7 @@ import (
 // --- deployments -----------------------------------------------------------
 
 func TestADeploymentThatDoesNotExistIsNotFound(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -31,6 +32,7 @@ func TestADeploymentThatDoesNotExistIsNotFound(t *testing.T) {
 
 // R-146: rolling back needs something to roll back to.
 func TestR146_RollingBackWithNoEarlierRevisionIsRefusedReadably(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -42,6 +44,7 @@ func TestR146_RollingBackWithNoEarlierRevisionIsRefusedReadably(t *testing.T) {
 }
 
 func TestRollingBackToARevisionThatDoesNotExist(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -53,6 +56,7 @@ func TestRollingBackToARevisionThatDoesNotExist(t *testing.T) {
 
 // Deploying is behind app.deploy, which a data-plane grant does not carry.
 func TestDeployingIsBehindItsOwnVerb(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")
@@ -65,6 +69,7 @@ func TestDeployingIsBehindItsOwnVerb(t *testing.T) {
 // --- app status and logs ---------------------------------------------------
 
 func TestStatusOfAnAppThatHasNeverRun(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -79,6 +84,7 @@ func TestStatusOfAnAppThatHasNeverRun(t *testing.T) {
 // R-170: logs stream. The handler must not buffer the whole response before
 // answering, and it must not fail when there is nothing to stream yet.
 func TestR170_AppLogsAnswerEvenWhenThereIsNothingToStream(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -88,6 +94,7 @@ func TestR170_AppLogsAnswerEvenWhenThereIsNothingToStream(t *testing.T) {
 }
 
 func TestDeploymentLogsOfANonexistentDeployment(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -102,6 +109,7 @@ func TestDeploymentLogsOfANonexistentDeployment(t *testing.T) {
 // Start and stop set desired state; restart is an act rather than a state and
 // goes through the runtime.
 func TestLifecycleEndpointsAreBehindTheLifecycleVerb(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")
@@ -115,6 +123,7 @@ func TestLifecycleEndpointsAreBehindTheLifecycleVerb(t *testing.T) {
 }
 
 func TestStartingAndStoppingRecordTheDesiredState(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -145,6 +154,7 @@ func TestStartingAndStoppingRecordTheDesiredState(t *testing.T) {
 // back to the loop. Nothing here retries on its own, which is what R-151
 // forbids.
 func TestR151_AHumanCanStartAnAppPandoGaveUpOn(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -167,6 +177,7 @@ func TestR151_AHumanCanStartAnAppPandoGaveUpOn(t *testing.T) {
 
 // Stopping one works too, and for the same reason: the loop is never coming.
 func TestStoppingAFailedAppIsRecorded(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -225,6 +236,7 @@ func (i *install) upload(s *session, appID string, body []byte) reply {
 // Gated by app.spec.edit rather than app.deploy: replacing the source changes
 // what the app *is*.
 func TestR262_UploadingSourceIsBehindTheSpecEditVerb(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")
@@ -241,6 +253,7 @@ func TestR262_UploadingSourceIsBehindTheSpecEditVerb(t *testing.T) {
 }
 
 func TestAnUploadThatIsNotAnArchiveIsRefusedRatherThanStored(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -250,6 +263,7 @@ func TestAnUploadThatIsNotAnArchiveIsRefusedRatherThanStored(t *testing.T) {
 }
 
 func TestUploadingToAnAppThatDoesNotExist(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	got := i.upload(i.admin(), "app_01HQ8ZZZZZZZZZZZZZZZZZZZZZ",
@@ -262,6 +276,7 @@ func TestUploadingToAnAppThatDoesNotExist(t *testing.T) {
 
 // R-212: backup and restore are install-scoped administration.
 func TestR212_BackupEndpointsAreInstallAdministration(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	other := i.user("ordinary")
 
@@ -281,6 +296,7 @@ func TestR212_BackupEndpointsAreInstallAdministration(t *testing.T) {
 }
 
 func TestListingBackupsOnAFreshInstall(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	got := i.do(i.admin(), http.MethodGet, "/backups", nil)
@@ -297,6 +313,7 @@ func TestListingBackupsOnAFreshInstall(t *testing.T) {
 // thing somebody passes wrongly and the wrong value here replaces an
 // installation.
 func TestVerifyAndRestoreAreSeparateRoutes(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -314,6 +331,7 @@ func TestVerifyAndRestoreAreSeparateRoutes(t *testing.T) {
 // The most destructive action in the system does not happen because a field was
 // left out of a request body.
 func TestRestoringWithoutConfirmationIsRefused(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	got := i.do(i.admin(), http.MethodPost, "/backups/bk_nothing/restore",
@@ -324,6 +342,7 @@ func TestRestoringWithoutConfirmationIsRefused(t *testing.T) {
 
 // R-214: Pando does not keep the passphrase, so one has to be given.
 func TestR214_ABackupWithNoPassphraseIsRefused(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	got := i.do(i.admin(), http.MethodPost, "/backups", map[string]any{})
@@ -335,6 +354,7 @@ func TestR214_ABackupWithNoPassphraseIsRefused(t *testing.T) {
 // R-206: restoring one app's data is an app operation, so its owner can do it
 // without install.backup.manage.
 func TestR206_RestoringOneAppsDataIsGatedOnTheAppNotTheInstall(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")
@@ -358,6 +378,7 @@ func TestR206_RestoringOneAppsDataIsGatedOnTheAppNotTheInstall(t *testing.T) {
 // R-086: the most privileged action in the system. The verb is checked, then
 // host policy, and only then is a session opened.
 func TestR086_ExecIsBehindItsOwnVerb(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")

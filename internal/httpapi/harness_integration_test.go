@@ -10,18 +10,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"go.uber.org/zap"
 
 	aianthropic "github.com/trypando/pando/internal/adapter/ai/anthropic"
@@ -45,6 +38,7 @@ import (
 	"github.com/trypando/pando/internal/core/source"
 	"github.com/trypando/pando/internal/core/spec"
 	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/core/state/statetest"
 	"github.com/trypando/pando/internal/httpapi"
 	"github.com/trypando/pando/internal/reference"
 	"github.com/trypando/pando/internal/secret"
@@ -54,40 +48,9 @@ import (
 //
 // The handlers hold concrete *state.X rather than interfaces, so there is no
 // seam to fake: a handler test either runs against the real store or tests
-// nothing. Postgres starts once for the package and each test gets its own
-// schema-fresh database, which is cheap next to starting a container per test.
-
-// ownerURL is the connection string for the shared container, resolved once.
-var (
-	containerOnce sync.Once
-	containerURL  string
-	containerErr  error
-)
-
-func sharedPostgres(t *testing.T) string {
-	t.Helper()
-	containerOnce.Do(func() {
-		ctx := context.Background()
-		container, err := postgres.Run(ctx, "postgres:17-alpine",
-			postgres.WithDatabase("pando"),
-			postgres.WithUsername("pando"),
-			postgres.WithPassword("test-password"),
-			testcontainers.WithWaitStrategy(
-				wait.ForLog("database system is ready to accept connections").
-					WithOccurrence(2).
-					WithStartupTimeout(90*time.Second)),
-		)
-		if err != nil {
-			containerErr = err
-			return
-		}
-		// Deliberately not terminated per test: the container lives for the
-		// package run and Ryuk reaps it afterwards.
-		containerURL, containerErr = container.ConnectionString(ctx, "sslmode=disable")
-	})
-	require.NoError(t, containerErr)
-	return containerURL
-}
+// nothing. Postgres starts once for the package and each test gets a database
+// of its own, copied from one migrated once (statetest). Nothing an install
+// holds is shared with another, so every test here runs in parallel (issue #31).
 
 // install is one Pando installation: a database, a wired API, and an admin.
 type install struct {
@@ -133,10 +96,7 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 	t.Helper()
 	ctx := context.Background()
 
-	dbURL := freshDatabase(t)
-	db, err := state.Connect(ctx, state.ConnectOptions{OwnerURL: dbURL})
-	require.NoError(t, err)
-	t.Cleanup(db.Close)
+	db, dbURL := statetest.Connect(t)
 
 	logger := zap.NewNop()
 	auditor := audit.New(db.Pool)
@@ -172,9 +132,7 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 	// /var/lib/pando/uploads, which a test cannot write to — and the failure
 	// arrives as a 500 from the upload endpoint rather than as anything that
 	// names the directory.
-	previousUploadDir := source.UploadDir
-	source.UploadDir = t.TempDir()
-	t.Cleanup(func() { source.UploadDir = previousUploadDir })
+	sources := source.Sources{UploadDir: t.TempDir()}
 
 	backupAdapter := backuplocal.New()
 	require.NoError(t, backupAdapter.Configure(ctx,
@@ -190,7 +148,8 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 
 	deployer := deploy.NewRunner(registry, appPlanner, apps, deployments, secrets, reconciles,
 		logStore, volumes, "http://pando:8080").
-		WithServices(state.NewServices(db), secrets)
+		WithServices(state.NewServices(db), secrets).
+		WithSources(sources)
 
 	minter, err := assertion.NewMinter("https://pando.test", clock.System{})
 	require.NoError(t, err)
@@ -235,6 +194,7 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 		Logs:               logStore,
 		Secrets:            secrets,
 		Detections:         state.NewDetections(db),
+		Sources:            sources,
 
 		Authz:   authorizer,
 		Authent: authenticator,
@@ -292,35 +252,6 @@ func quote(t *testing.T, s string) string {
 	require.NoError(t, err)
 	return string(b)
 }
-
-// freshDatabase creates an empty database for one install and returns its URL.
-//
-// A database rather than truncated tables. Migrations seed rows — the built-in
-// roles (R-081) and the host policy singleton (R-015) — so emptying every table
-// between tests leaves an install whose administrator role does not exist, and
-// the next bootstrap fails somewhere far from the cause. Which tables are
-// seeded is also a thing migrations may change, and a test harness that has to
-// be updated when they do is one that will not be.
-func freshDatabase(t *testing.T) string {
-	t.Helper()
-	ctx := context.Background()
-
-	base := sharedPostgres(t)
-	owner, err := pgx.Connect(ctx, base)
-	require.NoError(t, err)
-	defer func() { _ = owner.Close(ctx) }()
-
-	name := fmt.Sprintf("pando_test_%d", nextDatabase.Add(1))
-	_, err = owner.Exec(ctx, `CREATE DATABASE "`+name+`"`)
-	require.NoError(t, err)
-
-	u, err := url.Parse(base)
-	require.NoError(t, err)
-	u.Path = "/" + name
-	return u.String()
-}
-
-var nextDatabase atomic.Int64
 
 // --- requests --------------------------------------------------------------
 

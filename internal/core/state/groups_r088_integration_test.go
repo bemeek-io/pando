@@ -19,6 +19,7 @@ import (
 // in the database: a group holding the administrator role is the installation's
 // only way to manage accounts, and deleting it would leave nobody who can.
 func TestR088_DeletingTheGroupThatIsTheOnlyAdministratorIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	groups := state.NewGroups(db)
@@ -58,6 +59,7 @@ func TestR088_DeletingTheGroupThatIsTheOnlyAdministratorIsRefused(t *testing.T) 
 // meant for synced groups counted every Pando-made one as the same — and that a
 // name is still taken once.
 func TestR078_ManyGroupsCanBeMadeAndNamesAreUnique(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	groups := state.NewGroups(connected(t))
 

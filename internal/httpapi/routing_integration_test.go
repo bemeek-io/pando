@@ -96,6 +96,7 @@ func (i *install) newestRouting(s *session, appID string) spec.Routing {
 // explained — from where, to where, and that bookmarks break — and nothing is
 // written until it is confirmed.
 func TestR165_ChangingAnAddressNeedsConfirmation(t *testing.T) {
+	t.Parallel()
 	i, _, ops, appID := withRouting(t)
 	// Named in the adapter's zone (R-162), from the app's slug.
 	original := i.newestRouting(ops, appID).Hostname
@@ -117,6 +118,7 @@ func TestR165_ChangingAnAddressNeedsConfirmation(t *testing.T) {
 // come from an endpoint the app's editor can read, without install.view, and
 // a saved change shows as where the app will be after the next deploy.
 func TestR261_WhoeverEditsAnAppCanSeeWhereItCanMove(t *testing.T) {
+	t.Parallel()
 	i, _, ops, appID := withRouting(t)
 
 	var got struct {
@@ -158,6 +160,7 @@ func (i *install) pinNewest(s *session, appID string) reply {
 // per path, none inside or around another's, none that takes another app's
 // slug — refused when chosen, and decided when pinned.
 func TestR167_ACustomPathBelongsToOneApp(t *testing.T) {
+	t.Parallel()
 	i, admin, _, first := withRouting(t)
 	second := i.appWithSpec(admin, "wiki")
 
@@ -223,6 +226,7 @@ func (i *install) doRaw(s *session, method, path, body string) reply {
 // TestTheRoutingEndpointsRefuseWhatTheyCannotDo covers each refusal, and the
 // request that changes nothing.
 func TestTheRoutingEndpointsRefuseWhatTheyCannotDo(t *testing.T) {
+	t.Parallel()
 	i, admin, ops, appID := withRouting(t)
 
 	// Named as an administrator named it, where there is a name.
@@ -273,6 +277,7 @@ func TestTheRoutingEndpointsRefuseWhatTheyCannotDo(t *testing.T) {
 // TestR163_AnOperatorCannotMoveAnAppOffTheAdaptersDefaultMode asserts R-163
 // on both ways of writing routing: PUT /routing and a whole spec.
 func TestR163_AnOperatorCannotMoveAnAppOffTheAdaptersDefaultMode(t *testing.T) {
+	t.Parallel()
 	i, admin, ops, appID := withRouting(t)
 
 	refused := i.do(ops, http.MethodPut, "/apps/"+appID+"/routing", map[string]any{"mode": "path", "confirm": true})
@@ -295,6 +300,7 @@ func TestR163_AnOperatorCannotMoveAnAppOffTheAdaptersDefaultMode(t *testing.T) {
 // TestR162_MovingAnAppToTheDefaultAdapterNeedsNoOverride: the ordinary move
 // an install makes when it switches routing adapters.
 func TestR162_MovingAnAppToTheDefaultAdapterNeedsNoOverride(t *testing.T) {
+	t.Parallel()
 	i, admin, ops, appID := withRouting(t)
 	original := i.newestRouting(admin, appID).Hostname
 

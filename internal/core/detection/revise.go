@@ -10,7 +10,6 @@ import (
 	"github.com/trypando/pando/internal/adapter/api"
 	"github.com/trypando/pando/internal/core/clock"
 	"github.com/trypando/pando/internal/core/screening"
-	"github.com/trypando/pando/internal/core/source"
 	"github.com/trypando/pando/internal/core/spec"
 	"github.com/trypando/pando/internal/core/state"
 	"github.com/trypando/pando/internal/detect"
@@ -84,7 +83,7 @@ func (r *Runner) Revise(ctx context.Context, appID, message string) (state.Detec
 	if proposal.Commit != "" {
 		src.Commit = proposal.Commit
 	}
-	checkout, err := source.Fetch(ctx, src)
+	checkout, err := r.Sources.Fetch(ctx, src)
 	if err != nil {
 		return state.Detection{}, err
 	}

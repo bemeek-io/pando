@@ -21,6 +21,7 @@ import (
 // name — and holding it produced "an app named crewmate already exists",
 // pointing at a row the person had just deleted and can no longer see.
 func TestR204_ADeletedAppDoesNotHoldItsName(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")

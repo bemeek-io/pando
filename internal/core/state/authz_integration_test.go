@@ -13,17 +13,19 @@ import (
 	"github.com/trypando/pando/internal/core/authz"
 	"github.com/trypando/pando/internal/core/bootstrap"
 	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/core/state/statetest"
 	"github.com/trypando/pando/internal/errs"
 	"github.com/trypando/pando/internal/hash"
 	"github.com/trypando/pando/internal/id"
 	"github.com/trypando/pando/internal/secret"
 )
 
+// connected is a fresh, migrated database of the test's own, copied from one
+// prepared for the whole package (issue #31). A test about the cluster itself
+// — roles, ownership, a second Connect — uses startPostgres instead.
 func connected(t *testing.T) *state.DB {
 	t.Helper()
-	db, err := state.Connect(context.Background(), state.ConnectOptions{OwnerURL: startPostgres(t)})
-	require.NoError(t, err)
-	t.Cleanup(db.Close)
+	db, _ := statetest.Connect(t)
 	return db
 }
 
@@ -57,6 +59,7 @@ func seedApp(t *testing.T, db *state.DB, ownerID string) string {
 // Built-in role contents change only by migration. The trigger refuses every
 // runtime path, so a bug in an API handler cannot widen a role.
 func TestR081_BuiltInRolesAreImmutable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 
@@ -85,6 +88,7 @@ func TestR081_BuiltInRolesAreImmutable(t *testing.T) {
 // R-080 and R-184 specify, including that the three *.override verbs are
 // Owner-only.
 func TestR081_SeededVerbSetsMatchTheRequirement(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	store := state.NewAuthzStore(db)
@@ -131,6 +135,7 @@ func TestR081_SeededVerbSetsMatchTheRequirement(t *testing.T) {
 // TestR081_AdministratorIsImmutableToo asserts the fourth built-in role is
 // protected by the same trigger as the other three (R-081).
 func TestR081_AdministratorIsImmutableToo(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 
@@ -146,6 +151,7 @@ func TestR081_AdministratorIsImmutableToo(t *testing.T) {
 // scope, one verb, and the same protection as the others. What a creator can
 // manage beyond that comes from owning what they made (R-073), not from here.
 func TestR081_CreatorHoldsOnlyAppCreate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	store := state.NewAuthzStore(db)
@@ -171,6 +177,7 @@ func TestR081_CreatorHoldsOnlyAppCreate(t *testing.T) {
 // scope. Without it, a row with a null app and an app role would be a grant the
 // install-wide query returns and whose verbs are app verbs.
 func TestR080_GrantScopeIsEnforcedByTheDatabase(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -208,6 +215,7 @@ func TestR080_GrantScopeIsEnforcedByTheDatabase(t *testing.T) {
 // TestR080_InstallGrantsAreNeverReturnedByAnAppLookup asserts the two scopes stay
 // separate on the read path as well as the write path.
 func TestR080_InstallGrantsAreNeverReturnedByAnAppLookup(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -267,6 +275,7 @@ func TestR080_InstallGrantsAreNeverReturnedByAnAppLookup(t *testing.T) {
 // which requires shell access to the host. The refusal is at the store, below
 // every surface, so the console, the CLI and the API all inherit it.
 func TestR088_TheLastAdministratorCannotBeRevoked(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -289,6 +298,7 @@ func TestR088_TheLastAdministratorCannotBeRevoked(t *testing.T) {
 
 // TestR073_TwoPlanesAreTwoIndependentlyRevocableRows asserts R-073.
 func TestR073_TwoPlanesAreTwoIndependentlyRevocableRows(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -328,6 +338,7 @@ func TestR073_TwoPlanesAreTwoIndependentlyRevocableRows(t *testing.T) {
 // TestR075_AnonymousGrantIsARowAndCannotBeDuplicated asserts R-074/R-075 and the
 // NULLS NOT DISTINCT index — default NULL handling would let duplicates through.
 func TestR075_AnonymousGrantIsARowAndCannotBeDuplicated(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -351,6 +362,7 @@ func TestR075_AnonymousGrantIsARowAndCannotBeDuplicated(t *testing.T) {
 // data-plane grant has no role (R-070), and a non-anonymous grant has a
 // principal (R-074).
 func TestGrantShapesAreEnforcedByTheDatabase(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -372,6 +384,7 @@ func TestGrantShapesAreEnforcedByTheDatabase(t *testing.T) {
 // closing phase 1's Done when: the check is a live lookup, so suspending the
 // owner is enough — no cascade runs and no grant is rewritten.
 func TestR059_OrphanedDelegatedTokenEndToEnd(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -401,6 +414,7 @@ func TestR059_OrphanedDelegatedTokenEndToEnd(t *testing.T) {
 
 // TestR063_TokenSecretIsShownOnceAndStoredHashed asserts R-063.
 func TestR063_TokenSecretIsShownOnceAndStoredHashed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -417,6 +431,7 @@ func TestR063_TokenSecretIsShownOnceAndStoredHashed(t *testing.T) {
 // TestTokenAuthenticationFailuresAreIndistinguishable asserts that a caller
 // cannot enumerate valid token IDs by comparing errors.
 func TestTokenAuthenticationFailuresAreIndistinguishable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -454,6 +469,7 @@ func TestTokenAuthenticationFailuresAreIndistinguishable(t *testing.T) {
 // TestTokenShapesAreEnforced asserts R-058 and R-060: a delegated token needs an
 // owner, an account token must not have one.
 func TestTokenShapesAreEnforced(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -475,6 +491,7 @@ func TestTokenShapesAreEnforced(t *testing.T) {
 
 // TestR046_FirstRunCreatesOneAdminAndIsIdempotent asserts R-046.
 func TestR046_FirstRunCreatesOneAdminAndIsIdempotent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	users := state.NewUsers(db)
@@ -524,6 +541,7 @@ func TestR046_FirstRunCreatesOneAdminAndIsIdempotent(t *testing.T) {
 // grant made to a group is honored through membership, and removing membership
 // revokes access without touching the grant.
 func TestR079_GroupMembershipIsResolvedLive(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")

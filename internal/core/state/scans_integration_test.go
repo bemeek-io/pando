@@ -23,6 +23,7 @@ func score(n int) *int { return &n }
 // insisted on the pinned revision answered "this app has not been scanned yet"
 // a minute after scanning the very source the revision was written from.
 func TestR312_AcceptingAProposalDoesNotHideTheScanTakenAtDiscovery(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")
@@ -82,6 +83,7 @@ func TestR312_AcceptingAProposalDoesNotHideTheScanTakenAtDiscovery(t *testing.T)
 // found, whoever took it; a failed one, another commit's, or one of no known
 // commit is not — so the source is scanned once, not once per deploy.
 func TestR312_ADeployOfAScannedCommitUsesThatScan(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	alice := seedUser(t, db, "alice")

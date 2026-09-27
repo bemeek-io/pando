@@ -17,6 +17,7 @@ import (
 // against this API and mints a token to do it; putting the description of it
 // behind an install verb would leave them reading someone's screenshot.
 func TestR261_TheReferenceIsServedToAnyoneSignedIn(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	ordinary := i.user("ordinary")
 

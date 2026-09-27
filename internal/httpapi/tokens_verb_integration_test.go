@@ -14,6 +14,7 @@ import (
 // install.users.manage alone no longer reaches service tokens. The
 // Administrator holds both.
 func TestR060_ServiceTokensHaveTheirOwnVerb(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 

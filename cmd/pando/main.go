@@ -373,9 +373,14 @@ func serve(ctx context.Context, configPath string) error {
 		Logger:      logger,
 	}
 
+	// Where an app's source comes from, and where an uploaded one is kept
+	// (R-262). One value for the deploy path, detection, the API and the GC.
+	sources := source.Sources{UploadDir: source.DefaultUploadDir}
+
 	deployer := deploy.NewRunner(registry, appPlanner, apps, deployments, secrets, reconciles, logStore, volumes, proxyUpstream).
 		WithServices(state.NewServices(db), secrets).
-		WithSecurity(securityService)
+		WithSecurity(securityService).
+		WithSources(sources)
 
 	// Detection (Sequence A). Every detector bids; the runtime supplies the
 	// trial run (R-097), and a registry probe would supply R-094's top tier.
@@ -397,6 +402,7 @@ func serve(ctx context.Context, configPath string) error {
 		Apps:       apps,
 		Detections: detections,
 		Policy:     hostPolicy,
+		Sources:    sources,
 
 		// R-104: everything a repository cannot say about itself is
 		// configuration, not a question. Without this a detected spec describes
@@ -540,6 +546,7 @@ func serve(ctx context.Context, configPath string) error {
 		},
 		Logger:   logger,
 		Security: securityService,
+		Sources:  sources,
 		DB:       db,
 		Identity: identity,
 		Users:    users,
@@ -788,7 +795,7 @@ func serve(ctx context.Context, configPath string) error {
 
 		// A deleted app's build cache and uploaded source (R-224, issue #55).
 		BuildCaches:   buildCaches{registry},
-		DiscardUpload: source.DiscardUpload,
+		DiscardUpload: sources.DiscardUpload,
 
 		// R-211's rolling backups, which had a column, a default and an expiry
 		// query and nothing that ever took one.

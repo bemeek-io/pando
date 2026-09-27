@@ -15,6 +15,7 @@ import (
 // nothing is deployed — saying so is the difference between waiting and
 // wondering.
 func TestCreatingAnAppLeavesItInDraftWithDetectionQueued(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -36,6 +37,7 @@ func TestCreatingAnAppLeavesItInDraftWithDetectionQueued(t *testing.T) {
 }
 
 func TestAnAppNeedsAName(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	got := i.do(i.admin(), http.MethodPost, "/apps", map[string]any{
@@ -55,6 +57,7 @@ func TestAnAppNeedsAName(t *testing.T) {
 // R-262: an agent retries on a timeout, and a deploy that clones regularly
 // outlasts a client's patience. A retry must not produce two apps.
 func TestR262_ARetriedCreateReplaysRatherThanCreatingASecondApp(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -84,6 +87,7 @@ func TestR262_ARetriedCreateReplaysRatherThanCreatingASecondApp(t *testing.T) {
 }
 
 func TestListingAppsShowsWhatTheCallerCanManage(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -106,6 +110,7 @@ func TestListingAppsShowsWhatTheCallerCanManage(t *testing.T) {
 // R-087: an administrator holds no app.* verb and is not an owner of every app.
 // The two scopes are never conflated.
 func TestR087_AnOrdinaryUserSeesOnlyTheirOwnApps(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")
@@ -127,6 +132,7 @@ func TestR087_AnOrdinaryUserSeesOnlyTheirOwnApps(t *testing.T) {
 // An app someone cannot see must not be distinguishable from one that does not
 // exist, or the API becomes a way to enumerate apps.
 func TestAnAppYouCannotSeeAnswersTheSameAsOneThatDoesNotExist(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")
@@ -141,6 +147,7 @@ func TestAnAppYouCannotSeeAnswersTheSameAsOneThatDoesNotExist(t *testing.T) {
 }
 
 func TestGettingAnAppReturnsIt(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -155,12 +162,14 @@ func TestGettingAnAppReturnsIt(t *testing.T) {
 }
 
 func TestAnAppIDThatIsNotAnIDIsNotFound(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	got := i.do(i.admin(), http.MethodGet, "/apps/not-an-id", nil)
 	require.Contains(t, []int{http.StatusBadRequest, http.StatusNotFound}, got.Code, got.String())
 }
 
 func TestRenamingAnApp(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -176,6 +185,7 @@ func TestRenamingAnApp(t *testing.T) {
 // R-205: a delete keeps a copy of the app's storage unless told not to, and a
 // failed backup means the data is not safe — so the app is not deleted.
 func TestR205_DeletingAnAppTakesTheBackupDecisionExplicitly(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -191,6 +201,7 @@ func TestR205_DeletingAnAppTakesTheBackupDecisionExplicitly(t *testing.T) {
 // R-204/R-205: neither answer is assumed. An app with storage and no decision
 // is refused rather than deleted one way or the other.
 func TestR205_ADeleteWithNoDecisionIsAnsweredRatherThanAssumed(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -206,6 +217,7 @@ func TestR205_ADeleteWithNoDecisionIsAnsweredRatherThanAssumed(t *testing.T) {
 // R-152: spec revisions are append-only, and a new app has none until detection
 // is accepted or a spec is written.
 func TestR152_ANewAppHasNoSpecRevisionsYet(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -223,6 +235,7 @@ func TestR152_ANewAppHasNoSpecRevisionsYet(t *testing.T) {
 }
 
 func TestExportingAnAppWithNoPinnedSpecSaysSo(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -235,6 +248,7 @@ func TestExportingAnAppWithNoPinnedSpecSaysSo(t *testing.T) {
 // Start and stop set desired state and let the reconciler converge, so
 // "stopped" survives a Pando restart (design 05).
 func TestStartAndStopSetDesiredStateRatherThanActing(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -252,6 +266,7 @@ func TestStartAndStopSetDesiredStateRatherThanActing(t *testing.T) {
 
 // Every app endpoint is behind a verb, and an anonymous caller holds none.
 func TestEveryAppEndpointRefusesAnAnonymousCaller(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	id := i.createApp(i.admin(), "notes")
 
@@ -286,6 +301,7 @@ func TestEveryAppEndpointRefusesAnAnonymousCaller(t *testing.T) {
 // time. An app with no pinned spec cannot be planned either, and the refusal
 // has to be readable rather than a 500.
 func TestPlanningAnAppWithNothingPinnedIsRefusedReadably(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -304,6 +320,7 @@ func TestPlanningAnAppWithNothingPinnedIsRefusedReadably(t *testing.T) {
 }
 
 func TestDeployingAnAppWithNothingPinnedIsRefusedReadably(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -315,6 +332,7 @@ func TestDeployingAnAppWithNothingPinnedIsRefusedReadably(t *testing.T) {
 }
 
 func TestListingDeploymentsOfANewApp(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -327,6 +345,7 @@ func TestListingDeploymentsOfANewApp(t *testing.T) {
 // The launcher (R-264) is data-plane scoped, and deliberately a different list
 // from GET /apps.
 func TestR264_TheLauncherIsADifferentListFromTheManagementOne(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	i.createApp(admin, "notes")

@@ -20,6 +20,10 @@ import (
 )
 
 // startPostgres brings up a real Postgres and returns an owner connection URL.
+//
+// A cluster of the test's own, for the tests here: each creates roles, changes
+// ownership or connects twice, and AppRole's password and every role belong to
+// the cluster rather than to one database. Everything else uses connected.
 func startPostgres(t *testing.T) string {
 	t.Helper()
 	ctx := context.Background()
@@ -49,6 +53,7 @@ func startPostgres(t *testing.T) string {
 // revoke that ran is not the same as a privilege that cannot be regained — see
 // TestR027_AnOwningRoleCanUndoTheRevoke.
 func TestR027_AuditLogIsNotRewritable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ownerURL := startPostgres(t)
 
@@ -94,6 +99,7 @@ func TestR027_AuditLogIsNotRewritable(t *testing.T) {
 // serving traffic owns nothing, because an owner can restore its own privileges
 // whenever it likes.
 func TestR027_ApplicationRoleDoesNotOwnTheSchema(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ownerURL := startPostgres(t)
 
@@ -114,6 +120,7 @@ func TestR027_ApplicationRoleDoesNotOwnTheSchema(t *testing.T) {
 // TestR027_AuditRemainsImmutableAcrossRestarts asserts that the grant policy is
 // re-applied rather than assumed, so a grant that drifts is corrected.
 func TestR027_AuditRemainsImmutableAcrossRestarts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ownerURL := startPostgres(t)
 
@@ -157,6 +164,7 @@ func TestR027_AuditRemainsImmutableAcrossRestarts(t *testing.T) {
 // broken. If a future change lets Pando serve traffic as a schema-owning role,
 // the design note this test guards will have been lost.
 func TestR027_AnOwningRoleCanUndoTheRevoke(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ownerURL := startPostgres(t)
 
@@ -221,6 +229,7 @@ func urlAs(dsn, user, password string) (string, error) {
 // revoke the privilege on the way past and the check would pass, while the role
 // retained the ability to grant it straight back.
 func TestStartupFailsLoudlyWhenAuditCannotBeProtected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ownerURL := startPostgres(t)
 
@@ -246,6 +255,8 @@ func TestStartupFailsLoudlyWhenAuditCannotBeProtected(t *testing.T) {
 // both services start at once, so Postgres will not be accepting connections
 // when Pando first dials.
 func TestConnectRetriesUntilPostgresIsReady(t *testing.T) {
+	// Not parallel: it measures how long the retry loop waits, and serial
+	// tests finish before any parallel one starts.
 	ctx := context.Background()
 
 	// A URL pointing at nothing must fail within the timeout rather than hang,

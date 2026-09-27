@@ -18,6 +18,7 @@ import (
 // the proxy checks, and that changing the passcode or making the app private
 // ends every unlock.
 func TestR075a_PublicWithAPasscode(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	i := newInstall(t)
 	admin := i.admin()
@@ -88,6 +89,7 @@ func TestR075a_PublicWithAPasscode(t *testing.T) {
 // TestR076_PolicyCanRequireAPasscodeOrForbidPublicSharing asserts the three
 // public_sharing rules at the grants endpoint.
 func TestR076_PolicyCanRequireAPasscodeOrForbidPublicSharing(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	appID := i.createApp(admin, "notes")
@@ -132,6 +134,7 @@ func TestR076_PolicyCanRequireAPasscodeOrForbidPublicSharing(t *testing.T) {
 
 // The share picker finds people and groups by name, for whoever may share.
 func TestSharingFindsPeopleAndGroups(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	appID := i.createApp(admin, "notes")
