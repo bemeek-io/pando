@@ -91,7 +91,9 @@ one verb says nothing about another (R-082).
 | Endpoint | Verb | What it does |
 | --- | --- | --- |
 | `GET /api/v1/apps/{appID}/specs` | `app.view` | Every spec revision, and which one is pinned. Revisions are append-only (R-152). |
-| `POST /api/v1/apps/{appID}/specs` | `app.spec.edit` | Write a new spec revision. It does not deploy and does not become pinned. |
+| `POST /api/v1/apps/{appID}/specs` | `app.spec.edit` | Write a new spec revision. It does not deploy and does not become pinned. A routing mode other than its adapter's default, where the app did not already have one, also needs app.routing.override (R-163). |
+| `GET /api/v1/apps/{appID}/routing` | `app.view` | Where the app is reached, where it will be after the next deploy when a change is saved (`next_address`), and the routing adapters it could move to, with the modes each serves and defaults to. |
+| `PUT /api/v1/apps/{appID}/routing` | `app.spec.edit` | Change where a configured app is reached: `adapter_ref`, `mode`, and `hostname` or `path_prefix` (such as `/team/notes`), each defaulting to the adapter's own. Writes a revision the next deploy ships. A change needs `confirm: true`, since the old address stops working; a mode the adapter does not default to also needs app.routing.override (R-163). An address another app holds, or a path inside or around another app's, is refused with STATE_ADDRESS_TAKEN. |
 | `GET /api/v1/apps/{appID}/specs/{rev}` | `app.view` | One revision, in full. |
 | `POST /api/v1/apps/{appID}/specs/{rev}/pin` | `app.spec.edit` | Pin a revision: what the reconciler converges to, and what the next deploy ships. |
 | `GET /api/v1/apps/{appID}/specs/{a}/diff/{b}` | `app.view` | The classified difference between two revisions — what a deploy of it would restart, rebuild or leave alone. |
@@ -239,6 +241,7 @@ that finds the log line. Branch on the code; the message may be reworded.
 | `PLAN_NO_ADAPTER_MEETS_POLICY` | 409 | No configured adapter can satisfy this spec under host policy (R-024, R-114). |
 | `PLAN_SECURITY_BELOW_THRESHOLD` | 409 | This installation requires a security score, and this app is below it or has never been scanned (R-314). |
 | `PLAN_SLOT_UNFILLED` | 409 | A required dependency has nothing filling it, so the deploy would start an app that cannot connect (R-132). |
+| `STATE_ADDRESS_TAKEN` | 409 | Another app is already reached at this address, or at a path this one would sit inside or around. |
 | `STATE_AI_FUNCTION_ASSIGNED` | 409 | Another AI adapter already handles this AI function. Remove it from that adapter first. |
 | `STATE_APP_EXITED` | 409 | The app started and then stopped, so the deploy has nothing to send traffic to. |
 | `STATE_BACKUP_DECISION_REQUIRED` | 409 | The app has storage and the request did not say whether to keep a final backup of it (R-204, R-205). |

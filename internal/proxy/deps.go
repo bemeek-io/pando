@@ -25,6 +25,12 @@ func (r *StateResolver) ByHostname(ctx context.Context, hostname string) (state.
 	return r.apps.ByRouting(ctx, "hostname", hostname)
 }
 
+// ByPath resolves a path-mode app by the longest path it holds that the
+// request's path begins with.
+func (r *StateResolver) ByPath(ctx context.Context, path string) (state.App, *spec.AppSpec, string, bool, error) {
+	return r.apps.ByPath(ctx, path)
+}
+
 // BySlug resolves an app by its slug, for path mode.
 func (r *StateResolver) BySlug(ctx context.Context, slug string) (state.App, *spec.AppSpec, bool, error) {
 	return r.apps.ByRouting(ctx, "slug", slug)

@@ -407,6 +407,33 @@ one Pando. What makes an install feel like one topology or the other is the rout
 adapter's default; `ModeSource` records whether the mode was inherited or deliberately chosen, so the
 console can later show which apps deviate and host policy can restrict overrides (R-274, O-10).
 
+**[D] Changing a configured app's address** is `PUT /apps/{id}/routing` (`internal/core/address`),
+and the console's Change beside Address on the app's Overview. It writes a revision the next deploy
+ships, like any edit (R-152). Moving to another adapter takes that adapter's default mode and a
+hostname in its domain; a path defaults to the app's slug and may be any other (below); a port is
+allocated (§4.2). Two gates, both on the server so every client meets them: a mode the
+adapter does not default to needs `app.routing.override` (R-163) — checked on `POST /specs` as well,
+so a whole spec is not a way around it, and `ModeSource` is set from the adapter rather than taken
+from the author — and any change needs `confirm`, because the old address stops working and bookmarks
+to it break (R-165, design 01 §6). Re-running Configuration keeps the app's routing (`spec.Carry`):
+the repository has nothing to say about it.
+
+**[D] A path-mode app's path is whatever it is set to**, not only its slug: up to four segments of
+lowercase letters, digits and hyphens (`spec.CheckPathPrefix`), such as `/team/notes`. The proxy finds
+the app by the longest whole-segment prefix of the request's path (`state.Apps.ByPath`), strips it,
+and names it in `X-Forwarded-Prefix` (R-167); `/<slug>` still answers as it always has. Three rules keep
+one path to one app, decided when a revision is pinned (`state.Apps.Pin`, migration 35) and also asked
+before a change is saved so the person choosing hears it then:
+
+- **One live app per address.** `apps.address_hostname` and `apps.address_path` carry the pinned
+  address, with unique indexes over live apps. This also closes a gap that predates paths: two apps
+  could pin the same hostname, and the proxy answered for whichever the database returned first.
+- **No path inside or around another's** (`/team` and `/team/notes`), and none whose first segment is
+  another app's slug. One app would receive the other's requests, and an app claiming a path under
+  another's would be a page in that app's name that it does not control — on Pando's own origin.
+- **Never one of Pando's own paths** (`spec.ReservedPaths`: `/api`, `/admin`, `/login`, `/.pando` and
+  the rest). A test walks the router and fails if a top-level route is not reserved.
+
 ### 4.2 Host ports in port mode
 
 **[D] Resolved (O-15): the lowest free port in a configured range, held as a durable allocation.**

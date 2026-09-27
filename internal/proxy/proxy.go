@@ -56,6 +56,9 @@ const (
 type Resolver interface {
 	// ByHostname resolves an app from the Host header.
 	ByHostname(ctx context.Context, hostname string) (state.App, *spec.AppSpec, bool, error)
+	// ByPath resolves the path-mode app whose path is the longest whole-segment
+	// prefix of the request's path, and returns that path to strip (R-167).
+	ByPath(ctx context.Context, path string) (state.App, *spec.AppSpec, string, bool, error)
 	// BySlug resolves an app from the first path segment, for proxy mode.
 	BySlug(ctx context.Context, slug string) (state.App, *spec.AppSpec, bool, error)
 	// ByPort resolves an app from the port the request arrived on, for port
@@ -403,6 +406,19 @@ func (p *Proxy) resolve(r *http.Request) (state.App, *spec.AppSpec, string, bool
 		}
 	}
 
+	// A path-mode app's own path, which may be deeper than one segment and is
+	// not necessarily its slug. The longest match wins, and the address
+	// check at pin time (state.checkAddress) keeps two apps from nesting, so
+	// "longest" never has to choose between two apps' claims.
+	if app, s, prefix, found, err := p.Resolver.ByPath(ctx, r.URL.Path); err != nil {
+		return state.App{}, nil, "", false, err
+	} else if found {
+		return app, s, prefix, true, nil
+	}
+
+	// Then the slug, as every app has always answered at /<slug> on Pando's
+	// own address. The address check refuses a path that takes another app's
+	// slug, so this cannot reach an app some other path already claimed.
 	segment := firstSegment(r.URL.Path)
 	if segment == "" {
 		return state.App{}, nil, "", false, nil

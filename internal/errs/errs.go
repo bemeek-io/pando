@@ -77,6 +77,10 @@ const (
 	// cannot be changed from the API while it does (R-271).
 	StateSetAtStartup Code = "STATE_SET_AT_STARTUP"
 
+	// StateAddressTaken: another app is already reached at this hostname or
+	// path, or at one this path would sit inside or around.
+	StateAddressTaken Code = "STATE_ADDRESS_TAKEN"
+
 	// ADAPTER_* — adapter failed or is unavailable. 502.
 	AdapterUnavailable Code = "ADAPTER_UNAVAILABLE"
 	AdapterFailed      Code = "ADAPTER_FAILED"

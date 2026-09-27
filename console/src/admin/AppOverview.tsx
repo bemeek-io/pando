@@ -22,6 +22,7 @@ import { deployLabel, deployStatus } from '../ui/deploys';
 import { Security } from './Security';
 import { AppImage } from './AppImage';
 import { AppName } from './AppName';
+import { AppAddress } from './AppAddress';
 import { AppVerb, useCan } from './verbs';
 
 interface SpecRevision {
@@ -150,22 +151,7 @@ export function AppOverview({
               <StatusIndicator status={statusSymbol(app.state)} label={statusLabel(app.state)} />
             </Row>
             <Row label="Address">
-              {/* From the server, not assembled here: where an app is reached
-                  follows its routing mode, and the console does not decide
-                  routing (R-261). The old "/" + slug was the path-mode answer
-                  shown for every app in every mode. */}
-              {app.address ? (
-                // Its own tab: an app is a different place from the console, and
-                // opening it over the top leaves the browser's back button as
-                // the only way back to what you were doing.
-                <a href={app.address} target="_blank" rel="noopener noreferrer">
-                  {app.address.replace(/^\/\//, '')}
-                </a>
-              ) : (
-                <span style={{ color: 'var(--ink-secondary)' }}>
-                  This app gets an address when it is first deployed.
-                </span>
-              )}
+              <AppAddress app={app} />
             </Row>
             <Row label="Launcher image">
               <AppImage app={app} />

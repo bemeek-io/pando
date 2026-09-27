@@ -668,6 +668,11 @@ func Address(host, slug string, r Routing) string {
 		return fmt.Sprintf("//%s:%d/", name, r.Port)
 
 	case RoutingPath:
+		// The app's own path, which is its slug unless somebody chose
+		// another. The proxy finds it by this prefix (proxy.resolve).
+		if r.PathPrefix != "" {
+			return r.PathPrefix + "/"
+		}
 		return "/" + slug + "/"
 
 	default:

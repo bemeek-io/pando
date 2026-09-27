@@ -100,6 +100,19 @@ func (r *resolver) ByHostname(_ context.Context, hostname string) (state.App, *s
 	return r.app, r.spec, true, nil
 }
 
+// ByPath matches the way the real query does: a path-mode app whose path is
+// the request's path or a whole-segment prefix of it, case-sensitively.
+func (r *resolver) ByPath(_ context.Context, path string) (state.App, *spec.AppSpec, string, bool, error) {
+	if r.app.ID == "" || r.spec == nil || r.spec.Routing.Mode != spec.RoutingPath || r.spec.Routing.PathPrefix == "" {
+		return state.App{}, nil, "", false, nil
+	}
+	prefix := r.spec.Routing.PathPrefix
+	if path != prefix && !strings.HasPrefix(path, prefix+"/") {
+		return state.App{}, nil, "", false, nil
+	}
+	return r.app, r.spec, prefix, true, nil
+}
+
 func (r *resolver) BySlug(_ context.Context, slug string) (state.App, *spec.AppSpec, bool, error) {
 	if r.app.ID == "" || r.app.Slug != slug {
 		return state.App{}, nil, false, nil
@@ -470,6 +483,69 @@ func TestR167_PathModeStripsThePrefix(t *testing.T) {
 	require.Equal(t, "/dashboard", got.path, "the prefix is stripped before the app sees it")
 	require.Equal(t, "/notes", got.header.Get("X-Forwarded-Prefix"),
 		"and the app is told what was stripped, so it can build correct links")
+}
+
+// TestR167_ACustomPathIsServedAndStripped asserts R-167 for a path somebody
+// chose: deeper than one segment, not the slug, matched on whole segments,
+// stripped, and named in X-Forwarded-Prefix. Every step after resolution —
+// CheckData, the header strip, the assertion — is the same one every request
+// takes (R-023).
+func TestR167_ACustomPathIsServedAndStripped(t *testing.T) {
+	got := &received{}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.record(r)
+	}))
+	defer upstream.Close()
+
+	s := newStore()
+	s.owner[appID] = "usr_alice"
+	minter, err := assertion.NewMinter("https://pando.test", nil)
+	require.NoError(t, err)
+
+	p := &proxy.Proxy{
+		Resolver: &resolver{
+			app: state.App{ID: appID, Slug: "notes-a1b2c3", State: state.StateRunning},
+			spec: &spec.AppSpec{
+				Routing: spec.Routing{Mode: spec.RoutingPath, PathPrefix: "/team/notes"},
+				Workloads: []spec.Workload{{Name: "web", Primary: true,
+					Ports: []spec.Port{{Number: 80, Protocol: "http"}}}}},
+		},
+		Authenticator: staticAuth{principal: activeUser("usr_alice")},
+		Authz:         authz.New(s, nil, nil),
+		Minter:        minter,
+		Upstreams:     fixedUpstream{addr: upstream.URL},
+		Logger:        zap.NewNop(),
+		Mode:          spec.RoutingPath,
+	}
+	front := httptest.NewServer(p)
+	defer front.Close()
+
+	get := func(path string) int {
+		t.Helper()
+		*got = received{}
+		req, err := http.NewRequest(http.MethodGet, front.URL+path, nil)
+		require.NoError(t, err)
+		req.Header.Set("X-Pando-User", "forged@example.com")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	get("/team/notes/dashboard")
+	require.Equal(t, "/dashboard", got.path)
+	require.Equal(t, "/team/notes", got.header.Get("X-Forwarded-Prefix"))
+	require.NotEqual(t, "forged@example.com", got.header.Get("X-Pando-User"), "step 7 still runs")
+
+	get("/team/notes")
+	require.Equal(t, "/", got.path, "the path itself is the app's root")
+
+	get("/team/notes-archive/x")
+	require.Empty(t, got.path, "a prefix matches whole segments, not characters")
+
+	// The slug still answers, as it always has.
+	get("/notes-a1b2c3/x")
+	require.Equal(t, "/x", got.path)
 }
 
 // TestAnAppThatIsNotRunningIs503 asserts step 2 of the request path.

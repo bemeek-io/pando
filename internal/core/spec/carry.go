@@ -35,6 +35,14 @@ func Carry(pinned, next *AppSpec) *AppSpec {
 	out.Workloads = carryEnv(pinned, next)
 	out.Slots = carrySlots(pinned, next)
 	out.Volumes = carryVolumes(pinned, next)
+
+	// Where the app is reached. Nothing about it is read from the repository,
+	// so a re-detection has nothing to say about it — and taking the fresh
+	// default instead moved an app somebody had given its own hostname back
+	// to <slug>.<base domain>, breaking every bookmark to it (R-165).
+	if pinned.Routing.Mode != "" {
+		out.Routing = pinned.Routing
+	}
 	return &out
 }
 

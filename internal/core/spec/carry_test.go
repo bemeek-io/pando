@@ -109,6 +109,21 @@ func TestAPersonsValueWinsOverAnInferredOne(t *testing.T) {
 	require.Len(t, out.Workloads[0].Env, 3, "no duplicate key")
 }
 
+// TestR165_ReDetectingKeepsTheAppsAddress asserts R-165: an address somebody
+// bookmarked survives re-running Configuration, rather than falling back to
+// <slug>.<base domain>.
+func TestR165_ReDetectingKeepsTheAppsAddress(t *testing.T) {
+	pinned := pinnedApp()
+	pinned.Routing = spec.Routing{AdapterRef: "rte_cf", Mode: spec.RoutingSubdomain,
+		ModeSource: spec.ModeFromAdapterDefault, Hostname: "notes.bemeek.io"}
+	next := redetected()
+	next.Routing = spec.Routing{AdapterRef: "rte_cf", Mode: spec.RoutingSubdomain,
+		ModeSource: spec.ModeFromAdapterDefault, Hostname: "crew-notes.bemeek.io"}
+
+	out := spec.Carry(pinned, next)
+	require.Equal(t, pinned.Routing, out.Routing)
+}
+
 // Nothing is carried on the first acceptance — there is nothing to carry.
 func TestTheFirstAcceptanceCarriesNothing(t *testing.T) {
 	out := spec.Carry(nil, redetected())

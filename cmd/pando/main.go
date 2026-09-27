@@ -41,6 +41,7 @@ import (
 	"github.com/bemeek-io/pando/internal/cli"
 	"github.com/bemeek-io/pando/internal/config"
 	"github.com/bemeek-io/pando/internal/console"
+	"github.com/bemeek-io/pando/internal/core/address"
 	"github.com/bemeek-io/pando/internal/core/assertion"
 	"github.com/bemeek-io/pando/internal/core/assist"
 	"github.com/bemeek-io/pando/internal/core/audit"
@@ -522,6 +523,15 @@ func serve(ctx context.Context, configPath string) error {
 
 	apiHandler := (&httpapi.Server{
 		Edges: edges,
+		// Changing where a configured app is reached (R-162, R-163).
+		Address: &address.Service{
+			Registry:       registry,
+			Ports:          state.NewPorts(db),
+			Taken:          apps,
+			PortRangeStart: cfg.Server.PortRangeStart,
+			PortRangeEnd:   cfg.Server.PortRangeEnd,
+			BaseDomain:     cfg.Server.BaseDomain,
+		},
 		TeardownNow: func() {
 			select {
 			case teardownNow <- struct{}{}:
