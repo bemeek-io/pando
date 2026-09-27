@@ -242,20 +242,57 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # A plain docker build, deliberately, not buildx with the Actions layer
-      # cache. That was tried (#31): the layers worth caching — npm run build
-      # and the Go build — rerun on any source change, buildx's container
-      # builder ran them about 40% slower than the daemon's, and exporting the
-      # cache added nearly a minute. A pull request's build took 2m52s against
-      # this one's 1m32s.
+      # Go's build and module caches and npm's, kept between runs. The
+      # Dockerfile mounts them as cache mounts, which no layer holds, so a
+      # layer cache cannot carry them: a source change reruns the stages that
+      # compile, and without these they compiled every dependency from nothing.
+      # (A layer cache was tried first, #31, and was slower than no cache: those
+      # stages rerun anyway and exporting it cost nearly a minute.)
+      - if: steps.dhi.outputs.available == 'true'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - if: steps.dhi.outputs.available == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            image-cache/go-mod
+            image-cache/go-build
+            image-cache/npm
+          key: image-build-${{ hashFiles('go.sum', 'console/package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            image-build-${{ hashFiles('go.sum', 'console/package-lock.json') }}-
+            image-build-
+
+      # Moves those directories into the builder's cache mounts before the
+      # build and back out after it. The utility image is pinned like every
+      # other image this repository runs; the action's default is a moving tag.
+      - if: steps.dhi.outputs.available == 'true'
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
+        with:
+          utility-image: busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+          cache-map: |
+            {
+              "image-cache/go-mod": "/cache/go-mod",
+              "image-cache/go-build": "/cache/go-build",
+              "image-cache/npm": "/cache/npm"
+            }
+
+      - name: Build date
+        if: steps.dhi.outputs.available == 'true'
+        run: echo "build_date=$(git log -1 --format=%cI)" >> "$GITHUB_ENV"
+
       - name: Build
         if: steps.dhi.outputs.available == 'true'
-        run: |
-          docker build \
-            --build-arg VERSION=0.0.0-ci \
-            --build-arg COMMIT="$GITHUB_SHA" \
-            --build-arg BUILD_DATE="$(git log -1 --format=%cI)" \
-            -t trypando/pando:0.0.0-ci .
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: trypando/pando:0.0.0-ci
+          build-args: |
+            VERSION=0.0.0-ci
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ env.build_date }}
 
       - name: Smoke test
         if: steps.dhi.outputs.available == 'true'
