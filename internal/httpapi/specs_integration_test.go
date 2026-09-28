@@ -16,6 +16,7 @@ import (
 // R-152: spec revisions are append-only, so rollback is always to something
 // that provably existed.
 func TestR152_SpecRevisionsAccumulateAndAreNumbered(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -41,6 +42,7 @@ func TestR152_SpecRevisionsAccumulateAndAreNumbered(t *testing.T) {
 }
 
 func TestASpecRevisionCanBeReadBack(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -61,6 +63,7 @@ func TestASpecRevisionCanBeReadBack(t *testing.T) {
 // Pinning points the app at a revision. It does not deploy — keeping the two
 // separate is what makes "accepted but not deployed" a state someone can sit in.
 func TestPinningARevisionDoesNotDeploy(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -82,6 +85,7 @@ func TestPinningARevisionDoesNotDeploy(t *testing.T) {
 }
 
 func TestPinningARevisionThatDoesNotExist(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -93,6 +97,7 @@ func TestPinningARevisionThatDoesNotExist(t *testing.T) {
 // A spec that cannot describe a runnable app is refused at write time rather
 // than at deploy time.
 func TestAnInvalidSpecIsRefusedWithEveryProblemAtOnce(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -121,6 +126,7 @@ func TestAnInvalidSpecIsRefusedWithEveryProblemAtOnce(t *testing.T) {
 }
 
 func TestASpecForAnotherSchemaVersionIsRefused(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -135,6 +141,7 @@ func TestASpecForAnotherSchemaVersionIsRefused(t *testing.T) {
 }
 
 func TestAnUnreadableSpecBodyIsRefusedReadably(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -154,6 +161,7 @@ func TestAnUnreadableSpecBodyIsRefusedReadably(t *testing.T) {
 // every hand-written spec, which is the API's own documented way to configure
 // an app.
 func TestAHandWrittenSpecStillInheritsTheInstallsDefaults(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -185,6 +193,7 @@ func TestAHandWrittenSpecStillInheritsTheInstallsDefaults(t *testing.T) {
 // An imported spec is untrusted input like any other and lands as a proposal
 // requiring review, never as a live deployment.
 func TestAnImportedSpecIsRecordedAsImported(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -209,6 +218,7 @@ func TestAnImportedSpecIsRecordedAsImported(t *testing.T) {
 
 // Diffing two revisions is how someone sees what a change did before pinning it.
 func TestTwoRevisionsCanBeDiffed(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -230,6 +240,7 @@ func TestTwoRevisionsCanBeDiffed(t *testing.T) {
 // R-020: the spec is the sole record of how an app runs, so exporting it is how
 // someone takes that record elsewhere.
 func TestR020_APinnedSpecCanBeExported(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.appWithSpec(admin, "notes")
@@ -250,6 +261,7 @@ func TestR020_APinnedSpecCanBeExported(t *testing.T) {
 // Writing a spec is app.spec.edit, which is not something a data-plane grant
 // carries.
 func TestWritingASpecIsBehindTheSpecEditVerb(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")
@@ -274,6 +286,7 @@ func TestWritingASpecIsBehindTheSpecEditVerb(t *testing.T) {
 // R-132: a required unfilled slot blocks deploy at plan time, not at deploy
 // time. A spec with no slots plans as far as its adapters allow.
 func TestR132_PlanningAPinnedSpecReportsWhatIsMissingAtPlanTime(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.appWithSpec(admin, "notes")
@@ -289,6 +302,7 @@ func TestR132_PlanningAPinnedSpecReportsWhatIsMissingAtPlanTime(t *testing.T) {
 }
 
 func TestSlotsComeFromThePinnedSpec(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -322,6 +336,7 @@ func TestSlotsComeFromThePinnedSpec(t *testing.T) {
 // caller's own value and is stored as a secret rather than inline, so an export
 // stays safe to hand to someone.
 func TestASlotCanBeFilledWithALiteral(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -353,6 +368,7 @@ func TestASlotCanBeFilledWithALiteral(t *testing.T) {
 // fill after an accept replaced the first, and the deploy was refused for a
 // slot that had been filled (issue #55).
 func TestR132_FillingTwoSlotsKeepsBoth(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -398,6 +414,7 @@ func TestR132_FillingTwoSlotsKeepsBoth(t *testing.T) {
 }
 
 func TestSettingASlotThatTheSpecDoesNotDeclare(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.appWithSpec(admin, "notes")
@@ -414,6 +431,7 @@ func TestSettingASlotThatTheSpecDoesNotDeclare(t *testing.T) {
 // created behind the spec's back would exist until the next deploy and then
 // quietly not be mounted.
 func TestR020_AddingAVolumeWritesARevisionRatherThanCreatingStorage(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.appWithSpec(admin, "notes")
@@ -453,6 +471,7 @@ func TestR020_AddingAVolumeWritesARevisionRatherThanCreatingStorage(t *testing.T
 
 // A workload the spec does not declare is refused rather than invented.
 func TestAVolumeCannotMountIntoAWorkloadThatDoesNotExist(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.appWithSpec(admin, "notes")
@@ -465,6 +484,7 @@ func TestAVolumeCannotMountIntoAWorkloadThatDoesNotExist(t *testing.T) {
 }
 
 func TestDeployingAPinnedSpecReachesThePlannerRatherThanAuthorization(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.appWithSpec(admin, "notes")
@@ -476,6 +496,7 @@ func TestDeployingAPinnedSpecReachesThePlannerRatherThanAuthorization(t *testing
 
 // R-146: with two revisions there is something to roll back to.
 func TestR146_RollingBackNeedsAnEarlierPinnedRevision(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")

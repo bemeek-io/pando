@@ -25,20 +25,28 @@ import (
 	"github.com/trypando/pando/internal/core/reconciler"
 	"github.com/trypando/pando/internal/core/spec"
 	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/core/state/statetest"
 	"github.com/trypando/pando/internal/errs"
 )
 
 // Adapter registration happens in main, from compiled-in packages (R-253).
 // These are its tests: the parts of startup that decide what an install can do.
 
+// connected is a fresh, migrated database of the test's own, copied from one
+// prepared for the package (statetest).
 func connected(t *testing.T) *state.DB {
 	t.Helper()
-	db, _ := connectedURL(t)
+	db, _ := statetest.Connect(t)
 	return db
 }
 
-// connectedURL is connected, and the URL it connected to, for a command that
+// connectedURL is a database and the URL it connected to, for a command that
 // opens its own connection from configuration.
+//
+// In a Postgres of its own rather than a statetest copy: the command connects
+// the way a server starts, through state.Connect, and that sets a new password
+// on a role belonging to the whole cluster — under every other test's pool
+// if the cluster were shared.
 func connectedURL(t *testing.T) (*state.DB, string) {
 	t.Helper()
 	ctx := context.Background()
@@ -81,6 +89,7 @@ func quoted(t *testing.T, s string) string {
 // R-002: setup cost is paid once, and seeding a working set is part of not
 // charging it twice.
 func TestR002_AFreshInstallIsSeededWithAWorkingSetOfAdapters(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	store := state.NewAdapters(db)
@@ -118,6 +127,7 @@ func TestR002_AFreshInstallIsSeededWithAWorkingSetOfAdapters(t *testing.T) {
 // an install that already had others, so the feature would ship and silently
 // not exist. That is what happened to notifications.
 func TestACategoryAddedLaterIsSeededOnAnInstallThatAlreadyHasOthers(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	store := state.NewAdapters(db)
@@ -146,6 +156,7 @@ func TestACategoryAddedLaterIsSeededOnAnInstallThatAlreadyHasOthers(t *testing.T
 // Idempotent on every start after the first: seeding must not multiply the
 // adapters or reset one an operator reconfigured.
 func TestSeedingTwiceChangesNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	store := state.NewAdapters(db)
@@ -164,6 +175,7 @@ func TestSeedingTwiceChangesNothing(t *testing.T) {
 // An operator's own choice in a category stands: the default is not re-seeded
 // over it.
 func TestAConfiguredCategoryIsNotOverwrittenBySeeding(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	store := state.NewAdapters(db)
@@ -190,6 +202,7 @@ func TestAConfiguredCategoryIsNotOverwrittenBySeeding(t *testing.T) {
 // R-253: registration is from compiled-in packages. Everything the seed puts in
 // the table has an implementation here, or an install comes up missing one.
 func TestR253_EverySeededAdapterHasAnImplementation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	store := state.NewAdapters(db)
@@ -226,6 +239,7 @@ func TestR253_EverySeededAdapterHasAnImplementation(t *testing.T) {
 // A disabled adapter is configuration an operator chose, and it must not be
 // registered.
 func TestADisabledAdapterIsNotRegistered(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	store := state.NewAdapters(db)
@@ -246,6 +260,7 @@ func TestADisabledAdapterIsNotRegistered(t *testing.T) {
 // An adapter of a kind this binary does not have is skipped loudly, not fatal:
 // one unknown row must not stop an install from starting.
 func TestAnUnknownKindIsSkippedRatherThanFatal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	store := state.NewAdapters(db)
@@ -268,6 +283,7 @@ func TestAnUnknownKindIsSkippedRatherThanFatal(t *testing.T) {
 // An adapter that cannot be configured is skipped with its reason, rather than
 // registered half-built.
 func TestAnAdapterThatCannotBeConfiguredIsSkippedWithItsReason(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	store := state.NewAdapters(db)
@@ -289,6 +305,7 @@ func TestAnAdapterThatCannotBeConfiguredIsSkippedWithItsReason(t *testing.T) {
 // The adapter owns where its key lives; a second copy in server config is a
 // second copy to get wrong.
 func TestTheSecretsKeyPathIsReadFromTheAdaptersOwnConfiguration(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	store := state.NewAdapters(db)
@@ -306,6 +323,7 @@ func TestTheSecretsKeyPathIsReadFromTheAdaptersOwnConfiguration(t *testing.T) {
 // string is the correct answer — the bundle then carries no key because there
 // is none to carry.
 func TestAnInstallWithNoLocalSecretsAdapterHasNoKeyToBackUp(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	logger, _ := recorded()
@@ -317,6 +335,7 @@ func TestAnInstallWithNoLocalSecretsAdapterHasNoKeyToBackUp(t *testing.T) {
 // happened" — refusing to detect would make the failure arrive earlier and less
 // clearly.
 func TestR097_TheTrialRunnerIsNilWhenNoRuntimeIsConfigured(t *testing.T) {
+	t.Parallel()
 	require.Nil(t, runtimeForTrial(adapterapi.NewRegistry()))
 
 	ctx := context.Background()
@@ -333,6 +352,7 @@ func TestR097_TheTrialRunnerIsNilWhenNoRuntimeIsConfigured(t *testing.T) {
 // told. Not refused — a floor would make the schedule untestable end to end,
 // which is the whole reason it is configurable.
 func TestR149_AFastRetryScheduleIsWarnedAboutRatherThanRefused(t *testing.T) {
+	t.Parallel()
 	logger, logs := recorded()
 
 	warnIfRetriesAreFast(logger, []time.Duration{0, time.Second})
@@ -354,6 +374,7 @@ func TestR149_AFastRetryScheduleIsWarnedAboutRatherThanRefused(t *testing.T) {
 // Every denial, not only successes: a denial pattern is the signal that matters
 // for detecting misuse, and it is the thing most commonly left out.
 func TestEveryAuthorizationDenialIsAudited(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 
@@ -373,6 +394,7 @@ func TestEveryAuthorizationDenialIsAudited(t *testing.T) {
 // which is the point of it. Recorded as a system action so "who restarted this"
 // has an answer, and the answer is Pando.
 func TestTheReconcilersEventsAreRecordedAsTheSystem(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 
@@ -392,6 +414,7 @@ func TestTheReconcilersEventsAreRecordedAsTheSystem(t *testing.T) {
 // Two methods rather than the whole registry, so the reconciler cannot reach
 // for anything else.
 func TestTheReconcilerSeesOnlyTheAdaptersItResolves(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	logger, _ := recorded()
@@ -421,6 +444,7 @@ func TestTheReconcilerSeesOnlyTheAdaptersItResolves(t *testing.T) {
 // and no UI, which is the honest outcome — better than a panic at startup or a
 // blank page that looks like a broken console rather than an absent one.
 func TestTheConsoleIsOptionalAndSaysSoWhenAbsent(t *testing.T) {
+	t.Parallel()
 	logger, logs := recorded()
 
 	handler := consoleHandler(logger)
@@ -440,6 +464,7 @@ func TestTheConsoleIsOptionalAndSaysSoWhenAbsent(t *testing.T) {
 // stores the answer without interpreting it (R-251). Nil with no builder, where
 // detection still recognizes the language and asks its questions.
 func TestR251_TheBuildPlannerComesFromTheBuilderOrIsAbsent(t *testing.T) {
+	t.Parallel()
 	require.Nil(t, buildPlanner(adapterapi.NewRegistry()))
 
 	ctx := context.Background()
@@ -455,6 +480,7 @@ func TestR251_TheBuildPlannerComesFromTheBuilderOrIsAbsent(t *testing.T) {
 // for every app tracking a branch, and the answer is usually "the same as last
 // time".
 func TestTheRefResolverAnswersForSourcesThatCanAndCannotHaveOne(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// Nothing to resolve is not a failure to resolve.

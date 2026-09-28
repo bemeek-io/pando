@@ -27,6 +27,7 @@ func trialID(t *testing.T) string {
 // on. Busybox with httpd stands in for "a server", and the assertion that
 // matters is that nothing was asked of the image itself.
 func TestR097_ATrialRunObservesTheBoundPort(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 
@@ -46,6 +47,7 @@ func TestR097_ATrialRunObservesTheBoundPort(t *testing.T) {
 
 // A trial that crashes produces the log, which is the whole answer (R-107).
 func TestR107_ACrashingTrialReturnsItsLog(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 
@@ -70,6 +72,7 @@ func TestR107_ACrashingTrialReturnsItsLog(t *testing.T) {
 
 // R-202: what the app wrote outside its declared storage, by name.
 func TestR202_ATrialRunObservesWritesOutsideDeclaredStorage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 
@@ -95,6 +98,7 @@ func TestR202_ATrialRunObservesWritesOutsideDeclaredStorage(t *testing.T) {
 // Nothing survives a trial. A leaked container is a running copy of a
 // stranger's app that nothing is tracking.
 func TestATrialLeavesNothingBehind(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 	id := trialID(t)
@@ -119,6 +123,7 @@ func TestATrialLeavesNothingBehind(t *testing.T) {
 // Cleanup also has to survive the trial being interrupted, which is the case
 // that actually leaks: Pando restarting mid-detection.
 func TestATimedOutTrialStillCleansUp(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 	id := trialID(t)
@@ -142,6 +147,7 @@ func TestATimedOutTrialStillCleansUp(t *testing.T) {
 // R-112 again, from the other side: the trial run is the runtime's, and the
 // build path still never gets a socket.
 func TestR254_TrialCapabilitiesAreDeclaredNotAssumed(t *testing.T) {
+	t.Parallel()
 	caps, err := adapter(t).Capabilities(context.Background())
 	require.NoError(t, err)
 	require.True(t, caps.SupportsTrialRun)
@@ -153,6 +159,7 @@ func TestR254_TrialCapabilitiesAreDeclaredNotAssumed(t *testing.T) {
 // a user-defined network, on a port that changes each run. Reported as the
 // app's port, it makes detection propose a random number.
 func TestAnIdleContainerObservesNoPort(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 
@@ -172,6 +179,7 @@ func TestAnIdleContainerObservesNoPort(t *testing.T) {
 
 // An app bound to 127.0.0.1 is listening, and unreachable. Both halves matter.
 func TestALoopbackOnlyBindIsReportedSeparately(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 

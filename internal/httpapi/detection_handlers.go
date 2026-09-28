@@ -128,13 +128,16 @@ func (s *Server) handleRerunDetection(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
-	go s.redetectInBackground(context.WithoutCancel(r.Context()), app.ID)
 
+	// Read before the detection starts, not after: this response describes
+	// the request, and a detection that failed at once used to finish between
+	// the two, answering 202 with the outcome of work it said had only begun.
 	d, err := s.Detections.Get(r.Context(), app.ID)
 	if err != nil {
 		Error(w, r, err)
 		return
 	}
+	go s.redetectInBackground(context.WithoutCancel(r.Context()), app.ID)
 	JSON(w, http.StatusAccepted, detectionResponse(d))
 }
 

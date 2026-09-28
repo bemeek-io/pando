@@ -18,6 +18,7 @@ import (
 // forever, and an app with a deploy "in flight" refused the next one (issue
 // #55).
 func TestWorkInterruptedByARestartIsRecordedAsFailed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	owner := seedUser(t, db, "interrupted-owner")

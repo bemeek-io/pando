@@ -6,43 +6,20 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/trypando/pando/internal/core/audit"
 	"github.com/trypando/pando/internal/core/bootstrap"
 	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/core/state/statetest"
 	"github.com/trypando/pando/internal/hash"
 	"github.com/trypando/pando/internal/secret"
 )
 
 func newInstall(t *testing.T) (*state.DB, *state.Users, *state.Grants, *audit.Writer) {
 	t.Helper()
-	ctx := context.Background()
-
-	container, err := postgres.Run(ctx, "postgres:17-alpine",
-		postgres.WithDatabase("pando"),
-		postgres.WithUsername("pando"),
-		postgres.WithPassword("test-password"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second)),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(container) })
-
-	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-
-	db, err := state.Connect(ctx, state.ConnectOptions{OwnerURL: dsn, ConnectTimeout: 60 * time.Second})
-	require.NoError(t, err)
-	t.Cleanup(db.Close)
-
+	db, _ := statetest.Connect(t)
 	return db, state.NewUsers(db), state.NewGrants(db), audit.New(db.Pool)
 }
 
@@ -50,6 +27,7 @@ func newInstall(t *testing.T) (*state.DB, *state.Users, *state.Grants, *audit.Wr
 // password supplied, first run creates nothing and prints nothing, and the
 // installation waits for its first administrator.
 func TestR046_AFreshInstallWaitsToBeSetUp(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db, users, grants, auditor := newInstall(t)
 
@@ -94,6 +72,7 @@ func TestR046_AFreshInstallWaitsToBeSetUp(t *testing.T) {
 // Two people submitting the setup form at once: exactly one becomes the
 // administrator.
 func TestR046_OnlyOneClaimWins(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, users, _, auditor := newInstall(t)
 
@@ -119,6 +98,7 @@ func TestR046_OnlyOneClaimWins(t *testing.T) {
 // TestR046_AnOperatorCanSupplyTheFirstPassword asserts the [P] override: for
 // an unattended install, PANDO_ADMIN_PASSWORD makes the account at startup.
 func TestR046_AnOperatorCanSupplyTheFirstPassword(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db, users, grants, auditor := newInstall(t)
 
@@ -143,6 +123,7 @@ func TestR046_AnOperatorCanSupplyTheFirstPassword(t *testing.T) {
 // Compose file, in `docker inspect`, and inherited by every child process.
 // Supplying one buys a way in, not a credential.
 func TestR046_ASuppliedPasswordStillMustBeChanged(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db, users, grants, auditor := newInstall(t)
 
@@ -162,6 +143,7 @@ func TestR046_ASuppliedPasswordStillMustBeChanged(t *testing.T) {
 // install whose only administrator has a four-character password and an
 // operator who was never told.
 func TestASuppliedPasswordTooShortIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db, users, grants, auditor := newInstall(t)
 

@@ -61,12 +61,25 @@ func (c *Checkout) View(subdir string) api.SourceView {
 	return &dirView{root: root}
 }
 
+// Sources fetches an app's source, and keeps the sources that were uploaded
+// rather than cloned (R-262).
+//
+// A value handed to each caller rather than a package variable: the upload
+// directory used to be one, and two servers in one process — which is what a
+// parallel test run is — wrote their uploads into each other's (issue #31).
+//
+// The zero value fetches git and image sources. An upload needs UploadDir.
+type Sources struct {
+	// UploadDir is where uploaded sources are kept.
+	UploadDir string
+}
+
 // Fetch clones an app's source.
 //
 // The caller must have checked the source allowlist first (R-092) — by the time
 // this runs, disk has been written to, which is exactly why that check belongs
 // before it and not inside it.
-func Fetch(ctx context.Context, src spec.Source) (*Checkout, error) {
+func (s Sources) Fetch(ctx context.Context, src spec.Source) (*Checkout, error) {
 	switch src.Type {
 	case spec.SourceGit:
 		return fetchGit(ctx, src)
@@ -74,7 +87,7 @@ func Fetch(ctx context.Context, src spec.Source) (*Checkout, error) {
 		// Nothing to fetch: a prebuilt image is run as it is.
 		return &Checkout{Dir: "", Commit: src.Digest}, nil
 	case spec.SourceUpload:
-		return fetchUpload(ctx, src)
+		return s.fetchUpload(ctx, src)
 	default:
 		return nil, errs.Newf(errs.ValidInvalid,
 			"Pando does not know how to fetch source of type %q.", src.Type)

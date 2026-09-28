@@ -18,6 +18,7 @@ import (
 // monotonic IDs, so "before this ID" is a stable boundary in a way an offset is
 // not — with an offset, events arriving between requests shift every later page.
 func TestTheAuditLogPagesByCursor(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	for n := range 4 {
@@ -51,6 +52,7 @@ func TestTheAuditLogPagesByCursor(t *testing.T) {
 }
 
 func TestABadAuditCursorOrLimitIsRefusedReadably(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -66,6 +68,7 @@ func TestABadAuditCursorOrLimitIsRefusedReadably(t *testing.T) {
 // R-274: seeing the rules you work under is not the same privilege as changing
 // them. Read is behind install.view; write is behind install.policy.manage.
 func TestR274_ReadingPolicyAndChangingItAreDifferentPrivileges(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")
@@ -83,6 +86,7 @@ func TestR274_ReadingPolicyAndChangingItAreDifferentPrivileges(t *testing.T) {
 
 // R-270: Pando ships permissive and is narrowed deliberately.
 func TestR270_AFreshInstallShipsPermissive(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	got := i.do(i.admin(), http.MethodGet, "/policy", nil)
@@ -97,6 +101,7 @@ func TestR270_AFreshInstallShipsPermissive(t *testing.T) {
 // R-085: host policy may disable exec install-wide, and it denies the owner too
 // — policy is a floor evaluated before grants, not something a grant outranks.
 func TestR085_DisablingExecInstallWideDeniesTheAppsOwner(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -117,6 +122,7 @@ func TestR085_DisablingExecInstallWideDeniesTheAppsOwner(t *testing.T) {
 
 // R-092: the source allowlist is evaluated before anything touches disk.
 func TestR092_ASourceOutsideTheAllowlistIsRefusedAtCreation(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -140,6 +146,7 @@ func TestR092_ASourceOutsideTheAllowlistIsRefusedAtCreation(t *testing.T) {
 
 // Replaces rather than merges: a merge would make it impossible to remove a rule.
 func TestSavingPolicyReplacesTheDocument(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -162,6 +169,7 @@ func TestSavingPolicyReplacesTheDocument(t *testing.T) {
 // is composing, and answering "which apps does this break" for anyone who can
 // read policy hands them a probe for the whole install's shape.
 func TestPolicyPreviewIsBehindTheWriteVerb(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")
@@ -181,6 +189,7 @@ func TestPolicyPreviewIsBehindTheWriteVerb(t *testing.T) {
 // R-227: the audit log has its own verb, because it records what everyone did,
 // including inside apps they own.
 func TestR227_TheAuditLogIsBehindItsOwnVerb(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	other := i.user("ordinary")
 
@@ -193,6 +202,7 @@ func TestR227_TheAuditLogIsBehindItsOwnVerb(t *testing.T) {
 
 // Every action lands in the log under the principal that took it.
 func TestActionsAreRecordedInTheAuditLog(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -221,6 +231,7 @@ func TestActionsAreRecordedInTheAuditLog(t *testing.T) {
 }
 
 func TestTheAuditLogIsFilterable(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -259,6 +270,7 @@ func TestTheAuditLogIsFilterable(t *testing.T) {
 
 // A wildcard in a user-supplied prefix must not become a wildcard in the query.
 func TestAnAuditFilterCannotSmuggleAWildcard(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	i.createApp(admin, "notes")
@@ -278,6 +290,7 @@ func TestAnAuditFilterCannotSmuggleAWildcard(t *testing.T) {
 // GET /adapters returns live capabilities, not stored config, so the console
 // can grey out choices that would fail at plan time (R-254).
 func TestTheAdapterInventoryIsBehindInstallView(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	other := i.user("ordinary")
 
@@ -294,6 +307,7 @@ func TestTheAdapterInventoryIsBehindInstallView(t *testing.T) {
 }
 
 func TestCapacityIsBehindInstallView(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	denied := i.do(i.user("ordinary"), http.MethodGet, "/capacity", nil)
@@ -306,6 +320,7 @@ func TestCapacityIsBehindInstallView(t *testing.T) {
 }
 
 func TestRegisteringAnAdapterIsAdministration(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	denied := i.do(i.user("ordinary"), http.MethodPost, "/adapters", map[string]any{
@@ -318,6 +333,7 @@ func TestRegisteringAnAdapterIsAdministration(t *testing.T) {
 // consequence as the API reports it: a new adapter is saved but not running,
 // and says so, rather than reading as reachable.
 func TestR253_AnAdapterSavedAfterStartupIsMarkedUntilARestart(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -337,6 +353,7 @@ func TestR253_AnAdapterSavedAfterStartupIsMarkedUntilARestart(t *testing.T) {
 // — how a saved adapter is put into effect — is behind the same verb as saving
 // one, and is audited.
 func TestR253_RestartingIsForWhoeverMayChangeAdapters(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	denied := i.do(i.user("ordinary"), http.MethodPost, "/restart", nil)
@@ -357,6 +374,7 @@ func TestR253_RestartingIsForWhoeverMayChangeAdapters(t *testing.T) {
 // resolution end to end: sent as a credential, stored as ciphertext, listed by
 // name, never returned.
 func TestR190_AnAdapterCredentialGoesInEncryptedAndNeverComesBack(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	const key = "sk-ant-integration-must-not-leak"
@@ -385,6 +403,7 @@ func TestR190_AnAdapterCredentialGoesInEncryptedAndNeverComesBack(t *testing.T) 
 
 // TestO20_TheAPIRefusesACredentialInPlainConfiguration asserts O-20.
 func TestO20_TheAPIRefusesACredentialInPlainConfiguration(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	refused := i.do(i.admin(), http.MethodPost, "/adapters", map[string]any{
 		"id": "ai_anthropic", "category": "ai", "kind": "anthropic",
@@ -398,6 +417,7 @@ func TestO20_TheAPIRefusesACredentialInPlainConfiguration(t *testing.T) {
 // O-20: a secrets adapter is what would encrypt credentials, so it cannot be
 // given any.
 func TestO20_ASecretsAdapterCannotBeGivenCredentials(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	refused := i.do(i.admin(), http.MethodPost, "/adapters", map[string]any{
 		"id": "sek_other", "category": "secrets", "kind": "local",
@@ -412,6 +432,7 @@ func TestO20_ASecretsAdapterCannotBeGivenCredentials(t *testing.T) {
 // Changing someone's status and changing their power are different acts, and
 // folding them into one body is how a status update quietly becomes a promotion.
 func TestPromotionIsItsOwnRouteRatherThanAFieldOnPatch(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -455,6 +476,7 @@ func TestPromotionIsItsOwnRouteRatherThanAFieldOnPatch(t *testing.T) {
 
 // R-080: an app role cannot be granted install-wide.
 func TestR080_AnAppRoleCannotBeGrantedAcrossTheInstallation(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -475,6 +497,7 @@ func TestR080_AnAppRoleCannotBeGrantedAcrossTheInstallation(t *testing.T) {
 // --- slots and volumes -----------------------------------------------------
 
 func TestAnAppWithNoSpecHasNoSlots(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -490,6 +513,7 @@ func TestAnAppWithNoSpecHasNoSlots(t *testing.T) {
 }
 
 func TestSettingASlotNeedsExactlyOneResolution(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -501,6 +525,7 @@ func TestSettingASlotNeedsExactlyOneResolution(t *testing.T) {
 
 // R-204: volumes survive app deletion, which is why they are their own object.
 func TestR204_VolumesAreListedPerApp(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -518,6 +543,7 @@ func TestR204_VolumesAreListedPerApp(t *testing.T) {
 // R-083: rotating a credential and reading it are different levels of trust, so
 // reading a value has its own verb.
 func TestR083_ReadingASecretsValueIsItsOwnVerb(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")
@@ -541,6 +567,7 @@ func TestR083_ReadingASecretsValueIsItsOwnVerb(t *testing.T) {
 // R-190/R-191: core never encrypts — it stores what the adapter hands back, and
 // what comes out is what went in.
 func TestR190_ASecretRoundTripsThroughTheAdapter(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -562,6 +589,7 @@ func TestR190_ASecretRoundTripsThroughTheAdapter(t *testing.T) {
 }
 
 func TestASecretCanBeRemoved(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -582,6 +610,7 @@ func TestASecretCanBeRemoved(t *testing.T) {
 // R-022: nothing re-detects on its own, because a spec that changed under
 // someone because a file moved in their repository is a spec they did not write.
 func TestR022_DetectionEndpointsAnswerForAnAppThatHasNotDetectedYet(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -599,6 +628,7 @@ func TestR022_DetectionEndpointsAnswerForAnAppThatHasNotDetectedYet(t *testing.T
 }
 
 func TestDetectionAnswersAreBehindTheSpecEditVerb(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")

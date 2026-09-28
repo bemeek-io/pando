@@ -19,6 +19,7 @@ import (
 // existed these were gated only by being signed in, which meant any account
 // could suspend the administrator.
 func TestO17_ManagingSomeoneElsesAccountNeedsAnInstallVerb(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")
@@ -38,6 +39,7 @@ func TestO17_ManagingSomeoneElsesAccountNeedsAnInstallVerb(t *testing.T) {
 
 // R-080: an ordinary account must not be able to suspend the administrator.
 func TestR080_AnOrdinaryUserCannotSuspendTheAdministrator(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	other := i.user("ordinary")
 
@@ -50,6 +52,7 @@ func TestR080_AnOrdinaryUserCannotSuspendTheAdministrator(t *testing.T) {
 }
 
 func TestCreatingAnAccountIsAdministration(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	other := i.user("ordinary")
 
@@ -65,6 +68,7 @@ func TestCreatingAnAccountIsAdministration(t *testing.T) {
 
 // R-194: a password digest is never rendered, wherever a user is returned.
 func TestR194_AUserIsNeverReturnedWithAnythingCredentialShaped(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	i.user("ordinary")
@@ -83,6 +87,7 @@ func TestR194_AUserIsNeverReturnedWithAnythingCredentialShaped(t *testing.T) {
 // R-049: suspension is not deletion, and neither is reachable by mistyping the
 // other — they are separate routes.
 func TestR049_SuspendingAnAccountStopsItSigningInWithoutDeletingIt(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -111,6 +116,7 @@ func TestR049_SuspendingAnAccountStopsItSigningInWithoutDeletingIt(t *testing.T)
 
 // Changing your own password is self only, and needs no verb.
 func TestChangingYourOwnPassword(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -128,6 +134,7 @@ func TestChangingYourOwnPassword(t *testing.T) {
 }
 
 func TestChangingYourPasswordNeedsTheCurrentOne(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	got := i.do(i.admin(), http.MethodPost, "/me/password", map[string]any{
@@ -141,6 +148,7 @@ func TestChangingYourPasswordNeedsTheCurrentOne(t *testing.T) {
 // R-088: the last administrator cannot be removed, or the install is left with
 // nobody who can administer it.
 func TestR088_TheLastAdministratorCannotBeRemoved(t *testing.T) {
+	t.Parallel()
 	// Every route that would leave the installation with nobody who can manage
 	// accounts. An install in that state cannot be repaired through the API —
 	// the only way back is `pando admin` against the database, which needs
@@ -183,6 +191,7 @@ func TestR088_TheLastAdministratorCannotBeRemoved(t *testing.T) {
 // Suspension is still available once somebody else can administer the install,
 // which is the difference between a guard and a prohibition.
 func TestSuspendingAnAdministratorIsAllowedWhenAnotherRemains(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -214,6 +223,7 @@ func TestSuspendingAnAdministratorIsAllowedWhenAnotherRemains(t *testing.T) {
 // R-078: group names cross the identity boundary; what a group can do is
 // Pando's.
 func TestR078_GroupsAreCreatedAndListedByAnAdministrator(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -243,6 +253,7 @@ func TestR078_GroupsAreCreatedAndListedByAnAdministrator(t *testing.T) {
 }
 
 func TestGroupsAreAdministrationRatherThanSelfService(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	other := i.user("ordinary")
 
@@ -257,6 +268,7 @@ func TestGroupsAreAdministrationRatherThanSelfService(t *testing.T) {
 
 // The verb catalog, for composing a custom role (R-082).
 func TestTheVerbCatalogIsReadable(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 
 	got := i.do(i.admin(), http.MethodGet, "/verbs", nil)
@@ -276,6 +288,7 @@ func TestTheVerbCatalogIsReadable(t *testing.T) {
 
 // R-081: built-in roles are immutable, and new verbs arrive by migration only.
 func TestR081_ABuiltInRoleCannotBeDeleted(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -304,6 +317,7 @@ func TestR081_ABuiltInRoleCannotBeDeleted(t *testing.T) {
 
 // R-082: a custom role is composed from the verb catalog.
 func TestR082_ACustomRoleIsCreatedFromVerbsAndCanBeRemoved(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -327,6 +341,7 @@ func TestR082_ACustomRoleIsCreatedFromVerbsAndCanBeRemoved(t *testing.T) {
 // R-080: an install-scoped grant carries install verbs and no app, and vice
 // versa. A role for one scope cannot be granted in the other.
 func TestR080_AScopeMismatchIsRefusedRatherThanEvaluated(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -342,6 +357,7 @@ func TestR080_AScopeMismatchIsRefusedRatherThanEvaluated(t *testing.T) {
 // Sharing an app normally means letting someone use it, not letting them
 // redeploy it: the two planes are never conflated (R-029, R-070/071).
 func TestR029_SharingAnAppOnTheDataPlaneDoesNotLetSomeoneManageIt(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")
@@ -380,6 +396,7 @@ func TestR029_SharingAnAppOnTheDataPlaneDoesNotLetSomeoneManageIt(t *testing.T) 
 }
 
 func TestGrantsAreListedAndRevoked(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	id := i.createApp(admin, "notes")
@@ -398,6 +415,7 @@ func TestGrantsAreListedAndRevoked(t *testing.T) {
 // Only someone who can manage the app's access may change it (R-083-adjacent):
 // a grant is the thing that decides who else gets in.
 func TestOnlyTheAppsOwnerCanShareIt(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	other := i.user("ordinary")

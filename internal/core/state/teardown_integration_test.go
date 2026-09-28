@@ -18,6 +18,7 @@ import (
 // A detection that fails in the background records why, unless it already
 // recorded an outcome of its own, which is the one that stands.
 func TestADetectionFailureIsRecordedOnlyWhileItIsStillRunning(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	owner := seedUser(t, db, "fail-if-running")
@@ -64,6 +65,7 @@ func TestADetectionFailureIsRecordedOnlyWhileItIsStillRunning(t *testing.T) {
 // asked just before acting on an app read a while ago, so it is not (issue
 // #55).
 func TestADeletedAppIsKnownButNotLive(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	owner := seedUser(t, db, "known-live")
@@ -98,6 +100,7 @@ func TestADeletedAppIsKnownButNotLive(t *testing.T) {
 // deleted app's build cache stayed on disk because the teardown did not know
 // which builder held it (issue #55).
 func TestR224_ATeardownNamesTheBuilderHoldingTheAppsCache(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	owner := seedUser(t, db, "teardown-builder")
@@ -144,6 +147,7 @@ func TestR224_ATeardownNamesTheBuilderHoldingTheAppsCache(t *testing.T) {
 // A store that cannot be reached is reported as such, with a sentence, rather
 // than taken for an answer.
 func TestStartupRecoveryReportsAStoreItCannotReach(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	apps := state.NewApps(db)
 	detections := state.NewDetections(db)

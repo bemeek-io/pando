@@ -31,29 +31,38 @@
 # to run on the platform it is for. The release builds amd64 and arm64 in one
 # go (issue #52), and running npm and the Go toolchain under emulation for the
 # other one took the better part of an hour.
+#
+# Go's module and build caches, and npm's, are cache mounts at fixed paths:
+# they persist in the builder between builds without entering any layer, so a
+# source change recompiles what changed rather than every dependency. CI keeps
+# the Go build cache between runs too (the image job in ci.yml). The paths are
+# set rather than left to each image's defaults because CI names them.
 FROM --platform=$BUILDPLATFORM dhi.io/golang:1.27-alpine3.24-dev@sha256:0fbbb101cb3c451453aa0d3e7a87c378c6bd784d8cfbfd4958f97dd3bd0197e6 AS console
+ENV GOMODCACHE=/cache/go-mod GOCACHE=/cache/go-build npm_config_cache=/cache/npm
 WORKDIR /src
 RUN apk add --no-cache nodejs npm
 
 # Manifests first, so a change to console source does not re-run npm ci.
 COPY console/package.json console/package-lock.json ./console/
-RUN cd console && npm ci
+RUN --mount=type=cache,target=/cache/npm cd console && npm ci
 
 # The whole tree: the build reads cmd/gen-api-types for the types and
 # .claude/skills/pando-design for the design system.
 COPY . .
 # Vite is configured to write to ../internal/console/dist, which is the path
 # go:embed reads.
-RUN cd console && npm run build
+RUN --mount=type=cache,target=/cache/go-mod --mount=type=cache,target=/cache/go-build \
+    cd console && npm run build
 
 FROM --platform=$BUILDPLATFORM dhi.io/golang:1.27-alpine3.24-dev@sha256:0fbbb101cb3c451453aa0d3e7a87c378c6bd784d8cfbfd4958f97dd3bd0197e6 AS build
+ENV GOMODCACHE=/cache/go-mod GOCACHE=/cache/go-build
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
 
 # Dependencies first, so a source change does not re-download the module cache.
 COPY go.mod go.sum* ./
-RUN go mod download
+RUN --mount=type=cache,target=/cache/go-mod go mod download
 
 COPY . .
 COPY --from=console /src/internal/console/dist/ ./internal/console/dist/
@@ -72,7 +81,8 @@ RUN test -f internal/console/dist/index.html \
 ARG VERSION=""
 ARG COMMIT=""
 ARG BUILD_DATE=""
-RUN stamp=""; \
+RUN --mount=type=cache,target=/cache/go-mod --mount=type=cache,target=/cache/go-build \
+    stamp=""; \
     if [ -n "$VERSION" ]; then \
       stamp="-X main.buildVersion=${VERSION} -X main.buildCommit=${COMMIT} -X main.buildDate=${BUILD_DATE}"; \
     fi; \

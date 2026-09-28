@@ -13,6 +13,7 @@ import (
 // settings, so the console and CLI can offer them; a kind the build lacks is
 // refused rather than saved to be skipped at every startup.
 func TestR261_AdapterKindsAreListedAndUnknownOnesRefused(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 

@@ -14,6 +14,7 @@ import (
 // app it holds no grant on — and a custom role holding install.apps.view sees
 // it and can change nothing.
 func TestR081_AnAdministratorManagesAnAppSomebodyElseMade(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -95,6 +96,7 @@ func TestR081_AnAdministratorManagesAnAppSomebodyElseMade(t *testing.T) {
 // An account's app list shows only apps the viewer could see anyway: it is not
 // a way to learn that an app exists.
 func TestAccountAppsListOnlyWhatTheViewerCanSee(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	dana := i.user("dana")

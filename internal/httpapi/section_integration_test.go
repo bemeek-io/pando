@@ -48,6 +48,7 @@ func (i *install) createSection(s *session, name string) string {
 // sections, files apps into them one section per app, renames and deletes
 // them, and deleting one returns its apps to "Your apps".
 func TestR342_SectionsGroupAPersonsOwnLauncher(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	notes := i.createApp(admin, "notes")
@@ -99,6 +100,7 @@ func TestR342_SectionsGroupAPersonsOwnLauncher(t *testing.T) {
 // another person cannot see it, rename it, delete it or file into it, and
 // cannot file an app they cannot open into their own.
 func TestR342_SectionsAreNobodyElses(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	notes := i.createApp(admin, "notes")

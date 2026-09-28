@@ -34,6 +34,7 @@ func (i *install) customRole(s *session, name, scope string, verbs ...string) st
 // role takes its grants with it: the role in use could not be deleted at all,
 // because the grants referenced it. Whoever held it loses what it allowed.
 func TestR082_ACustomRoleSomeoneHoldsCanBeDeleted(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	appID := i.createApp(admin, "notes")
@@ -61,6 +62,7 @@ func TestR082_ACustomRoleSomeoneHoldsCanBeDeleted(t *testing.T) {
 // R-088 through a route that did not check it: a custom role holding
 // install.users.manage, when it is the last grant that can manage accounts.
 func TestR088_DeletingTheRoleThatIsTheOnlyWayToManageAccountsIsRefused(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -85,6 +87,7 @@ func TestR088_DeletingTheRoleThatIsTheOnlyWayToManageAccountsIsRefused(t *testin
 // TestR078_DeletingAGroupTakesWhatWasSharedWithIt asserts that a group's
 // members lose what the group gave them, and keep what was given to them.
 func TestR078_DeletingAGroupTakesWhatWasSharedWithIt(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	viaGroup := i.createApp(admin, "wiki")
@@ -127,6 +130,7 @@ func TestR078_DeletingAGroupTakesWhatWasSharedWithIt(t *testing.T) {
 // five of Pando's: the screen that says what each role is showed two, because
 // it asked only for the ones granted across the installation.
 func TestR081_EveryBuiltInRoleIsListed(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	i.customRole(admin, "log reader", "app", "app.view", "app.logs.read")

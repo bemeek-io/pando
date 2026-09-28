@@ -6,7 +6,6 @@ import (
 
 	"github.com/trypando/pando/internal/core/audit"
 	"github.com/trypando/pando/internal/core/authz"
-	"github.com/trypando/pando/internal/core/source"
 	"github.com/trypando/pando/internal/core/spec"
 	"github.com/trypando/pando/internal/errs"
 )
@@ -40,7 +39,7 @@ func (s *Server) handleUploadSource(w http.ResponseWriter, r *http.Request) {
 	body := http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	defer func() { _ = body.Close() }()
 
-	path, err := source.StoreUpload(app.ID, body)
+	path, err := s.Sources.StoreUpload(app.ID, body)
 	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {

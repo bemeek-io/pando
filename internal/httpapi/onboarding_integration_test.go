@@ -20,6 +20,7 @@ import (
 // a plain one as a value and a secret as a reference to the secrets adapter,
 // and a variable detection never found goes to the primary workload.
 func TestR022_AcceptingSetsTheVariablesGivenWithIt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	i := newInstall(t)
 	admin := i.admin()
@@ -89,6 +90,7 @@ func TestR022_AcceptingSetsTheVariablesGivenWithIt(t *testing.T) {
 // and the deploy is not refused for it. Replacing the variable's entry instead
 // left the required slot unfilled and moved the refusal to deploy time.
 func TestR132_AValueSetDuringReviewFillsItsSlot(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	i := newInstall(t)
 	admin := i.admin()
@@ -142,6 +144,7 @@ func TestR132_AValueSetDuringReviewFillsItsSlot(t *testing.T) {
 // judged the app runs without is no longer required, so it cannot block the
 // deploy (R-132).
 func TestR132_ReviewCanKeepASlotValuePlainOrMarkASlotOptional(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	i := newInstall(t)
 	admin := i.admin()

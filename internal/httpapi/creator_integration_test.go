@@ -13,6 +13,7 @@ import (
 // Creator role end to end: someone given it can make an app and manage it,
 // cannot see or touch anyone else's, and reaches no installation setting.
 func TestR081_ACreatorManagesTheAppsTheyMakeAndNothingElse(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	theirs := i.createApp(admin, "payroll")

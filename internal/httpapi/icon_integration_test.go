@@ -36,6 +36,7 @@ func (i *install) raw(s *session, method, path, contentType string, body []byte)
 // is set with app.spec.edit, shown to whoever can open the app, and hidden —
 // as not-found — from everyone else.
 func TestR340_AppImageSetByAppAdminSeenByAppUsers(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	appID := i.createApp(admin, "notes")
@@ -101,6 +102,7 @@ func TestR340_AppImageSetByAppAdminSeenByAppUsers(t *testing.T) {
 // image: SVG and non-images are refused by what the bytes are, whatever the
 // header claims, and so is anything over 256 KB.
 func TestR340_AppImageRefusesWhatIsNotARasterImage(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	appID := i.createApp(admin, "notes")

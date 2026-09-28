@@ -17,15 +17,12 @@ import (
 	"github.com/trypando/pando/internal/secret"
 )
 
-// Parameters. argon2id, tuned for an interactive login on a single host.
-// Encoded into every hash, so raising them later does not invalidate existing
+// Parameters. The cost — time, memory, parallelism — is in cost.go. Encoded
+// into every hash, so raising any of them later does not invalidate existing
 // credentials — a hash carries the parameters it was made with.
 const (
-	timeCost    = 3
-	memoryCost  = 64 * 1024 // 64 MiB
-	parallelism = 2
-	saltLength  = 16
-	keyLength   = 32
+	saltLength = 16
+	keyLength  = 32
 )
 
 // MinPasswordLength is the only rule a password has to satisfy.

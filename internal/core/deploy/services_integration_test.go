@@ -10,12 +10,8 @@ import (
 	"io"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/trypando/pando/internal/adapter/api"
 	secretslocal "github.com/trypando/pando/internal/adapter/secrets/local"
@@ -23,6 +19,7 @@ import (
 	"github.com/trypando/pando/internal/core/bootstrap"
 	"github.com/trypando/pando/internal/core/spec"
 	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/core/state/statetest"
 	"github.com/trypando/pando/internal/errs"
 	"github.com/trypando/pando/internal/secret"
 )
@@ -72,17 +69,7 @@ func provisioningRunner(t *testing.T) (*Runner, *fakeServices, *spec.AppSpec) {
 	t.Helper()
 	ctx := context.Background()
 
-	container, err := postgres.Run(ctx, "postgres:17-alpine",
-		postgres.WithDatabase("pando"), postgres.WithUsername("pando"), postgres.WithPassword("test-password"),
-		testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").
-			WithOccurrence(2).WithStartupTimeout(90*time.Second)))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(container) })
-	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-	db, err := state.Connect(ctx, state.ConnectOptions{OwnerURL: dsn})
-	require.NoError(t, err)
-	t.Cleanup(db.Close)
+	db, _ := statetest.Connect(t)
 
 	users := state.NewUsers(db)
 	first, err := bootstrap.Run(ctx, users, state.NewGrants(db), db, audit.New(db.Pool), secret.New("a-first-password-123"))
@@ -109,6 +96,7 @@ func provisioningRunner(t *testing.T) (*Runner, *fakeServices, *spec.AppSpec) {
 // the first deploy provisions and stores the connection string; every later one
 // hands the stored one back so the data on disk still opens.
 func TestR131_AProvisionedDatabaseKeepsItsCredentialsAcrossDeploys(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	r, fake, s := provisioningRunner(t)
 
@@ -138,6 +126,7 @@ func TestR131_AProvisionedDatabaseKeepsItsCredentialsAcrossDeploys(t *testing.T)
 }
 
 func TestASlotNothingCanProvisionIsRefusedWithTheWayOut(t *testing.T) {
+	t.Parallel()
 	r, _, s := provisioningRunner(t)
 	s.Slots[0].Type = spec.SlotRedis
 	_, err := r.provision(context.Background(), s, io.Discard)
@@ -152,6 +141,7 @@ func TestASlotNothingCanProvisionIsRefusedWithTheWayOut(t *testing.T) {
 }
 
 func TestAProvisionerThatFailsStopsTheDeploy(t *testing.T) {
+	t.Parallel()
 	r, fake, s := provisioningRunner(t)
 	fake.failing = true
 	_, err := r.provision(context.Background(), s, io.Discard)
@@ -166,6 +156,7 @@ func TestAProvisionerThatFailsStopsTheDeploy(t *testing.T) {
 }
 
 func TestWithoutAServicesStoreNothingIsProvisioned(t *testing.T) {
+	t.Parallel()
 	r := &Runner{}
 	got, err := r.provision(context.Background(), specWithProvisionedSlot(), io.Discard)
 	require.NoError(t, err)

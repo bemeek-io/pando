@@ -94,10 +94,14 @@ func Connect(ctx context.Context, opts ConnectOptions) (*DB, error) {
 	}
 	defer owner.Close()
 
-	if !opts.SkipMigrate {
-		if err := Migrate(ctx, opts.OwnerURL); err != nil {
-			return nil, err
-		}
+	var version uint
+	if opts.SkipMigrate {
+		version, err = readSchemaVersion(ctx, owner)
+	} else {
+		version, err = migrateUp(ctx, opts.OwnerURL)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	appPassword, err := provisionAppRole(ctx, owner)
@@ -111,7 +115,17 @@ func Connect(ctx context.Context, opts ConnectOptions) (*DB, error) {
 		return nil, err
 	}
 
-	appURL, err := withCredentials(opts.OwnerURL, AppRole, appPassword)
+	db, err := connectAsApp(ctx, opts.OwnerURL, appPassword, version)
+	if err != nil {
+		return nil, err
+	}
+	l.Info("state store ready", zap.String("role", AppRole))
+	return db, nil
+}
+
+// connectAsApp opens the pool the rest of the process uses, held as AppRole.
+func connectAsApp(ctx context.Context, ownerURL string, appPassword secret.Value, version uint) (*DB, error) {
+	appURL, err := withCredentials(ownerURL, AppRole, appPassword)
 	if err != nil {
 		return nil, err
 	}
@@ -123,9 +137,22 @@ func Connect(ctx context.Context, opts ConnectOptions) (*DB, error) {
 		pool.Close()
 		return nil, errs.Wrap(errs.Internal, "Could not connect to the state database as the application role.", err)
 	}
+	return &DB{Pool: pool, schemaVersion: version}, nil
+}
 
-	l.Info("state store ready", zap.String("role", AppRole))
-	return &DB{Pool: pool, schemaVersion: appliedSchemaVersion}, nil
+// readSchemaVersion is the migration a database is at, for one that was not
+// migrated by this call.
+//
+// A database that was never migrated is an error here rather than version
+// zero: nothing Pando does next — granting on its tables, checking the audit
+// log — can succeed on it either.
+func readSchemaVersion(ctx context.Context, owner *pgxpool.Pool) (uint, error) {
+	var version int64
+	if err := owner.QueryRow(ctx, `SELECT version FROM schema_migrations LIMIT 1`).Scan(&version); err != nil {
+		return 0, errs.Wrap(errs.Internal, "Could not read the database schema version.", err).
+			WithRemedy("Run `pando migrate` against this database, or start Pando without skipping migrations.")
+	}
+	return uint(version), nil //nolint:gosec // G115: a migration version is a small positive number.
 }
 
 // waitForPostgres dials until Postgres answers or the timeout expires.
@@ -167,51 +194,64 @@ func waitForPostgres(ctx context.Context, dsn string, timeout time.Duration) (*p
 
 // Migrate applies pending migrations as the owning role.
 func Migrate(ctx context.Context, ownerURL string) error {
+	_, err := migrateUp(ctx, ownerURL)
+	return err
+}
+
+// migrateUp applies pending migrations and returns the version it left the
+// database at.
+//
+// Returned rather than kept in a package variable, which it used to be: two
+// Connects in one process — a parallel test run — wrote it at once (issue #31).
+func migrateUp(ctx context.Context, ownerURL string) (uint, error) {
 	src, err := iofs.New(migrations.FS, ".")
 	if err != nil {
-		return errs.Wrap(errs.Internal, "Could not read the embedded migrations.", err)
+		return 0, errs.Wrap(errs.Internal, "Could not read the embedded migrations.", err)
 	}
 
 	cfg, err := pgx.ParseConfig(ownerURL)
 	if err != nil {
-		return errs.Wrap(errs.Internal, "The database connection URL is malformed.", err)
+		return 0, errs.Wrap(errs.Internal, "The database connection URL is malformed.", err)
 	}
 	db := stdlib.OpenDB(*cfg)
 	defer db.Close()
 
 	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
-		return errs.Wrap(errs.Internal, "Could not prepare the database for migration.", err)
+		return 0, errs.Wrap(errs.Internal, "Could not prepare the database for migration.", err)
 	}
 
 	m, err := migrate.NewWithInstance("iofs", src, "postgres", driver)
 	if err != nil {
-		return errs.Wrap(errs.Internal, "Could not prepare the database for migration.", err)
+		return 0, errs.Wrap(errs.Internal, "Could not prepare the database for migration.", err)
 	}
+	// The driver holds a connection of its own, which closing db above does
+	// not reclaim: without this every migration left one open for the life of
+	// the process, and a database cannot be copied while anything is
+	// connected to it (issue #31).
+	defer func() { _, _ = m.Close() }()
 
+	// A dirty schema is refused by Up itself, so it is recognized here. It used
+	// to be checked after Up, on a path Up never let it reach, which reported
+	// "migration failed" without the one thing worth knowing.
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return errs.Wrap(errs.Internal, "Database migration failed.", err)
+		var dirty migrate.ErrDirty
+		if errors.As(err, &dirty) {
+			return 0, errs.New(errs.Internal,
+				fmt.Sprintf("The database schema is marked dirty at version %d, which means a previous migration failed partway.", dirty.Version)).
+				WithRemedy("Restore from a backup, or resolve the failed migration manually before starting Pando again.")
+		}
+		return 0, errs.Wrap(errs.Internal, "Database migration failed.", err)
 	}
 
-	version, dirty, err := m.Version()
+	version, _, err := m.Version()
 	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
-		return errs.Wrap(errs.Internal, "Could not read the database schema version.", err)
-	}
-	if dirty {
-		return errs.New(errs.Internal,
-			fmt.Sprintf("The database schema is marked dirty at version %d, which means a previous migration failed partway.", version)).
-			WithRemedy("Restore from a backup, or resolve the failed migration manually before starting Pando again.")
+		return 0, errs.Wrap(errs.Internal, "Could not read the database schema version.", err)
 	}
 
 	log.From(ctx).Info("migrations applied", zap.Uint("version", version))
-	appliedSchemaVersion = version
-	return nil
+	return version, nil
 }
-
-// appliedSchemaVersion is set by migrate and read when the DB is built. A
-// package variable rather than a return value because migrate runs on the owner
-// pool, before the DB the rest of the process uses exists.
-var appliedSchemaVersion uint
 
 // provisionAppRole creates or updates AppRole and returns its password.
 //

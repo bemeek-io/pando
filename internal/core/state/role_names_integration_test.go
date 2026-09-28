@@ -16,6 +16,7 @@ import (
 // unique however they are written — built-ins included, which are stored
 // lowercase and shown capitalized.
 func TestR082_ACustomRoleCannotTakeAnExistingRolesName(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	roles := state.NewRoles(db)

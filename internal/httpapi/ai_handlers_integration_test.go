@@ -50,6 +50,7 @@ var aiPosts = []struct {
 // A body that is not JSON is refused as unreadable, with an example of one
 // that is, on every AI endpoint that takes a body.
 func TestAIEndpointsRefuseAnUnreadableBody(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	withAI(t, i, "ai_anthropic", everything("anthropic"))
@@ -75,6 +76,7 @@ func TestAIEndpointsRefuseAnUnreadableBody(t *testing.T) {
 // install with no AI service answers each function with a clear adapter
 // error, not a crash.
 func TestR106_AIEndpointsWithoutAssistanceSayItIsNotSetUp(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	i.Server.Assist = nil
@@ -90,6 +92,7 @@ func TestR106_AIEndpointsWithoutAssistanceSayItIsNotSetUp(t *testing.T) {
 // Without the assignment service, listing and changing assignments is an
 // internal error rather than a nil dereference.
 func TestAIFunctionEndpointsWithoutAssignmentsAreAnInternalError(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	i.Server.AIFunctions = nil
@@ -106,6 +109,7 @@ func TestAIFunctionEndpointsWithoutAssignmentsAreAnInternalError(t *testing.T) {
 
 // Every AI endpoint needs a signed-in caller.
 func TestAIEndpointsRefuseAnonymous(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	withAI(t, i, "ai_anthropic", everything("anthropic"))
 
@@ -125,6 +129,7 @@ func TestAIEndpointsRefuseAnonymous(t *testing.T) {
 // An adapter that is reached and fails surfaces as ADAPTER_FAILED with its
 // reason, and nothing is recorded as sent.
 func TestAIAdapterFailureSurfacesAsAdapterFailed(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	require.NoError(t, i.Server.Registry.Register("ai_anthropic", failingAI{everything("anthropic")}))
@@ -143,6 +148,7 @@ func TestAIAdapterFailureSurfacesAsAdapterFailed(t *testing.T) {
 
 // An empty question is refused before anything is sent.
 func TestAIQuestionsMustSaySomething(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	withAI(t, i, "ai_anthropic", everything("anthropic"))
@@ -159,6 +165,7 @@ func TestAIQuestionsMustSaySomething(t *testing.T) {
 // adapter, beside the adapter and model; assigning and unassigning a
 // function are recorded too.
 func TestAIAuditSearchRecordsWhatWasSent(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	ai := withAI(t, i, "ai_anthropic", everything("anthropic"))

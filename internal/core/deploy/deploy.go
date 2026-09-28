@@ -80,6 +80,10 @@ type Runner struct {
 	// nothing is enforced.
 	security Security
 
+	// sources fetches what a deploy builds, including an uploaded source
+	// (R-262), which is kept in the directory it names.
+	sources source.Sources
+
 	// ProxyUpstream is where routing adapters must send traffic (R-023). It is
 	// Pando's proxy, always, and it is passed to every Ensure so that no adapter
 	// has to work it out.
@@ -98,7 +102,7 @@ func (r *Runner) PrepareRevision(ctx context.Context, rev state.Revision, by str
 		return rev, nil
 	}
 
-	checkout, err := source.Fetch(ctx, s.Source)
+	checkout, err := r.sources.Fetch(ctx, s.Source)
 	if err != nil {
 		return state.Revision{}, err
 	}
@@ -153,6 +157,14 @@ func (r *Runner) WithServices(services *state.Services, secrets *state.Secrets) 
 	return r
 }
 
+// WithSources sets where a deploy fetches source from, and where uploaded
+// source is kept (R-262). Without it, git and image sources deploy and an
+// uploaded one is refused.
+func (r *Runner) WithSources(sources source.Sources) *Runner {
+	r.sources = sources
+	return r
+}
+
 // Run executes a deployment to completion.
 //
 // The app's state moves to deploying at the start and to running or degraded at
@@ -201,7 +213,7 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 	} else {
 		fmt.Fprintf(sink, "=> Fetching source at %s\n", short(appSpec.Source.Commit))
 	}
-	checkout, err := source.Fetch(ctx, appSpec.Source)
+	checkout, err := r.sources.Fetch(ctx, appSpec.Source)
 	if err != nil {
 		return fail("fetch", err)
 	}

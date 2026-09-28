@@ -18,6 +18,7 @@ import (
 // through the API, is never written into the stored document, and GET /config
 // says where it was set.
 func TestR271_PolicySetAtStartupIsFixedAndSaysWhere(t *testing.T) {
+	t.Parallel()
 	overlay, err := corepolicy.NewOverlay([]corepolicy.Setting{
 		{Key: "min_security_score", Value: "80", Source: corepolicy.Source{Kind: "env", Name: "PANDO_POLICY_MIN_SECURITY_SCORE"}},
 		{Key: "disabled_verbs", Value: []any{"app.exec"}, Source: corepolicy.Source{Kind: "file", Name: "/etc/pando/pando.yaml", Key: "policy.disabled_verbs"}},

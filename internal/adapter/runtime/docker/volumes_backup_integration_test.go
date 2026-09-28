@@ -21,6 +21,7 @@ import (
 // A DR bundle without app volumes restores a Pando that knows about every app
 // and has lost all their data, which is a worse outcome than failing loudly.
 func TestR212_AVolumeRoundTripsThroughSnapshotAndRestore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 
@@ -49,6 +50,7 @@ func TestR212_AVolumeRoundTripsThroughSnapshotAndRestore(t *testing.T) {
 // A restore that merged would leave a volume matching neither the backup nor
 // the previous state, and nobody could tell which files came from where.
 func TestR212_RestoreReplacesRatherThanMerges(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 
@@ -73,6 +75,7 @@ func TestR212_RestoreReplacesRatherThanMerges(t *testing.T) {
 // TestR212_AnEmptyVolumeSnapshotsCleanly — an app that has not written anything
 // yet still has to back up, and a tar of nothing is still a valid tar.
 func TestR212_AnEmptyVolumeSnapshotsCleanly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := adapter(t)
 

@@ -28,6 +28,7 @@ func credentialStore(t *testing.T, db *state.DB) *state.AdapterCredentials {
 // TestR190_AnAdapterCredentialIsStoredOnlyAsCiphertext asserts R-190 for
 // adapter credentials (O-20): no column anywhere holds the plaintext.
 func TestR190_AnAdapterCredentialIsStoredOnlyAsCiphertext(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	require.NoError(t, state.NewAdapters(db).Upsert(ctx, state.AdapterConfig{
@@ -64,6 +65,7 @@ func TestR190_AnAdapterCredentialIsStoredOnlyAsCiphertext(t *testing.T) {
 // TestR190_TheDatabaseRefusesCredentialsInPlainConfiguration asserts O-20's
 // mechanism: a check constraint, not only the handler.
 func TestR190_TheDatabaseRefusesCredentialsInPlainConfiguration(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	err := state.NewAdapters(db).Upsert(context.Background(), state.AdapterConfig{
 		ID: "ai_sneaky", Category: "ai", Kind: "anthropic", Name: "x", Enabled: true,
@@ -75,6 +77,7 @@ func TestR190_TheDatabaseRefusesCredentialsInPlainConfiguration(t *testing.T) {
 // TestO20_ACredentialIsBoundToItsAdapter asserts that ciphertext sealed for one
 // adapter cannot be opened as another's: the adapter ID is authenticated data.
 func TestO20_ACredentialIsBoundToItsAdapter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := connected(t)
 	adapters := state.NewAdapters(db)

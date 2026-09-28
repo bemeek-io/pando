@@ -43,6 +43,7 @@ func (noEdgeRuntime) Capabilities(context.Context) (adapterapi.RuntimeCapabiliti
 // half: Pando runs the edge, so Pando says when it could not — and why, to
 // whoever may change the adapter.
 func TestR174_TheAdaptersListSaysWhenAnEdgeIsNotRunning(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	i := newInstall(t)
 	require.NoError(t, i.Adapters.Upsert(ctx, state.AdapterConfig{

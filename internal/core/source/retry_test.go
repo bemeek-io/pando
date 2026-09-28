@@ -71,13 +71,11 @@ func TestRetryingACloneStopsWithTheContext(t *testing.T) {
 
 // An upload that cannot be removed is reported rather than silently kept.
 func TestAnUploadThatCannotBeRemovedIsReported(t *testing.T) {
-	old := UploadDir
-	UploadDir = t.TempDir()
-	t.Cleanup(func() { UploadDir = old })
+	s := Sources{UploadDir: t.TempDir()}
 
-	stuck := filepath.Join(UploadDir, "app_01STUCK.tar.gz")
+	stuck := filepath.Join(s.UploadDir, "app_01STUCK.tar.gz")
 	require.NoError(t, os.MkdirAll(filepath.Join(stuck, "inside"), 0o700))
 
-	err := DiscardUpload("app_01STUCK")
+	err := s.DiscardUpload("app_01STUCK")
 	require.ErrorContains(t, err, "could not remove the app's uploaded source")
 }

@@ -53,14 +53,6 @@ func TestMalformedHashDeniesRatherThanPanics(t *testing.T) {
 	}
 }
 
-// Parameters live in the hash, so raising them later does not invalidate
-// credentials already stored.
-func TestParametersAreEncodedInTheHash(t *testing.T) {
-	h, err := hash.New(secret.New("x"))
-	require.NoError(t, err)
-	require.Contains(t, h, "m=65536,t=3,p=2")
-}
-
 // TestR042_AMalformedStoredHashDeniesRatherThanPanics asserts R-042.
 //
 // "Secure" for local users has to include behaving under a stored hash that is

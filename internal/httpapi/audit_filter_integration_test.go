@@ -13,6 +13,7 @@ import (
 // The audit log answers "who did what to which, and when" — the filters
 // combine, so "this person's changes to this app, last hour" is one query.
 func TestTheAuditLogFiltersByTargetAndTime(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	notes := i.createApp(admin, "notes")
@@ -65,6 +66,7 @@ func TestTheAuditLogFiltersByTargetAndTime(t *testing.T) {
 // `involving` reads one account's whole history — what it did, and what was
 // done to it — which the actor and target filters, combined with AND, cannot.
 func TestR227_TheAuditLogFindsEverythingToDoWithOneAccount(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	dana := i.user("dana")
@@ -110,6 +112,7 @@ func TestR227_TheAuditLogFindsEverythingToDoWithOneAccount(t *testing.T) {
 // GET /users/{id} is the same shape as a row of GET /users: an account's page
 // needs its role and when it was made, and should not need the whole list.
 func TestOneAccountCarriesItsRoleAndWhenItWasMade(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 

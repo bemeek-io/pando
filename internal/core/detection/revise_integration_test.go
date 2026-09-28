@@ -58,6 +58,7 @@ func (s *sourceScans) ScanSource(_ context.Context, _, _, commit string) {
 // stored proposal, and the exchange is kept on it. Detection hands the
 // scanner that same commit, so a deploy of it can reuse the scan (R-312).
 func TestR336_ARevisionReadsTheReviewedCommitAndIsStored(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	ctx := context.Background()
 
@@ -104,6 +105,7 @@ func TestR336_ARevisionReadsTheReviewedCommitAndIsStored(t *testing.T) {
 // TestR336_ARevisionNeedsAFinishedPlan asserts the refusal before any fetch:
 // an app whose detection never finished has no plan to change.
 func TestR336_ARevisionNeedsAFinishedPlan(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	ctx := context.Background()
 

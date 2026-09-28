@@ -120,6 +120,7 @@ func functionsOf(t *testing.T, i *install, s *session) map[string]aiFunction {
 // function another adapter handles is refused with a message that says how to
 // move it.
 func TestR259_FunctionAssignedToOneAdapter(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	withAI(t, i, "ai_anthropic", everything("anthropic"))
@@ -180,6 +181,7 @@ func TestR259_FunctionAssignedToOneAdapter(t *testing.T) {
 // own model only on an adapter that advertises model choice, from its list
 // when it has one.
 func TestR259_AssignmentModelOverride(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	withAI(t, i, "ai_anthropic", everything("anthropic"))
@@ -212,6 +214,7 @@ func TestR259_AssignmentModelOverride(t *testing.T) {
 // function the adapter's capabilities leave out is refused when assigned,
 // rather than failing when called.
 func TestR259_OnlyAdvertisedFunctionsCanBeAssigned(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	narrow := everything("narrow")
@@ -233,6 +236,7 @@ func TestR259_OnlyAdvertisedFunctionsCanBeAssigned(t *testing.T) {
 // TestR259_OneAIAdapterPerProvider asserts R-259: a second AI adapter of a
 // provider the install already has is refused, by the database.
 func TestR259_OneAIAdapterPerProvider(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 
@@ -258,6 +262,7 @@ func TestR259_OneAIAdapterPerProvider(t *testing.T) {
 // what the config file declares is reported with its source and cannot be
 // changed through the API while it is declared.
 func TestR271_ConfigDeclaredAdaptersAndAssignmentsAreReadOnly(t *testing.T) {
+	t.Parallel()
 	src := func(key string) config.Source {
 		return config.Source{Kind: "file", Name: "/etc/pando/pando.yaml", Key: key}
 	}

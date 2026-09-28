@@ -51,13 +51,7 @@ const (
 	// volume and does not fit anywhere.
 	chunkSize = 1 << 20
 
-	// KDF cost. Deliberately higher than the interactive login in
-	// internal/hash: unlocking a bundle happens once, in a disaster, and an
-	// attacker holding a stolen bundle has unlimited time. Encoded in the
-	// header so raising these later does not orphan existing bundles.
-	kdfTime        = 4
-	kdfMemory      = 256 * 1024 // 256 MiB
-	kdfParallelism = 4
+	// The KDF cost — kdfTime, kdfMemory, kdfParallelism — is in kdf_cost.go.
 )
 
 // ErrPassphrase is returned when a bundle will not decrypt.

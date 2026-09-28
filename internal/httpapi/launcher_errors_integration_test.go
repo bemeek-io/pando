@@ -44,6 +44,7 @@ func (i *install) serviceToken(admin *session) *session {
 // not one — the anonymous principal, a service token — is refused with a
 // reason, and so is every malformed or unknown ID, as not-found.
 func TestR342_PersonalEndpointsRefuseWhatIsNotAPersonOrNotThere(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	appID := i.createApp(admin, "notes")
@@ -97,6 +98,7 @@ func TestR342_PersonalEndpointsRefuseWhatIsNotAPersonOrNotThere(t *testing.T) {
 // R-340: the image endpoints' refusals — an ID that is not one, an app that
 // does not exist, an app with no image, and an app somebody cannot see.
 func TestR340_ImageEndpointsRefuseWhatIsNotThere(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	appID := i.createApp(admin, "notes")
@@ -120,6 +122,7 @@ func TestR340_ImageEndpointsRefuseWhatIsNotThere(t *testing.T) {
 // R-271: GET /config on an install started with no startup configuration
 // answers empty lists rather than null.
 func TestR271_ConfigWithNothingSetIsEmptyNotNull(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	got := i.do(i.admin(), http.MethodGet, "/config", nil)
 	require.Equal(t, http.StatusOK, got.Code, got.String())

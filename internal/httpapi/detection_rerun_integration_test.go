@@ -45,6 +45,7 @@ func (f *fakeDetector) Revise(_ context.Context, _, message string) (state.Detec
 // longer permits is refused before anything is recorded, so the previous
 // outcome is not replaced by a detection that was never going to run.
 func TestR092_ARefusedRerunWritesNothing(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	appID := i.createApp(admin, "notes")
@@ -66,6 +67,7 @@ func TestR092_ARefusedRerunWritesNothing(t *testing.T) {
 // detector returned without recording is recorded for it, so the detection is
 // not left running for good.
 func TestR022_ARerunRunsInTheBackgroundAndRecordsItsFailure(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	appID := i.createApp(admin, "notes")
@@ -96,6 +98,7 @@ func TestR022_ARerunRunsInTheBackgroundAndRecordsItsFailure(t *testing.T) {
 // detector made is refused at once, rather than recorded and refused at accept
 // as "This app has no workloads" (issue #55).
 func TestR338_AnAnswerThatCannotBecomeASpecIsRefusedWhenGiven(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	i := newInstall(t)
 	admin := i.admin()
@@ -127,6 +130,7 @@ func TestR338_AnAnswerThatCannotBecomeASpecIsRefusedWhenGiven(t *testing.T) {
 // Deleting an app asks for its bundle to be torn down at once, when the
 // install can, rather than on the next reconcile.
 func TestDeletingAnAppAsksForItsTeardownAtOnce(t *testing.T) {
+	t.Parallel()
 	i := newInstall(t)
 	admin := i.admin()
 	appID := i.createApp(admin, "notes")

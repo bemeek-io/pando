@@ -116,7 +116,7 @@ func runCase(t *testing.T, auction *detect.Auction, c testCase) outcome {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	checkout, err := source.Fetch(ctx, spec.Source{
+	checkout, err := source.Sources{}.Fetch(ctx, spec.Source{
 		Type: spec.SourceGit, URL: c.URL, Ref: c.Ref, Subdir: c.Subdir,
 	})
 	if err != nil {

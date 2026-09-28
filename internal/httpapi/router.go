@@ -24,6 +24,7 @@ import (
 	"github.com/trypando/pando/internal/core/edge"
 	"github.com/trypando/pando/internal/core/planner"
 	corepolicy "github.com/trypando/pando/internal/core/policy"
+	"github.com/trypando/pando/internal/core/source"
 	"github.com/trypando/pando/internal/core/spec"
 	"github.com/trypando/pando/internal/core/state"
 	"github.com/trypando/pando/internal/errs"
@@ -109,6 +110,10 @@ type Server struct {
 	// than returning an empty proposal — R-106's shape: with nothing
 	// configured, each step degrades to a question, not a dead end.
 	Detector Detector
+
+	// Sources keeps an uploaded source (R-262) and fetches an app's source for
+	// a scan on request.
+	Sources source.Sources
 
 	// Defaults fills in what an author left out of a spec — the install's
 	// adapters, its routing shape, and the retention caps R-211 and R-223 set.

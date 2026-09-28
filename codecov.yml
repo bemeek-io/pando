@@ -6,8 +6,8 @@
 # job covers them and uploads under its own flag. Codecov takes the union, and
 # every line it counts was executed by a test that ran.
 #
-# after_n_builds is what stops it reporting before it has both. The unit job
-# finishes in about three minutes and the integration job in about eight, so
+# after_n_builds is what stops it reporting before it has both. The two jobs
+# finish minutes apart, so
 # without this every pull request gets a comment saying its coverage collapsed
 # — naming the files only the integration flag covers — and then a silent
 # correction once the second upload lands. That happened twice on #21 before
@@ -23,6 +23,12 @@ comment:
   # Same rule for the pull request comment, for the same reason.
   after_n_builds: 2
   require_changes: false
+
+# Test support that lives outside a _test.go file only because more than one
+# package's tests import it. Like a _test.go file, it never ships, and a line of
+# it that no test reaches is a harness error path, not untested product.
+ignore:
+  - "internal/core/state/statetest"
 
 # No `paths` here, deliberately. Both flags measure the whole repository, and
 # constraining them is what broke this file the first time: `paths: - /` became

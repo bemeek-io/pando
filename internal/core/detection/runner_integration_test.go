@@ -13,15 +13,13 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	adapterapi "github.com/trypando/pando/internal/adapter/api"
 	"github.com/trypando/pando/internal/core/detection"
 	corepolicy "github.com/trypando/pando/internal/core/policy"
 	"github.com/trypando/pando/internal/core/spec"
 	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/core/state/statetest"
 	"github.com/trypando/pando/internal/detect"
 	"github.com/trypando/pando/internal/errs"
 )
@@ -30,28 +28,10 @@ import (
 // somewhere to write the answer. The detectors themselves are tested in
 // internal/detect; what is asserted here is what happens around them.
 
+// connected is a fresh, migrated database of the test's own (statetest).
 func connected(t *testing.T) *state.DB {
 	t.Helper()
-	ctx := context.Background()
-
-	container, err := postgres.Run(ctx, "postgres:17-alpine",
-		postgres.WithDatabase("pando"),
-		postgres.WithUsername("pando"),
-		postgres.WithPassword("test-password"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(90*time.Second)),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(container) })
-
-	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-
-	db, err := state.Connect(ctx, state.ConnectOptions{OwnerURL: dsn})
-	require.NoError(t, err)
-	t.Cleanup(db.Close)
+	db, _ := statetest.Connect(t)
 	return db
 }
 
@@ -129,6 +109,7 @@ func appFrom(t *testing.T, db *state.DB, src spec.Source) string {
 // Sequence A: detection reads the repository, produces a proposal, and records
 // it where GET /detection reads.
 func TestDetectionRecordsAProposalAgainstTheApp(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	ctx := context.Background()
 
@@ -154,6 +135,7 @@ func TestDetectionRecordsAProposalAgainstTheApp(t *testing.T) {
 // R-092: the allowlist is checked before anything touches disk, so a blocked
 // source produces zero disk writes — git clone is never invoked.
 func TestR092_ABlockedSourceIsRefusedBeforeAnythingIsCloned(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	ctx := context.Background()
 
@@ -177,6 +159,7 @@ func TestR092_ABlockedSourceIsRefusedBeforeAnythingIsCloned(t *testing.T) {
 // between the two and a re-detection (R-022) of an app whose source is no
 // longer allowed must not clone it.
 func TestTheAllowlistIsRecheckedOnEveryDetection(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	ctx := context.Background()
 
@@ -193,6 +176,7 @@ func TestTheAllowlistIsRecheckedOnEveryDetection(t *testing.T) {
 }
 
 func TestDetectingAnAppThatDoesNotExist(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 
 	_, err := runnerOver(t, db, corepolicy.Static(corepolicy.Default())).
@@ -203,6 +187,7 @@ func TestDetectingAnAppThatDoesNotExist(t *testing.T) {
 // An app with no source has nothing to detect from, and says so rather than
 // failing somewhere further in.
 func TestAnAppWithNoSourceSaysWhatToDoAboutIt(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	appID := appFrom(t, db, spec.Source{})
 
@@ -216,6 +201,7 @@ func TestAnAppWithNoSourceSaysWhatToDoAboutIt(t *testing.T) {
 // to the console later needs to find out what happened — the failure is
 // recorded rather than only returned.
 func TestAFailedDetectionIsRecordedRatherThanOnlyReturned(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	ctx := context.Background()
 
@@ -236,6 +222,7 @@ func TestAFailedDetectionIsRecordedRatherThanOnlyReturned(t *testing.T) {
 // a question. Without the install's defaults a detected spec describes the app
 // and says nothing about where it runs, which is a spec the planner refuses.
 func TestR104_TheProposalCarriesTheInstallsOwnAnswers(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	ctx := context.Background()
 
@@ -268,6 +255,7 @@ func (portModeInstall) Defaults(context.Context) spec.Defaults {
 // complaint, and refused at deploy with "0 is not a usable port number" —
 // which says nothing about the range being full or about deleting an app.
 func TestO15_AFullPortRangeBlocksTheProposalRatherThanLeavingNoPort(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	ctx := context.Background()
 
@@ -302,6 +290,7 @@ func TestO15_AFullPortRangeBlocksTheProposalRatherThanLeavingNoPort(t *testing.T
 // that is there passes, one that is not is not found, and a lookup that could
 // not be made at all is returned rather than read as either.
 func TestCheckRefusesWhatDetectWouldRefuse(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	ctx := context.Background()
 
@@ -324,6 +313,7 @@ func TestCheckRefusesWhatDetectWouldRefuse(t *testing.T) {
 // rather than left running for good. jsonb refuses a NUL character, and a
 // Dockerfile whose CMD carries one puts it in the proposal's evidence.
 func TestADetectionThatCannotBeStoredIsNotLeftRunning(t *testing.T) {
+	t.Parallel()
 	db := connected(t)
 	ctx := context.Background()
 
