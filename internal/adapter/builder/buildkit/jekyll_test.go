@@ -1,0 +1,122 @@
+package buildkit
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// pagesSite is the shape of the repository in issue #67: a GitHub Pages site
+// with a remote theme, a layout, a hand-written index.html at the root and
+// under solutions/, and pages written in Markdown. No Gemfile.
+//
+// detect's TestR094_AJekyllSiteIsBuiltRatherThanServedAsCommitted runs the same
+// shape through the auction with this planner.
+func pagesSite(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for name, body := range map[string]string{
+		"_config.yml":                           "remote_theme: pages-themes/midnight@v0.2.0\nplugins:\n  - jekyll-remote-theme\n",
+		"_layouts/solution.html":                "---\nlayout: default\n---\n{{ content }}\n",
+		"index.html":                            "---\nlayout: default\n---\n<a href=\"solutions\">Solutions</a>\n",
+		"solutions/index.html":                  "<!doctype html><p>list</p>\n",
+		"solutions/copy-role-and-acls/index.md": "---\nlayout: solution\n---\n# Copy role and ACLs\n",
+		"assets/js/get-solutions.js":            "console.log(1)\n",
+	} {
+		full := filepath.Join(root, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(t, os.WriteFile(full, []byte(body), 0o644))
+	}
+	return root
+}
+
+// TestR094_AJekyllSiteIsBuiltBeforeItIsServed asserts R-094.
+//
+// A known static site generator's config is the static tier's evidence, and
+// for Jekyll that evidence means a build. Served as committed, the site in
+// issue #67 answered every Markdown page with a 403 or the Markdown itself.
+func TestR094_AJekyllSiteIsBuiltBeforeItIsServed(t *testing.T) {
+	root := pagesSite(t)
+
+	files, dockerfile, _, err := New().Plan(context.Background(), view{root})
+	require.NoError(t, err)
+
+	body := files[dockerfile]
+	require.Contains(t, body, "FROM ruby:"+defaultRubyVersion+" AS build")
+	require.Contains(t, body, "RUN bundle exec jekyll build --destination /tmp/_site")
+	require.Contains(t, body, "COPY --from=build /tmp/_site/ /usr/share/nginx/html/")
+	require.Contains(t, body, "EXPOSE 80")
+
+	// With no Gemfile of its own the site is built the way GitHub Pages builds
+	// it, and the Gemfile that says so travels with the plan.
+	require.Contains(t, body, "BUNDLE_GEMFILE=/site/"+jekyllGemfilePath)
+	require.Equal(t, jekyllGemfile, files[jekyllGemfilePath])
+}
+
+// A site with its own Gemfile is built with it, on the Ruby it names.
+func TestR094_AJekyllSitesOwnGemfileAndRubyAreUsed(t *testing.T) {
+	root := writeFiles(t, map[string]string{
+		"_config.yml":   "title: Blog\n",
+		"Gemfile":       "source 'https://rubygems.org'\ngem 'jekyll', '~> 4.3'\n",
+		".ruby-version": "ruby-3.2.4\n",
+	})
+	site, ok := readJekyllSite(root)
+	require.True(t, ok)
+	require.Equal(t, jekyllSite{OwnGemfile: true, Ruby: "3.2.4"}, site)
+
+	name, err := writeJekyllPlan(root, site)
+	require.NoError(t, err)
+	body, err := os.ReadFile(filepath.Join(root, name))
+	require.NoError(t, err)
+	require.Contains(t, string(body), "FROM ruby:3.2.4 AS build")
+	require.NotContains(t, string(body), "BUNDLE_GEMFILE")
+	_, err = os.Stat(filepath.Join(root, filepath.FromSlash(jekyllGemfilePath)))
+	require.True(t, os.IsNotExist(err), "a site with a Gemfile gets no second one")
+}
+
+// What is not a Jekyll site is left to the planners that were reading it.
+func TestAJekyllSiteIsNotReadIntoWhatIsNotOne(t *testing.T) {
+	for name, files := range map[string]map[string]string{
+		"a _config.yml alone": {"_config.yml": "title: x\n", "index.html": "<p>hi</p>"},
+		"a Ruby app":          {"_config.yml": "theme: x\n", "Gemfile": "gem 'rails'\n"},
+		"no config":           {"_layouts/default.html": "{{ content }}"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			for n, body := range files {
+				full := filepath.Join(root, filepath.FromSlash(n))
+				require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+				require.NoError(t, os.WriteFile(full, []byte(body), 0o644))
+			}
+			_, ok := readJekyllSite(root)
+			require.False(t, ok)
+		})
+	}
+}
+
+// A .ruby-version that is not a version is not put in a FROM line.
+func TestAJekyllSitesRubyVersionIsCheckedBeforeItIsUsed(t *testing.T) {
+	root := writeFiles(t, map[string]string{
+		"_config.yml":   "",
+		"Gemfile":       "gem \"github-pages\"\n",
+		".ruby-version": "3.3 AS x\nRUN evil\n",
+	})
+	site, ok := readJekyllSite(root)
+	require.True(t, ok)
+	require.Equal(t, defaultRubyVersion, site.Ruby)
+	require.False(t, strings.Contains(site.Ruby, " "))
+}
+
+// TestR160_AStaticSitesDirectoryRedirectIsRelative asserts R-160.
+//
+// Behind a port-mode address, nginx's absolute redirect to add a directory's
+// trailing slash dropped the port: /solutions on localhost:9001 went to
+// http://localhost/solutions/ (issue #67). The integration test
+// TestR160_AStaticSitesDirectoryRedirectKeepsItsPort runs the real server.
+func TestR160_AStaticSitesDirectoryRedirectIsRelative(t *testing.T) {
+	require.Contains(t, staticConfig, "absolute_redirect off;")
+}
