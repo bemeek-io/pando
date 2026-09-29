@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/trypando/pando/internal/errs"
 )
 
 // pagesSite is the shape of the repository in issue #67: a GitHub Pages site
@@ -119,4 +121,33 @@ func TestAJekyllSitesRubyVersionIsCheckedBeforeItIsUsed(t *testing.T) {
 // TestR160_AStaticSitesDirectoryRedirectKeepsItsPort runs the real server.
 func TestR160_AStaticSitesDirectoryRedirectIsRelative(t *testing.T) {
 	require.Contains(t, staticConfig, "absolute_redirect off;")
+}
+
+// A plan that cannot be written is a build failure that says so, not a plan
+// with a piece missing.
+func TestAJekyllPlanThatCannotBeWrittenFailsTheBuild(t *testing.T) {
+	for name, tc := range map[string]struct {
+		site  jekyllSite
+		block string // made a file, where the plan needs a directory
+		dir   string // made a directory, where the plan writes a file
+	}{
+		"gemfile directory": {site: jekyllSite{Ruby: "3.3.6"}, block: ".nixpacks/jekyll"},
+		"gemfile":           {site: jekyllSite{Ruby: "3.3.6"}, dir: jekyllGemfilePath},
+		"dockerfile folder": {site: jekyllSite{OwnGemfile: true, Ruby: "3.3.6"}, block: ".nixpacks"},
+		"dockerfile":        {site: jekyllSite{OwnGemfile: true, Ruby: "3.3.6"}, dir: ".nixpacks/Dockerfile"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			if tc.block != "" {
+				full := filepath.Join(root, filepath.FromSlash(tc.block))
+				require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+				require.NoError(t, os.WriteFile(full, nil, 0o644))
+			}
+			if tc.dir != "" {
+				require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.FromSlash(tc.dir)), 0o755))
+			}
+			_, err := writeJekyllPlan(root, tc.site)
+			require.Equal(t, errs.BuildFailed, errs.CodeOf(err), "got %v", err)
+		})
+	}
 }
