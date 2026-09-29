@@ -125,21 +125,22 @@ export function Usage({ app, layout = 'table' }: { app: App; layout?: 'table' | 
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)', font: 'var(--type-code)' }}>
                 {row.name}
                 {row.primary && parts.length > 1 && <Tag>address</Tag>}
+                {/* A stopped part says so once, beside its name, rather than
+                    once per reading it has none of. Disk still has an answer. */}
+                {!row.running && (
+                  <span style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)' }}>· Not running</span>
+                )}
               </span>
-              <Labeled label="CPU">
-                {row.running ? (
-                  <Meter used={row.cpu_millis} limit={row.cpu_limit_millis} host={data.host_cpu_millis} format={cores} />
-                ) : (
-                  <Stopped />
-                )}
-              </Labeled>
-              <Labeled label="Memory">
-                {row.running ? (
-                  <Meter used={row.memory_bytes} limit={row.memory_limit_bytes} host={data.host_memory_bytes} format={bytes} />
-                ) : (
-                  <Stopped />
-                )}
-              </Labeled>
+              {row.running && (
+                <>
+                  <Labeled label="CPU">
+                    <Meter used={row.cpu_millis} limit={row.cpu_limit_millis} host={data.host_cpu_millis} format={cores} />
+                  </Labeled>
+                  <Labeled label="Memory">
+                    <Meter used={row.memory_bytes} limit={row.memory_limit_bytes} host={data.host_memory_bytes} format={bytes} />
+                  </Labeled>
+                </>
+              )}
               <Labeled label="Disk">
                 <Disk row={row} />
               </Labeled>
@@ -317,7 +318,7 @@ function Capped({ children }: { children: React.ReactNode }) {
 function Disk({ row }: { row: PartUsage }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', padding: 'var(--space-2) 0' }}>
-      <span>{row.disk_bytes < 0 ? '—' : bytes(row.disk_bytes)}</span>
+      <span style={{ font: 'var(--type-body-ui)' }}>{row.disk_bytes < 0 ? '—' : bytes(row.disk_bytes)}</span>
       {row.volumes.map((v) => (
         <span key={v.id} style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)' }}>
           {v.name || v.id} at {v.path}: {v.bytes < 0 ? 'size unknown' : bytes(v.bytes)}
@@ -328,16 +329,23 @@ function Disk({ row }: { row: PartUsage }) {
 }
 
 /** One reading in the stacked layout: its name above it, as the table's
- *  header would be. */
+ *  header would be. Stacked explicitly, as the loading skeleton is, so the
+ *  layout does not depend on whether the value happens to be a block. */
 function Labeled({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
       <span style={{ font: 'var(--type-label)', color: 'var(--ink-secondary)' }}>{label}</span>
       {children}
     </div>
   );
 }
 
+/** A table cell for a reading a stopped part has none of. Same type and
+ *  padding as a Meter's number and the Disk column, so the row lines up. */
 function Stopped() {
-  return <span style={{ color: 'var(--ink-secondary)' }}>Not running</span>;
+  return (
+    <div style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', padding: 'var(--space-2) 0' }}>
+      Not running
+    </div>
+  );
 }
