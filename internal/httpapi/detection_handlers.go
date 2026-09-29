@@ -3,12 +3,17 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
+	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/trypando/pando/internal/core/audit"
 	"github.com/trypando/pando/internal/core/authz"
+	"github.com/trypando/pando/internal/core/clock"
+	"github.com/trypando/pando/internal/core/detection"
 	"github.com/trypando/pando/internal/core/spec"
 	"github.com/trypando/pando/internal/core/state"
 	"github.com/trypando/pando/internal/detect"
@@ -21,19 +26,54 @@ import (
 // runners_up is part of the response on purpose: R-102 is "ask, never guess",
 // and showing what else bid is how a user sees the auction rather than being
 // handed a verdict.
+//
+// `wait` makes it a long poll (issue #80): while detection is running, the
+// answer is held until it reaches a new stage or finishes, or until the wait
+// runs out. Every client waits this one way — the console, `pando app
+// detection --wait` and pando_get_detection's wait_seconds (R-261).
 func (s *Server) handleGetDetection(w http.ResponseWriter, r *http.Request) {
 	app, ok := s.requireControl(w, r, authz.AppView)
 	if !ok {
 		return
 	}
-
-	d, err := s.Detections.Get(r.Context(), app.ID)
+	wait, err := waitParam(r.URL.Query().Get("wait"))
 	if err != nil {
 		Error(w, r, err)
 		return
 	}
 
-	JSON(w, http.StatusOK, withPlannedAddress(r, app, detectionResponse(d), d))
+	d, err := detection.Await(r.Context(), s.Detections, s.clock(), app.ID, wait)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	JSON(w, http.StatusOK, withPlannedAddress(r, app, s.detectionResponse(d), d))
+}
+
+// waitParam reads `wait`: a number of seconds, or a duration such as 30s.
+// Empty is no wait. More than detection.MaxWait is held to it rather than
+// refused, so a client asking for "as long as you will" gets exactly that.
+func waitParam(raw string) (time.Duration, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	wait, err := time.ParseDuration(raw)
+	if err != nil {
+		seconds, convErr := strconv.Atoi(raw)
+		if convErr != nil {
+			return 0, errs.Newf(errs.ValidInvalid,
+				"The wait parameter %q is not a length of time Pando can read.", raw).
+				WithRemedy(fmt.Sprintf("Give a number of seconds up to %d, such as wait=30, or a duration such as wait=30s.",
+					int(detection.MaxWait.Seconds())))
+		}
+		wait = time.Duration(seconds) * time.Second
+	}
+	if wait < 0 {
+		return 0, errs.New(errs.ValidInvalid, "The wait parameter cannot be negative.").
+			WithRemedy("Give a number of seconds, such as wait=30, or leave it out to answer at once.")
+	}
+	return min(wait, detection.MaxWait), nil
 }
 
 // withPlannedAddress adds where the app will be reachable once deployed, from
@@ -82,7 +122,7 @@ func (s *Server) handleReviseDetection(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
-	JSON(w, http.StatusOK, withPlannedAddress(r, app, detectionResponse(updated), updated))
+	JSON(w, http.StatusOK, withPlannedAddress(r, app, s.detectionResponse(updated), updated))
 }
 
 // handleRerunDetection re-detects, explicitly (R-022).
@@ -138,7 +178,7 @@ func (s *Server) handleRerunDetection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	go s.redetectInBackground(context.WithoutCancel(r.Context()), app.ID)
-	JSON(w, http.StatusAccepted, detectionResponse(d))
+	JSON(w, http.StatusAccepted, s.detectionResponse(d))
 }
 
 // redetectInBackground runs a re-detection, and records a failure the detector
@@ -282,7 +322,7 @@ func (s *Server) handleDetectionAnswers(w http.ResponseWriter, r *http.Request) 
 		Error(w, r, err)
 		return
 	}
-	JSON(w, http.StatusOK, withPlannedAddress(r, app, detectionResponse(updated), updated))
+	JSON(w, http.StatusOK, withPlannedAddress(r, app, s.detectionResponse(updated), updated))
 }
 
 // handleAcceptDetection pins the proposal as spec revision 1 (Sequence A 13–17).
@@ -502,7 +542,7 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 
 // --- helpers ---------------------------------------------------------------
 
-func detectionResponse(d state.Detection) map[string]any {
+func (s *Server) detectionResponse(d state.Detection) map[string]any {
 	out := map[string]any{
 		"status":     d.Status,
 		"detection":  json.RawMessage(d.Body),
@@ -510,6 +550,20 @@ func detectionResponse(d state.Detection) map[string]any {
 		"commit":     d.Commit,
 		"started_at": d.StartedAt,
 		"updated_at": d.UpdatedAt,
+	}
+	// While running: the stage, beside the status rather than only inside the
+	// partial proposal, and how long it has been going by the server's clock,
+	// not the caller's (issue #80). Elapsed time rather than an estimate: the
+	// trial run (R-097) dominates and varies too widely for one to be honest.
+	if d.Status == state.DetectionRunning {
+		var body struct {
+			Stage string `json:"stage"`
+		}
+		_ = json.Unmarshal(d.Body, &body)
+		if body.Stage != "" {
+			out["stage"] = body.Stage
+		}
+		out["elapsed_seconds"] = max(0, int(s.clock().Since(d.StartedAt).Seconds()))
 	}
 	// The keys of the questions still waiting for an answer. Status stays
 	// needs_answers until accept, because answers are applied then, so status
@@ -576,4 +630,12 @@ type Detector interface {
 	// Revise changes a finished proposal as a person asked, through the AI
 	// adapter, and records the exchange on it (R-336).
 	Revise(ctx context.Context, appID, message string) (state.Detection, error)
+}
+
+// clock is the server's time source.
+func (s *Server) clock() clock.Clock {
+	if s.Clock == nil {
+		return clock.System{}
+	}
+	return s.Clock
 }

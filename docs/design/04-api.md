@@ -106,6 +106,12 @@ GET /api/v1/apps/{id}/detection
 
 **[P]** While `status` is `needs_answers`, the response also carries `unanswered`: the keys of the questions that still have no answer. Answers are applied at accept, so `status` stays `needs_answers` until then; an empty `unanswered` is how a client tells "answered, ready to accept" from "waiting for answers" (issue #55).
 
+**[P]** While `status` is `running`, the response carries `stage` (fetching, detecting, trying, scanning, screening) and `elapsed_seconds`, by the server's clock. Elapsed time rather than an estimate: the trial run (R-097) dominates and varies too widely for an estimate to be honest (issue #80).
+
+**[P]** `?wait=` (seconds, or a duration such as `30s`; at most 60) makes the read a long poll: while detection is running, the answer is held until it reaches a new stage or finishes, or the wait runs out. A finished detection is answered at once. A long poll rather than a stream, because it works through every proxy and fits MCP's request/response model; and one mechanism for every surface (R-261) — the console waits this way, `pando app detection --wait` does, and `pando_get_detection` takes `wait_seconds`. `GET /apps` and `GET /apps/{id}` carry the same `status` and `stage` as `detection` on each app, so a draft says why it is still a draft (issue #80).
+
+**[P]** `pando app detection --wait` exits 0 when the proposal is ready to accept, 2 when there are questions a person has to answer, and 1 when detection failed or was blocked — so a script can tell "someone has to act" from "it broke" without reading the output.
+
 **[D]** `questions[].prompt` is held to R-105. The console shows a copy button on it, because the expected workflow is pasting it into the assistant that wrote the app.
 
 ### 2.3 Specs and deployments

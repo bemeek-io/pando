@@ -662,9 +662,12 @@ func TestR105_UnansweredDetectionQuestionsArePrintedVerbatimAndStopTheDeploy(t *
 			"status": "succeeded",
 			"detection": map[string]any{
 				"questions": []map[string]any{
-					{"key": "port", "question": question},
-					{"key": "later", "question": "Something deferred.", "deferred": true},
-					{"key": "answered", "question": "Already handled."},
+					// `prompt`, as the server writes it (detect.Question). The
+					// CLI read `question`, which nothing sends, and printed
+					// blank lines where the questions should be.
+					{"key": "port", "prompt": question},
+					{"key": "later", "prompt": "Something deferred.", "deferred": true},
+					{"key": "answered", "prompt": "Already handled."},
 				},
 			},
 			"answers": map[string]string{"answered": "yes"},

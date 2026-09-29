@@ -221,9 +221,37 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
+	if apps, err = s.withDetections(r.Context(), apps); err != nil {
+		Error(w, r, err)
+		return
+	}
 	JSON(w, http.StatusOK, map[string]any{
 		"apps": s.withVerdicts(r.Context(), withAddresses(r, apps)),
 	})
+}
+
+// withDetections fills in where each app's detection has got to, so a draft
+// in the list and on its own page says why it is still a draft — detection
+// running and at which stage, or waiting on answers — instead of only that it
+// is one (issue #80). One query for the whole list.
+func (s *Server) withDetections(ctx context.Context, apps []state.App) ([]state.App, error) {
+	if s.Detections == nil || len(apps) == 0 {
+		return apps, nil
+	}
+	ids := make([]string, len(apps))
+	for i := range apps {
+		ids[i] = apps[i].ID
+	}
+	summaries, err := s.Detections.Summaries(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range apps {
+		if d, ok := summaries[apps[i].ID]; ok {
+			apps[i].Detection = &d
+		}
+	}
+	return apps, nil
 }
 
 // seesEveryApp reports whether the caller's install role reaches every app
@@ -292,6 +320,12 @@ func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	app.Address = spec.Address(r.Host, app.Slug, app.Routing)
+	withDetection, err := s.withDetections(r.Context(), []state.App{app})
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	app = withDetection[0]
 
 	// What the caller may do on this app, by the authorizer's own answer
 	// verb by verb, so the console shows what it cannot do as read-only
