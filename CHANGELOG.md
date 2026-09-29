@@ -52,6 +52,17 @@ Unreleased above it. -->
   `github.com/trypando/pando`, the Go module path is `github.com/trypando/pando`, and the Homebrew tap
   is `trypando/tap/pando`. Old `github.com/bemeek-io/...` URLs redirect.
 
+### Fixed
+
+- **A static site's pages redirected to the wrong port.** Opening a folder without its trailing slash
+  (`/solutions`) on an app reached at an address with a port, such as `localhost:9001`, sent the
+  browser to the same path on port 80, where nothing answers (#67). The redirect now keeps the
+  address the browser used. Redeploy a static site to pick this up.
+- **A Jekyll site was served as its source.** A GitHub Pages site deployed and looked healthy, but its
+  Markdown pages showed as raw Markdown or failed to load (#67). Pando now builds a Jekyll site with
+  Jekyll before serving it, the way GitHub Pages does, using the site's own Gemfile or, without one,
+  the `github-pages` gem. Detect the app again to get the new build plan.
+
 ### Upgrade notes
 
 - An install with more than one AI adapter of the same provider must remove all but one before
