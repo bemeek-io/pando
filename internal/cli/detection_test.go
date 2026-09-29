@@ -152,3 +152,88 @@ func TestExitCodeOf(t *testing.T) {
 	require.Equal(t, 1, cli.ExitCodeOf(errors.New("anything")))
 	require.Equal(t, 2, cli.ExitCodeOf(&cli.ExitCode{Code: 2, Err: errors.New("questions")}))
 }
+
+// Each stage is named in words, and one Pando adds later still reads.
+func TestAppDetectionNamesEveryStage(t *testing.T) {
+	for stage, says := range map[string]string{
+		"fetching":  "Running: fetching the source.",
+		"detecting": "Running: working out what the app is.",
+		"trying":    "Running: trying a run of the app.",
+		"scanning":  "Running: scanning the source for security problems.",
+		"screening": "Running: having the AI adapter check the plan.",
+		"":          "Running: starting.",
+		"indexing":  "Running: indexing.",
+	} {
+		api := newAPI(t).reply("GET /apps/app_01HQ8/detection", map[string]any{"status": "running", "stage": stage})
+		got := run(t, api, "", "app", "detection", "app_01HQ8")
+		require.NoError(t, got.err)
+		require.Contains(t, got.out, says, stage)
+	}
+}
+
+// Every question answered is ready to accept, not a question to answer; and
+// an outcome the CLI does not know is still reported.
+func TestAppDetectionReportsTheOtherOutcomes(t *testing.T) {
+	api := newAPI(t).reply("GET /apps/app_01HQ8/detection", map[string]any{
+		"status":     "needs_answers",
+		"detection":  map[string]any{"questions": []map[string]any{{"key": "port", "prompt": portQuestion}}},
+		"unanswered": []string{},
+	})
+	got := run(t, api, "", "app", "detection", "app_01HQ8", "--wait")
+	require.NoError(t, got.err, "nothing is left to answer")
+	require.Contains(t, got.out, "Every question is answered.")
+	require.NotContains(t, got.out, portQuestion)
+
+	api = newAPI(t).reply("GET /apps/app_01HQ8/detection", map[string]any{
+		"status":    "unknown",
+		"detection": map[string]any{"questions": []map[string]any{{"key": "port", "prompt": portQuestion}}},
+		"answers":   map[string]string{},
+	})
+	got = run(t, api, "", "app", "detection", "app_01HQ8", "--wait")
+	require.Equal(t, 2, cli.ExitCodeOf(got.err))
+	require.Equal(t, "1 question(s) still to answer", got.err.Error())
+	require.Contains(t, got.out, portQuestion)
+
+	api = newAPI(t).reply("GET /apps/app_01HQ8/detection", map[string]any{"status": "superseded"})
+	got = run(t, api, "", "app", "detection", "app_01HQ8")
+	require.NoError(t, got.err)
+	require.Contains(t, got.out, "Detection finished: superseded.")
+}
+
+// A wait that outlasts its timeout gives up saying how to keep waiting.
+func TestAppDetectionWaitGivesUpAtItsTimeout(t *testing.T) {
+	api := newAPI(t).reply("GET /apps/app_01HQ8/detection", map[string]any{"status": "running", "stage": "trying"})
+	got := run(t, api, "", "app", "detection", "app_01HQ8", "--wait", "--timeout", "1ns")
+	require.ErrorContains(t, got.err, "detection is still running after 1ns")
+	require.ErrorContains(t, got.err, "`pando app detection app_01HQ8 --wait`")
+	require.Contains(t, got.errOut, "Trying a run of the app...")
+}
+
+// An API error while waiting ends the wait with that error.
+func TestAppDetectionWaitReportsARefusal(t *testing.T) {
+	api := newAPI(t).fail("GET /apps/app_01HQ8/detection", 404,
+		map[string]string{"code": "NOT_FOUND", "message": "This app has not been through detection yet."})
+	got := run(t, api, "", "app", "detection", "app_01HQ8", "--wait")
+	require.ErrorContains(t, got.err, "This app has not been through detection yet.")
+
+	got = run(t, api, "", "app", "detection", "app_01HQ8")
+	require.ErrorContains(t, got.err, "This app has not been through detection yet.")
+}
+
+// A deploy stops on a blocked detection, with the reason, before accepting.
+func TestDeployStopsWhenDetectionIsBlocked(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": "package main"})
+	api := newAPI(t).
+		reply("POST /apps", map[string]any{"id": "app_01HQ8"}).
+		reply("GET /apps/app_01HQ8/detection", map[string]any{
+			"status": "blocked",
+			"detection": map[string]any{"blocked": map[string]string{
+				"code": "PLAN_PORT_EXHAUSTED", "message": "Every port in this install's range is taken.",
+			}},
+		})
+
+	got := run(t, api, "", "deploy", dir)
+	require.ErrorContains(t, got.err, "could not work out how to run this directory")
+	require.Contains(t, got.errOut, "Every port in this install's range is taken.")
+	require.False(t, api.sawPath("/apps/app_01HQ8/detection/accept"))
+}

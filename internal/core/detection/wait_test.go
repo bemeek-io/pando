@@ -2,6 +2,7 @@ package detection
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -146,4 +147,35 @@ func TestAwaitEndsWhenTheCallerGoesAway(t *testing.T) {
 	got, err := Await(ctx, r, clock.NewFake(time.Time{}), "app_1", 30*time.Second)
 	require.NoError(t, err)
 	require.Equal(t, state.DetectionRunning, got.Status)
+}
+
+// A read that fails partway through the wait ends it with that failure.
+func TestAwaitReportsAFailedRead(t *testing.T) {
+	t.Parallel()
+	r := &failingReader{first: running(time.Time{})}
+	_, err := Await(context.Background(), r, ticking(t), "app_1", 30*time.Second)
+	require.ErrorIs(t, err, errRead)
+}
+
+var errRead = errors.New("the database went away")
+
+type failingReader struct {
+	first state.Detection
+	reads atomic.Int32
+}
+
+func (f *failingReader) Get(context.Context, string) (state.Detection, error) {
+	if f.reads.Add(1) == 1 {
+		return f.first, nil
+	}
+	return state.Detection{}, errRead
+}
+
+// A nil clock is the system clock.
+func TestAwaitWithNoClockUsesTheSystemOne(t *testing.T) {
+	t.Parallel()
+	r := &scriptedReader{script: []state.Detection{{Status: state.DetectionReady}}}
+	got, err := Await(context.Background(), r, nil, "app_1", time.Second)
+	require.NoError(t, err)
+	require.Equal(t, state.DetectionReady, got.Status)
 }
