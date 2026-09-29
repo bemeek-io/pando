@@ -61,7 +61,7 @@ func TestR094_AJekyllSiteIsBuiltBeforeItIsServed(t *testing.T) {
 	// At ./Gemfile, because Jekyll loads the github-pages gem and the defaults
 	// Pages turns on only from there. Pointed at with BUNDLE_GEMFILE, a page
 	// with no front matter was copied out as Markdown.
-	require.Contains(t, body, "RUN cp "+jekyllGemfilePath+" Gemfile\nRUN bundle install")
+	require.Contains(t, body, "RUN cp "+jekyllGemfilePath+" Gemfile && rm -f Gemfile.lock\nRUN bundle install")
 	require.NotContains(t, body, "BUNDLE_GEMFILE")
 	require.Equal(t, jekyllGemfile, files[jekyllGemfilePath])
 
@@ -71,6 +71,7 @@ func TestR094_AJekyllSiteIsBuiltBeforeItIsServed(t *testing.T) {
 	require.Equal(t, jekyllServedConfig, files[jekyllServedConfigPath])
 	require.Contains(t, jekyllServedConfig, "baseurl: \"\"")
 	require.Contains(t, body, "PAGES_DISABLE_NETWORK=1")
+	require.Contains(t, body, "BUNDLE_WITHOUT=development:test", "a site's test gems are not installed (R-011)")
 }
 
 // A site with its own Gemfile is built with it, on the Ruby it names.
@@ -118,7 +119,7 @@ func TestAJekyllSiteIsNotReadIntoWhatIsNotOne(t *testing.T) {
 func TestAJekyllSitesRubyVersionIsCheckedBeforeItIsUsed(t *testing.T) {
 	root := writeFiles(t, map[string]string{
 		"_config.yml":   "",
-		"Gemfile":       "gem \"github-pages\"\n",
+		"Gemfile":       "gem \"jekyll\"\n",
 		".ruby-version": "3.3 AS x\nRUN evil\n",
 	})
 	site, ok := readJekyllSite(root)
@@ -198,4 +199,49 @@ func TestAGitHubRepositoryIsReadFromTheOriginAndNothingElse(t *testing.T) {
 		require.Equal(t, want, githubRepository(root), config)
 	}
 	require.Empty(t, githubRepository(t.TempDir()), "an uploaded source has no .git")
+}
+
+// A site's Gemfile brings Jekyll in however it likes: by name, through the
+// theme gem a starter names, through a theme repository's gemspec, or as
+// locked. Each was a Ruby app before (issue #67).
+func TestR094_AJekyllSiteIsRecognizedByWhatItsGemfileBringsIn(t *testing.T) {
+	for name, files := range map[string]map[string]string{
+		"jekyll":    {"Gemfile": "gem 'jekyll', '~> 4.3'\n"},
+		"theme gem": {"Gemfile": "source \"https://rubygems.org\"\ngem \"jekyll-theme-chirpy\", \"~> 7.6\"\n"},
+		"gemspec":   {"Gemfile": "gemspec\n", "theme.gemspec": "spec.add_runtime_dependency \"jekyll\", \">= 3.9\"\n"},
+		"lockfile":  {"Gemfile": "gem 'my-site-deps'\n", "Gemfile.lock": "GEM\n  specs:\n    jekyll (4.3.4)\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			files["_config.yml"] = "title: x\n"
+			site, ok := readJekyllSite(writeFiles(t, files))
+			require.True(t, ok)
+			require.True(t, site.OwnGemfile, "built with the site's own Gemfile")
+		})
+	}
+
+	_, ok := readJekyllSite(writeFiles(t, map[string]string{
+		"_config.yml": "", "Gemfile": "gemspec\n", "app.gemspec": "spec.add_dependency 'rack'\n",
+	}))
+	require.False(t, ok, "a gemspec that does not depend on Jekyll is a Ruby library's")
+}
+
+// A Gemfile naming github-pages is built the way GitHub builds it: with the
+// current github-pages gem, not with what the Gemfile resolves to.
+func TestR094_APagesSitesGemfileIsReplacedAsGitHubReplacesIt(t *testing.T) {
+	root := writeFiles(t, map[string]string{
+		"_config.yml":   "remote_theme: mmistakes/minimal-mistakes\n",
+		"Gemfile":       "gem \"github-pages\", group: :jekyll_plugins\ngem \"jekyll-algolia\"\n",
+		"Gemfile.lock":  "GEM\n  specs:\n    github-pages (222)\n",
+		".ruby-version": "2.7.1\n",
+	})
+	site, ok := readJekyllSite(root)
+	require.True(t, ok)
+	require.False(t, site.OwnGemfile)
+	require.Equal(t, defaultRubyVersion, site.Ruby)
+
+	name, err := writeJekyllPlan(root, site)
+	require.NoError(t, err)
+	body, err := os.ReadFile(filepath.Join(root, name))
+	require.NoError(t, err)
+	require.Contains(t, string(body), "RUN cp "+jekyllGemfilePath+" Gemfile && rm -f Gemfile.lock\n")
 }

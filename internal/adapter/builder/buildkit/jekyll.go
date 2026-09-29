@@ -69,13 +69,18 @@ var jekyllMarkers = []string{"_layouts", "_includes", "_posts", "_sass", "_data"
 
 var (
 	jekyllTheme = regexp.MustCompile(`(?m)^\s*(remote_)?theme\s*:`)
-	jekyllGem   = regexp.MustCompile(`(?m)^\s*gem\s+['"](jekyll|github-pages)['"]`)
+	jekyllGem   = regexp.MustCompile(`(?m)^\s*gem\s+['"](jekyll[A-Za-z0-9_-]*|github-pages)['"]`)
+	gemspecLine = regexp.MustCompile(`(?m)^\s*gemspec\b`)
+	gemspecDep  = regexp.MustCompile(`add_(?:runtime_)?dependency\s*\(?\s*['"]jekyll['"]`)
+	lockedGem   = regexp.MustCompile(`(?m)^ {4}(jekyll|github-pages) \(`)
+	pagesGem    = regexp.MustCompile(`(?m)^\s*gem\s+['"]github-pages['"]`)
 )
 
 // jekyllSite is what reading the repository said about a Jekyll site.
 type jekyllSite struct {
-	// OwnGemfile is true when the site's Gemfile names Jekyll. False means the
-	// site has no Gemfile and is built with jekyllGemfile.
+	// OwnGemfile is true when the site is built with its own Gemfile. False
+	// means it is built with jekyllGemfile, as GitHub Pages builds it: the site
+	// has no Gemfile, or has one naming github-pages.
 	OwnGemfile bool
 	Ruby       string
 
@@ -88,10 +93,10 @@ type jekyllSite struct {
 }
 
 // readJekyllSite reports whether the repository is a Jekyll site: a _config.yml,
-// and either a Gemfile naming Jekyll or something else only a Jekyll site has —
-// a theme, or one of its underscore directories. A _config.yml alone is not
-// enough; other tools use the name. A Gemfile that does not name Jekyll is a
-// Ruby app's, whatever else is beside it.
+// and either a Gemfile that brings in Jekyll or something else only a Jekyll
+// site has — a theme, or one of its underscore directories. A _config.yml
+// alone is not enough; other tools use the name. A Gemfile that does not bring
+// in Jekyll is a Ruby app's, whatever else is beside it.
 func readJekyllSite(contextDir string) (jekyllSite, bool) {
 	var config []byte
 	var configName string
@@ -106,8 +111,16 @@ func readJekyllSite(contextDir string) (jekyllSite, bool) {
 	}
 
 	if gemfile, err := os.ReadFile(filepath.Join(contextDir, "Gemfile")); err == nil {
-		if !jekyllGem.Match(gemfile) {
+		if !gemfileBuildsJekyll(contextDir, gemfile) {
 			return jekyllSite{}, false
+		}
+		// A Gemfile naming github-pages is a Pages site's, and GitHub builds a
+		// Pages site with its own current github-pages gem whatever the Gemfile
+		// says. Resolved from the Gemfile instead, one naming jekyll-algolia
+		// beside it got github-pages 222 and Jekyll 3.9, which do not run on a
+		// current Ruby (issue #67).
+		if pagesGem.Match(gemfile) {
+			return jekyllSite{Ruby: defaultRubyVersion, Repository: githubRepository(contextDir), Config: configName}, true
 		}
 		return jekyllSite{OwnGemfile: true, Ruby: jekyllRuby(contextDir),
 			Repository: githubRepository(contextDir), Config: configName}, true
@@ -163,6 +176,32 @@ func githubRepository(contextDir string) string {
 	return ""
 }
 
+// gemfileBuildsJekyll reports a Gemfile that brings in Jekyll, directly or
+// through what it names.
+//
+// A starter site names its theme gem and nothing else — jekyll-theme-chirpy,
+// which depends on Jekyll — and a theme's own repository brings Jekyll in
+// through its gemspec. Read as naming Jekyll or not, both were Ruby apps
+// (issue #67). A Gemfile.lock that locks Jekyll settles it either way.
+func gemfileBuildsJekyll(contextDir string, gemfile []byte) bool {
+	if jekyllGem.Match(gemfile) {
+		return true
+	}
+	if lock, err := os.ReadFile(filepath.Join(contextDir, "Gemfile.lock")); err == nil && lockedGem.Match(lock) {
+		return true
+	}
+	if !gemspecLine.Match(gemfile) {
+		return false
+	}
+	specs, _ := filepath.Glob(filepath.Join(contextDir, "*.gemspec"))
+	for _, spec := range specs {
+		if body, err := os.ReadFile(spec); err == nil && gemspecDep.Match(body) {
+			return true
+		}
+	}
+	return false
+}
+
 // jekyllRuby is the Ruby a site with its own Gemfile is built on: what
 // .ruby-version says, or what the Gemfile or its lockfile says, or the default.
 func jekyllRuby(contextDir string) string {
@@ -186,7 +225,13 @@ func writeJekyllPlan(contextDir string, site jekyllSite) (string, error) {
 	// Unauthenticated, that is sixty requests an hour per address, and a build
 	// that got an answer and one that did not wrote different pages from the
 	// same commit.
-	env := "ENV JEKYLL_ENV=production PAGES_DISABLE_NETWORK=1"
+	//
+	// BUNDLE_WITHOUT leaves out what a site keeps for testing and working on
+	// it. Pando builds the site and does not test it (R-011), and a test group
+	// can need more than Ruby: choosealicense.com's pulls in rugged, whose
+	// native extension needs CMake, and the build failed installing a gem the
+	// site never uses (issue #67).
+	env := "ENV JEKYLL_ENV=production PAGES_DISABLE_NETWORK=1 BUNDLE_WITHOUT=development:test"
 	if site.Repository != "" {
 		env += " PAGES_REPO_NWO=" + site.Repository
 	}
@@ -194,8 +239,9 @@ func writeJekyllPlan(contextDir string, site jekyllSite) (string, error) {
 	gemfile := ""
 	if !site.OwnGemfile {
 		files[jekyllGemfilePath] = jekyllGemfile
-		// The site has no Gemfile, so this one overwrites nothing.
-		gemfile = "RUN cp " + jekyllGemfilePath + " Gemfile\n"
+		// Replacing a github-pages Gemfile, and the lockfile resolved from it,
+		// is what GitHub does; a site with neither loses nothing.
+		gemfile = "RUN cp " + jekyllGemfilePath + " Gemfile && rm -f Gemfile.lock\n"
 	}
 	name := filepath.Join(".nixpacks", "Dockerfile")
 	// The destination is outside the source, so nothing Jekyll writes can be

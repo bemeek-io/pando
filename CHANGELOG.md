@@ -60,9 +60,10 @@ Unreleased above it. -->
   address the browser used. Redeploy a static site to pick this up.
 - **A Jekyll site was served as its source.** A GitHub Pages site deployed and looked healthy, but its
   Markdown pages showed as raw Markdown or failed to load (#67). Pando now builds a Jekyll site with
-  Jekyll before serving it, the way GitHub Pages does, using the site's own Gemfile or, without one,
-  the `github-pages` gem, and serves it at the root of the app's address whatever `baseurl` the
-  site sets for GitHub. Detect the app again to get the new build plan.
+  Jekyll before serving it. A GitHub Pages site (no Gemfile, or one naming `github-pages`) is built
+  the way GitHub builds it, with the current `github-pages` gem; any other Jekyll site with its own
+  Gemfile, without its development and test gems. Either is served at the root of the app's address
+  whatever `baseurl` the site sets for GitHub. Detect the app again to get the new build plan.
 
 ### Upgrade notes
 

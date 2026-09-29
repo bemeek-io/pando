@@ -30,10 +30,12 @@ build: served as committed, the Markdown pages were either the raw Markdown or, 
 holding only `index.md`, a 403. A deploy that looks healthy and serves source is worse than either a
 built site or a refusal, and building is what GitHub Pages does with the same repository.
 
-- **Recognized** when there is a `_config.yml` (or `.yaml`) and either a Gemfile naming `jekyll` or
-  `github-pages`, or a `theme:`/`remote_theme:` line, or one of `_layouts`, `_includes`, `_posts`,
-  `_sass`, `_data`. A `_config.yml` alone is not enough; a Gemfile naming neither gem is a Ruby
-  app's.
+- **Recognized** when there is a `_config.yml` (or `.yaml`) and either a Gemfile that brings in
+  Jekyll, or a `theme:`/`remote_theme:` line, or one of `_layouts`, `_includes`, `_posts`, `_sass`,
+  `_data`. A Gemfile brings Jekyll in by naming `github-pages` or any `jekyll*` gem (a starter names
+  only its theme gem, `jekyll-theme-chirpy`), through a gemspec that depends on `jekyll` (a theme's
+  own repository), or by a `Gemfile.lock` that locks it. A `_config.yml` alone is not enough; a
+  Gemfile that brings in none of these is a Ruby app's.
 - **Detection** lowers the static bid to 0.2 when such a site is at the root, the same step aside a
   root `index.html` beside a package.json build script gets, so the buildpack bid (which plans the
   build) wins without a question.
@@ -43,7 +45,12 @@ built site or a refusal, and building is what GitHub Pages does with the same re
 - **A site with no Gemfile** is built with the `github-pages` gem, in a Gemfile the plan carries at
   `.nixpacks/jekyll/Gemfile`. That gem is what GitHub Pages builds such a site with: it pins Jekyll,
   the plugins Pages allows and Pages' defaults, and it includes `jekyll-remote-theme`, which a site
-  naming a `remote_theme` needs. A site with its own Gemfile is built with that one.
+  naming a `remote_theme` needs. **A site whose Gemfile names `github-pages` is built the same
+  way**, its Gemfile and lockfile replaced, because that is what GitHub does: it builds a Pages site
+  with its current `github-pages` whatever the Gemfile says, and loads only the plugins it allows.
+  Resolved from the Gemfile instead, `mmistakes/mm-github-pages-starter` (which also names
+  `jekyll-algolia`) got `github-pages` 222 and Jekyll 3.9, which do not run on a current Ruby. Any
+  other site with a Gemfile is built with its own.
   The build copies it to `./Gemfile` rather than pointing `BUNDLE_GEMFILE` at it: Jekyll loads the
   `:jekyll_plugins` group, and with it Pages' defaults, only from a `Gemfile` in the directory it
   runs in. Pointed at, the gems were installed and never loaded, and every Markdown page without
@@ -65,11 +72,29 @@ built site or a refusal, and building is what GitHub Pages does with the same re
   is sixty requests an hour per address, and a build that got an answer and one that did not wrote
   different pages from the same commit. Fields only the API supplies (a repository's description,
   for one) are empty.
+- **`BUNDLE_WITHOUT=development:test`.** Pando builds the site and does not test it (R-011), and a
+  test group can need more than Ruby: `github/choosealicense.com`'s pulls in `rugged`, whose native
+  extension needs CMake, and the build failed installing a gem the site never uses.
 - **The build needs the network** — gems, and a remote theme — as a Node site's build does.
 
 Checked against the repository in the issue: detection chooses the build with no question, and
 `/`, `/solutions` and all thirteen solution pages load in port mode, rendered, with the theme's
-stylesheet.
+stylesheet. Then against five more public sites, each detected, built with the plan detection
+produced, and crawled (the home page, its internal links, and every local stylesheet and script)
+through a port-mode address:
+
+| Repository | Shape | Built with | Result |
+|---|---|---|---|
+| `ben-meeker/servicenow-solutions` | Pages, no Gemfile, remote theme | `github-pages` | 3 pages, 5 assets |
+| `barryclark/jekyll-now` | Pages, no Gemfile | `github-pages` | 4 pages, 1 asset |
+| `mmistakes/mm-github-pages-starter` | Gemfile naming `github-pages`, remote theme | `github-pages` | 12 pages, 5 assets |
+| `github/choosealicense.com` | Jekyll 4 Gemfile, test group needing CMake | its Gemfile | 16 pages, 2 assets |
+| `cotes2020/chirpy-starter` | Gemfile naming only a theme gem | its Gemfile | 7 pages, 5 assets |
+| `daattali/beautiful-jekyll` | theme repository, `gemspec` | its Gemfile | 5 pages, 3 assets |
+
+Each chose the build with no question. `academicpages/academicpages.github.io` was not built this
+way: it commits a Dockerfile and a compose file, which R-094 ranks above a static site generator's
+config, and detection asks which of the two to use.
 
 Only the repository root is read. A Pages site kept in `docs/` beside a committed `index.html`
 there is still served as committed.
