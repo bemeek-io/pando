@@ -14,7 +14,8 @@ import (
 
 // pagesSite is the shape of the repository in issue #67: a GitHub Pages site
 // with a remote theme, a layout, a hand-written index.html at the root and
-// under solutions/, and pages written in Markdown. No Gemfile.
+// under solutions/, and pages written in Markdown with no front matter, which
+// GitHub Pages renders anyway. No Gemfile.
 //
 // detect's TestR094_AJekyllSiteIsBuiltRatherThanServedAsCommitted runs the same
 // shape through the auction with this planner.
@@ -26,7 +27,7 @@ func pagesSite(t *testing.T) string {
 		"_layouts/solution.html":                "---\nlayout: default\n---\n{{ content }}\n",
 		"index.html":                            "---\nlayout: default\n---\n<a href=\"solutions\">Solutions</a>\n",
 		"solutions/index.html":                  "<!doctype html><p>list</p>\n",
-		"solutions/copy-role-and-acls/index.md": "---\nlayout: solution\n---\n# Copy role and ACLs\n",
+		"solutions/copy-role-and-acls/index.md": "# Copy role and ACLs\n",
 		"assets/js/get-solutions.js":            "console.log(1)\n",
 	} {
 		full := filepath.Join(root, filepath.FromSlash(name))
@@ -49,14 +50,27 @@ func TestR094_AJekyllSiteIsBuiltBeforeItIsServed(t *testing.T) {
 
 	body := files[dockerfile]
 	require.Contains(t, body, "FROM ruby:"+defaultRubyVersion+" AS build")
-	require.Contains(t, body, "RUN bundle exec jekyll build --destination /tmp/_site")
+	require.Contains(t, body,
+		"RUN bundle exec jekyll build --config _config.yml,"+jekyllServedConfigPath+" --destination /tmp/_site")
 	require.Contains(t, body, "COPY --from=build /tmp/_site/ /usr/share/nginx/html/")
 	require.Contains(t, body, "EXPOSE 80")
 
 	// With no Gemfile of its own the site is built the way GitHub Pages builds
 	// it, and the Gemfile that says so travels with the plan.
-	require.Contains(t, body, "BUNDLE_GEMFILE=/site/"+jekyllGemfilePath)
+	//
+	// At ./Gemfile, because Jekyll loads the github-pages gem and the defaults
+	// Pages turns on only from there. Pointed at with BUNDLE_GEMFILE, a page
+	// with no front matter was copied out as Markdown.
+	require.Contains(t, body, "RUN cp "+jekyllGemfilePath+" Gemfile\nRUN bundle install")
+	require.NotContains(t, body, "BUNDLE_GEMFILE")
 	require.Equal(t, jekyllGemfile, files[jekyllGemfilePath])
+
+	// Served at the root of the app's address, not at a guess at where GitHub
+	// would serve it, and built the same way whether or not the GitHub API
+	// answered.
+	require.Equal(t, jekyllServedConfig, files[jekyllServedConfigPath])
+	require.Contains(t, jekyllServedConfig, "baseurl: \"\"")
+	require.Contains(t, body, "PAGES_DISABLE_NETWORK=1")
 }
 
 // A site with its own Gemfile is built with it, on the Ruby it names.
@@ -68,14 +82,14 @@ func TestR094_AJekyllSitesOwnGemfileAndRubyAreUsed(t *testing.T) {
 	})
 	site, ok := readJekyllSite(root)
 	require.True(t, ok)
-	require.Equal(t, jekyllSite{OwnGemfile: true, Ruby: "3.2.4"}, site)
+	require.Equal(t, jekyllSite{OwnGemfile: true, Ruby: "3.2.4", Config: "_config.yml"}, site)
 
 	name, err := writeJekyllPlan(root, site)
 	require.NoError(t, err)
 	body, err := os.ReadFile(filepath.Join(root, name))
 	require.NoError(t, err)
 	require.Contains(t, string(body), "FROM ruby:3.2.4 AS build")
-	require.NotContains(t, string(body), "BUNDLE_GEMFILE")
+	require.NotContains(t, string(body), "RUN cp ", "the site's own Gemfile is not replaced")
 	_, err = os.Stat(filepath.Join(root, filepath.FromSlash(jekyllGemfilePath)))
 	require.True(t, os.IsNotExist(err), "a site with a Gemfile gets no second one")
 }
@@ -150,4 +164,38 @@ func TestAJekyllPlanThatCannotBeWrittenFailsTheBuild(t *testing.T) {
 			require.Equal(t, errs.BuildFailed, errs.CodeOf(err), "got %v", err)
 		})
 	}
+}
+
+// The repository a site was cloned from reaches the plan, because the Pages
+// themes read site.github and jekyll-github-metadata stops a production build
+// that cannot name it (issue #67).
+func TestR094_AJekyllSiteIsBuiltAsTheRepositoryItCameFrom(t *testing.T) {
+	root := pagesSite(t)
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".git", "config"), []byte(
+		"[core]\n\tbare = false\n[remote \"origin\"]\n\turl = https://github.com/ben-meeker/servicenow-solutions\n"+
+			"\tfetch = +refs/heads/*:refs/remotes/origin/*\n"), 0o644))
+
+	files, dockerfile, _, err := New().Plan(context.Background(), view{root})
+	require.NoError(t, err)
+	require.Contains(t, files[dockerfile], " PAGES_REPO_NWO=ben-meeker/servicenow-solutions\n")
+}
+
+func TestAGitHubRepositoryIsReadFromTheOriginAndNothingElse(t *testing.T) {
+	for config, want := range map[string]string{
+		"[remote \"origin\"]\n\turl = https://github.com/acme/site.git\n":                    "acme/site",
+		"[remote \"origin\"]\n\turl = git@github.com:acme/site.github.io.git\n":              "acme/site.github.io",
+		"[remote \"origin\"]\n\turl = ssh://git@github.com/acme/site\n":                      "acme/site",
+		"[remote \"origin\"]\n\turl = https://gitlab.com/acme/site.git\n":                    "",
+		"[remote \"origin\"]\n\turl = https://github.com/acme/site;rm -rf /\n":               "",
+		"[remote \"upstream\"]\n\turl = https://github.com/acme/site\n":                      "",
+		"[remote \"origin\"]\n\tfetch = x\n[remote \"b\"]\n\turl = https://github.com/a/b\n": "",
+		"[core]\n\tbare = false\n": "",
+	} {
+		root := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(root, ".git", "config"), []byte(config), 0o644))
+		require.Equal(t, want, githubRepository(root), config)
+	}
+	require.Empty(t, githubRepository(t.TempDir()), "an uploaded source has no .git")
 }

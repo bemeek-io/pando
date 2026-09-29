@@ -36,7 +36,33 @@ gem "github-pages", group: :jekyll_plugins
 
 // jekyllGemfilePath is where that Gemfile is written: under .nixpacks/ so the
 // plan carries it, and in a dot-directory so Jekyll leaves it out of the site.
+//
+// The build copies it to ./Gemfile rather than pointing BUNDLE_GEMFILE at it.
+// Jekyll requires the :jekyll_plugins group only when a file named Gemfile is
+// in the directory it runs in, and that group is what loads github-pages and
+// the defaults Pages turns on. Pointed at from BUNDLE_GEMFILE, the gems were
+// installed and never loaded: jekyll-optional-front-matter was off, and every
+// Markdown page without front matter was copied out as Markdown (issue #67).
 const jekyllGemfilePath = ".nixpacks/jekyll/Gemfile"
+
+// jekyllServedConfig is read after the site's own _config.yml, and says where
+// the site is served: at the root of the app's own address, which is where
+// Pando serves every app.
+//
+// Without it, jekyll-github-metadata sets an unset url and baseurl to the
+// site's GitHub Pages address in a production build. Built by Pando, that was a
+// guess at a project page — /pages/<owner>/<repo> — and every stylesheet the
+// theme linked through it was answered by the index.html fallback (issue #67).
+// An empty value is set, and so is left alone; a baseurl the site sets itself
+// is overridden too, because it names where GitHub serves the site, not Pando.
+const jekyllServedConfig = `# Pando serves the site at the root of the app's own address.
+url: ""
+baseurl: ""
+`
+
+// jekyllServedConfigPath is where jekyllServedConfig is written, beside the
+// generated Gemfile.
+const jekyllServedConfigPath = ".nixpacks/jekyll/_config.pando.yml"
 
 // jekyllMarkers are the directories only a Jekyll site has.
 var jekyllMarkers = []string{"_layouts", "_includes", "_posts", "_sass", "_data"}
@@ -52,6 +78,13 @@ type jekyllSite struct {
 	// site has no Gemfile and is built with jekyllGemfile.
 	OwnGemfile bool
 	Ruby       string
+
+	// Repository is the GitHub owner/name the site's origin names, or empty.
+	Repository string
+
+	// Config is the site's own configuration file: _config.yml or
+	// _config.yaml.
+	Config string
 }
 
 // readJekyllSite reports whether the repository is a Jekyll site: a _config.yml,
@@ -61,9 +94,10 @@ type jekyllSite struct {
 // Ruby app's, whatever else is beside it.
 func readJekyllSite(contextDir string) (jekyllSite, bool) {
 	var config []byte
+	var configName string
 	for _, name := range []string{"_config.yml", "_config.yaml"} {
 		if body, err := os.ReadFile(filepath.Join(contextDir, name)); err == nil {
-			config = body
+			config, configName = body, name
 			break
 		}
 	}
@@ -75,7 +109,8 @@ func readJekyllSite(contextDir string) (jekyllSite, bool) {
 		if !jekyllGem.Match(gemfile) {
 			return jekyllSite{}, false
 		}
-		return jekyllSite{OwnGemfile: true, Ruby: jekyllRuby(contextDir)}, true
+		return jekyllSite{OwnGemfile: true, Ruby: jekyllRuby(contextDir),
+			Repository: githubRepository(contextDir), Config: configName}, true
 	}
 
 	marked := jekyllTheme.Match(config)
@@ -87,7 +122,45 @@ func readJekyllSite(contextDir string) (jekyllSite, bool) {
 	if !marked {
 		return jekyllSite{}, false
 	}
-	return jekyllSite{Ruby: defaultRubyVersion}, true
+	return jekyllSite{Ruby: defaultRubyVersion, Repository: githubRepository(contextDir), Config: configName}, true
+}
+
+var (
+	originSection = regexp.MustCompile(`(?m)^\s*\[remote "origin"\]\s*$`)
+	gitURL        = regexp.MustCompile(`^\s*url\s*=\s*(\S+)\s*$`)
+	githubRemote  = regexp.MustCompile(`^(?:https://|ssh://git@|git@)github\.com[/:]([A-Za-z0-9-]+/[A-Za-z0-9._-]+?)(?:\.git)?/?$`)
+)
+
+// githubRepository is the owner/name of the GitHub repository the checkout was
+// cloned from, or empty when it was not cloned from GitHub.
+//
+// jekyll-github-metadata, which GitHub Pages turns on for every site, needs it
+// the moment a layout reads site.github — the Pages themes all do — and in a
+// production build reads it only from PAGES_REPO_NWO or the site's own
+// config, never from the git remote. GitHub sets PAGES_REPO_NWO for the sites
+// it builds; without it the build stopped at "No repo name found" (issue #67).
+// Read when planning, so the plan shows the value it will build with.
+func githubRepository(contextDir string) string {
+	body, err := os.ReadFile(filepath.Join(contextDir, ".git", "config"))
+	if err != nil {
+		return ""
+	}
+	loc := originSection.FindIndex(body)
+	if loc == nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(body[loc[1]:]), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "[") {
+			break
+		}
+		if m := gitURL.FindStringSubmatch(line); m != nil {
+			if repo := githubRemote.FindStringSubmatch(m[1]); repo != nil {
+				return repo[1]
+			}
+			return ""
+		}
+	}
+	return ""
 }
 
 // jekyllRuby is the Ruby a site with its own Gemfile is built on: what
@@ -109,20 +182,21 @@ func jekyllRuby(contextDir string) string {
 // Into .nixpacks/, beside where a nixpacks plan goes, so detection collects it
 // and the build replays it as it would any other plan (R-020).
 func writeJekyllPlan(contextDir string, site jekyllSite) (string, error) {
-	env := "ENV JEKYLL_ENV=production"
-	if !site.OwnGemfile {
-		full := filepath.Join(contextDir, filepath.FromSlash(jekyllGemfilePath))
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			return "", errs.Wrap(errs.BuildFailed, "Could not prepare the build.", err)
-		}
-		// G306: a generated build input, read by the rootless builder as a
-		// different user. It holds no secret.
-		if err := os.WriteFile(full, []byte(jekyllGemfile), 0o644); err != nil { //nolint:gosec
-			return "", errs.Wrap(errs.BuildFailed, "Could not prepare the build.", err)
-		}
-		env += " BUNDLE_GEMFILE=/site/" + jekyllGemfilePath
+	// PAGES_DISABLE_NETWORK keeps jekyll-github-metadata off the GitHub API.
+	// Unauthenticated, that is sixty requests an hour per address, and a build
+	// that got an answer and one that did not wrote different pages from the
+	// same commit.
+	env := "ENV JEKYLL_ENV=production PAGES_DISABLE_NETWORK=1"
+	if site.Repository != "" {
+		env += " PAGES_REPO_NWO=" + site.Repository
 	}
-
+	files := map[string]string{jekyllServedConfigPath: jekyllServedConfig}
+	gemfile := ""
+	if !site.OwnGemfile {
+		files[jekyllGemfilePath] = jekyllGemfile
+		// The site has no Gemfile, so this one overwrites nothing.
+		gemfile = "RUN cp " + jekyllGemfilePath + " Gemfile\n"
+	}
 	name := filepath.Join(".nixpacks", "Dockerfile")
 	// The destination is outside the source, so nothing Jekyll writes can be
 	// read back as a page on the next build.
@@ -131,8 +205,8 @@ FROM ruby:%s AS build
 WORKDIR /site
 COPY . .
 %s
-RUN bundle install
-RUN bundle exec jekyll build --destination /tmp/_site
+%sRUN bundle install
+RUN bundle exec jekyll build --config %s,%s --destination /tmp/_site
 
 FROM %s
 COPY --from=build /tmp/_site/ /usr/share/nginx/html/
@@ -140,15 +214,19 @@ RUN printf %s > /etc/nginx/conf.d/default.conf
 EXPOSE 80
 ENTRYPOINT ["/bin/sh", "-c"]
 CMD ["exec nginx -g 'daemon off;'"]
-`, site.Ruby, env, staticServerImage, printfFormat(staticConfig))
+`, site.Ruby, env, gemfile, site.Config, jekyllServedConfigPath, staticServerImage, printfFormat(staticConfig))
 
-	full := filepath.Join(contextDir, name)
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		return "", errs.Wrap(errs.BuildFailed, "Could not prepare the build.", err)
-	}
-	// G306: as above.
-	if err := os.WriteFile(full, []byte(content), 0o644); err != nil { //nolint:gosec
-		return "", errs.Wrap(errs.BuildFailed, "Could not prepare the build.", err)
+	files[filepath.ToSlash(name)] = content
+	for name, body := range files {
+		full := filepath.Join(contextDir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return "", errs.Wrap(errs.BuildFailed, "Could not prepare the build.", err)
+		}
+		// G306: a generated build input, read by the rootless builder as a
+		// different user. It holds no secret.
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil { //nolint:gosec
+			return "", errs.Wrap(errs.BuildFailed, "Could not prepare the build.", err)
+		}
 	}
 	return name, nil
 }

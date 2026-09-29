@@ -44,7 +44,32 @@ built site or a refusal, and building is what GitHub Pages does with the same re
   `.nixpacks/jekyll/Gemfile`. That gem is what GitHub Pages builds such a site with: it pins Jekyll,
   the plugins Pages allows and Pages' defaults, and it includes `jekyll-remote-theme`, which a site
   naming a `remote_theme` needs. A site with its own Gemfile is built with that one.
+  The build copies it to `./Gemfile` rather than pointing `BUNDLE_GEMFILE` at it: Jekyll loads the
+  `:jekyll_plugins` group, and with it Pages' defaults, only from a `Gemfile` in the directory it
+  runs in. Pointed at, the gems were installed and never loaded, and every Markdown page without
+  front matter (all of this site's) was copied out as Markdown, because `jekyll-optional-front-matter`
+  was off.
+- **The repository is named in the plan** as `PAGES_REPO_NWO`, read from the checkout's GitHub
+  `origin` when planning. `jekyll-github-metadata`, on for every Pages site, needs it as soon as a
+  layout reads `site.github` (the Pages themes all do), and a production build reads it only from
+  that variable or the site's config, never from the git remote. GitHub sets it for the sites it
+  builds; without it the build stopped at "No repo name found". A source not cloned from GitHub gets
+  none, and a site that reads `site.github` then fails with Jekyll's own message naming the fix.
+- **`url` and `baseurl` are set to empty** by a second config file the plan carries
+  (`.nixpacks/jekyll/_config.pando.yml`), read after the site's. In a production build the
+  metadata plugin otherwise fills them with the site's GitHub Pages address, which built here was a
+  guess at a project page (`/pages/<owner>/<repo>`); every stylesheet linked through it was answered
+  by the `index.html` fallback. Pando serves every app at the root of its own address, so a
+  `baseurl` the site sets for GitHub is overridden too.
+- **`PAGES_DISABLE_NETWORK=1`** keeps the metadata plugin off the GitHub API. Unauthenticated, that
+  is sixty requests an hour per address, and a build that got an answer and one that did not wrote
+  different pages from the same commit. Fields only the API supplies (a repository's description,
+  for one) are empty.
 - **The build needs the network** — gems, and a remote theme — as a Node site's build does.
+
+Checked against the repository in the issue: detection chooses the build with no question, and
+`/`, `/solutions` and all thirteen solution pages load in port mode, rendered, with the theme's
+stylesheet.
 
 Only the repository root is read. A Pages site kept in `docs/` beside a committed `index.html`
 there is still served as committed.
