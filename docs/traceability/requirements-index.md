@@ -10,9 +10,9 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | | Count | Of total |
 |---|---:|---:|
 | Requirements | 242 | — |
-| Specified in a design doc | 194 | 80% |
+| Specified in a design doc | 196 | 80% |
 | Assigned to a phase | 137 | 56% |
-| Covered by a named test | 154 | 63% |
+| Covered by a named test | 155 | 64% |
 
 A requirement with no design reference is not necessarily a gap — it may be philosophy (R-002),
 a non-goal (R-010–R-016), or deferred (R-290+). A requirement with no *test* is either
@@ -93,7 +93,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-091** | D LATER | Private repos are in scope, supporting the credential mechanisms GitHub offers (PAT, GitHub… | 7.1 Input | 01 | — | — |
 | **R-092** | D | Source allowlist. | 7.1 Input | 00, 04, 05, 07, 09, 10 | 06 | `TestR092_ABlockedSourceIsRefusedBeforeAnythingIsCloned`, `TestR092_ARefusedRerunWritesNothing`, `TestR092_ASourceOutsideTheAllowlistIsRefusedAtCreation`, `TestR092_BlockedSourceFailsBeforeAnythingElse`, `TestR092_TheSourceAllowlistAcceptsOnlyApprovedHosts` |
 | **R-093** | D | Detection is a detector auction. | 7.2 Detection | 03, 07 | 06 | `TestR093_RunnersUpAreReturned` |
-| **R-094** | D | Confidence ladder, highest first: | 7.2 Detection | 03, 07 | 06 | `TestR094_ACommittedProgramIsPlannedWhenNixpacksHasNothingToSay`, `TestR094_ACommittedProgramIsRunAsItIs`, `TestR094_AContainerfileIsBuiltLikeADockerfile`, `TestR094_AHerokuPHPProcfileServesItsDocumentRoot`, `TestR094_AMakefileBuildBecomesTheBuildCommand`, `TestR094_AMakefileDrivenPlanOutranksConventionMatching`, `TestR094_APublishedImageAppIsProposedAsTheImage`, `TestR094_APublishedImageOnGHCRIsFound`, `TestR094_APublishedImageShortCircuitsTheAuction`, `TestR094_AWorkflowsBuildJobIsTheBuild`, `TestR094_AnEmbedDirectiveAndAClientOutputAreOneDeclaration`, `TestR094_AnyToolchainsOutputCanPairWithAnEmbed`, `TestR094_TheHighestRungWins` |
+| **R-094** | D | Confidence ladder, highest first: | 7.2 Detection | 03, 07 | 06 | `TestR094_ACommittedProgramIsPlannedWhenNixpacksHasNothingToSay`, `TestR094_ACommittedProgramIsRunAsItIs`, `TestR094_AContainerfileIsBuiltLikeADockerfile`, `TestR094_AHerokuPHPProcfileServesItsDocumentRoot`, `TestR094_AJekyllSiteIsBuiltAsTheRepositoryItCameFrom`, `TestR094_AJekyllSiteIsBuiltBeforeItIsServed`, `TestR094_AJekyllSiteIsBuiltRatherThanServedAsCommitted`, `TestR094_AJekyllSiteIsRecognizedByWhatItsGemfileBringsIn`, `TestR094_AJekyllSitesOwnGemfileAndRubyAreUsed`, `TestR094_AJekyllSourceTreeIsNotBidAsAFinishedSite`, `TestR094_AMakefileBuildBecomesTheBuildCommand`, `TestR094_AMakefileDrivenPlanOutranksConventionMatching`, `TestR094_APagesSitesGemfileIsReplacedAsGitHubReplacesIt`, `TestR094_APublishedImageAppIsProposedAsTheImage`, `TestR094_APublishedImageOnGHCRIsFound`, `TestR094_APublishedImageShortCircuitsTheAuction`, `TestR094_AWorkflowsBuildJobIsTheBuild`, `TestR094_AnEmbedDirectiveAndAClientOutputAreOneDeclaration`, `TestR094_AnyToolchainsOutputCanPairWithAnEmbed`, `TestR094_TheHighestRungWins` |
 | **R-095** | P | For tier 4, wrap an existing buildpack implementation (Paketo, nixpacks) rather than | 7.2 Detection | 03 | — | `TestR095_ABuildpackPlanComesFromNixpacks`, `TestR095_ADjangoAppCollectsItsStaticFiles`, `TestR095_ADotnetProjectIsBuiltOnTheSDKItTargets`, `TestR095_AGoProgramIsBuiltOnTheGoItNames`, `TestR095_AJVMProjectIsBuiltWithItsOwnToolOnItsOwnJDK`, `TestR095_ANodeAppGetsASupportedNodeUnlessItNamesOne`, `TestR095_ANodeServerIsBuiltOnTheOfficialNodeImage`, `TestR095_ARubyProjectsVersionComesFromItsGemfile`, `TestR095_DjangosCollectstaticIsTheBuildWhenNoneIsDeclared`, `TestR095_ToolchainsTheRepositoryDoesNotNameAreSupplied` |
 | **R-096** | D | A compose file is a complete answer, not a hint. | 7.2 Detection | 01 | — | `TestR096_AComposeAppGetsOneImagePerServiceThatBuilds`, `TestR096_AComposeBuildsTargetAndArgumentsAreImported`, `TestR096_AComposeCommandKeepsItsQuoting`, `TestR096_AComposeFileIsImportedNotInterpreted`, `TestR096_AComposeFileOfOnlyDatabasesDoesNotOutbidTheApp`, `TestR096_AComposeSecretIsPlacedWhereComposePutsIt`, `TestR096_AComposeServiceBuildsFromItsOwnDockerfile`, `TestR096_AComposeSubstitutionIsResolvedToItsDefault`, `TestR096_ADependencyIsWaitedOnOnlyWhileItCanStillBecomeHealthy`, `TestR096_ADependentStartsOnceItsDependencyIsHealthy`, `TestR096_ADirectoryTooBigToCarryIsStorageWhenNothingBuildsIt`, `TestR096_ADoubledDollarIsALiteralDollar`, `TestR096_AFileWhereEveryServiceHasAProfileKeepsThemAll`, `TestR096_AMountedRepositoryDirectoryKeepsItsFiles`, `TestR096_AServiceBehindAProfileIsNotImported`, `TestR096_AServiceReachedByHostnameIsImportedAsWritten`, `TestR096_AnEnvFileIsPartOfTheComposeFile`, `TestR096_ComposeSecretsInEveryShapeComposeAccepts` |
 | **R-097** | D | A trial run in throwaway isolation is part of detection. | 7.2 Detection | 01, 03, 07, 10 | 06 | `TestR097_ABuildpackAppsAssumedPortIsCheckedAgainstTheBuiltImage`, `TestR097_AComposeServiceIsRoutedToItsWebPortNotSSH`, `TestR097_APlansDeclaredPortBeatsTheLanguageDefault`, `TestR097_APortCheckThatCannotRunLeavesTheAssumption`, `TestR097_APortNobodyFilledInIsReplacedByTheRoutedOne`, `TestR097_ATrialRunObservesTheBoundPort`, `TestR097_AWatchedPortAnswersTheQuestionInsteadOfAPerson`, `TestR097_AnImagesWebPortIsTheOneRoutedTo`, `TestR097_ObservedPortsAreMarkedObservedNotFramework`, `TestR097_ThePrimaryWorkloadIsToldItsPort`, `TestR097_TheTrialRunnerIsNilWhenNoRuntimeIsConfigured` |
@@ -152,7 +152,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-151** | D | A `failed` app stays failed until a human intervenes. | 10.4 Failure handling | 05, 09 | 07 | `TestR151_ACrashLoopingAppReachesFailedAndStaysThere`, `TestR151_AFailedAppIsNeverTouched`, `TestR151_AHumanCanStartAnAppPandoGaveUpOn` |
 | **R-152** | P | Revision history retains the last 10 pinned specs for rollback. | 10.4 Failure handling | 01, 02, 03, 04 | 02, 07, 10 | `TestR152_ANewAppHasNoSpecRevisionsYet`, `TestR152_PinningMarksARevisionEverPinned`, `TestR152_PruningNeverRemovesARevisionThatWasEverPinned`, `TestR152_RevisionsAreNumberedMonotonically`, `TestR152_SpecRevisionsAccumulateAndAreNumbered`, `TestR152_SpecRevisionsCannotBeEdited` |
 | **R-153** | D | One app, one place (R-010). | 10.5 Scale | — | — | — |
-| **R-160** | D | Routing is an adapter category. | 11. Networking and Routing | — | — | — |
+| **R-160** | D | Routing is an adapter category. | 11. Networking and Routing | — | — | `TestR160_AStaticSitesDirectoryRedirectIsRelative`, `TestR160_AStaticSitesDirectoryRedirectKeepsItsPort` |
 | **R-161** | D | Each routing adapter advertises which addressing modes it supports: subdomain, path prefix,… | 11. Networking and Routing | 03 | — | `TestR161_APortModeAppIsServedAtTheRootOfItsPort`, `TestR161_AnAppsAddressFollowsItsRoutingMode` |
 | **R-162** | D | Each routing adapter declares a default mode (e.g. | 11. Networking and Routing | 03 | 03 | `TestR162_AnAppIsNamedInTheRoutingAdaptersDomain`, `TestR162_AppsAreNamedOneLevelBelowTheZone`, `TestR162_CapabilitiesAreHonestAboutTLS`, `TestR162_MovingAnAppToAnotherAdapterTakesItsDefaults`, `TestR162_MovingAnAppToTheDefaultAdapterNeedsNoOverride`, `TestR162_TheRoutingModeComesFromTheAdapterNotFromConfiguration` |
 | **R-163** | D | Deviating from the default requires `app.routing.override`. | 11. Networking and Routing | 01, 03 | — | `TestR163_AHandWrittenSpecIsCheckedTheSameWay`, `TestR163_ANonDefaultModeIsAnOverride`, `TestR163_AnInheritedRoutingModeIsMarkedAsInherited`, `TestR163_AnOperatorCannotMoveAnAppOffTheAdaptersDefaultMode` |
@@ -272,7 +272,6 @@ Check each against the categories above before treating it as a gap.
 - **R-001** (1. What Pando Is) — Pando hosts your apps without you having to set up deployment pipelines, tunnels, or DNS more…
 - **R-003** (1. What Pando Is) — Pando serves two audiences with one product and no tiers:
 - **R-004** (1. What Pando Is) — There are no SKUs, editions, or paywalled features.
-- **R-011** (2. Non-Goals) — Pando does not test.
 - **R-012** (2. Non-Goals) — Pando is not a marketplace.
 - **R-013** (2. Non-Goals) — Pando is not a disaster-recovery product.
 - **R-014** (2. Non-Goals) — No multi-AZ or multi-region.
@@ -289,7 +288,6 @@ Check each against the categories above before treating it as a gap.
 - **R-142** (10.2 Deploy triggers) — Trigger delivery is by polling by default, since inbound connectivity cannot be assumed.
 - **R-143** (10.2 Deploy triggers) — Watch for new tags on an upstream image, for apps deployed from a published image rather than…
 - **R-153** (10.5 Scale) — One app, one place (R-010).
-- **R-160** (11. Networking and Routing) — Routing is an adapter category.
 - **R-180** (12. Egress and Isolation) — Apps are isolated from each other (R-025).
 - **R-181** (12. Egress and Isolation) — Egress defaults to allow-all.
 - **R-192** (13. Secrets) — Environment variables are the default injection mechanism, since slot detection keys on them…
