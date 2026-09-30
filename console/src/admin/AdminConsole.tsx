@@ -319,6 +319,7 @@ export function AdminConsole({
         {section === 'sign-in' && (
           <SignIn
             canEdit={canManageAdapters}
+            canManagePolicy={canManagePolicy}
             query={route.query}
             onClearTest={() => go({ view: 'admin', section: 'sign-in' }, true)}
           />

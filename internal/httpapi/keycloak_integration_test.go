@@ -688,6 +688,12 @@ func TestR047_JITFollowsHostPolicyAndPasswordSignInCanBeTurnedOff(t *testing.T) 
 	opts := inst.anon(http.MethodGet, "/auth/options", nil)
 	require.Contains(t, opts.String(), `"password_sign_in":false`)
 
+	// Local accounts read as off everywhere the setting is shown: the provider
+	// list agrees with the sign-in page, which offers only the provider.
+	local := inst.do(admin, http.MethodGet, "/identity-providers/idp_local", nil)
+	require.Contains(t, local.String(), `"enabled":false`, local.String())
+	require.Contains(t, opts.String(), `"name":"Corp"`)
+
 	// With password sign-in off, the last provider cannot be turned off.
 	off := inst.do(admin, http.MethodPatch, "/identity-providers/"+p.ID, map[string]any{"enabled": false})
 	require.Equal(t, http.StatusBadRequest, off.Code, off.String())

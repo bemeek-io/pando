@@ -38,10 +38,14 @@ const KIND_LABEL: Record<string, string> = { local: 'Username and password', oid
 
 export function SignIn({
   canEdit,
+  canManagePolicy = false,
   query,
   onClearTest,
 }: {
   canEdit: boolean;
+  /** Password sign-in is host policy (disable_password_sign_in), so turning
+   *  local accounts off takes install.policy.manage. */
+  canManagePolicy?: boolean;
   /** provider= and test= when a test sign-in has just come back. */
   query?: string;
   onClearTest: () => void;
@@ -82,12 +86,6 @@ export function SignIn({
           decided in Pando.
         </Quiet>
 
-        {policy.data?.disable_password_sign_in && (
-          <Banner tone="info">
-            Password sign-in is turned off in Policy. If no provider works, whoever runs this installation can turn
-            it back on with pando admin enable-password-sign-in.
-          </Banner>
-        )}
 
         {listing.isPending ? (
           <Loading gap="var(--space-4)">
@@ -102,6 +100,7 @@ export function SignIn({
               key={p.id}
               provider={p}
               canEdit={canEdit}
+              canManagePolicy={canManagePolicy}
               jitOff={policy.data?.disable_jit_provisioning ?? false}
               onEdit={() => setEditing(p)}
             />
@@ -128,11 +127,13 @@ export function SignIn({
 function ProviderCard({
   provider: p,
   canEdit,
+  canManagePolicy,
   jitOff,
   onEdit,
 }: {
   provider: ProviderView;
   canEdit: boolean;
+  canManagePolicy: boolean;
   jitOff: boolean;
   onEdit: () => void;
 }) {
@@ -145,6 +146,19 @@ function ProviderCard({
   const toggle = useMutation({
     mutationFn: () => api.patch(`/identity-providers/${p.id}`, { enabled: !p.enabled }),
     onSuccess: refresh,
+  });
+  // Local accounts are turned off by host policy, which refuses it while no
+  // identity provider is on — so this cannot empty the sign-in page.
+  const passwords = useMutation({
+    mutationFn: async () => {
+      const doc = await api.get<Record<string, unknown>>('/policy');
+      return api.put('/policy', { ...doc, disable_password_sign_in: p.enabled });
+    },
+    onSettled: () => {
+      refresh();
+      void queries.invalidateQueries({ queryKey: ['policy'] });
+      void queries.invalidateQueries({ queryKey: ['sign-in-options'] });
+    },
   });
   const check = useMutation({
     mutationFn: () => api.post<{ ok: boolean; message?: string; remedy?: string }>(`/identity-providers/${p.id}/check`),
@@ -164,7 +178,7 @@ function ProviderCard({
     mutationFn: () => api.del(`/identity-providers/${p.id}`),
     onSuccess: refresh,
   });
-  const failure = toggle.error ?? scim.error ?? scimOff.error ?? remove.error;
+  const failure = toggle.error ?? passwords.error ?? scim.error ?? scimOff.error ?? remove.error;
 
   const status = p.problem ? (
     <StatusIndicator status="failed" label="Not usable" title={p.problem} />
@@ -185,7 +199,9 @@ function ProviderCard({
 
         {p.problem && <Banner tone="failed">{p.problem}</Banner>}
         <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: 0 }}>
-          {revocationText(p.kind, p.revocation)}
+          {!external && !p.enabled
+            ? 'Password sign-in is off: the sign-in page shows only identity providers, and a username and password are refused. If no provider works, whoever runs this installation can turn it back on with pando admin enable-password-sign-in.'
+            : revocationText(p.kind, p.revocation)}
         </p>
 
         {external && (
@@ -230,6 +246,14 @@ function ProviderCard({
           </Banner>
         )}
         {failure && <Banner tone="failed">{refusal(failure)}</Banner>}
+
+        {canManagePolicy && !external && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+            <Button onClick={() => passwords.mutate()} disabled={passwords.isPending}>
+              {p.enabled ? 'Turn off password sign-in' : 'Turn on password sign-in'}
+            </Button>
+          </div>
+        )}
 
         {canEdit && external && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
