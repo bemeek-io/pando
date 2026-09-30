@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trypando/pando/internal/core/idp"
 	"github.com/trypando/pando/internal/core/policy"
 	"github.com/trypando/pando/internal/core/security"
 	"github.com/trypando/pando/internal/core/spec"
@@ -70,6 +71,15 @@ var exported = []any{
 	// The last scheduled backup of an app (issue #87), shown on the app and on
 	// the Backups screen.
 	state.BackupAttempt{},
+
+	// External identity (issue #51): the providers screen, the sign-in page's
+	// options, a test sign-in's report, and an account's identities.
+	idp.ProviderView{},
+	idp.SignInOptions{},
+	idp.TestReport{},
+	idp.Problem{},
+	state.Identity{},
+	state.Group{},
 }
 
 func main() {

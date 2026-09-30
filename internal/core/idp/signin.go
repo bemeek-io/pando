@@ -438,7 +438,7 @@ type TestReport struct {
 	Error      *Problem            `json:"error,omitempty"`
 	Subject    *SubjectView        `json:"subject,omitempty"`
 	Attributes map[string][]string `json:"attributes,omitempty"`
-	Outcome    *Outcome            `json:"outcome,omitempty"`
+	Outcome    *SignInOutcome            `json:"outcome,omitempty"`
 }
 
 // TestResult returns a test sign-in's report, to the administrator who ran it.
@@ -469,8 +469,8 @@ const (
 	OutcomeRefused  = "refused"
 )
 
-// Outcome is which account a sign-in reaches, and how.
-type Outcome struct {
+// SignInOutcome is which account a sign-in reaches, and how.
+type SignInOutcome struct {
 	Kind        string   `json:"kind"`
 	UserID      string   `json:"user_id,omitempty"`
 	Username    string   `json:"username,omitempty"`
@@ -486,8 +486,8 @@ type Outcome struct {
 	err error
 }
 
-func refused(e *errs.Error) Outcome {
-	return Outcome{Kind: OutcomeRefused, Message: e.Message, Remedy: e.Remedy, err: e}
+func refused(e *errs.Error) SignInOutcome {
+	return SignInOutcome{Kind: OutcomeRefused, Message: e.Message, Remedy: e.Remedy, err: e}
 }
 
 // decide resolves a verified subject to an account (O-1, R-045): the
@@ -495,13 +495,13 @@ func refused(e *errs.Error) Outcome {
 // account with the email it vouches for; or, where the provider and host
 // policy allow, a new one. Otherwise nobody. dryRun answers the question
 // without changing anything, for a test sign-in.
-func (s *Service) decide(ctx context.Context, p state.IdentityProvider, subject api.Subject, dryRun bool) Outcome {
+func (s *Service) decide(ctx context.Context, p state.IdentityProvider, subject api.Subject, dryRun bool) SignInOutcome {
 	groupsFrom := "sign_in"
 	if p.SCIMEnabled {
 		groupsFrom = "scim"
 	}
-	out := func(kind string, u state.User) Outcome {
-		return Outcome{Kind: kind, UserID: u.ID, Username: u.ExternalID, DisplayName: u.DisplayName,
+	out := func(kind string, u state.User) SignInOutcome {
+		return SignInOutcome{Kind: kind, UserID: u.ID, Username: u.ExternalID, DisplayName: u.DisplayName,
 			Groups: subject.Groups, GroupsFrom: groupsFrom}
 	}
 
@@ -559,7 +559,7 @@ func (s *Service) decide(ctx context.Context, p state.IdentityProvider, subject 
 				p.Name, subject.ExternalID)))
 	}
 	if dryRun {
-		return Outcome{Kind: OutcomeCreated, Username: subject.ExternalID, DisplayName: subject.DisplayName,
+		return SignInOutcome{Kind: OutcomeCreated, Username: subject.ExternalID, DisplayName: subject.DisplayName,
 			Groups: subject.Groups, GroupsFrom: groupsFrom}
 	}
 	created, err := s.Identities.CreateExternal(ctx, state.NewExternal{

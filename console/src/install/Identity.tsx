@@ -24,8 +24,12 @@ import { useAIFunctionOn } from './AIFunctions';
 interface Group {
   id: string;
   name: string;
+  /** The identity provider that owns the membership, and its name. */
   source?: string;
+  source_name?: string;
   members?: string[];
+  /** On a Pando group: the provider groups whose members count as its own. */
+  linked_from?: string[] | null;
   /** The installation role everyone in the group holds; '' for none. */
   install_role_id?: string;
 }
@@ -89,6 +93,7 @@ function Groups({ canEdit, query }: { canEdit: boolean; query: string }) {
   const [editing, setEditing] = useState<Group | 'new' | null>(null);
   const [deleting, setDeleting] = useState<Group | null>(null);
   const [showing, setShowing] = useState<string | null>(null);
+  const [linking, setLinking] = useState<Group | null>(null);
 
   const groups = useQuery({
     queryKey: ['groups'],
@@ -104,7 +109,9 @@ function Groups({ canEdit, query }: { canEdit: boolean; query: string }) {
   const roleName = (id?: string) => installRoles.find((r) => r.id === id)?.name ?? '';
 
   const all = groups.data?.groups ?? [];
-  const rows = all.filter((g) => matches(query, g.name, g.source ?? 'Pando', roleName(g.install_role_id)));
+  const rows = all.filter((g) =>
+    matches(query, g.name, g.source_name ?? g.source ?? 'Pando', roleName(g.install_role_id)),
+  );
   // Looked up rather than kept, so the panel follows a rename or a delete.
   const shown = all.find((g) => g.id === showing);
 
@@ -156,7 +163,12 @@ function Groups({ canEdit, query }: { canEdit: boolean; query: string }) {
               // edit: the provider is the source of truth for membership
               // (R-078), and an edit here would be overwritten at the next
               // sign-in without saying so.
-              render: (row: Group) => (row.source ? row.source : 'Pando'),
+              render: (row: Group) =>
+                row.source
+                  ? (row.source_name ?? row.source)
+                  : row.linked_from && row.linked_from.length > 0
+                    ? `Pando, and ${row.linked_from.length} provider group${row.linked_from.length === 1 ? '' : 's'}`
+                    : 'Pando',
             },
             {
               key: 'role',
@@ -190,6 +202,11 @@ function Groups({ canEdit, query }: { canEdit: boolean; query: string }) {
                       <Button variant="secondary" onClick={() => setEditing(row)}>
                         Change people
                       </Button>
+                      {all.some((g) => g.source) && (
+                        <Button variant="secondary" onClick={() => setLinking(row)}>
+                          Provider groups
+                        </Button>
+                      )}
                       <Button variant="secondary" onClick={() => setDeleting(row)}>
                         Delete
                       </Button>
@@ -229,6 +246,9 @@ function Groups({ canEdit, query }: { canEdit: boolean; query: string }) {
       )}
 
       {editing && <EditGroup group={editing} onClose={() => setEditing(null)} />}
+      {linking && (
+        <LinkGroups group={all.find((g) => g.id === linking.id) ?? linking} synced={all.filter((g) => g.source)} onClose={() => setLinking(null)} />
+      )}
       {deleting && <DeleteGroup group={deleting} onClose={() => setDeleting(null)} />}
     </section>
   );
@@ -706,6 +726,48 @@ function DeleteRole({ role, onClose }: { role: Role; onClose: () => void }) {
           This can&rsquo;t be undone. Making a role with the same name later does not give it back to anyone.
         </p>
         {remove.isError && <Banner tone="failed">{refusal(remove.error)}</Banner>}
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * Which identity provider groups count as members of a Pando group (R-078).
+ * Everyone in a linked provider group holds what this group holds, for as long
+ * as the provider keeps them in it (R-079).
+ */
+function LinkGroups({ group, synced, onClose }: { group: Group; synced: Group[]; onClose: () => void }) {
+  const queries = useQueryClient();
+  const linked = new Set(group.linked_from ?? []);
+  const toggle = useMutation({
+    mutationFn: ({ id, on }: { id: string; on: boolean }) =>
+      on ? api.put(`/groups/${group.id}/links/${id}`) : api.del(`/groups/${group.id}/links/${id}`),
+    onSettled: () => void queries.invalidateQueries({ queryKey: ['groups'] }),
+  });
+  return (
+    <Dialog
+      open
+      title={`Provider groups in ${group.name}`}
+      description="Everyone in a chosen group counts as a member of this one. The provider says who is in it; removing someone there removes them here within two minutes."
+      onClose={onClose}
+      footer={
+        <Button variant="primary" onClick={onClose}>
+          Done
+        </Button>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        {synced.map((g) => (
+          <Checkbox
+            key={g.id}
+            label={g.name}
+            description={`From ${g.source_name ?? g.source}, ${g.members?.length ?? 0} people`}
+            checked={linked.has(g.id)}
+            disabled={toggle.isPending}
+            onChange={(e) => toggle.mutate({ id: g.id, on: e.target.checked })}
+          />
+        ))}
+        {toggle.isError && <Banner tone="failed">{refusal(toggle.error)}</Banner>}
       </div>
     </Dialog>
   );

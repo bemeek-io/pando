@@ -240,6 +240,9 @@ interface PolicyDoc {
 
   disable_ai_screening?: boolean;
   disable_anonymous_use_audit?: boolean;
+
+  disable_password_sign_in?: boolean;
+  disable_jit_provisioning?: boolean;
 }
 
 interface Violation {
@@ -543,6 +546,27 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
               label="Don't record visits from people who aren't signed in"
               description="Each visit to an app is recorded in the audit log. With this on, only visits by signed-in people and tokens are."
               onChange={(e) => edit({ disable_anonymous_use_audit: e.target.checked })}
+            />
+          </Fixed>
+
+          {/* Issue #51: how people sign in. Password sign-in off is refused
+              while no identity provider is on; the Sign-in screen says so. */}
+          <Fixed field="disable_password_sign_in">
+            <Switch
+              checked={current.disable_password_sign_in ?? false}
+              disabled={locked('disable_password_sign_in')}
+              label="Turn off password sign-in"
+              description="People sign in through an identity provider only. Needs a provider turned on on the Sign-in screen. If none works, pando admin enable-password-sign-in on the host turns this back off."
+              onChange={(e) => edit({ disable_password_sign_in: e.target.checked })}
+            />
+          </Fixed>
+          <Fixed field="disable_jit_provisioning">
+            <Switch
+              checked={current.disable_jit_provisioning ?? false}
+              disabled={locked('disable_jit_provisioning')}
+              label="Don't create accounts at first sign-in"
+              description="Whatever each identity provider is set to. People then need an account from SCIM, or linked by an administrator, before they can sign in."
+              onChange={(e) => edit({ disable_jit_provisioning: e.target.checked })}
             />
           </Fixed>
 

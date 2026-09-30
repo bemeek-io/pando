@@ -11,10 +11,10 @@
 // refuses a second attempt the moment one account exists, so there is exactly
 // one first person.
 //
-// Local accounts only for now. An external identity provider begins with a
-// redirect (`IdentityAdapter.Begin`), and when one is configured this page
-// grows a button per provider rather than a second page — R-044's providers are
-// alternatives to this form, not alternatives to signing in.
+// An external identity provider begins with a redirect, so each one the
+// installation has turned on is a button here rather than a second page —
+// providers are alternatives to this form, not alternatives to signing in
+// (issue #51). Host policy may turn the form itself off, leaving the buttons.
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -26,6 +26,8 @@ import { FieldSkeleton, HeadingSkeleton, LineSkeleton, Loading } from '../ui/Loa
 import { TopoMap } from '../ui/TopoBackground';
 import { signInInstead } from './passcode';
 import { returnTo } from './return-to';
+import { failedSignIn, providerStart } from './sso';
+import type { SignInOptions } from './sso';
 
 export function Login() {
   // Why the setup form was taken away, when somebody else finished first.
@@ -81,6 +83,25 @@ function SignIn({ notice }: { notice?: string }) {
   const [password, setPassword] = useState('');
   const queries = useQueryClient();
 
+  // The ways in this installation offers. Asked, not assumed: a failure to
+  // ask falls back to the password form, which is what every installation
+  // had before providers existed.
+  const options = useQuery({
+    queryKey: ['sign-in-options'],
+    queryFn: () => api.get<SignInOptions>('/auth/options'),
+  });
+  const providers = options.data?.providers ?? [];
+  const passwords = options.data?.password_sign_in ?? true;
+
+  // Why a provider sign-in came back here, in the server's words.
+  const failedID = failedSignIn(window.location.search);
+  const failed = useQuery({
+    queryKey: ['sign-in-failure', failedID],
+    queryFn: () => api.get<{ message: string; remedy?: string }>(`/auth/failures/${failedID}`),
+    enabled: failedID !== null,
+    retry: false,
+  });
+
   const signIn = useMutation({
     mutationFn: () => api.post<unknown>('/sessions', { username, password }),
     onSuccess: () => {
@@ -118,31 +139,58 @@ function SignIn({ notice }: { notice?: string }) {
         style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
       >
         {notice && <Banner tone="info">{notice}</Banner>}
-        <Input
-          label="Username"
-          value={username}
-          autoComplete="username"
-          autoFocus
-          onChange={(e) => edit(setUsername)(e.target.value)}
-        />
-        <Input
-          label="Password"
-          type="password"
-          value={password}
-          autoComplete="current-password"
-          onChange={(e) => edit(setPassword)(e.target.value)}
-          // The server's message, shown as written. It is held to the R-105
-          // standard, and paraphrasing it here would undo that in the UI layer.
-          error={signIn.isError ? messageOf(signIn.error) : undefined}
-        />
-        <Button
-          type="submit"
-          variant="primary"
-          fullWidth
-          disabled={signIn.isPending || username === '' || password === ''}
-        >
-          {signIn.isPending ? 'Signing in' : 'Sign in'}
-        </Button>
+        {failed.data && (
+          <Banner tone="failed">
+            {failed.data.remedy ? `${failed.data.message} ${failed.data.remedy}` : failed.data.message}
+          </Banner>
+        )}
+        {providers.map((p, i) => (
+          // One primary action per view: the first provider when password
+          // sign-in is off, the password form's button otherwise.
+          <Button
+            key={p.id}
+            type="button"
+            variant={!passwords && i === 0 ? 'primary' : 'secondary'}
+            fullWidth
+            onClick={() => window.location.assign(providerStart(p.id, window.location.search, window.location.href))}
+          >
+            {`Sign in with ${p.name}`}
+          </Button>
+        ))}
+        {passwords && providers.length > 0 && (
+          <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: 0 }}>
+            Or sign in with a Pando username and password.
+          </p>
+        )}
+        {passwords && (
+          <>
+            <Input
+              label="Username"
+              value={username}
+              autoComplete="username"
+              autoFocus={providers.length === 0}
+              onChange={(e) => edit(setUsername)(e.target.value)}
+            />
+            <Input
+              label="Password"
+              type="password"
+              value={password}
+              autoComplete="current-password"
+              onChange={(e) => edit(setPassword)(e.target.value)}
+              // The server's message, shown as written. It is held to the R-105
+              // standard, and paraphrasing it here would undo that in the UI layer.
+              error={signIn.isError ? messageOf(signIn.error) : undefined}
+            />
+            <Button
+              type="submit"
+              variant="primary"
+              fullWidth
+              disabled={signIn.isPending || username === '' || password === ''}
+            >
+              {signIn.isPending ? 'Signing in' : 'Sign in'}
+            </Button>
+          </>
+        )}
       </form>
     </Frame>
   );
