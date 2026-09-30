@@ -58,9 +58,9 @@ one verb says nothing about another (R-082).
 
 | Endpoint | Verb | What it does |
 | --- | --- | --- |
-| `GET /api/v1/apps` |  | The apps you can administer. |
-| `POST /api/v1/apps` | `app.create` | Create an app from a repository. Returns immediately in draft while detection runs. |
-| `GET /api/v1/apps/{appID}` | `app.view` | One app: name, source, state, pinned spec, and its last daily backup attempt. |
+| `GET /api/v1/apps` |  | The apps you can administer. Each carries `detection` — its status, and its stage while running — once it has been through detection. |
+| `POST /api/v1/apps` | `app.create` | Create an app from a repository. Returns immediately in draft while detection runs; follow it with GET /detection and `wait`. |
+| `GET /api/v1/apps/{appID}` | `app.view` | One app: name, source, state and pinned spec; `detection` — its status, and its stage while running — once it has been through detection; and `last_backup`, its last daily backup attempt. |
 | `PATCH /api/v1/apps/{appID}` | `app.spec.edit` | Rename an app or change its source. |
 | `DELETE /api/v1/apps/{appID}` | `app.delete` | Delete an app. With storage, `backup=true` keeps a final copy and `force=true` discards it; without either, the request is refused so the decision is taken rather than assumed (R-204, R-205). |
 | `GET /api/v1/apps/{appID}/icon` |  | The image on the app's launcher tile. Anyone who can open the app can load it; `icon_updated_at` on the app says whether there is one and when it changed (R-340). |
@@ -78,7 +78,7 @@ one verb says nothing about another (R-082).
 
 | Endpoint | Verb | What it does |
 | --- | --- | --- |
-| `GET /api/v1/apps/{appID}/detection` | `app.view` | What Pando worked out about the repository: the winning bid, its evidence, the runners-up and any outstanding questions. |
+| `GET /api/v1/apps/{appID}/detection` | `app.view` | What Pando worked out about the repository: the winning bid, its evidence, the runners-up and any outstanding questions. While `status` is `running`, `stage` is one of fetching, detecting, trying, scanning or screening, and `elapsed_seconds` how long it has been going. `wait` (seconds, up to 60) holds the answer until detection reaches a new stage or finishes. |
 | `POST /api/v1/apps/{appID}/detection/rerun` | `app.spec.edit` | Run detection again, against the current commit. |
 | `GET /api/v1/apps/{appID}/detection/diff` | `app.view` | What accepting the proposal would change about the running app. |
 | `POST /api/v1/apps/{appID}/detection/answers` | `app.spec.edit` | Answer detection's questions. Each answer is a fact detection could not find, not a preference. |

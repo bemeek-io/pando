@@ -46,9 +46,9 @@ var routeDocs = []reference.Route{
 	{Method: "DELETE", Path: "/api/v1/tokens/{tokenID}", Group: "Tokens", Summary: "Revoke a token. Yours; a service token with install.tokens.manage; anyone else's with install.users.manage."},
 
 	// --- apps -------------------------------------------------------------
-	{Method: "GET", Path: "/api/v1/apps", Group: "Apps", Summary: "The apps you can administer."},
-	{Method: "POST", Path: "/api/v1/apps", Group: "Apps", Summary: "Create an app from a repository. Returns immediately in draft while detection runs.", Verb: string(authz.AppCreate)},
-	{Method: "GET", Path: "/api/v1/apps/{appID}", Group: "Apps", Summary: "One app: name, source, state, pinned spec, and its last daily backup attempt.", Verb: string(authz.AppView)},
+	{Method: "GET", Path: "/api/v1/apps", Group: "Apps", Summary: "The apps you can administer. Each carries `detection` — its status, and its stage while running — once it has been through detection."},
+	{Method: "POST", Path: "/api/v1/apps", Group: "Apps", Summary: "Create an app from a repository. Returns immediately in draft while detection runs; follow it with GET /detection and `wait`.", Verb: string(authz.AppCreate)},
+	{Method: "GET", Path: "/api/v1/apps/{appID}", Group: "Apps", Summary: "One app: name, source, state and pinned spec; `detection` — its status, and its stage while running — once it has been through detection; and `last_backup`, its last daily backup attempt.", Verb: string(authz.AppView)},
 	{Method: "PATCH", Path: "/api/v1/apps/{appID}", Group: "Apps", Summary: "Rename an app or change its source.", Verb: string(authz.AppSpecEdit)},
 	{Method: "DELETE", Path: "/api/v1/apps/{appID}", Group: "Apps", Summary: "Delete an app. With storage, `backup=true` keeps a final copy and `force=true` discards it; without either, the request is refused so the decision is taken rather than assumed (R-204, R-205).", Verb: string(authz.AppDelete)},
 	{Method: "GET", Path: "/api/v1/apps/{appID}/icon", Group: "Apps", Summary: "The image on the app's launcher tile. Anyone who can open the app can load it; `icon_updated_at` on the app says whether there is one and when it changed (R-340)."},
@@ -63,7 +63,7 @@ var routeDocs = []reference.Route{
 	{Method: "GET", Path: "/api/v1/apps/{appID}/exec", Group: "Apps", Summary: "A terminal in the running app, over a websocket. Refused when host policy has turned exec off, including for the owner (R-085).", Verb: string(authz.AppExec)},
 
 	// --- detection --------------------------------------------------------
-	{Method: "GET", Path: "/api/v1/apps/{appID}/detection", Group: "Detection", Summary: "What Pando worked out about the repository: the winning bid, its evidence, the runners-up and any outstanding questions.", Verb: string(authz.AppView)},
+	{Method: "GET", Path: "/api/v1/apps/{appID}/detection", Group: "Detection", Summary: "What Pando worked out about the repository: the winning bid, its evidence, the runners-up and any outstanding questions. While `status` is `running`, `stage` is one of fetching, detecting, trying, scanning or screening, and `elapsed_seconds` how long it has been going. `wait` (seconds, up to 60) holds the answer until detection reaches a new stage or finishes.", Verb: string(authz.AppView)},
 	{Method: "POST", Path: "/api/v1/apps/{appID}/detection/rerun", Group: "Detection", Summary: "Run detection again, against the current commit.", Verb: string(authz.AppSpecEdit)},
 	{Method: "GET", Path: "/api/v1/apps/{appID}/detection/diff", Group: "Detection", Summary: "What accepting the proposal would change about the running app.", Verb: string(authz.AppView)},
 	{Method: "POST", Path: "/api/v1/apps/{appID}/detection/answers", Group: "Detection", Summary: "Answer detection's questions. Each answer is a fact detection could not find, not a preference.", Verb: string(authz.AppSpecEdit)},

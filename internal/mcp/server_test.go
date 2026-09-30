@@ -229,6 +229,10 @@ func TestEachToolMapsToItsEndpoint(t *testing.T) {
 		{"pando_list_apps", `{}`, "GET", "/apps"},
 		{"pando_get_app", `{"app_id":"app_01HQ8"}`, "GET", "/apps/app_01HQ8"},
 		{"pando_get_detection", `{"app_id":"app_01HQ8"}`, "GET", "/apps/app_01HQ8/detection"},
+		// Issue #80: an agent waits on detection the way every client does,
+		// through the API's long poll (R-261).
+		{"pando_get_detection", `{"app_id":"app_01HQ8","wait_seconds":30}`, "GET", "/apps/app_01HQ8/detection?wait=30"},
+		{"pando_get_detection", `{"app_id":"app_01HQ8","wait_seconds":0}`, "GET", "/apps/app_01HQ8/detection"},
 		{"pando_accept_proposal", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/detection/accept"},
 		{"pando_plan", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/plan"},
 		{"pando_deploy", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/deployments"},
@@ -361,6 +365,21 @@ func TestCreateAppReportsEachMissingArgumentByName(t *testing.T) {
 	srv, s = newSession()
 	replies = s.run(t, srv, call(1, "pando_create_app", `{"name":"notes"}`))
 	require.Contains(t, text(t, replies[0]), "source_url is required")
+}
+
+// A wait that is not a whole number of seconds is refused before it reaches
+// the API, saying what is valid.
+func TestGetDetectionRefusesAnUnusableWait(t *testing.T) {
+	for _, args := range []string{
+		`{"app_id":"app_01HQ8","wait_seconds":-1}`,
+		`{"app_id":"app_01HQ8","wait_seconds":1.5}`,
+		`{"app_id":"app_01HQ8","wait_seconds":"30"}`,
+	} {
+		srv, s := newSession()
+		replies := s.run(t, srv, call(1, "pando_get_detection", args))
+		require.Contains(t, text(t, replies[0]), "wait_seconds must be a whole number of seconds", args)
+		require.Empty(t, s.calls, "a malformed call does not reach the API")
+	}
 }
 
 func TestAnswerDetectionReportsEachMissingArgumentByName(t *testing.T) {

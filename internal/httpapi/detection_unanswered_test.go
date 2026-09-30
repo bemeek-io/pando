@@ -21,12 +21,12 @@ func TestR102_TheDetectionSaysWhichQuestionsAreStillOpen(t *testing.T) {
 	d := state.Detection{Status: state.DetectionNeedsAnswers, Body: body,
 		Answers: map[string]string{"primary_port": "8080"}}
 
-	require.Equal(t, []string{"start_command"}, detectionResponse(d)["unanswered"])
+	require.Equal(t, []string{"start_command"}, (&Server{}).detectionResponse(d)["unanswered"])
 
 	d.Answers["start_command"] = "npm start"
-	require.Equal(t, []string{}, detectionResponse(d)["unanswered"], "answered, ready to accept")
+	require.Equal(t, []string{}, (&Server{}).detectionResponse(d)["unanswered"], "answered, ready to accept")
 
 	d.Status = state.DetectionReady
-	_, present := detectionResponse(d)["unanswered"]
+	_, present := (&Server{}).detectionResponse(d)["unanswered"]
 	require.False(t, present, "only a detection waiting on answers says what it is waiting on")
 }

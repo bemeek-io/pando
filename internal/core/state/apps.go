@@ -95,6 +95,12 @@ type App struct {
 	// empty when it is under "Your apps" (R-342). Like Favorite, only GET
 	// /me/apps fills it in.
 	SectionID string `json:"section_id,omitempty"`
+
+	// Detection is where the app's detection has got to — running and at
+	// which stage, or how it finished — so a draft says why it is still a
+	// draft (issue #80). Filled in by the API layer on GET /apps and GET
+	// /apps/{id}; nil for an app that has never been through detection.
+	Detection *DetectionSummary `json:"detection,omitempty"`
 }
 
 // Apps stores apps and their spec revisions.

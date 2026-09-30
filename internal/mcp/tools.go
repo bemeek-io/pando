@@ -86,9 +86,11 @@ var toolList = []tool{
 		},
 	},
 	{
-		Name:        "pando_get_app",
-		Description: "Get one app: its name, source, state and pinned spec.",
-		Schema:      schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+		Name: "pando_get_app",
+		Description: "Get one app: its name, source, state and pinned spec. Once the app has been " +
+			"through detection, `detection` says where that has got to — `status`, and `stage` while " +
+			"it is running — which is why an app in draft is still in draft.",
+		Schema: schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
 		request: func(args map[string]any) (string, string, any, error) {
 			id, err := stringArg(args, "app_id", true)
 			if err != nil {
@@ -100,7 +102,8 @@ var toolList = []tool{
 	{
 		Name: "pando_create_app",
 		Description: "Create an app from a git repository. Returns immediately with the app in " +
-			"draft while Pando works out how to run it; call pando_get_detection next.",
+			"draft while Pando works out how to run it; call pando_get_detection next, with " +
+			"wait_seconds to wait for it to finish.",
 		Schema: schema(map[string]any{
 			"name":       str("A short name for the app."),
 			"source_url": str("The repository URL."),
@@ -123,17 +126,47 @@ var toolList = []tool{
 		},
 	},
 	{
+		// Issue #80: an agent was told to call this next and left to guess how
+		// often. The description says what running means and how to wait.
 		Name: "pando_get_detection",
 		Description: "What Pando worked out about an app, including any questions it needs " +
 			"answered before it can deploy. The questions are written to be answerable by " +
-			"whatever wrote the app.",
-		Schema: schema(map[string]any{"app_id": str("The app's ID.")}, "app_id"),
+			"whatever wrote the app. `status` is `running` while Pando is still working: call " +
+			"again. While running, `stage` says what it is doing — fetching (cloning the " +
+			"repository), detecting (working out what the app is), trying (a trial run), " +
+			"scanning (a security scan) or screening (an AI adapter checking the plan) — and " +
+			"`elapsed_seconds` how long it has taken so far; a trial run can take several " +
+			"minutes. Pass wait_seconds (up to 60) to have the call return as soon as the stage " +
+			"changes or detection finishes, instead of calling repeatedly. When it has " +
+			"finished, `status` is ready (call pando_accept_proposal), needs_answers or unknown " +
+			"(answer the questions with pando_answer_detection), blocked or failed (the " +
+			"`detection` field says why).",
+		Schema: schema(map[string]any{
+			"app_id": str("The app's ID."),
+			"wait_seconds": map[string]any{
+				"type": "integer",
+				"description": "Optional. While detection is running, wait up to this many seconds " +
+					"(at most 60) for it to move on before answering. 0 or absent answers at once.",
+				"minimum": 0,
+				"maximum": 60,
+			},
+		}, "app_id"),
 		request: func(args map[string]any) (string, string, any, error) {
 			id, err := stringArg(args, "app_id", true)
 			if err != nil {
 				return "", "", nil, err
 			}
-			return "GET", appPath(id, "/detection"), nil, nil
+			path := appPath(id, "/detection")
+			if raw, ok := args["wait_seconds"]; ok && raw != nil {
+				seconds, isNumber := raw.(float64)
+				if !isNumber || seconds < 0 || seconds != float64(int(seconds)) {
+					return "", "", nil, fmt.Errorf("wait_seconds must be a whole number of seconds, 0 to 60")
+				}
+				if seconds > 0 {
+					path += fmt.Sprintf("?wait=%d", int(seconds))
+				}
+			}
+			return "GET", path, nil, nil
 		},
 	},
 	{

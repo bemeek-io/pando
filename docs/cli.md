@@ -221,6 +221,8 @@ pando app add <source-url>
 | Flag | Default | What it does |
 | --- | --- | --- |
 | `--name` |  | name for the app (defaults to the repository name) |
+| `--timeout` | `10m0s` | with --wait, how long to wait before giving up |
+| `--wait` |  | wait for detection to finish, as `pando app detection --wait` does |
 
 #### `app delete`
 
@@ -239,6 +241,28 @@ is not safe. Pass --discard-data to delete without one.
 | Flag | Default | What it does |
 | --- | --- | --- |
 | `--discard-data` |  | delete without keeping a backup of the app's storage |
+
+#### `app detection`
+
+Show how far detection has got, and what to do next
+
+```
+pando app detection <app>
+```
+
+Shows where an app's detection stands: running and at which stage, or how it
+finished — ready, waiting on answers, blocked or failed — and what to do next.
+Questions are printed exactly as Pando wrote them, to paste into whatever wrote
+the app.
+
+With --wait, waits for detection to finish, printing each stage as it is
+reached. It then exits 0 when the app is ready to accept, 2 when there are
+questions to answer, and 1 when detection failed or was blocked.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--timeout` | `10m0s` | with --wait, how long to wait before giving up |
+| `--wait` |  | wait for detection to finish, and exit non-zero unless it is ready |
 
 #### `app favorite`
 

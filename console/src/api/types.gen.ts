@@ -27,6 +27,7 @@ export interface App {
   icon_updated_at?: string;
   favorite?: boolean;
   section_id?: string;
+  detection?: DetectionSummary;
 }
 
 export interface Section {
@@ -235,6 +236,13 @@ export interface Routing {
   hostname?: string;
   path_prefix?: string;
   port?: number;
+}
+
+export interface DetectionSummary {
+  status: string;
+  stage?: string;
+  started_at: string;
+  updated_at: string;
 }
 
 export interface TrialObservation {
