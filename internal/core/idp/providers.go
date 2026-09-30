@@ -87,6 +87,14 @@ func (s *Service) view(ctx context.Context, o Origin, p state.IdentityProvider, 
 	if v.Credentials == nil {
 		v.Credentials = []string{}
 	}
+	// Local accounts are on or off by host policy, not by their row: one
+	// setting, disable_password_sign_in, so the Policy screen, the Sign-in
+	// screen and the sign-in page cannot disagree about it.
+	if p.Kind == "local" {
+		if doc, err := s.Policy.Load(ctx); err == nil {
+			v.Enabled = !doc.DisablePasswordSignIn
+		}
+	}
 	if p.Kind != "local" {
 		e := s.Endpoints(o, p.ID)
 		v.CallbackURL = e.CallbackURL

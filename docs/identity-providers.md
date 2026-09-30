@@ -223,8 +223,10 @@ any provider where people can set their own email.
 
 ## Turning off password sign-in
 
-Once people sign in through a provider, host policy's **Turn off password sign-in**
-(`disable_password_sign_in`) removes the password form. Pando refuses it while no provider is on, and
+Once people sign in through a provider, turn password sign-in off with **Turn off password sign-in**
+on the **Local users** card of the Sign-in screen, or the same switch under Policy — they are one host
+policy setting, `disable_password_sign_in`, and changing it needs `install.policy.manage`. The sign-in
+page then shows only the provider buttons, and a username and password are refused by the API as well. Pando refuses it while no provider is on, and
 refuses turning off the last provider while it is set.
 
 **Break glass**: if every provider becomes unreachable, whoever runs the installation can run, on the
