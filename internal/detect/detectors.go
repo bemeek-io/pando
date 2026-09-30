@@ -386,6 +386,16 @@ func (d StaticDetector) Bid(_ context.Context, src api.SourceView) (Candidate, e
 		}
 	}
 
+	// A Jekyll site at the root is source in the same way: GitHub Pages builds
+	// it before serving it, and serving it unbuilt answers every Markdown page
+	// with a 403 or the Markdown itself (issue #67). The buildpack bid builds
+	// it, and this one steps aside for it.
+	if dir == "." && isJekyllSource(src) {
+		confidence = 0.2
+		evidence = append(evidence,
+			"_config.yml marks this as a Jekyll site, which is built before it is served")
+	}
+
 	return Candidate{
 		Strategy:   spec.BuildStatic,
 		Confidence: confidence,
@@ -1241,6 +1251,35 @@ func hasBuildScript(src api.SourceView) bool {
 		return false
 	}
 	return strings.TrimSpace(pkg.Scripts["build"]) != ""
+}
+
+var jekyllTheme = regexp.MustCompile(`(?m)^\s*(remote_)?theme\s*:`)
+
+// isJekyllSource reports a _config.yml at the root that names a theme, or sits
+// beside a directory only a Jekyll site has. The builder reads the same
+// repository more closely to plan the build; this only has to know the root is
+// not a finished site.
+func isJekyllSource(src api.SourceView) bool {
+	var config []byte
+	for _, name := range []string{"_config.yml", "_config.yaml"} {
+		if f, err := src.Open(name); err == nil {
+			config, _ = io.ReadAll(io.LimitReader(f, 64<<10))
+			_ = f.Close()
+			break
+		}
+	}
+	if config == nil {
+		return false
+	}
+	if jekyllTheme.Match(config) {
+		return true
+	}
+	for _, dir := range []string{"_layouts", "_includes", "_posts", "_sass", "_data"} {
+		if info, err := src.Stat(dir); err == nil && info.IsDir {
+			return true
+		}
+	}
+	return false
 }
 
 // hasWorkspacesField reports whether package.json declares workspaces.

@@ -62,6 +62,16 @@ Unreleased above it. -->
 
 - **`pando deploy <dir>` printed blank lines where detection's questions belonged.** It read a field
   the server never sends. The questions are now printed exactly as Pando wrote them.
+- **A static site's pages redirected to the wrong port.** Opening a folder without its trailing slash
+  (`/solutions`) on an app reached at an address with a port, such as `localhost:9001`, sent the
+  browser to the same path on port 80, where nothing answers (#67). The redirect now keeps the
+  address the browser used. Redeploy a static site to pick this up.
+- **A Jekyll site was served as its source.** A GitHub Pages site deployed and looked healthy, but its
+  Markdown pages showed as raw Markdown or failed to load (#67). Pando now builds a Jekyll site with
+  Jekyll before serving it. A GitHub Pages site (no Gemfile, or one naming `github-pages`) is built
+  the way GitHub builds it, with the current `github-pages` gem; any other Jekyll site with its own
+  Gemfile, without its development and test gems. Either is served at the root of the app's address
+  whatever `baseurl` the site sets for GitHub. Detect the app again to get the new build plan.
 
 ### Upgrade notes
 

@@ -44,8 +44,14 @@ const staticServerImage = "nginx:1.27-alpine"
 // exist and gets a 404 — the same trap Pando's own console needed the server to
 // handle. A static site with a router is the common case, and a site without
 // one is unaffected by the fallback.
+//
+// absolute_redirect off makes the redirect that adds a directory's trailing
+// slash relative. nginx otherwise writes it from the Host header without the
+// port, so behind a port-mode address /solutions on localhost:9001 redirected
+// to http://localhost/solutions/, where nothing listens (issue #67, R-160).
 const staticConfig = `server {
   listen 80;
+  absolute_redirect off;
   root /usr/share/nginx/html;
   location / { try_files $uri $uri/ /index.html; }
 }
@@ -136,6 +142,10 @@ func buildpackDockerfile(req api.BuildRequest, contextDir string) (string, error
 	// nixpacks (staticsite.go), unless somebody said how it starts — then it
 	// is not being served as files.
 	if req.StartCommand == "" {
+		// A Jekyll site is source for a site, not the site (jekyll.go).
+		if site, ok := readJekyllSite(contextDir); ok {
+			return writeJekyllPlan(contextDir, site)
+		}
 		if site, ok := readStaticSiteBuild(contextDir); ok {
 			return writeStaticSitePlan(contextDir, site)
 		}
@@ -546,6 +556,13 @@ func ensureRubyVersion(contextDir string) {
 	if _, err := os.Stat(target); err == nil {
 		return
 	}
+	// G306: a build input in the throwaway checkout; it holds no secret.
+	_ = os.WriteFile(target, []byte(gemfileRubyVersion(contextDir)+"\n"), 0o644) //nolint:gosec
+}
+
+// gemfileRubyVersion is the Ruby the Gemfile or its lockfile names, the
+// Gemfile's own line first, or the default.
+func gemfileRubyVersion(contextDir string) string {
 	version := defaultRubyVersion
 	if body, err := os.ReadFile(filepath.Join(contextDir, "Gemfile.lock")); err == nil {
 		if m := gemfileLockRuby.FindStringSubmatch(string(body)); m != nil {
@@ -557,8 +574,7 @@ func ensureRubyVersion(contextDir string) {
 			version = m[1]
 		}
 	}
-	// G306: a build input in the throwaway checkout; it holds no secret.
-	_ = os.WriteFile(target, []byte(version+"\n"), 0o644) //nolint:gosec
+	return version
 }
 
 // declaresNodeVersion reports whether package.json names a Node version.
