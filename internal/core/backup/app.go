@@ -93,7 +93,7 @@ func (s *Service) CreateForApp(ctx context.Context, id string, req AppCreateRequ
 	}
 
 	for _, v := range req.Volumes {
-		if err := s.addVolume(ctx, b, v); err != nil {
+		if err := s.addVolume(ctx, b, v, VolumesPrefix+v.VolumeID+".tar"); err != nil {
 			return Created{}, err
 		}
 	}

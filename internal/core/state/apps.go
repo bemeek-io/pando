@@ -794,6 +794,16 @@ func (a *Apps) WithStorage(ctx context.Context) ([]AppWithStorage, error) {
 		if err := rows.Scan(&app.AppID, &app.Spec, &app.Retain); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list apps with storage.", err)
 		}
+		// Absent means the default, not "keep none" (R-211, issue #87).
+		//
+		// spec.Defaults.Apply turns a zero into the default before a spec is
+		// stored, so no stored spec can ask for zero on purpose. A zero here is
+		// a revision stored before defaults were applied on every path — every
+		// hand-written spec, for a while — and reading it as "keep none"
+		// skipped that app on every pass, silently, for as long as it ran.
+		if app.Retain == 0 {
+			app.Retain = spec.StandardDefaults().Retention.BackupDailyCount
+		}
 		out = append(out, app)
 	}
 	return out, rows.Err()
@@ -889,8 +899,10 @@ func (a *Apps) OrphanedVolumes(ctx context.Context, limit int) ([]OrphanedVolume
 }
 
 // ForgetVolume removes a volume row whose storage has been destroyed.
-func (a *Apps) ForgetVolume(ctx context.Context, volumeID string) error {
-	if _, err := a.db.Exec(ctx, `DELETE FROM volumes WHERE id = $1`, volumeID); err != nil {
+//
+// By app and ID: a volume ID is unique only within its app.
+func (a *Apps) ForgetVolume(ctx context.Context, appID, volumeID string) error {
+	if _, err := a.db.Exec(ctx, `DELETE FROM volumes WHERE app_id = $1 AND id = $2`, appID, volumeID); err != nil {
 		return errs.Wrap(errs.Internal, "Could not remove the storage record.", err)
 	}
 	return nil
@@ -963,6 +975,11 @@ func (v *Volumes) Create(ctx context.Context, appID, name, adapterRef string) (s
 //
 // Idempotent: every deploy re-records, and the handle is refreshed in case the
 // runtime's own naming changed under it.
+//
+// Keyed by app and ID together (migration 000036). The ID is only unique
+// within an app — two apps may both keep a volume called "data" — and keyed by
+// ID alone, the second app's deploy overwrote the first app's row and recorded
+// nothing for its own, so it was never backed up (issue #87).
 func (v *Volumes) RecordFromRuntime(ctx context.Context, appID, adapterRef string, observed []VolumeRecord) error {
 	for _, o := range observed {
 		if o.VolumeID == "" {
@@ -971,7 +988,7 @@ func (v *Volumes) RecordFromRuntime(ctx context.Context, appID, adapterRef strin
 		_, err := v.db.Exec(ctx, `
 			INSERT INTO volumes (id, app_id, name, adapter_ref, handle)
 			VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (id) DO UPDATE
+			ON CONFLICT (app_id, id) DO UPDATE
 			  SET handle = excluded.handle, adapter_ref = excluded.adapter_ref`,
 			o.VolumeID, appID, o.Name, adapterRef, nullable(o.Handle))
 		if err != nil {
@@ -1070,29 +1087,29 @@ func (a *Apps) ByRouting(ctx context.Context, by, value string) (App, *spec.AppS
 	return app, &s, true, nil
 }
 
-// EverAttached reports which of an app's volumes were actually materialized.
+// Handles reports each of an app's recorded volumes and the runtime handle it
+// was last seen under — empty for a volume that was never materialized.
 //
-// The distinction R-203 turns on. A volume row with a handle was created in the
-// runtime and may hold data; recreating it after it disappears produces an
-// empty replacement and an app that comes up healthy having lost everything —
-// the failure that looks exactly like success. A row without a handle has never
-// existed anywhere, so creating it loses nothing.
-func (v *Volumes) EverAttached(ctx context.Context, appID string) (map[string]bool, error) {
+// A non-empty handle is the distinction R-203 turns on. A volume row with a
+// handle was created in the runtime and may hold data; recreating it after it
+// disappears produces an empty replacement and an app that comes up healthy
+// having lost everything — the failure that looks exactly like success. A row
+// without a handle has never existed anywhere, so creating it loses nothing.
+func (v *Volumes) Handles(ctx context.Context, appID string) (map[string]string, error) {
 	rows, err := v.db.Query(ctx,
-		`SELECT id, handle IS NOT NULL FROM volumes WHERE app_id = $1`, appID)
+		`SELECT id, coalesce(handle, '') FROM volumes WHERE app_id = $1`, appID)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not read the app's storage.", err)
 	}
 	defer rows.Close()
 
-	out := map[string]bool{}
+	out := map[string]string{}
 	for rows.Next() {
-		var volumeID string
-		var materialized bool
-		if err := rows.Scan(&volumeID, &materialized); err != nil {
+		var volumeID, handle string
+		if err := rows.Scan(&volumeID, &handle); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read the app's storage.", err)
 		}
-		out[volumeID] = materialized
+		out[volumeID] = handle
 	}
 	return out, rows.Err()
 }

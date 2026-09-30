@@ -32,12 +32,23 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.Backups.List(r.Context(), r.URL.Query().Get("app_id"))
+	appID := r.URL.Query().Get("app_id")
+	rows, err := s.Backups.List(r.Context(), appID)
 	if err != nil {
 		Error(w, r, err)
 		return
 	}
-	JSON(w, http.StatusOK, map[string]any{"backups": rows})
+
+	// The last scheduled attempt for each app, taken or not (issue #87). The
+	// list above says what exists; this says what was tried and did not
+	// happen, which the list cannot — an app missing from it looks the same
+	// whether it was never due or failed every hour for a week.
+	attempts, err := s.Backups.Attempts(r.Context(), appID)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	JSON(w, http.StatusOK, map[string]any{"backups": rows, "attempts": attempts})
 }
 
 type createBackupRequest struct {

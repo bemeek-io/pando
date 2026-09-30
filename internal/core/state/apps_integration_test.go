@@ -318,3 +318,86 @@ func TestARevisionIDFromAnotherAppDoesNotResolve(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// withVolume is minimalSpec keeping its data in a volume called "data", as a
+// spec detection writes from a Dockerfile's VOLUME often does.
+func withVolume() *spec.AppSpec {
+	s := minimalSpec()
+	s.Volumes = []spec.Volume{{ID: "data", Name: "data"}}
+	s.Workloads[0].Mounts = []spec.Mount{{VolumeID: "data", Path: "/data"}}
+	return s
+}
+
+// TestR211_TwoAppsCanEachKeepAVolumeOfTheSameName asserts that each app's
+// storage is recorded against that app, whatever it is called (issue #87).
+//
+// A volume row's ID is the spec's volume ID, and "data" is an ordinary one.
+// Keyed by that alone, the second app's deploy rewrote the first app's row to
+// point at the second app's volume and recorded nothing for its own — so the
+// second app was never backed up, and the first app's backups held the
+// second app's data.
+func TestR211_TwoAppsCanEachKeepAVolumeOfTheSameName(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := connected(t)
+	alice := seedUser(t, db, "alice")
+	apps := state.NewApps(db)
+	volumes := state.NewVolumes(db)
+	source := state.NewBundleSource(db)
+
+	first, err := apps.Create(ctx, "first", "first", alice.ID, alice.ID, spec.Source{Type: spec.SourceGit, URL: "https://example.test/a"})
+	require.NoError(t, err)
+	second, err := apps.Create(ctx, "second", "second", alice.ID, alice.ID, spec.Source{Type: spec.SourceGit, URL: "https://example.test/b"})
+	require.NoError(t, err)
+
+	require.NoError(t, volumes.RecordFromRuntime(ctx, first.ID, "rt_docker",
+		[]state.VolumeRecord{{VolumeID: "data", Name: "data", Handle: "pando-" + first.ID + "-data"}}))
+	require.NoError(t, volumes.RecordFromRuntime(ctx, second.ID, "rt_docker",
+		[]state.VolumeRecord{{VolumeID: "data", Name: "data", Handle: "pando-" + second.ID + "-data"}}))
+
+	for _, app := range []state.App{first, second} {
+		got, err := source.VolumesForApp(ctx, app.ID)
+		require.NoError(t, err)
+		require.Len(t, got, 1, "each app has its own record of its storage")
+		require.Equal(t, app.ID, got[0].AppID)
+		require.Equal(t, "pando-"+app.ID+"-data", got[0].Handle, "and it points at that app's volume")
+	}
+
+	all, err := source.VolumesToSnapshot(ctx)
+	require.NoError(t, err)
+	require.Len(t, all, 2, "a whole-installation backup holds both")
+
+	// Forgetting one app's storage leaves the other's alone.
+	require.NoError(t, apps.ForgetVolume(ctx, first.ID, "data"))
+	got, err := source.VolumesForApp(ctx, second.ID)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+}
+
+// TestR211_ASpecStoredWithoutRetentionIsBackedUpByDefault asserts that a
+// missing backup count means R-211's default rather than "keep none".
+//
+// Defaults were once applied only on the detection path, so a hand-written
+// spec was stored with no retention at all. The sweep read that as zero and
+// skipped the app on every pass, without a word, for as long as it ran.
+func TestR211_ASpecStoredWithoutRetentionIsBackedUpByDefault(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := connected(t)
+	alice := seedUser(t, db, "alice")
+	apps := state.NewApps(db)
+
+	app, err := apps.Create(ctx, "notes", "notes", alice.ID, alice.ID, spec.Source{Type: spec.SourceGit, URL: "https://example.test/app"})
+	require.NoError(t, err)
+
+	s := withVolume()
+	require.Zero(t, s.Retention.BackupDailyCount, "stored the way a spec without defaults was")
+	rev, err := apps.CreateRevision(ctx, app.ID, s, spec.OriginManual, alice.ID)
+	require.NoError(t, err)
+	require.NoError(t, apps.Pin(ctx, app.ID, rev.ID, state.StateRunning, alice.ID))
+
+	found, err := apps.WithStorage(ctx)
+	require.NoError(t, err)
+	require.Len(t, found, 1)
+	require.Equal(t, spec.StandardDefaults().Retention.BackupDailyCount, found[0].Retain)
+}

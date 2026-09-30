@@ -79,6 +79,10 @@ type ServiceRef struct {
 
 // VolumeRef names one volume and the adapter that can snapshot it.
 type VolumeRef struct {
+	// AppID names the app the volume belongs to. A volume ID is unique only
+	// within its app — two apps may both keep one called "data" — so a
+	// bundle holding every app's volumes names each entry by both.
+	AppID      string
 	VolumeID   string
 	AdapterRef string
 	Handle     string
@@ -231,7 +235,7 @@ func (s *Service) assemble(ctx context.Context, w io.Writer) (Manifest, error) {
 		return Manifest{}, err
 	}
 	for _, v := range volumes {
-		if err := s.addVolume(ctx, b, v); err != nil {
+		if err := s.addVolume(ctx, b, v, installVolumeEntry(v)); err != nil {
 			return Manifest{}, err
 		}
 	}
@@ -342,13 +346,38 @@ func (s *Service) addServiceSnapshot(ctx context.Context, b *Writer, adapter api
 // Staged to a file first because tar needs the size in the header and a volume
 // snapshot streams. The alternative is buffering a volume in memory, which for
 // the volumes this exists to protect is not an alternative.
-func (s *Service) addVolume(ctx context.Context, b *Writer, v VolumeRef) error {
+func (s *Service) addVolume(ctx context.Context, b *Writer, v VolumeRef, entry string) error {
 	rt, ok := s.Registry.Runtime(v.AdapterRef)
 	if !ok {
 		return errs.Newf(errs.AdapterFailed,
 			"The runtime holding %s is not configured, so its data cannot be backed up.", v.VolumeID)
 	}
-	return s.addSnapshot(ctx, b, rt, api.VolumeHandle{VolumeID: v.VolumeID, Handle: v.Handle}, VolumesPrefix+v.VolumeID+".tar")
+	return s.addSnapshot(ctx, b, rt, api.VolumeHandle{VolumeID: v.VolumeID, Handle: v.Handle}, entry)
+}
+
+// installVolumeEntry names a volume inside a whole-installation bundle:
+// volumes/<app>/<volume>.tar.
+//
+// By app as well as volume. Named by volume alone, two apps that each keep a
+// volume called "data" wrote two entries with one name, and a restore put the
+// second app's data into the first (issue #87). A per-app backup holds one
+// app, so it keeps volumes/<volume>.tar.
+func installVolumeEntry(v VolumeRef) string {
+	if v.AppID == "" {
+		return VolumesPrefix + v.VolumeID + ".tar"
+	}
+	return VolumesPrefix + v.AppID + "/" + v.VolumeID + ".tar"
+}
+
+// parseVolumeEntry reads a volume entry's name back into its app and volume.
+// An entry from a bundle taken before entries were named by app carries no
+// app, and the app is returned empty.
+func parseVolumeEntry(name string) (appID, volumeID string) {
+	rest := strings.TrimSuffix(strings.TrimPrefix(name, VolumesPrefix), ".tar")
+	if i := strings.LastIndex(rest, "/"); i >= 0 {
+		return rest[:i], rest[i+1:]
+	}
+	return "", rest
 }
 
 // addEdgeVolumes adds the storage of every edge the default runtime runs, and

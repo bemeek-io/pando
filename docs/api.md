@@ -60,7 +60,7 @@ one verb says nothing about another (R-082).
 | --- | --- | --- |
 | `GET /api/v1/apps` |  | The apps you can administer. Each carries `detection` — its status, and its stage while running — once it has been through detection. |
 | `POST /api/v1/apps` | `app.create` | Create an app from a repository. Returns immediately in draft while detection runs; follow it with GET /detection and `wait`. |
-| `GET /api/v1/apps/{appID}` | `app.view` | One app: name, source, state and pinned spec, and `detection` — its status, and its stage while running — once it has been through detection. |
+| `GET /api/v1/apps/{appID}` | `app.view` | One app: name, source, state and pinned spec; `detection` — its status, and its stage while running — once it has been through detection; and `last_backup`, its last daily backup attempt. |
 | `PATCH /api/v1/apps/{appID}` | `app.spec.edit` | Rename an app or change its source. |
 | `DELETE /api/v1/apps/{appID}` | `app.delete` | Delete an app. With storage, `backup=true` keeps a final copy and `force=true` discards it; without either, the request is refused so the decision is taken rather than assumed (R-204, R-205). |
 | `GET /api/v1/apps/{appID}/icon` |  | The image on the app's launcher tile. Anyone who can open the app can load it; `icon_updated_at` on the app says whether there is one and when it changed (R-340). |
@@ -196,7 +196,7 @@ one verb says nothing about another (R-082).
 | `POST /api/v1/policy/preview` | `install.policy.manage` | Which apps a candidate policy would block, before it is saved. |
 | `GET /api/v1/config` | `install.view` | The configuration Pando started with (R-271): every non-secret setting, its value and where it came from — an environment variable, the config file, or the default — and the host policy fields fixed there, which cannot be changed through the API while they are set. Secrets are never listed. |
 | `GET /api/v1/audit` | `install.audit.read` | The audit log, newest first. Filters combine: `action` (a prefix), `principal_id` (who did it, including through a token), `principal_kind` (user, token, system or anonymous), `app_id`, `target_kind` and `target_id` (what it was done to), `involving` (an ID that is the actor or the target — everything to do with one account), and `since`/`until` (RFC 3339; since inclusive, until exclusive). Pages with `before`. Append-only: no endpoint edits or deletes an event, and the database refuses it too (R-027). |
-| `GET /api/v1/backups` | `install.backup.manage` | The backups this installation holds. |
+| `GET /api/v1/backups` | `install.backup.manage` | The backups this installation holds, and each app's last daily backup attempt with why it was skipped or failed. |
 | `POST /api/v1/backups` | `install.backup.manage` | Take a backup now. |
 | `POST /api/v1/backups/{backupID}/verify` | `install.backup.manage` | Check a backup before it is needed, rather than at the moment of disaster (R-216). |
 | `POST /api/v1/backups/{backupID}/restore` | `install.backup.manage` | Restore from a backup. Verified first: an incomplete one is refused rather than half-applied (R-215). |

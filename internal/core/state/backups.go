@@ -270,9 +270,9 @@ func (b *BundleSource) jsonRows(ctx context.Context, query string) ([]byte, erro
 // still deciding whether to keep would defeat the point of keeping it.
 func (b *BundleSource) VolumesToSnapshot(ctx context.Context) ([]backup.VolumeRef, error) {
 	rows, err := b.db.Query(ctx, `
-		SELECT id, coalesce(adapter_ref, ''), coalesce(handle, '')
+		SELECT app_id, id, coalesce(adapter_ref, ''), coalesce(handle, '')
 		FROM volumes
-		ORDER BY id`)
+		ORDER BY app_id, id`)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not read this installation's storage.", err)
 	}
@@ -281,7 +281,7 @@ func (b *BundleSource) VolumesToSnapshot(ctx context.Context) ([]backup.VolumeRe
 	out := make([]backup.VolumeRef, 0)
 	for rows.Next() {
 		var v backup.VolumeRef
-		if err := rows.Scan(&v.VolumeID, &v.AdapterRef, &v.Handle); err != nil {
+		if err := rows.Scan(&v.AppID, &v.VolumeID, &v.AdapterRef, &v.Handle); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read this installation's storage.", err)
 		}
 		out = append(out, v)
@@ -322,7 +322,7 @@ func (b *BundleSource) ServicesToSnapshot(ctx context.Context) ([]backup.Service
 // its app is gone, and the final backup is taken at exactly that moment.
 func (b *BundleSource) VolumesForApp(ctx context.Context, appID string) ([]backup.VolumeRef, error) {
 	rows, err := b.db.Query(ctx, `
-		SELECT id, coalesce(adapter_ref, ''), coalesce(handle, '')
+		SELECT app_id, id, coalesce(adapter_ref, ''), coalesce(handle, '')
 		FROM volumes WHERE app_id = $1 ORDER BY id`, appID)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not read the app's storage.", err)
@@ -332,7 +332,7 @@ func (b *BundleSource) VolumesForApp(ctx context.Context, appID string) ([]backu
 	out := make([]backup.VolumeRef, 0)
 	for rows.Next() {
 		var v backup.VolumeRef
-		if err := rows.Scan(&v.VolumeID, &v.AdapterRef, &v.Handle); err != nil {
+		if err := rows.Scan(&v.AppID, &v.VolumeID, &v.AdapterRef, &v.Handle); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read the app's storage.", err)
 		}
 		out = append(out, v)
@@ -341,3 +341,73 @@ func (b *BundleSource) VolumesForApp(ctx context.Context, appID string) ([]backu
 }
 
 var _ backup.StateSource = (*BundleSource)(nil)
+
+// BackupAttempt is the last scheduled rolling backup of one app and what came
+// of it (issue #87).
+//
+// A backup that did not happen used to leave nothing behind but a server log
+// line, so an app that had not been backed up in a week looked exactly like
+// one that had. Outcome is "taken", "skipped" or "failed"; Message and Remedy
+// say why and what to do about it, to the R-105 standard, and are empty when
+// the backup was taken.
+type BackupAttempt struct {
+	AppID string `json:"app_id"`
+
+	// AppName is filled in when attempts are listed, for a screen that shows
+	// them. Not stored: an app's name can change.
+	AppName string `json:"app_name,omitempty"`
+
+	AttemptedAt time.Time `json:"attempted_at"`
+	Outcome     string    `json:"outcome"`
+	BackupID    string    `json:"backup_id,omitempty"`
+	Message     string    `json:"message,omitempty"`
+	Remedy      string    `json:"remedy,omitempty"`
+}
+
+// Backup attempt outcomes.
+const (
+	AttemptTaken   = "taken"
+	AttemptSkipped = "skipped"
+	AttemptFailed  = "failed"
+)
+
+// RecordAttempt replaces the app's last attempt with this one.
+func (b *Backups) RecordAttempt(ctx context.Context, a BackupAttempt) error {
+	_, err := b.db.Exec(ctx, `
+		INSERT INTO backup_attempts (app_id, attempted_at, outcome, backup_id, message, remedy)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (app_id) DO UPDATE
+		  SET attempted_at = excluded.attempted_at, outcome = excluded.outcome,
+		      backup_id = excluded.backup_id, message = excluded.message,
+		      remedy = excluded.remedy`,
+		a.AppID, a.AttemptedAt, a.Outcome, nullable(a.BackupID), a.Message, a.Remedy)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not record the backup attempt.", err)
+	}
+	return nil
+}
+
+// Attempts returns the last scheduled backup attempt of each live app, or of
+// one app when appID is set. Newest first.
+func (b *Backups) Attempts(ctx context.Context, appID string) ([]BackupAttempt, error) {
+	rows, err := b.db.Query(ctx, `
+		SELECT t.app_id, a.name, t.attempted_at, t.outcome, coalesce(t.backup_id, ''), t.message, t.remedy
+		FROM backup_attempts t
+		JOIN apps a ON a.id = t.app_id
+		WHERE a.deleted_at IS NULL AND ($1 = '' OR t.app_id = $1)
+		ORDER BY t.attempted_at DESC`, appID)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the backup attempts.", err)
+	}
+	defer rows.Close()
+
+	out := make([]BackupAttempt, 0)
+	for rows.Next() {
+		var a BackupAttempt
+		if err := rows.Scan(&a.AppID, &a.AppName, &a.AttemptedAt, &a.Outcome, &a.BackupID, &a.Message, &a.Remedy); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the backup attempts.", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}

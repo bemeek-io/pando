@@ -153,3 +153,43 @@ func TestADatabaseThatCannotBeRestoredSaysTheInstallIsNotReplaced(t *testing.T) 
 	s.DatabaseURL = secret.New("::not a url")
 	require.Error(t, s.restoreDatabase(context.Background(), strings.NewReader("")))
 }
+
+// TestR212_TwoAppsWithAVolumeOfTheSameNameRestoreToTheirOwnStorage asserts
+// that a whole-installation bundle keeps apart two apps that each keep a
+// volume called "data" (issue #87).
+//
+// A volume ID is unique only within its app. Named by volume alone, both
+// apps' data went into the bundle as volumes/data.tar, and a restore put both
+// into whichever app the database listed first.
+func TestR212_TwoAppsWithAVolumeOfTheSameNameRestoreToTheirOwnStorage(t *testing.T) {
+	s, rt := restoring(t)
+	first := VolumeRef{AppID: "app_1", VolumeID: "data", AdapterRef: "rt_docker", Handle: "pando-app_1-data"}
+	second := VolumeRef{AppID: "app_2", VolumeID: "data", AdapterRef: "rt_docker", Handle: "pando-app_2-data"}
+	s.State = volumesOnly{refs: []VolumeRef{first, second}}
+
+	require.NotEqual(t, installVolumeEntry(first), installVolumeEntry(second),
+		"two apps' volumes are two entries in the bundle")
+
+	storeBundle(t, s, "dr_1", 1,
+		bundleEntry{installVolumeEntry(second), "the second app's data"},
+		bundleEntry{installVolumeEntry(first), "the first app's data"},
+	)
+	got, err := s.Restore(context.Background(), RestoreRequest{AdapterRef: "bk_local", ObjectName: "dr_1",
+		Passphrase: passphrase, Confirm: true})
+	require.NoError(t, err)
+	require.Equal(t, 2, got.VolumesApplied)
+	require.Equal(t, "the first app's data", string(rt.volumes["pando-app_1-data"]))
+	require.Equal(t, "the second app's data", string(rt.volumes["pando-app_2-data"]))
+}
+
+// A bundle taken before entries were named by app still restores: its entry
+// names the volume alone, and is matched on that as it always was.
+func TestAVolumeEntryWithoutAnAppStillRestores(t *testing.T) {
+	appID, volumeID := parseVolumeEntry(VolumesPrefix + "vol_a.tar")
+	require.Empty(t, appID)
+	require.Equal(t, "vol_a", volumeID)
+
+	appID, volumeID = parseVolumeEntry(installVolumeEntry(VolumeRef{AppID: "app_1", VolumeID: "vol_a"}))
+	require.Equal(t, "app_1", appID)
+	require.Equal(t, "vol_a", volumeID)
+}

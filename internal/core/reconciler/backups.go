@@ -8,6 +8,7 @@ import (
 
 	"github.com/trypando/pando/internal/core/backup"
 	"github.com/trypando/pando/internal/core/state"
+	"github.com/trypando/pando/internal/errs"
 )
 
 // Rolling per-app backups (R-210, R-211) and expiry.
@@ -72,25 +73,37 @@ func (g *GC) takeRollingBackups(ctx context.Context) {
 			continue
 		}
 
-		if err := g.takeOne(ctx, app); err != nil {
-			// Logged, not retried harder. A destination that is down will be up
-			// on the next pass, and a backup that fails is not a reason to stop
-			// backing up every other app.
-			g.Logger.Warn("could not take a rolling backup",
-				zap.String("app_id", app.AppID), zap.Error(err))
-			continue
-		}
-		g.Logger.Info("took a rolling backup", zap.String("app_id", app.AppID))
+		attempt, cause := g.takeOne(ctx, app)
+		g.recordAttempt(ctx, attempt, cause)
 	}
 }
 
-func (g *GC) takeOne(ctx context.Context, app state.AppWithStorage) error {
+// takeOne takes one app's rolling backup and says what came of it.
+//
+// Every way through returns an attempt, because every way through used to be
+// a way for a backup not to happen without anybody finding out (issue #87):
+// an app whose storage Pando had no record of returned nil, and the caller
+// logged "took a rolling backup" for a backup that was never written.
+//
+// The error, when there is one, is the cause for the log. The attempt carries
+// the part a person can act on.
+func (g *GC) takeOne(ctx context.Context, app state.AppWithStorage) (state.BackupAttempt, error) {
+	attempt := state.BackupAttempt{AppID: app.AppID, AttemptedAt: g.now()}
+
 	volumes, err := g.BundleSource.VolumesForApp(ctx, app.AppID)
 	if err != nil {
-		return err
+		return failed(attempt, err), err
 	}
 	if len(volumes) == 0 {
-		return nil
+		// The spec declares storage and Pando has no record of any. The
+		// reconciler records what the runtime holds as it checks the app, so
+		// this is usually one pass behind a first deploy — and when it is not,
+		// the storage was never created, which a redeploy does.
+		attempt.Outcome = state.AttemptSkipped
+		attempt.Message = "This app's configuration keeps data in a volume, but Pando has no record of " +
+			"that volume being created, so there was nothing to copy. The next backup is attempted within the hour."
+		attempt.Remedy = "If this is still the case after an hour, redeploy the app so its storage is created and recorded."
+		return attempt, nil
 	}
 
 	id := g.Backups.NewID()
@@ -106,15 +119,62 @@ func (g *GC) takeOne(ctx context.Context, app state.AppWithStorage) error {
 		RetainFor: time.Duration(app.Retain) * backupInterval,
 	})
 	if err != nil {
-		return err
+		return failed(attempt, err), err
 	}
 
-	return g.Backups.Record(ctx, state.Backup{
+	if err := g.Backups.Record(ctx, state.Backup{
 		ID: id, AppID: app.AppID, Kind: "rolling",
 		AdapterRef: created.AdapterRef, ObjectName: created.ObjectName,
 		SizeBytes: created.SizeBytes, Manifest: created.Manifest,
 		RetainUntil: created.RetainUntil, CreatedBy: "system",
-	})
+	}); err != nil {
+		return failed(attempt, err), err
+	}
+
+	attempt.Outcome = state.AttemptTaken
+	attempt.BackupID = id
+	return attempt, nil
+}
+
+// failed is an attempt that went wrong, in the words of the error that did it.
+//
+// A destination that is down will be up on the next pass, and a backup that
+// fails is not a reason to stop backing up every other app — so this is
+// recorded and the sweep moves on, rather than retried harder.
+func failed(attempt state.BackupAttempt, err error) state.BackupAttempt {
+	attempt.Outcome = state.AttemptFailed
+
+	// An envelope's message is written for a person and its wrapped cause is
+	// not in it. An error without one names internals, which belong in the
+	// log rather than on a screen.
+	if e := errs.As(err); e != nil {
+		attempt.Message = e.Message
+		attempt.Remedy = e.Remedy
+	}
+	if attempt.Message == "" {
+		attempt.Message = "Pando could not take this app's backup."
+	}
+	if attempt.Remedy == "" {
+		attempt.Remedy = "Pando tries again within the hour. If it fails again, search the server log for this app's ID for the cause."
+	}
+	return attempt
+}
+
+// recordAttempt logs an attempt and keeps it where the console can show it.
+func (g *GC) recordAttempt(ctx context.Context, attempt state.BackupAttempt, cause error) {
+	fields := []zap.Field{zap.String("app_id", attempt.AppID)}
+	switch attempt.Outcome {
+	case state.AttemptTaken:
+		g.Logger.Info("took a rolling backup", append(fields, zap.String("backup_id", attempt.BackupID))...)
+	case state.AttemptSkipped:
+		g.Logger.Warn("skipped a rolling backup", append(fields, zap.String("reason", attempt.Message))...)
+	default:
+		g.Logger.Warn("could not take a rolling backup", append(fields, zap.Error(cause))...)
+	}
+
+	if err := g.Backups.RecordAttempt(ctx, attempt); err != nil {
+		g.Logger.Warn("could not record the backup attempt", append(fields, zap.Error(err))...)
+	}
 }
 
 // pruneExpiredBackups removes backups whose retention has passed (R-211).
