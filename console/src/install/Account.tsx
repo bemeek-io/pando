@@ -16,6 +16,7 @@ import { InstallVerb, useInstallVerb, usePrincipal } from '../app/principal';
 import { Sheet } from '../ui/Sheet';
 import { FieldSkeleton, HeadingSkeleton, LineSkeleton } from '../ui/Loading';
 import { BesideField } from '../ui/BesideField';
+import { Identities } from './Identities';
 import { AccountApps } from './AccountApps';
 import { GeneratedPassword, PasswordToCopy } from './GeneratedPassword';
 import type { Account, Role } from './Accounts';
@@ -29,6 +30,7 @@ interface Group {
   name: string;
   /** Set when an identity provider owns the membership (R-078). */
   source?: string;
+  source_name?: string;
   members?: string[];
   install_role_id?: string;
 }
@@ -151,7 +153,9 @@ export function AccountPage({
             {(manage || isSelf) && <EditDetails account={a} manage={manage} isSelf={isSelf} />}
           </div>
           <Details>
-            <Detail term="Username" mono>
+            {/* An external account's external_id is the provider's ID for the
+                person, not a name anyone signs in with. */}
+            <Detail term={a.adapter_id === LOCAL ? 'Username' : 'Identity at provider'} mono>
               {a.external_id}
             </Detail>
             <Detail term="Name">{a.display_name || '—'}</Detail>
@@ -159,6 +163,11 @@ export function AccountPage({
             <Detail term="Identity source" mono={a.adapter_id !== LOCAL}>
               {a.adapter_id === LOCAL ? 'Local account' : a.adapter_id}
             </Detail>
+            {a.alias_of && (
+              <Detail term="Replaced by" mono>
+                {a.alias_of}
+              </Detail>
+            )}
             {a.adapter_id === LOCAL && (
               <Detail term="Password">
                 {a.must_change_password ? 'Must be changed at next sign-in' : 'Set by the account holder'}
@@ -209,6 +218,8 @@ export function AccountPage({
             </Detail>
           </Details>
         </section>
+
+        <Identities userID={a.id} manage={manage} />
 
         <AccountApps principal={{ kind: 'user', id: a.id, name: a.display_name || a.external_id }} />
 
@@ -428,7 +439,9 @@ function GroupMembership({
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2) var(--space-3)' }}>
           {memberOf.map((g) => (
             <span key={g.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}>
-              <Tag>{g.name}</Tag>
+              {/* A provider's group says where it comes from: its members are
+                  changed there, not here (R-078). */}
+              <Tag>{g.source_name ? `${g.name} · ${g.source_name}` : g.name}</Tag>
               {!g.source && (
                 <IconButton
                   label={`Remove from ${g.name}`}
@@ -456,7 +469,11 @@ function GroupMembership({
         // "None" read as a row that could not be edited.
         <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2) var(--space-3)' }}>
           <span style={{ color: 'var(--ink-secondary)' }}>
-            {groups.some((g) => !g.source) ? 'In every group there is.' : 'No groups yet.'}
+            {groups.some((g) => !g.source)
+              ? 'In every group there is.'
+              : memberOf.length > 0
+                ? 'No Pando groups to add to yet.'
+                : 'No groups yet.'}
           </span>
           {onGroups && (
             <Button variant="secondary" onClick={onGroups}>

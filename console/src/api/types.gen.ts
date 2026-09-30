@@ -91,6 +91,7 @@ export interface User {
   display_name?: string;
   status: string;
   must_change_password: boolean;
+  alias_of?: string;
   created_at: string;
 }
 
@@ -205,6 +206,8 @@ export interface Document {
   insecure_action?: string;
   insecure_grace_hours?: number;
   ignore_unfixable_findings?: boolean;
+  disable_password_sign_in?: boolean;
+  disable_jit_provisioning?: boolean;
 }
 
 export interface BackupAttempt {
@@ -215,6 +218,71 @@ export interface BackupAttempt {
   backup_id?: string;
   message?: string;
   remedy?: string;
+}
+
+export interface ProviderView {
+  id: string;
+  kind: string;
+  name: string;
+  config: unknown;
+  enabled: boolean;
+  jit_provisioning: boolean;
+  link_by_email: boolean;
+  scim_enabled: boolean;
+  scim_token_created_at?: string;
+  scim_identity_attribute: string;
+  created_at: string;
+  updated_at: string;
+  credentials: (string[] | null);
+  callback_url?: string;
+  entity_id?: string;
+  metadata_url?: string;
+  scim_base_url?: string;
+  revocation?: Revocation;
+  problem?: string;
+}
+
+export interface SignInOptions {
+  password_sign_in: boolean;
+  providers: (PublicProvider[] | null);
+}
+
+export interface TestReport {
+  ok: boolean;
+  error?: Problem;
+  subject?: SubjectView;
+  attributes?: (Record<string, (string[] | null)> | null);
+  outcome?: SignInOutcome;
+}
+
+export interface Problem {
+  code: string;
+  message: string;
+  remedy?: string;
+}
+
+export interface Identity {
+  adapter_id: string;
+  adapter_name: string;
+  adapter_kind: string;
+  external_id: string;
+  user_id: string;
+  origin: boolean;
+  scim: boolean;
+  last_sign_in_at?: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  source?: string;
+  source_name?: string;
+  members?: (string[] | null);
+  linked_from?: (string[] | null);
+  links_to?: (string[] | null);
+  created_at: string;
 }
 
 export interface Source {
@@ -469,6 +537,38 @@ export interface Finding {
   title: string;
   target: string;
   fix?: string;
+}
+
+export interface Revocation {
+  max_lifetime_seconds: number;
+  mode: string;
+  window_seconds: number;
+}
+
+export interface PublicProvider {
+  id: string;
+  name: string;
+  kind: string;
+}
+
+export interface SubjectView {
+  external_id: string;
+  username?: string;
+  email?: string;
+  email_verified: boolean;
+  display_name?: string;
+  groups: (string[] | null);
+}
+
+export interface SignInOutcome {
+  kind: string;
+  user_id?: string;
+  username?: string;
+  display_name?: string;
+  message?: string;
+  remedy?: string;
+  groups?: (string[] | null);
+  groups_from: string;
 }
 
 export interface Applied {

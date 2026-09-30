@@ -36,6 +36,7 @@ import { AccountPage } from '../install/Account';
 import { Accounts, messageOf } from '../install/Accounts';
 import { filtersFrom, linkQuery } from '../install/audit';
 import { Identity } from '../install/Identity';
+import { SignIn } from '../install/SignIn';
 import { Backups } from '../install/Backups';
 import { Audit, Installation, Policy } from '../install/Installation';
 import { statusLabel, statusSymbol } from '../ui/status';
@@ -110,6 +111,7 @@ export function AdminConsole({
   // audit log.
   const canView = useInstallVerb(InstallVerb.View);
   const canManageUsers = useInstallVerb(InstallVerb.UsersManage);
+  const canManageAdapters = useInstallVerb(InstallVerb.AdaptersManage);
   const canManagePolicy = useInstallVerb(InstallVerb.PolicyManage);
   const canReadAudit = useInstallVerb(InstallVerb.AuditRead);
   const canManageBackups = useInstallVerb(InstallVerb.BackupManage);
@@ -161,6 +163,9 @@ export function AdminConsole({
   // screen answering both is how an authorization model turns into a list of
   // people with special powers (R-078).
   if (canView || canManageUsers) items.push({ value: 'identity', label: 'Groups and roles' });
+  // Identity providers are adapters (R-040): read with install.view, changed
+  // with install.adapters.manage.
+  if (canView) items.push({ value: 'sign-in', label: 'Sign-in' });
   if (canView) items.push({ value: 'adapters', label: 'Adapters' });
   if (canView || canManagePolicy) items.push({ value: 'policy', label: 'Policy' });
   if (canManageBackups) items.push({ value: 'backups', label: 'Backups' });
@@ -311,6 +316,13 @@ export function AdminConsole({
             <Accounts onOpen={(a) => go({ view: 'admin', section: 'accounts', userID: a.id })} />
           ))}
         {section === 'identity' && <Identity canEdit={canManageUsers} />}
+        {section === 'sign-in' && (
+          <SignIn
+            canEdit={canManageAdapters}
+            query={route.query}
+            onClearTest={() => go({ view: 'admin', section: 'sign-in' }, true)}
+          />
+        )}
         {section === 'adapters' && <Installation />}
         {section === 'policy' && <Policy canEdit={canManagePolicy} />}
         {section === 'backups' && <Backups />}

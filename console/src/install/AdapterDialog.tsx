@@ -322,7 +322,7 @@ export function AdapterDialog({
 const CREDENTIAL = 'Stored encrypted. Pando never shows it again.';
 
 /** One setting, as its kind describes it. */
-function FieldInput({
+export function FieldInput({
   field,
   value,
   stored,

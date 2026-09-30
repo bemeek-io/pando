@@ -22,6 +22,8 @@ const LABELS: Record<string, string> = {
   insecure_action: 'Stop apps that fall below it while running',
   insecure_grace_hours: 'Grace period, in hours',
   ignore_unfixable_findings: 'Ignore findings with no fix available',
+  disable_password_sign_in: 'Turn off password sign-in',
+  disable_jit_provisioning: "Don't create accounts at first sign-in",
 };
 
 const SHARING: Record<string, string> = { allowed: 'Allowed', passcode_only: 'Only with a passcode', none: 'Not allowed' };

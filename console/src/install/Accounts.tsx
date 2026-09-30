@@ -37,6 +37,8 @@ export interface Account {
   must_change_password: boolean;
   install_role_id: string;
   created_at?: string;
+  /** Set on an account whose sign-in identities were moved to another (O-1). */
+  alias_of?: string;
 }
 
 export interface Role {

@@ -29,7 +29,14 @@ one verb says nothing about another (R-082).
 
 | Endpoint | Verb | What it does |
 | --- | --- | --- |
-| `POST /api/v1/sessions` |  | Sign in with a username and password. Sets the session cookie. |
+| `POST /api/v1/sessions` |  | Sign in with a username and password. Sets the session cookie. Refused when host policy has `disable_password_sign_in` on. |
+| `GET /api/v1/auth/options` |  | How people can sign in here: whether password sign-in is on, and the identity providers that are (`id`, `name`, `kind`). Public. |
+| `GET /api/v1/auth/providers/{providerID}/start` |  | Start signing in through an identity provider: a browser navigation, redirected to the provider. `next` is the path to land on afterwards. Works under `/.pando` on an app's own hostname too. Public. |
+| `GET /api/v1/auth/providers/{providerID}/callback` |  | Where an OpenID Connect provider returns the browser: the redirect URI to register with it. Public. |
+| `POST /api/v1/auth/providers/{providerID}/callback` |  | Where a SAML provider posts its response: the Assertion Consumer Service URL to register with it. Public. |
+| `GET /api/v1/auth/providers/{providerID}/metadata` |  | Pando's SAML service provider metadata for this provider. Its URL is also the entity ID. Public. |
+| `GET /api/v1/auth/complete` |  | Finish a provider sign-in in the browser that started it, with the one-time `code` the callback issued. Sets the session cookie and redirects to where the sign-in began. Public. |
+| `GET /api/v1/auth/failures/{flowID}` |  | Why a provider sign-in failed (`message`, `remedy`), for the sign-in page. Public. |
 | `DELETE /api/v1/sessions` |  | Sign out, ending this session. |
 | `GET /api/v1/setup` |  | Whether this installation is waiting for its first administrator (`needed`). Public. |
 | `POST /api/v1/setup` |  | Set up a new installation: the first account (`username`, `display_name`, `password`), made an administrator, and signed in. Public, and refused once any account exists (R-046). |
@@ -169,12 +176,52 @@ one verb says nothing about another (R-082).
 | `DELETE /api/v1/groups/{groupID}/members/{userID}` | `install.users.manage` | Remove one account from a group. Refused when it would leave nobody who can manage accounts (R-088). |
 | `PUT /api/v1/groups/{groupID}/role` | `install.users.manage` | Give a group an installation role (`role_id`), which everyone in it holds. |
 | `DELETE /api/v1/groups/{groupID}/role` | `install.users.manage` | Take a group's installation role away. Refused when it would leave nobody who can manage accounts (R-088). |
+| `GET /api/v1/users/{userID}/identities` |  | The external identities that sign in to an account: which provider, its ID for the person, whether it is where the account came from, and whether SCIM manages it. Your own, or anyone's with install.view. |
+| `POST /api/v1/users/{userID}/identities` | `install.users.manage` | Link a provider's identity (`adapter_id`, `external_id`) to an account, so it signs in there. Adds an alias and never merges accounts (O-1). If it already signs in to another account, `replace_account: true` moves it, and that account is kept, suspended, as an alias. |
+| `DELETE /api/v1/users/{userID}/identities` | `install.users.manage` | Unlink an identity (`adapter_id`, `external_id` in the query) from an account. |
+| `PUT /api/v1/groups/{groupID}/links/{syncedGroupID}` | `install.users.manage` | Make everyone in a group an identity provider syncs count as a member of a group made in Pando, live (R-078, R-079). |
+| `DELETE /api/v1/groups/{groupID}/links/{syncedGroupID}` | `install.users.manage` | Remove such a link. Refused when it would leave nobody who can manage accounts (R-088). |
 | `GET /api/v1/groups/{groupID}/apps` | `install.view` | A group's app grants: the role everyone in it has on each app, whether they can open it, and whether you can change that (`can_manage`). Only apps you can see. Share an app with a group through `POST /apps/{appID}/grants` with `principal_kind: group`. |
 | `DELETE /api/v1/groups/{groupID}` | `install.users.manage` | Delete a group. Everything shared with it goes with it: its members lose that access and keep anything given to them another way. Refused if it would leave nobody who can manage accounts (R-088). |
 | `GET /api/v1/roles` | `install.view` | Roles, built in and custom. By default the ones granted across the installation; `scope=app` gives the ones granted on an app, and `scope=all` both. Built-in roles are immutable (R-081). |
 | `POST /api/v1/roles` | `install.users.manage` | Compose a custom role from verbs (R-082). |
 | `DELETE /api/v1/roles/{roleID}` | `install.users.manage` | Delete a custom role, and every grant of it: whoever held it loses what it allowed. Built-in roles cannot be deleted (R-081). Refused if it would leave nobody who can manage accounts (R-088). |
 | `GET /api/v1/verbs` | `install.view` | Every verb, by scope, for composing a role. There is no implication graph: holding one says nothing about another (R-082). |
+
+### Identity providers
+
+| Endpoint | Verb | What it does |
+| --- | --- | --- |
+| `GET /api/v1/identity-providers` | `install.view` | Every identity provider, local accounts included: settings, which credentials are set (never their values), the callback URL and entity ID to register with the provider, the SCIM base URL, and its revocation — session lifetime, mode, and the window that results (R-047, R-050). `kinds` describes the kinds that can be added, with presets for known providers. |
+| `POST /api/v1/identity-providers` | `install.adapters.manage` | Add an identity provider: `kind` (oidc or saml), `name`, `config`, write-only `credentials`, `jit_provisioning`, `link_by_email`. Off until `enabled` is set, so it can be tested first. |
+| `GET /api/v1/identity-providers/{providerID}` | `install.view` | One identity provider. |
+| `PATCH /api/v1/identity-providers/{providerID}` | `install.adapters.manage` | Change an identity provider. `config` replaces the settings whole; each `credentials` field replaces that one, and an empty value removes it. Takes effect on the next sign-in, without a restart. |
+| `DELETE /api/v1/identity-providers/{providerID}` | `install.adapters.manage` | Remove an identity provider nobody has signed in through. One that has is turned off instead. |
+| `POST /api/v1/identity-providers/{providerID}/check` | `install.adapters.manage` | Whether the provider answers: its discovery document or metadata can be read (`ok`, `message`). |
+| `POST /api/v1/identity-providers/{providerID}/scim-token` | `install.adapters.manage` | Turn SCIM on for a provider, or replace its token. The token is in this response and never again. With SCIM on, the provider's pushes create and suspend accounts and set its groups' members at once (R-048). |
+| `DELETE /api/v1/identity-providers/{providerID}/scim-token` | `install.adapters.manage` | Turn SCIM off for a provider. What it pushed stays. |
+| `GET /api/v1/identity-providers/{providerID}/test` | `install.adapters.manage` | Start a test sign-in: a browser navigation to the provider, returning to the console with a report of the claims it sent and what Pando would do with them. Signs nobody in, and works while the provider is off. |
+| `GET /api/v1/identity-providers/{providerID}/tests/{flowID}` | `install.adapters.manage` | A test sign-in's report, to the administrator who ran it. |
+
+### SCIM
+
+| Endpoint | Verb | What it does |
+| --- | --- | --- |
+| `GET /api/v1/scim/v2/ServiceProviderConfig` |  | SCIM 2.0 service provider configuration. Every SCIM endpoint takes the provider's SCIM token as a bearer token, not a Pando token. |
+| `GET /api/v1/scim/v2/ResourceTypes` |  | SCIM resource types: User and Group. |
+| `GET /api/v1/scim/v2/Schemas` |  | The SCIM attributes Pando reads. |
+| `GET /api/v1/scim/v2/Users` |  | The accounts this provider provisioned. `filter` takes `userName`, `externalId` or `emails` with `eq`; `startIndex` and `count` page. |
+| `POST /api/v1/scim/v2/Users` |  | Provision an account. An account the provider's sign-in already made is adopted rather than refused. |
+| `GET /api/v1/scim/v2/Users/{id}` |  | One provisioned account. |
+| `PUT /api/v1/scim/v2/Users/{id}` |  | Replace an account's profile. `active: false` suspends it and ends its sessions at once; `active: true` lifts only a suspension this provider made (R-049). |
+| `PATCH /api/v1/scim/v2/Users/{id}` |  | Change an account's profile or `active` with SCIM PATCH operations. |
+| `DELETE /api/v1/scim/v2/Users/{id}` |  | Deprovision an account: it is suspended, not deleted (R-049), leaves the provider's groups, and its sessions end. |
+| `GET /api/v1/scim/v2/Groups` |  | This provider's groups. `filter` takes `displayName` or `externalId` with `eq`; `excludedAttributes=members` leaves members out. |
+| `POST /api/v1/scim/v2/Groups` |  | Push a group. It holds no access until an administrator gives it some or links it to a Pando group (R-078). |
+| `GET /api/v1/scim/v2/Groups/{id}` |  | One pushed group, with its members. |
+| `PUT /api/v1/scim/v2/Groups/{id}` |  | Replace a pushed group's name and members. |
+| `PATCH /api/v1/scim/v2/Groups/{id}` |  | Add or remove members, or rename, with SCIM PATCH operations. Takes effect on the next request (R-079). |
+| `DELETE /api/v1/scim/v2/Groups/{id}` |  | Delete a pushed group, and every grant made to it. |
 
 ### Installation
 

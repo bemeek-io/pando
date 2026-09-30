@@ -18,6 +18,7 @@ export type Section =
   | 'api'
   | 'accounts'
   | 'identity'
+  | 'sign-in'
   | 'adapters'
   | 'policy'
   | 'backups'
@@ -34,7 +35,8 @@ export interface Route {
   /** An account's own page, under Accounts. */
   userID?: string;
   /** The Audit log's filters, as a query string without `?` — how an
-   *  account's page links to the whole log already narrowed to it. */
+   *  account's page links to the whole log already narrowed to it. On the
+   *  Sign-in screen, the provider and test sign-in to show. */
   query?: string;
 }
 
@@ -43,6 +45,7 @@ const SECTIONS: Section[] = [
   'api',
   'accounts',
   'identity',
+  'sign-in',
   'adapters',
   'policy',
   'backups',
@@ -66,9 +69,11 @@ export function parse(pathname: string, search = ''): Route {
     return { view: 'admin', section: 'accounts', userID: parts[2] };
   }
 
-  // /admin/audit?… — filters carried in from a link.
+  // /admin/audit?… — filters carried in from a link. /admin/sign-in?… — the
+  // provider a test sign-in came back from, and its report (issue #51).
   const query = search.replace(/^\?/, '');
   if (parts[1] === 'audit' && query) return { view: 'admin', section: 'audit', query };
+  if (parts[1] === 'sign-in' && query) return { view: 'admin', section: 'sign-in', query };
 
   // The adapters screen was called Installation, and a link to it may still
   // say so.
@@ -86,7 +91,9 @@ export function format(route: Route): string {
     return `/admin/apps/${route.appID}${route.tab ? `/${route.tab}` : ''}`;
   }
   if (route.section === 'accounts' && route.userID) return `/admin/accounts/${route.userID}`;
-  if (route.section === 'audit' && route.query) return `/admin/audit?${route.query}`;
+  if ((route.section === 'audit' || route.section === 'sign-in') && route.query) {
+    return `/admin/${route.section}?${route.query}`;
+  }
   return route.section === 'apps' ? '/admin' : `/admin/${route.section}`;
 }
 
