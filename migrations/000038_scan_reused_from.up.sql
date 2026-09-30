@@ -1,0 +1,14 @@
+-- A scan a later revision reuses rather than runs again (R-312, issue #84).
+--
+-- A deploy of a source that already has a successful scan does not scan it
+-- again. When that deploy is of a new revision — a variable edited, the same
+-- commit or upload deployed — the scan still has to describe the revision
+-- being deployed, or the threshold check and the console see a revision with
+-- no scan and call it unscanned. So the reuse is recorded as a row attached to
+-- the new revision, carrying the original's findings, score and ran_at, and
+-- naming the scan it came from.
+--
+-- A copy rather than an update: app_scans is append-only (R-319). No foreign
+-- key: an app's cascade deletes both rows, and a SET NULL action would be an
+-- UPDATE the append-only trigger refuses.
+ALTER TABLE app_scans ADD COLUMN reused_from text;

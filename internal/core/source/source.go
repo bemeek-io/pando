@@ -35,7 +35,22 @@ type Checkout struct {
 	// same revision builds the same code.
 	Commit string
 
+	// Digest names an uploaded source, which has no commit: the SHA-256 of the
+	// archive it was unpacked from, as "sha256:<hex>". Never written into the
+	// spec as a commit (R-120) — it is how a scan knows the same archive when
+	// it sees it again (R-312).
+	Digest string
+
 	cleanup func()
+}
+
+// Identity is what names this exact source: the commit, or for an upload the
+// archive's digest. Empty when neither is known.
+func (c *Checkout) Identity() string {
+	if c.Commit != "" {
+		return c.Commit
+	}
+	return c.Digest
 }
 
 // Close removes the checkout.

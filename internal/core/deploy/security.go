@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/trypando/pando/internal/adapter/api"
@@ -29,14 +30,17 @@ func (r *Runner) scan(ctx context.Context, dep state.Deployment, appSpec *spec.A
 		return nil
 	}
 
-	// Scanned once per source, not once per deploy. Detection scans the
-	// commit it read, a person can ask for a scan, and a new commit gets one
-	// here — but a deploy of a commit already scanned uses that scan. It was
-	// scanning the same source again minutes after the plan had, while the
-	// person watched. The threshold below is still checked either way.
-	if at, found, err := r.security.ScannedAt(ctx, dep.AppID, commit); err == nil && found {
-		fmt.Fprintf(sink, "=> Using the security scan of %s from %s\n", short(commit), at.UTC().Format(time.RFC3339))
-		return r.allowed(ctx, dep, nil)
+	// Scanned once per source, not once per deploy (R-312). Detection scans
+	// the source it read, a person can ask for a scan, and a new commit or a
+	// new upload gets one here — but a deploy of a source already scanned by
+	// this scanner uses that scan, attached to this revision. Redeploying an
+	// unchanged source scanned it again every time, and a score that moved
+	// with how often somebody pressed deploy would describe the button rather
+	// than the app. The threshold below is still checked either way.
+	if reused, found, err := r.security.Reuse(ctx, dep.AppID, dep.SpecID, commit); err == nil && found {
+		fmt.Fprintf(sink, "=> Using the security scan of %s from %s (source unchanged)\n",
+			describeSource(appSpec, commit), reused.RanAt.UTC().Format(time.RFC3339))
+		return r.allowed(ctx, dep, reused.Findings)
 	}
 
 	fmt.Fprintln(sink, "=> Scanning for known vulnerabilities")
@@ -65,6 +69,16 @@ func (r *Runner) scan(ctx context.Context, dep state.Deployment, appSpec *spec.A
 	}
 
 	return r.allowed(ctx, dep, scanned.Findings)
+}
+
+// describeSource names a scanned source for the deploy log: an upload by what
+// it is, since its digest means nothing to the person who sent it, and a
+// commit or image digest by its first characters.
+func describeSource(appSpec *spec.AppSpec, source string) string {
+	if appSpec != nil && appSpec.Source.Type == spec.SourceUpload {
+		return "the uploaded source"
+	}
+	return short(strings.TrimPrefix(source, "sha256:"))
 }
 
 // allowed is host policy's decision on the app's standing (R-314): the scan

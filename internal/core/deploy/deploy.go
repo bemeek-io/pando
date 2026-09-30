@@ -139,9 +139,9 @@ func (r *Runner) WithSecurity(s Security) *Runner {
 // deploy path cannot reach for anything else.
 type Security interface {
 	Scan(ctx context.Context, req api.ScanRequest, principal audit.Event) (state.Scan, error)
-	// ScannedAt reports whether the app's source at commit was already
-	// scanned, and when: a deploy of it uses that scan.
-	ScannedAt(ctx context.Context, appID, commit string) (time.Time, bool, error)
+	// Reuse returns a successful scan of the app's source, attached to specID,
+	// when there is one: a deploy of an unchanged source uses that scan.
+	Reuse(ctx context.Context, appID, specID, source string) (state.Scan, bool, error)
 	Allows(ctx context.Context, appID, specID string) (security.Standing, error)
 	Configured() (string, bool)
 }
@@ -247,7 +247,7 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 	// Here rather than before the build because the image is what there is to
 	// look at, and before `applying` because a refusal must leave the running
 	// app untouched — the same contract a failed build has (R-146).
-	commit := checkout.Commit
+	commit := checkout.Identity()
 	if commit == "" {
 		commit = appSpec.Source.Commit
 	}

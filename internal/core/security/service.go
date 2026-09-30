@@ -196,15 +196,43 @@ func (s *Service) Scanning(appID string) (time.Time, bool) {
 	return p.since, true
 }
 
-// ScannedAt returns when the app's source at commit was last scanned
-// successfully, and whether it was. A deploy of that commit uses that scan
-// rather than scanning the same source again (design 09 §4.1).
-func (s *Service) ScannedAt(ctx context.Context, appID, commit string) (time.Time, bool, error) {
-	scan, found, err := s.Scans.ForCommit(ctx, appID, commit)
-	if err != nil || !found {
-		return time.Time{}, false, err
+// Reuse finds a successful scan of this app's source by the scanner that would
+// run now, and makes it the scan of specID: a deploy of that source uses it
+// rather than scanning the same thing again (R-312, design 09 §4.1).
+//
+// Source is what names the source exactly — a commit, an image digest, an
+// upload's archive digest — and a scan by another scanner does not count: its
+// findings are not the ones this installation's scanner would report. Found is
+// false when there is nothing to reuse, and the caller scans.
+//
+// A scan already attached to specID is returned as it is. One attached to
+// another revision, or to none, is recorded again against specID, so the
+// threshold check and every screen that asks for the revision's score find it.
+func (s *Service) Reuse(ctx context.Context, appID, specID, source string) (state.Scan, bool, error) {
+	ref, configured := s.Configured()
+	if !configured {
+		return state.Scan{}, false, nil
 	}
-	return scan.RanAt, true, nil
+	found, ok, err := s.Scans.ForSource(ctx, appID, source, ref)
+	if err != nil || !ok {
+		return state.Scan{}, false, err
+	}
+	if specID == "" {
+		return found, true, nil
+	}
+
+	current, has, err := s.Scans.Latest(ctx, appID, specID)
+	if err != nil {
+		return state.Scan{}, false, err
+	}
+	if has && current.SpecID == specID && current.Origin() == found.Origin() {
+		return current, true, nil
+	}
+	reused, err := s.Scans.Reuse(ctx, found, specID)
+	if err != nil {
+		return state.Scan{}, false, err
+	}
+	return reused, true, nil
 }
 
 // Report is where an app stands right now.
