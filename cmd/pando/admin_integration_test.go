@@ -92,3 +92,39 @@ func TestAResetIsRefusedForAShortPasswordOrAnUnknownAccount(t *testing.T) {
 	_, err = runAdmin(t, "reset-password", "nobody", "--password", "a-brand-new-password-9")
 	require.Error(t, err)
 }
+
+// TestR043_PasswordSignInCanBeTurnedBackOnFromTheHost asserts the break-glass
+// path for an install whose only way in is an identity provider that stopped
+// working: `pando admin enable-password-sign-in` clears the policy, says so,
+// and is audited — and does nothing, saying that too, when it is already on.
+func TestR043_PasswordSignInCanBeTurnedBackOnFromTheHost(t *testing.T) {
+	ctx := context.Background()
+	db, _ := withAdmin(t)
+	store := state.NewPolicy(db)
+
+	out, err := runAdmin(t, "enable-password-sign-in")
+	require.NoError(t, err)
+	require.Contains(t, out, "already on")
+
+	doc, err := store.Load(ctx)
+	require.NoError(t, err)
+	doc.DisablePasswordSignIn = true
+	require.NoError(t, store.Save(ctx, doc, "test"))
+
+	out, err = runAdmin(t, "enable-password-sign-in")
+	require.NoError(t, err)
+	require.Contains(t, out, "Password sign-in is on")
+	doc, err = store.Load(ctx)
+	require.NoError(t, err)
+	require.False(t, doc.DisablePasswordSignIn)
+
+	var via string
+	require.NoError(t, db.QueryRow(ctx,
+		`SELECT detail->>'via' FROM audit_events WHERE action = 'policy.update' ORDER BY id DESC LIMIT 1`).Scan(&via))
+	require.Equal(t, "pando admin enable-password-sign-in", via)
+
+	// Fixed in the startup configuration, it is the configuration to change.
+	t.Setenv("PANDO_POLICY_DISABLE_PASSWORD_SIGN_IN", "true")
+	_, err = runAdmin(t, "enable-password-sign-in")
+	require.ErrorContains(t, err, "startup configuration")
+}

@@ -86,6 +86,16 @@ func ensureSynced(ctx context.Context, tx pgx.Tx, adapterID, externalID, name st
 // Link makes everyone in a provider's group count as a member of a Pando-made
 // group, live (R-079).
 func (g *Groups) Link(ctx context.Context, syncedGroupID, groupID, by string) error {
+	// Checked first so a missing group is called missing, rather than
+	// reported by the direction trigger as a link that runs the wrong way.
+	var n int
+	if err := g.db.QueryRow(ctx, `SELECT count(*) FROM groups WHERE id = ANY ($1)`,
+		[]string{syncedGroupID, groupID}).Scan(&n); err != nil {
+		return errs.Wrap(errs.Internal, "Could not link the groups.", err)
+	}
+	if n < 2 && syncedGroupID != groupID {
+		return errs.New(errs.NotFound, "There is no group with that ID.")
+	}
 	_, err := g.db.Exec(ctx, `
 		INSERT INTO group_links (synced_group_id, group_id, created_by) VALUES ($1, $2, $3)
 		ON CONFLICT DO NOTHING`, syncedGroupID, groupID, by)
