@@ -224,14 +224,24 @@ CREATE TABLE deployments (
 
 ```sql
 CREATE TABLE volumes (
-    id          text PRIMARY KEY,             -- vol_...
+    id          text NOT NULL,                -- the spec's volume ID: unique within its app
     app_id      text NOT NULL REFERENCES apps(id) ON DELETE RESTRICT,
     name        text NOT NULL,
     adapter_ref text NOT NULL,
     handle      text,                         -- adapter's own identifier
-    created_at  timestamptz NOT NULL DEFAULT now()
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (app_id, id),
+    UNIQUE (app_id, name)
 );
 ```
+
+**[D]** Keyed by app and ID together. The ID is the spec's volume ID, and a spec names volumes after
+what they hold — two apps that each keep one called `data` are ordinary. Keyed by ID alone, the second
+app's deploy rewrote the first app's row and recorded nothing for its own, so it was never backed up
+and lost R-203's protection (issue #87, migration 000036). The reconciler records what the runtime
+reports holding for an app when Pando's rows disagree, so rows a deploy could not write come back
+without a redeploy. A whole-installation bundle names each volume `volumes/<app>/<volume>.tar` for the
+same reason.
 
 **[D]** `ON DELETE RESTRICT`, deliberately. An app cannot be deleted out from under its volumes; the delete flow must resolve them explicitly through the keep-or-discard prompt (R-204). Once it has — discarded, or backed up first — the rows go and `apps.discard_storage` is set, and the GC's teardown destroys the volumes with the bundle. Nothing else sets it, so an app whose storage no delete settled keeps its volumes.
 
@@ -427,6 +437,22 @@ CREATE TABLE backups (
     CONSTRAINT backups_object_is_unique UNIQUE (adapter_ref, object_name)
 );
 ```
+
+```sql
+CREATE TABLE backup_attempts (
+    app_id       text PRIMARY KEY REFERENCES apps(id) ON DELETE CASCADE,
+    attempted_at timestamptz NOT NULL,
+    outcome      text NOT NULL CHECK (outcome IN ('taken', 'skipped', 'failed')),
+    backup_id    text,                        -- when taken; not a FK, expiry removes backups
+    message      text NOT NULL DEFAULT '',    -- why skipped or failed (R-105)
+    remedy       text NOT NULL DEFAULT ''
+);
+```
+
+**[D]** The last scheduled rolling backup of each app, whatever came of it — one row per app, replaced
+on every attempt. `backups` says what exists; this says what was tried and did not happen, which
+`backups` cannot: an app missing from it looks the same whether it was never due or failed every hour
+for a week (issue #87). Shown on the app and on the Backups screen.
 
 **[D]** `kind = 'on_delete'` rows have `retain_until IS NULL` — R-204 says these are kept until explicitly discarded, not aged out. The CHECK makes that structural rather than a convention the pruning query has to remember.
 

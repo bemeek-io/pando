@@ -66,6 +66,10 @@ var exported = []any{
 	// finding gains a field.
 	security.Report{},
 	policy.Document{},
+
+	// The last scheduled backup of an app (issue #87), shown on the app and on
+	// the Backups screen.
+	state.BackupAttempt{},
 }
 
 func main() {

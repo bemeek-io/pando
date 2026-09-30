@@ -301,10 +301,27 @@ func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
+
+	// The app's last scheduled backup and what came of it (R-211, issue #87).
+	// On the app, for its owner: a backup that did not happen is the app's
+	// problem, and the Backups screen is only for whoever manages the install.
+	var lastBackup *state.BackupAttempt
+	if s.Backups != nil {
+		attempts, err := s.Backups.Attempts(r.Context(), app.ID)
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		if len(attempts) > 0 {
+			lastBackup = &attempts[0]
+		}
+	}
+
 	JSON(w, http.StatusOK, struct {
 		state.App
-		Verbs []authz.Verb `json:"verbs"`
-	}{app, verbs})
+		Verbs      []authz.Verb         `json:"verbs"`
+		LastBackup *state.BackupAttempt `json:"last_backup,omitempty"`
+	}{app, verbs, lastBackup})
 }
 
 func (s *Server) handlePatchApp(w http.ResponseWriter, r *http.Request) {

@@ -346,6 +346,11 @@ being retried forever.
 **[P]** A separate periodic job, hourly:
 
 - Trim logs to `Retention.LogBytes` per app (R-223), and to the aggregate host disk budget (R-224). **Aggregate wins.** If total retention exceeds the disk budget, every app's cap is scaled down proportionally rather than letting one app's allowance brick the host. **Not implemented — see O-16.** Pando does not hold app logs; it streams them from the runtime, and there is no mechanism on the adapter interface to trim them. Scaling caps down proportionally would mean recreating every container, which is destruction on a schedule triggered by an unrelated app being chatty.
+- Take a rolling backup of each `running` or `degraded` app with storage that has none from the last
+  24 hours (R-211). A stored spec with no `backup_daily_count` is read as the default of 7, not as
+  "keep none": no stored spec can ask for zero, because defaults turn a zero into 7 before it is
+  stored. Every attempt, taken, skipped or failed, is recorded in `backup_attempts` with why and what
+  to do (issue #87); "took a rolling backup" is logged only when one was.
 - Expire rolling backups past `BackupDaily` (R-211). Never touches `kind = 'on_delete'` (R-204).
 - Prune spec revisions past `SpecRevisions`, skipping any revision that was ever pinned.
 - Reap idle per-user instances **[LATER]** (R-293).

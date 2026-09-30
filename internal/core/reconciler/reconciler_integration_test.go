@@ -674,3 +674,52 @@ func (f *fakeRuntime) Edges(context.Context) ([]string, error)  { return nil, ni
 func (f *fakeRuntime) EdgeVolumes(context.Context) ([]api.VolumeHandle, error) {
 	return nil, nil
 }
+
+// TestR203_TheReconcilerRecordsStorageTheRuntimeHolds asserts that Pando's
+// record of an app's storage is brought back in line with the runtime without
+// waiting for a deploy (issue #87).
+//
+// Before volume rows were keyed by app, a second app with a volume called
+// "data" got no row and pointed the first app's row at its own volume. With no
+// row, R-203 did not know the volume had ever held data — so a lost volume
+// would be recreated empty — and rolling backups (R-211) found nothing to copy.
+// Nothing asks for a redeploy, so the loop that already observes every app
+// puts the record right.
+func TestR203_TheReconcilerRecordsStorageTheRuntimeHolds(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	h := newHarness(t, state.StateRunning)
+
+	// The harness's app, keeping its data in a volume called "data".
+	s := &spec.AppSpec{
+		SchemaVersion: spec.SchemaVersion,
+		AppID:         h.appID,
+		Source:        spec.Source{Type: spec.SourceGit, URL: "https://example.test/app", Ref: "main"},
+		Build:         spec.Build{Strategy: spec.BuildPrebuilt},
+		Workloads: []spec.Workload{{Name: "web", Image: "example/app:1", Primary: true, Exposed: true,
+			Mounts: []spec.Mount{{VolumeID: "data", Path: "/data"}}}},
+		Volumes: []spec.Volume{{ID: "data", Name: "data"}},
+		Routing: spec.Routing{AdapterRef: "rte_fake", Mode: spec.RoutingPort, Port: 9000},
+		Runtime: spec.RuntimeRef{AdapterRef: "rt_fake", IsolationFloor: spec.IsolationContainer},
+		Deploy:  spec.Deploy{Strategy: spec.DeployRecreate},
+	}
+	rev, err := h.apps.CreateRevision(ctx, h.appID, s, spec.OriginEdited, "")
+	require.NoError(t, err)
+	require.NoError(t, h.apps.Pin(ctx, h.appID, rev.ID, state.StateRunning, ""))
+
+	volumes := state.NewVolumes(h.db)
+	// A row pointing at somebody else's volume, as the collision left it.
+	require.NoError(t, volumes.RecordFromRuntime(ctx, h.appID, "rt_fake",
+		[]state.VolumeRecord{{VolumeID: "data", Name: "data", Handle: "pando-app_other-data"}}))
+
+	observed := healthy()
+	observed.Volumes = []api.ObservedVolume{{VolumeID: "data", Present: true, Handle: "pando-" + h.appID + "-data"}}
+	h.runtime.setObserved(observed)
+
+	h.rec.Tick(ctx)
+
+	handles, err := volumes.Handles(ctx, h.appID)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"data": "pando-" + h.appID + "-data"}, handles,
+		"the record names the volume the runtime actually holds for this app")
+}

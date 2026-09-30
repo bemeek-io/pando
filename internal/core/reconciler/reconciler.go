@@ -298,9 +298,14 @@ func (r *Reconciler) desired(ctx context.Context, app state.Reconcilable, s *spe
 		return api.BundlePlan{}, Inputs{}, err
 	}
 
-	held, err := r.Volumes.EverAttached(ctx, app.ID)
+	handles, err := r.Volumes.Handles(ctx, app.ID)
 	if err != nil {
 		return api.BundlePlan{}, Inputs{}, err
+	}
+	handles = r.recordObservedVolumes(ctx, app, s, want, observed, handles)
+	held := make(map[string]bool, len(handles))
+	for volumeID, handle := range handles {
+		held[volumeID] = handle != ""
 	}
 
 	// Per workload where the deployment recorded it. The app-level digest
@@ -327,6 +332,51 @@ func (r *Reconciler) desired(ctx context.Context, app state.Reconcilable, s *spe
 		CurrentEnvHash:      EnvHash(s, versions),
 		VolumesThatHeldData: held,
 	}, nil
+}
+
+// recordObservedVolumes brings Pando's volume rows in line with what the
+// runtime reports holding for this app, and returns the handles as recorded.
+//
+// Only a deploy used to write these rows, and before migration 000036 a deploy
+// could not write one for a volume whose ID another app already used: the
+// second app got no row and the first app's row was pointed at the second
+// app's volume (issue #87). A redeploy would fix each app, but nothing asks
+// for one — so the loop that already observes every app fixes it instead.
+//
+// Only volumes the app should have, only ones the runtime says exist, and only
+// where the record disagrees, so a settled app costs no write. This changes
+// Pando's record, never the runtime: the volume is already there.
+func (r *Reconciler) recordObservedVolumes(ctx context.Context, app state.Reconcilable, s *spec.AppSpec, want api.BundlePlan, observed api.ObservedBundle, handles map[string]string) map[string]string {
+	present := make(map[string]string, len(observed.Volumes))
+	for _, v := range observed.Volumes {
+		if v.Present && v.Handle != "" {
+			present[v.VolumeID] = v.Handle
+		}
+	}
+
+	var records []state.VolumeRecord
+	for _, v := range want.Volumes {
+		handle, ok := present[v.VolumeID]
+		if !ok || handles[v.VolumeID] == handle {
+			continue
+		}
+		records = append(records, state.VolumeRecord{VolumeID: v.VolumeID, Name: v.Name, Handle: handle})
+	}
+	if len(records) == 0 {
+		return handles
+	}
+
+	if err := r.Volumes.RecordFromRuntime(ctx, app.ID, s.Runtime.AdapterRef, records); err != nil {
+		r.Logger.Warn("could not record the app's storage",
+			zap.String("app_id", app.ID), zap.Error(err))
+		return handles
+	}
+	for _, rec := range records {
+		handles[rec.VolumeID] = rec.Handle
+	}
+	r.Logger.Info("recorded storage the runtime holds for this app",
+		zap.String("app_id", app.ID), zap.Int("volumes", len(records)))
+	return handles
 }
 
 // settle records that an app is as it should be.

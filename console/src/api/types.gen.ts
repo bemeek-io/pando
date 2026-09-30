@@ -206,6 +206,16 @@ export interface Document {
   ignore_unfixable_findings?: boolean;
 }
 
+export interface BackupAttempt {
+  app_id: string;
+  app_name?: string;
+  attempted_at: string;
+  outcome: string;
+  backup_id?: string;
+  message?: string;
+  remedy?: string;
+}
+
 export interface Source {
   type: string;
   url?: string;

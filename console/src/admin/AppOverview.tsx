@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Banner, Button, Card, StatusIndicator, Tag } from '@design';
 
 import { api } from '@api/client';
-import type { App, Deployment } from '@api/types.gen';
+import type { App, BackupAttempt, Deployment } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { InlineWarning } from '../ui/InlineWarning';
 import { Parts } from './Parts';
@@ -24,6 +24,7 @@ import { AppImage } from './AppImage';
 import { AppName } from './AppName';
 import { AppAddress } from './AppAddress';
 import { AppVerb, useCan } from './verbs';
+import { attemptDetail, attemptLabel, attemptSymbol } from '../ui/backupAttempt';
 
 interface SpecRevision {
   id: string;
@@ -38,7 +39,7 @@ export function AppOverview({
   app,
   onGo,
 }: {
-  app: App;
+  app: App & { last_backup?: BackupAttempt };
   /** Where a warning's fix lives: a tab, and the section on it. */
   onGo: (tab: string, focus?: string) => void;
 }) {
@@ -90,6 +91,7 @@ export function AppOverview({
   const unshipped = Boolean(newest && pinned && newest.revision > pinned.revision);
 
   const latest = (deployments.data?.deployments ?? [])[0];
+  const lastBackup = app.last_backup;
   const warnings = pinnedSpec.data?.body?.warnings ?? [];
 
   // Counted from the spec rather than carried in it. Detection reads the names
@@ -188,6 +190,17 @@ export function AppOverview({
                 <span style={{ color: 'var(--ink-secondary)' }}>Not deployed yet.</span>
               )}
             </Row>
+            {/* The last daily backup, taken or not (R-211, issue #87). Only
+                apps that keep data are backed up, so an app with none has no
+                row rather than one saying "never". */}
+            {lastBackup && (
+              <Row label="Last backup">
+                <StatusIndicator
+                  status={attemptSymbol(lastBackup)}
+                  label={`${attemptLabel(lastBackup)} ${relative(lastBackup.attempted_at).toLowerCase()}`}
+                />
+              </Row>
+            )}
           </Card>
           {!narrow && parts}
         </div>
@@ -209,6 +222,10 @@ export function AppOverview({
           certificate validation during TLS session resumption" wrapped one
           word to a line and the section ran off the bottom of the page. */}
       <Security appID={app.id} watching={app.state === 'deploying'} />
+
+      {lastBackup && lastBackup.outcome !== 'taken' && (
+        <InlineWarning>{attemptDetail(lastBackup)}</InlineWarning>
+      )}
 
       {unset.length > 0 && (
         <InlineWarning
