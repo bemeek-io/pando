@@ -22,10 +22,27 @@ type AdapterCredentials struct {
 	db         *DB
 	adapter    api.SecretsAdapter
 	adapterRef string
+
+	// table and scope say whose credentials these are: adapter_configs', or
+	// identity providers' (identity_adapter_credentials). Fixed at
+	// construction from the two constructors below, never from input.
+	table string
+	scope string
 }
 
 func NewAdapterCredentials(db *DB, adapter api.SecretsAdapter, adapterRef string) *AdapterCredentials {
-	return &AdapterCredentials{db: db, adapter: adapter, adapterRef: adapterRef}
+	return &AdapterCredentials{db: db, adapter: adapter, adapterRef: adapterRef,
+		table: "adapter_credentials", scope: "adapter:"}
+}
+
+// NewIdentityCredentials stores identity providers' secrets — an OIDC client
+// secret — the same way, in their own table (identity_adapters is not
+// adapter_configs). A different scope in the sealed reference as well, so a
+// provider's ciphertext cannot be replayed as an adapter's even if two IDs
+// matched.
+func NewIdentityCredentials(db *DB, adapter api.SecretsAdapter, adapterRef string) *AdapterCredentials {
+	return &AdapterCredentials{db: db, adapter: adapter, adapterRef: adapterRef,
+		table: "identity_adapter_credentials", scope: "identity:"}
 }
 
 var credentialField = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
@@ -36,8 +53,8 @@ var credentialField = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // the ciphertext as authenticated data. "adapter:" cannot collide with an app ID,
 // which is always prefixed app_, so a credential's ciphertext cannot be replayed
 // as an app secret or the other way round.
-func credentialRef(adapterID, field string) api.SecretRef {
-	return api.SecretRef{AppID: "adapter:" + adapterID, Key: field}
+func credentialRef(scope, adapterID, field string) api.SecretRef {
+	return api.SecretRef{AppID: scope + adapterID, Key: field}
 }
 
 // Put stores or rotates one credential. An empty value removes it.
@@ -55,18 +72,18 @@ func (c *AdapterCredentials) Put(ctx context.Context, adapterID, field string, v
 		return c.Delete(ctx, adapterID, field)
 	}
 
-	stored, err := c.adapter.Put(ctx, credentialRef(adapterID, field), v)
+	stored, err := c.adapter.Put(ctx, credentialRef(c.scope, adapterID, field), v)
 	if err != nil {
 		return err
 	}
 	_, err = c.db.Exec(ctx, `
-		INSERT INTO adapter_credentials (adapter_id, field, adapter_ref, ciphertext, external_ref)
+		INSERT INTO `+c.table+` AS t (adapter_id, field, adapter_ref, ciphertext, external_ref)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (adapter_id, field) DO UPDATE SET
 			adapter_ref = EXCLUDED.adapter_ref,
 			ciphertext = EXCLUDED.ciphertext,
 			external_ref = EXCLUDED.external_ref,
-			version = adapter_credentials.version + 1,
+			version = t.version + 1,
 			updated_at = now()`,
 		adapterID, field, c.adapterRef, stored.Ciphertext, nullable(stored.Handle))
 	if err != nil {
@@ -78,7 +95,7 @@ func (c *AdapterCredentials) Put(ctx context.Context, adapterID, field string, v
 // Delete removes one credential.
 func (c *AdapterCredentials) Delete(ctx context.Context, adapterID, field string) error {
 	_, err := c.db.Exec(ctx,
-		`DELETE FROM adapter_credentials WHERE adapter_id = $1 AND field = $2`, adapterID, field)
+		`DELETE FROM `+c.table+` WHERE adapter_id = $1 AND field = $2`, adapterID, field)
 	if err != nil {
 		return errs.Wrap(errs.Internal, "Could not remove the adapter's credential.", err)
 	}
@@ -90,7 +107,7 @@ func (c *AdapterCredentials) Delete(ctx context.Context, adapterID, field string
 // anything being able to read it back.
 func (c *AdapterCredentials) Fields(ctx context.Context) (map[string][]string, error) {
 	rows, err := c.db.Query(ctx,
-		`SELECT adapter_id, field FROM adapter_credentials ORDER BY adapter_id, field`)
+		`SELECT adapter_id, field FROM `+c.table+` ORDER BY adapter_id, field`)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not list adapter credentials.", err)
 	}
@@ -113,7 +130,7 @@ func (c *AdapterCredentials) Fields(ctx context.Context) (map[string][]string, e
 // adapter reads them, so none of them can be logged on the way.
 func (c *AdapterCredentials) Resolve(ctx context.Context, adapterID string) (map[string]secret.Value, error) {
 	rows, err := c.db.Query(ctx,
-		`SELECT field, ciphertext, external_ref FROM adapter_credentials WHERE adapter_id = $1`, adapterID)
+		`SELECT field, ciphertext, external_ref FROM `+c.table+` WHERE adapter_id = $1`, adapterID)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not read the adapter's credentials.", err)
 	}
@@ -144,7 +161,7 @@ func (c *AdapterCredentials) Resolve(ctx context.Context, adapterID string) (map
 
 	out := make(map[string]secret.Value, len(all))
 	for _, s := range all {
-		ref := credentialRef(adapterID, s.field)
+		ref := credentialRef(c.scope, adapterID, s.field)
 		stored := api.StoredRef{AppID: ref.AppID, Key: ref.Key, Ciphertext: s.ciphertext}
 		if s.handle != nil {
 			stored.Handle = *s.handle

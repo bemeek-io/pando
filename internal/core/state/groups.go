@@ -25,11 +25,40 @@ func NewGroups(db *DB) *Groups { return &Groups{db: db} }
 
 // Group is a stored group.
 type Group struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Source    string    `json:"source,omitempty"`
-	Members   []string  `json:"members,omitempty"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+
+	// Source is the identity provider that owns the group's membership, and
+	// SourceName its name; both empty for a group made in Pando. A synced
+	// group's members change at the provider, never here (R-079).
+	Source     string `json:"source,omitempty"`
+	SourceName string `json:"source_name,omitempty"`
+
+	Members []string `json:"members,omitempty"`
+
+	// LinkedFrom, on a Pando-made group, are the provider groups whose members
+	// count as its members (group_links). LinksTo, on a synced group, are the
+	// Pando groups it feeds.
+	LinkedFrom []string `json:"linked_from,omitempty"`
+	LinksTo    []string `json:"links_to,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
+}
+
+const groupSelect = `
+		SELECT g.id, g.name, coalesce(g.adapter_id, ''), coalesce(a.name, ''), g.created_at,
+		       coalesce(array_agg(DISTINCT m.user_id) FILTER (WHERE m.user_id IS NOT NULL), '{}'),
+		       coalesce((SELECT array_agg(l.synced_group_id ORDER BY l.synced_group_id) FROM group_links l WHERE l.group_id = g.id), '{}'),
+		       coalesce((SELECT array_agg(l.group_id ORDER BY l.group_id) FROM group_links l WHERE l.synced_group_id = g.id), '{}')
+		FROM groups g
+		LEFT JOIN identity_adapters a ON a.id = g.adapter_id
+		LEFT JOIN group_members m ON m.group_id = g.id`
+
+func scanGroup(row pgx.Row) (Group, error) {
+	var group Group
+	err := row.Scan(&group.ID, &group.Name, &group.Source, &group.SourceName, &group.CreatedAt,
+		&group.Members, &group.LinkedFrom, &group.LinksTo)
+	return group, err
 }
 
 // Create adds a Pando-native group.
@@ -53,13 +82,9 @@ func (g *Groups) Create(ctx context.Context, name string) (Group, error) {
 
 // List returns every group with its members.
 func (g *Groups) List(ctx context.Context) ([]Group, error) {
-	rows, err := g.db.Query(ctx, `
-		SELECT g.id, g.name, g.created_at,
-		       coalesce(array_agg(m.user_id) FILTER (WHERE m.user_id IS NOT NULL), '{}')
-		FROM groups g
-		LEFT JOIN group_members m ON m.group_id = g.id
-		GROUP BY g.id, g.name, g.created_at
-		ORDER BY g.name`)
+	rows, err := g.db.Query(ctx, groupSelect+`
+		GROUP BY g.id, g.name, g.adapter_id, a.name, g.created_at
+		ORDER BY g.adapter_id IS NOT NULL, lower(g.name)`)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not read the groups.", err)
 	}
@@ -67,8 +92,8 @@ func (g *Groups) List(ctx context.Context) ([]Group, error) {
 
 	out := make([]Group, 0)
 	for rows.Next() {
-		var group Group
-		if err := rows.Scan(&group.ID, &group.Name, &group.CreatedAt, &group.Members); err != nil {
+		group, err := scanGroup(rows)
+		if err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read the groups.", err)
 		}
 		out = append(out, group)
@@ -79,9 +104,10 @@ func (g *Groups) List(ctx context.Context) ([]Group, error) {
 // Search finds groups by name, case-insensitively, at most limit of them.
 func (g *Groups) Search(ctx context.Context, q string, limit int) ([]Group, error) {
 	rows, err := g.db.Query(ctx, `
-		SELECT id, name, created_at FROM groups
-		WHERE $1 = '' OR name ILIKE '%' || $1 || '%'
-		ORDER BY name LIMIT $2`, likeEscape(q), limit)
+		SELECT g.id, g.name, coalesce(g.adapter_id, ''), coalesce(a.name, ''), g.created_at
+		FROM groups g LEFT JOIN identity_adapters a ON a.id = g.adapter_id
+		WHERE $1 = '' OR g.name ILIKE '%' || $1 || '%'
+		ORDER BY g.name LIMIT $2`, likeEscape(q), limit)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not search the groups.", err)
 	}
@@ -89,7 +115,7 @@ func (g *Groups) Search(ctx context.Context, q string, limit int) ([]Group, erro
 	out := []Group{}
 	for rows.Next() {
 		var group Group
-		if err := rows.Scan(&group.ID, &group.Name, &group.CreatedAt); err != nil {
+		if err := rows.Scan(&group.ID, &group.Name, &group.Source, &group.SourceName, &group.CreatedAt); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not search the groups.", err)
 		}
 		out = append(out, group)
@@ -99,15 +125,9 @@ func (g *Groups) Search(ctx context.Context, q string, limit int) ([]Group, erro
 
 // ByID returns one group.
 func (g *Groups) ByID(ctx context.Context, groupID string) (Group, bool, error) {
-	var group Group
-	err := g.db.QueryRow(ctx, `
-		SELECT g.id, g.name, g.created_at,
-		       coalesce(array_agg(m.user_id) FILTER (WHERE m.user_id IS NOT NULL), '{}')
-		FROM groups g
-		LEFT JOIN group_members m ON m.group_id = g.id
+	group, err := scanGroup(g.db.QueryRow(ctx, groupSelect+`
 		WHERE g.id = $1
-		GROUP BY g.id, g.name, g.created_at`, groupID).
-		Scan(&group.ID, &group.Name, &group.CreatedAt, &group.Members)
+		GROUP BY g.id, g.name, g.adapter_id, a.name, g.created_at`, groupID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Group{}, false, nil
 	}
@@ -123,6 +143,9 @@ func (g *Groups) ByID(ctx context.Context, groupID string) (Group, bool, error) 
 // "remove this person", and removing someone from a group is the operation that
 // has to work — it is how access is revoked (R-079).
 func (g *Groups) SetMembers(ctx context.Context, groupID string, userIDs []string) error {
+	if err := g.native(ctx, groupID); err != nil {
+		return err
+	}
 	tx, err := g.db.Begin(ctx)
 	if err != nil {
 		return errs.Wrap(errs.Internal, "Could not change the group's members.", err)
@@ -218,7 +241,9 @@ func (g *Groups) native(ctx context.Context, groupID string) error {
 	}
 	if adapter != nil {
 		return errs.New(errs.ValidInvalid, "This group comes from an identity provider, so its members are changed there.").
-			WithRemedy("Change the membership in the identity provider; Pando picks it up at the next sign-in.")
+			WithRemedy("Change the membership in the identity provider; Pando picks it up at the next sign-in, " +
+				"or at once if the provider pushes changes through SCIM. To give its members a Pando group's " +
+				"access as well, link it to that group.")
 	}
 	return nil
 }
@@ -239,7 +264,7 @@ func peopleWhoManage(ctx context.Context, tx pgx.Tx) (int, error) {
 		  AND (
 		        (g.principal_kind = 'user'  AND g.principal_id = u.id)
 		     OR (g.principal_kind = 'group' AND g.principal_id IN (
-		            SELECT group_id FROM group_members WHERE user_id = u.id))
+		            SELECT group_id FROM effective_group_members WHERE user_id = u.id))
 		  )`, string(authz.InstallUsersManage)).Scan(&n)
 	return n, err
 }

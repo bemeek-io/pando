@@ -49,7 +49,7 @@ func (s *AuthzStore) ControlGrantsFor(ctx context.Context, appID string, p authz
 		        (g.principal_kind = 'user'  AND g.principal_id = $2)
 		     OR (g.principal_kind = 'token' AND g.principal_id = $3)
 		     OR (g.principal_kind = 'group' AND g.principal_id IN (
-		            SELECT group_id FROM group_members WHERE user_id = $2))
+		            SELECT group_id FROM effective_group_members WHERE user_id = $2))
 		  )`,
 		appID, nullable(p.UserID), nullable(accountTokenID(p)))
 	if err != nil {
@@ -91,7 +91,7 @@ func (s *AuthzStore) InstallGrantsFor(ctx context.Context, p authz.Principal) ([
 		        (g.principal_kind = 'user'  AND g.principal_id = $1)
 		     OR (g.principal_kind = 'token' AND g.principal_id = $2)
 		     OR (g.principal_kind = 'group' AND g.principal_id IN (
-		            SELECT group_id FROM group_members WHERE user_id = $1))
+		            SELECT group_id FROM effective_group_members WHERE user_id = $1))
 		  )`,
 		nullable(p.UserID), nullable(accountTokenID(p)))
 	if err != nil {
@@ -170,7 +170,7 @@ func (s *AuthzStore) HasDataGrant(ctx context.Context, appID string, p authz.Pri
 			        (g.principal_kind = 'user'  AND g.principal_id = $2)
 			     OR (g.principal_kind = 'token' AND g.principal_id = $3)
 			     OR (g.principal_kind = 'group' AND g.principal_id IN (
-			            SELECT group_id FROM group_members WHERE user_id = $2))
+			            SELECT group_id FROM effective_group_members WHERE user_id = $2))
 			  )
 		)`, appID, nullable(p.UserID), nullable(accountTokenID(p))).Scan(&exists)
 	if err != nil {
@@ -206,7 +206,7 @@ func (s *AuthzStore) GroupsForUser(ctx context.Context, userID string) ([]string
 	if userID == "" {
 		return nil, nil
 	}
-	rows, err := s.db.Query(ctx, `SELECT group_id FROM group_members WHERE user_id = $1`, userID)
+	rows, err := s.db.Query(ctx, `SELECT group_id FROM effective_group_members WHERE user_id = $1`, userID)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not read group membership.", err)
 	}
@@ -602,7 +602,7 @@ func (g *Grants) ForUser(ctx context.Context, userID string) ([]UserAppGrant, er
 		  AND (
 		        (g.principal_kind = 'user'  AND g.principal_id = $1)
 		     OR (g.principal_kind = 'group' AND g.principal_id IN (
-		            SELECT group_id FROM group_members WHERE user_id = $1))
+		            SELECT group_id FROM effective_group_members WHERE user_id = $1))
 		  )
 		ORDER BY a.name, a.id, g.plane, g.principal_kind DESC`, userID)
 	if err != nil {

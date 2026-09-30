@@ -230,7 +230,7 @@ func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, 
 		        (g.principal_kind = 'user'  AND g.principal_id = $1)
 		     OR (g.principal_kind = 'token' AND g.principal_id = $2)
 		     OR (g.principal_kind = 'group' AND g.principal_id IN (
-		            SELECT group_id FROM group_members WHERE user_id = $1))
+		            SELECT group_id FROM effective_group_members WHERE user_id = $1))
 		  )`, nullable(p.UserID), nullable(accountTokenID(p)))
 }
 
@@ -315,7 +315,7 @@ func (a *Apps) ListForUse(ctx context.Context, p authz.Principal) ([]App, error)
 		     OR (g.principal_kind = 'user'  AND g.principal_id = $1)
 		     OR (g.principal_kind = 'token' AND g.principal_id = $2)
 		     OR (g.principal_kind = 'group' AND g.principal_id IN (
-		            SELECT group_id FROM group_members WHERE user_id = $1))
+		            SELECT group_id FROM effective_group_members WHERE user_id = $1))
 		  )
 		ORDER BY a.name`,
 		nullable(p.UserID), nullable(accountTokenID(p)))

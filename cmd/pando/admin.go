@@ -11,6 +11,7 @@ import (
 	"github.com/trypando/pando/internal/config"
 	"github.com/trypando/pando/internal/core/audit"
 	"github.com/trypando/pando/internal/core/bootstrap"
+	corepolicy "github.com/trypando/pando/internal/core/policy"
 	"github.com/trypando/pando/internal/core/state"
 	"github.com/trypando/pando/internal/errs"
 	"github.com/trypando/pando/internal/hash"
@@ -43,6 +44,7 @@ func adminCmd(configPath *string) *cobra.Command {
 			"could change the row by hand.",
 	}
 	cmd.AddCommand(resetPasswordCmd(configPath))
+	cmd.AddCommand(enablePasswordSignInCmd(configPath))
 	return cmd
 }
 
@@ -186,4 +188,75 @@ func resetPassword(ctx context.Context, cfg *config.Config, username string, pas
 	logger.Info("password reset from the host shell",
 		zap.String("username", username), zap.String("user_id", userID))
 	return nil
+}
+
+// enablePasswordSignInCmd is the break-glass path when password sign-in is
+// off and every identity provider is out of reach (issue #51): the provider is
+// down, its certificate rolled over unannounced, or its settings were saved
+// wrong. With password sign-in back on, `reset-password` gives someone a way
+// in, and they fix the provider from the console.
+func enablePasswordSignInCmd(configPath *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "enable-password-sign-in",
+		Short: "Turn password sign-in back on when no identity provider works",
+		Long: "Clears disable_password_sign_in in host policy, so local accounts can sign in with a password again.\n\n" +
+			"For when password sign-in is off and nobody can sign in through an identity provider. Follow it with\n" +
+			"`pando admin reset-password` if you also need a password for an account.",
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, logger, err := setup(*configPath)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = logger.Sync() }()
+			ctx := log.Into(cmd.Context(), logger)
+
+			overlay, err := startupPolicy(cfg)
+			if err != nil {
+				return err
+			}
+			if doc := overlay.Apply(corepolicy.Default()); doc.DisablePasswordSignIn {
+				return errs.New(errs.StateSetAtStartup,
+					"disable_password_sign_in is set in Pando's startup configuration, so it cannot be changed here.").
+					WithRemedy("Remove it from the config file or the PANDO_POLICY_DISABLE_PASSWORD_SIGN_IN variable, and restart Pando.")
+			}
+
+			db, err := state.Connect(ctx, state.ConnectOptions{
+				OwnerURL:       cfg.Database.URL,
+				ConnectTimeout: cfg.Database.ConnectTimeout,
+			})
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			store := state.NewPolicy(db)
+			doc, err := store.Load(ctx)
+			if err != nil {
+				return err
+			}
+			if !doc.DisablePasswordSignIn {
+				fmt.Fprintln(cmd.OutOrStdout(), "Password sign-in is already on.")
+				return nil
+			}
+			doc.DisablePasswordSignIn = false
+			if err := store.Save(ctx, doc, "system"); err != nil {
+				return err
+			}
+			// Audited, and fatal if it is not: this changes how everyone signs
+			// in, from outside every check the API makes.
+			if err := audit.New(db.Pool).Write(ctx, audit.Event{
+				PrincipalKind: audit.KindSystem, PrincipalID: "system", Action: "policy.update",
+				TargetKind: "policy", TargetID: "host",
+				Detail: map[string]any{"disable_password_sign_in": false, "via": "pando admin enable-password-sign-in",
+					"reason": "run from the host shell, outside any session"},
+			}); err != nil {
+				return errs.Wrap(errs.Internal,
+					"Password sign-in was turned on and Pando could not record it in the audit log.", err)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Password sign-in is on. Local accounts can sign in with their passwords again.")
+			return nil
+		},
+	}
 }

@@ -115,6 +115,13 @@ func (a *Authenticator) fromSession(ctx context.Context, sessionID string) (auth
 func Authenticate(a *Authenticator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// SCIM presents a provider's own bearer token, which is not a
+			// Pando credential and would be refused as one. Those handlers
+			// authenticate it themselves, and it reaches nothing else.
+			if strings.HasPrefix(r.URL.Path, scimPrefix+"/") {
+				next.ServeHTTP(w, r)
+				return
+			}
 			p, err := a.Authenticate(r)
 			if err != nil {
 				Error(w, r, err)

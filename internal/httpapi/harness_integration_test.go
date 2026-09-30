@@ -21,6 +21,8 @@ import (
 	adapterapi "github.com/trypando/pando/internal/adapter/api"
 	backuplocal "github.com/trypando/pando/internal/adapter/backup/local"
 	identitylocal "github.com/trypando/pando/internal/adapter/identity/local"
+	identityoidc "github.com/trypando/pando/internal/adapter/identity/oidc"
+	identitysaml "github.com/trypando/pando/internal/adapter/identity/saml"
 	secretslocal "github.com/trypando/pando/internal/adapter/secrets/local"
 	"github.com/trypando/pando/internal/config"
 	"github.com/trypando/pando/internal/core/assertion"
@@ -32,6 +34,7 @@ import (
 	"github.com/trypando/pando/internal/core/clock"
 	"github.com/trypando/pando/internal/core/deploy"
 	"github.com/trypando/pando/internal/core/detection"
+	"github.com/trypando/pando/internal/core/idp"
 	"github.com/trypando/pando/internal/core/planner"
 	corepolicy "github.com/trypando/pando/internal/core/policy"
 	"github.com/trypando/pando/internal/core/security"
@@ -236,6 +239,27 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 			Auditor:     auditor,
 			Logger:      zap.NewNop(),
 		},
+	}
+
+	// External identity, with the kinds main compiles in.
+	srv.IDP = &idp.Service{
+		Providers:   state.NewIdentityProviders(db),
+		Credentials: state.NewIdentityCredentials(db, secretsAdapter, "sec_local"),
+		Identities:  state.NewIdentities(db),
+		Users:       users,
+		Sessions:    sessions,
+		Groups:      state.NewGroups(db),
+		Flows:       state.NewSSOFlows(db),
+		SCIMUsers:   state.NewSCIMUsers(db),
+		SCIMGroups:  state.NewSCIMGroups(db),
+		Policy:      effectivePolicy,
+		Local:       identity,
+		Kinds: map[string]idp.Kind{
+			identityoidc.Kind: {New: func() adapterapi.IdentityAdapter { return identityoidc.New() }, Info: identityoidc.Info()},
+			identitysaml.Kind: {New: func() adapterapi.IdentityAdapter { return identitysaml.New() }, Info: identitysaml.Info()},
+		},
+		Audit: httpapi.AuditFunc(auditor),
+		Clock: clock.System{},
 	}
 
 	return &install{

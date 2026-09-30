@@ -135,6 +135,18 @@ type Document struct {
 	// only acts on what it can fix turns it on, and the two agree again: what
 	// is counted is what is shown.
 	IgnoreUnfixableFindings bool `json:"ignore_unfixable_findings,omitempty"`
+
+	// DisablePasswordSignIn refuses sign-in with a local username and
+	// password (issue #51), once people sign in through an external identity
+	// provider. Refused while no external provider is on, so it cannot empty
+	// the sign-in page. `pando admin enable-password-sign-in` is the way back
+	// when every provider is unreachable, and needs shell access on the host.
+	DisablePasswordSignIn bool `json:"disable_password_sign_in,omitempty"`
+
+	// DisableJITProvisioning refuses making an account at a first external
+	// sign-in, whatever each provider is set to. People then need an account
+	// first — pushed by SCIM, or linked by an administrator.
+	DisableJITProvisioning bool `json:"disable_jit_provisioning,omitempty"`
 }
 
 // What InsecureAction may say.

@@ -32,6 +32,10 @@ var descriptions = map[string]string{
 		"warn, or stop (after the grace period).",
 	"insecure_grace_hours":      "Grace period, in hours, before stop applies to an app below the minimum score.",
 	"ignore_unfixable_findings": "Ignore findings with no fix available, in both the security score and the list.",
+	"disable_password_sign_in": "Turn off sign-in with a local username and password, so people sign in through " +
+		"an external identity provider. Needs at least one provider turned on.",
+	"disable_jit_provisioning": "Don't make an account when someone first signs in through an identity provider, " +
+		"whatever the provider is set to. People need an account from SCIM or an administrator first.",
 }
 
 // Describe says what a policy field does, in the Policy screen's words.

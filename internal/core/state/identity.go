@@ -63,6 +63,11 @@ type User struct {
 
 	MustChangePassword bool `json:"must_change_password"`
 
+	// AliasOf is set on an account whose identities an administrator moved to
+	// another (O-1). It stays, suspended, because its ID may be an assertion
+	// subject some app holds data under (R-054).
+	AliasOf string `json:"alias_of,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -94,11 +99,11 @@ func (u *Users) ByExternalID(ctx context.Context, adapterID, externalID string) 
 	var user User
 	var email, display *string
 	err := u.db.QueryRow(ctx, `
-		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at
+		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at, coalesce(alias_of, '')
 		FROM users
 		WHERE adapter_id = $1 AND external_id = $2 AND deleted_at IS NULL`,
 		adapterID, externalID).
-		Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display, &user.Status, &user.MustChangePassword, &user.CreatedAt)
+		Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display, &user.Status, &user.MustChangePassword, &user.CreatedAt, &user.AliasOf)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, false, nil
 	}
@@ -119,9 +124,9 @@ func (u *Users) ByID(ctx context.Context, userID string) (User, bool, error) {
 	var user User
 	var email, display *string
 	err := u.db.QueryRow(ctx, `
-		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at
+		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at, coalesce(alias_of, '')
 		FROM users WHERE id = $1`, userID).
-		Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display, &user.Status, &user.MustChangePassword, &user.CreatedAt)
+		Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display, &user.Status, &user.MustChangePassword, &user.CreatedAt, &user.AliasOf)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, false, nil
 	}
@@ -148,8 +153,8 @@ func (u *Users) ByID(ctx context.Context, userID string) (User, bool, error) {
 // every other list, and the shape of the response already allows it.
 func (u *Users) List(ctx context.Context) ([]User, error) {
 	rows, err := u.db.Query(ctx, `
-		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at
-		FROM users WHERE deleted_at IS NULL ORDER BY id DESC`)
+		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at, coalesce(alias_of, '')
+		FROM users WHERE deleted_at IS NULL AND alias_of IS NULL ORDER BY id DESC`)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not read the accounts.", err)
 	}
@@ -160,7 +165,7 @@ func (u *Users) List(ctx context.Context) ([]User, error) {
 		var user User
 		var email, display *string
 		if err := rows.Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display,
-			&user.Status, &user.MustChangePassword, &user.CreatedAt); err != nil {
+			&user.Status, &user.MustChangePassword, &user.CreatedAt, &user.AliasOf); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read the accounts.", err)
 		}
 		if email != nil {
@@ -179,6 +184,19 @@ func (u *Users) List(ctx context.Context) ([]User, error) {
 // Suspension is not deletion (R-049): this is the endpoint behind PATCH, and it
 // must never trigger the destruction rules that DELETE does (R-282).
 func (u *Users) SetStatus(ctx context.Context, userID, status string) error {
+	return u.SetStatusBy(ctx, userID, status, SuspendedByAdmin)
+}
+
+// Who suspended an account (users.suspended_by).
+const SuspendedByAdmin = "admin"
+
+// SuspendedBySCIM is the suspended_by value for a SCIM client acting for a
+// provider.
+func SuspendedBySCIM(providerID string) string { return "scim:" + providerID }
+
+// SetStatusBy is SetStatus on someone's behalf: an administrator, or a SCIM
+// client. The R-088 lockout rule applies to both.
+func (u *Users) SetStatusBy(ctx context.Context, userID, status, by string) error {
 	switch status {
 	case "active", "suspended":
 	default:
@@ -186,10 +204,20 @@ func (u *Users) SetStatus(ctx context.Context, userID, status string) error {
 	}
 
 	if status == "active" {
-		_, err := u.db.Exec(ctx,
-			`UPDATE users SET status = $2, updated_at = now() WHERE id = $1`, userID, status)
+		// An alias stays suspended: its identities belong to another account
+		// now, and reactivating it would give back a way in that nothing
+		// should reach (O-1). The constraint says so too; this says it in
+		// words.
+		tag, err := u.db.Exec(ctx,
+			`UPDATE users SET status = $2, suspended_by = NULL, updated_at = now()
+			 WHERE id = $1 AND alias_of IS NULL`, userID, status)
 		if err != nil {
 			return errs.Wrap(errs.Internal, "Could not update the account.", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return errs.New(errs.ValidInvalid,
+				"This account's sign-in identities were moved to another account, so it stays suspended.").
+				WithRemedy("Sign in with the account they were moved to.")
 		}
 		return nil
 	}
@@ -229,7 +257,8 @@ func (u *Users) SetStatus(ctx context.Context, userID, status string) error {
 	}
 
 	if _, err := tx.Exec(ctx,
-		`UPDATE users SET status = $2, updated_at = now() WHERE id = $1`, userID, status); err != nil {
+		`UPDATE users SET status = $2, suspended_by = $3, updated_at = now() WHERE id = $1`,
+		userID, status, by); err != nil {
 		return errs.Wrap(errs.Internal, "Could not update the account.", err)
 	}
 
@@ -390,9 +419,9 @@ func (u *Users) UpdateProfile(ctx context.Context, userID string, p Profile) err
 // query lists the first few.
 func (u *Users) Search(ctx context.Context, q string, limit int) ([]User, error) {
 	rows, err := u.db.Query(ctx, `
-		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at
+		SELECT id, adapter_id, external_id, email, display_name, status, must_change_password, created_at, coalesce(alias_of, '')
 		FROM users
-		WHERE deleted_at IS NULL
+		WHERE deleted_at IS NULL AND alias_of IS NULL
 		  AND ($1 = '' OR external_id ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%' OR email ILIKE '%' || $1 || '%')
 		ORDER BY external_id
 		LIMIT $2`, likeEscape(q), limit)
@@ -405,7 +434,7 @@ func (u *Users) Search(ctx context.Context, q string, limit int) ([]User, error)
 		var user User
 		var email, display *string
 		if err := rows.Scan(&user.ID, &user.AdapterID, &user.ExternalID, &email, &display,
-			&user.Status, &user.MustChangePassword, &user.CreatedAt); err != nil {
+			&user.Status, &user.MustChangePassword, &user.CreatedAt, &user.AliasOf); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not search the accounts.", err)
 		}
 		if email != nil {
