@@ -240,7 +240,7 @@ func (g *GC) reclaimOrphanedVolumes(ctx context.Context) {
 				zap.String("volume_id", o.VolumeID), zap.Error(err))
 			continue
 		}
-		if err := g.Apps.ForgetVolume(ctx, o.VolumeID); err != nil {
+		if err := g.Apps.ForgetVolume(ctx, o.AppID, o.VolumeID); err != nil {
 			g.Logger.Warn("removed orphaned storage but could not record it",
 				zap.String("volume_id", o.VolumeID), zap.Error(err))
 			continue

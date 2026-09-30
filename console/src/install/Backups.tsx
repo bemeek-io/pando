@@ -12,11 +12,14 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Dialog, EmptyState, Input, Tag } from '@design';
+import { Banner, Button, Dialog, EmptyState, Input, StatusIndicator, Tag } from '@design';
 
 import { api } from '@api/client';
+import type { BackupAttempt } from '@api/types.gen';
 import { Quiet, Screen, messageOf } from './Accounts';
 import { Table } from '../ui/Table';
+import { relative } from '../ui/time';
+import { attemptDetail, attemptLabel, attemptSymbol } from '../ui/backupAttempt';
 
 interface BackupRow {
   id: string;
@@ -34,10 +37,11 @@ export function Backups() {
 
   const backups = useQuery({
     queryKey: ['backups'],
-    queryFn: () => api.get<{ backups: BackupRow[] }>('/backups'),
+    queryFn: () => api.get<{ backups: BackupRow[]; attempts?: BackupAttempt[] }>('/backups'),
   });
 
   const rows = backups.data?.backups ?? [];
+  const attempts = backups.data?.attempts ?? [];
 
   return (
     <Screen
@@ -120,6 +124,56 @@ export function Backups() {
         ]}
         rows={rows}
       />
+
+      {/* Each app's last daily backup, including the ones that did not happen
+          (R-211, issue #87). The table above lists what exists; a backup that
+          was skipped or failed leaves nothing there, and used to leave nothing
+          anywhere but the server log. */}
+      {attempts.length > 0 && (
+        <section
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-3)',
+            marginTop: 'var(--space-6)',
+          }}
+        >
+          <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>Daily app backups</h4>
+          <Quiet>
+            Pando copies the data of every running app that keeps any, once a day. This is the last
+            attempt for each app.
+          </Quiet>
+          <Table
+            columns={[
+              {
+                key: 'app_name',
+                header: 'App',
+                width: 'minmax(0,22ch)',
+                render: (row: BackupAttempt) => row.app_name || row.app_id,
+              },
+              {
+                key: 'outcome',
+                header: 'Last attempt',
+                width: '24ch',
+                render: (row: BackupAttempt) => (
+                  <StatusIndicator
+                    status={attemptSymbol(row)}
+                    label={`${attemptLabel(row)} ${relative(row.attempted_at).toLowerCase()}`}
+                  />
+                ),
+              },
+              {
+                key: 'message',
+                header: 'Details',
+                width: 'minmax(0,1fr)',
+                muted: true,
+                render: (row: BackupAttempt) => attemptDetail(row) || '—',
+              },
+            ]}
+            rows={attempts.map((a) => ({ ...a, id: a.app_id }))}
+          />
+        </section>
+      )}
 
       {taking && <TakeBackup onClose={() => setTaking(false)} />}
       {acting && <UseBackup {...acting} onClose={() => setActing(null)} />}

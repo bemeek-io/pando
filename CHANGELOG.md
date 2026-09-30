@@ -72,6 +72,16 @@ Unreleased above it. -->
   the way GitHub builds it, with the current `github-pages` gem; any other Jekyll site with its own
   Gemfile, without its development and test gems. Either is served at the root of the app's address
   whatever `baseurl` the site sets for GitHub. Detect the app again to get the new build plan.
+- **Daily app backups could silently not happen** (#87). Two apps that each kept a volume with the
+  same name (`data` is common) shared one record of it: the second app was never backed up, the
+  first app's backups copied the second app's data, and the second app lost the protection against
+  recreating a lost volume empty. Each app now has its own record, and Pando repairs existing records
+  from what the runtime reports for each running app within a minute of starting. An app whose configuration was saved without
+  a backup count is now backed up with the default of 7 rather than skipped. A whole-installation
+  backup names each app's volumes separately; older backups still restore.
+- Every daily backup attempt is recorded, and the last one — taken, skipped or failed, with why and
+  what to do — is shown on the app's overview and on **Backups**. The server log says "took a rolling
+  backup" only when one was taken.
 
 ### Upgrade notes
 

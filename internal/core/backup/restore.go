@@ -252,7 +252,7 @@ func (s *Service) restoreEdgeVolume(ctx context.Context, entryName string, r io.
 }
 
 func (s *Service) restoreVolume(ctx context.Context, entryName string, r io.Reader) error {
-	volumeID := strings.TrimSuffix(strings.TrimPrefix(entryName, VolumesPrefix), ".tar")
+	appID, volumeID := parseVolumeEntry(entryName)
 	if volumeID == "" {
 		return nil
 	}
@@ -261,9 +261,11 @@ func (s *Service) restoreVolume(ctx context.Context, entryName string, r io.Read
 	if err != nil {
 		return err
 	}
+	// By app and volume. A bundle taken before entries were named by app
+	// carries only the volume, and is matched on that as it always was.
 	var target *VolumeRef
 	for i := range refs {
-		if refs[i].VolumeID == volumeID {
+		if refs[i].VolumeID == volumeID && (appID == "" || refs[i].AppID == appID) {
 			target = &refs[i]
 			break
 		}
@@ -286,7 +288,7 @@ func (s *Service) restoreVolume(ctx context.Context, entryName string, r io.Read
 
 	handle := api.VolumeHandle{VolumeID: target.VolumeID, Handle: target.Handle}
 	if handle.Handle == "" {
-		created, err := rt.CreateVolume(ctx, api.VolumeRequest{VolumeID: volumeID})
+		created, err := rt.CreateVolume(ctx, api.VolumeRequest{BundleID: target.AppID, VolumeID: volumeID})
 		if err != nil {
 			return err
 		}

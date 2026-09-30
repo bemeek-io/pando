@@ -22,6 +22,7 @@ resolution both here and in the requirements or design doc that owns it.
 | **O-4** | Required vs optional slot detection — the forty-key `.env.example` problem | Has a `[P]` answer that needs measuring, not deciding | Phase 6 |
 | **O-18** | Where a signed apt repository is hosted, so `apt install pando` works without downloading a file first | Costs money or custody of a signing key; neither is an engineering call | Not blocking — the `.deb` is already published |
 | **O-23** | Whether the Cloudflare adapter configures Cloudflare Access in front of an app | A product decision about a second gate Pando does not control; the adapter ships without it | Not blocking — design 03 §4.5 |
+| **O-24** | Whether a stopped app keeps a daily backup, and whether an app that has gone unbacked-up is notified | R-211 says "daily, 7 retained" and does not say what happens while an app is stopped; the sweep backs up only running and degraded apps | Not blocking — issue #87 |
 
 **O-4** has a `[P]` fallback that preserves R-103: default `Required: false` for anything the file
 gives a sample value for, and let the trial run settle it — a slot whose absence crashes the trial run
@@ -386,6 +387,23 @@ Pando should configure it at all. The options:
    step, and a policy that drifts open is invisible to Pando.
 3. **A per-app switch that puts Access in front with an operator-chosen policy**, reported in the plan
    as an addition and never as a replacement for the proxy.
+
+**O-24** was raised by issue #87. The rolling backup sweep (design 05 §6) takes a copy only of apps
+that are `running` or `degraded`. A stopped app's data does not change, so a new copy would hold
+nothing the last one did not — but retention keeps going, and seven days after an app is stopped its
+last rolling backup expires and nothing replaces it. The options:
+
+1. **Leave it.** A stopped app is one somebody chose to stop, and its volume is still on disk (R-204).
+   The cost is that "7 retained" quietly becomes "none" for an app that has been stopped a week.
+2. **Stop expiring the newest rolling backup of an app that is not running**, so there is always one.
+   Nothing extra is taken; one copy outlives its retention on purpose.
+3. **Back up stopped apps too.** Simplest to state, and seven identical copies of data nothing is
+   writing to.
+
+Separately, the issue asks whether an app with storage that has had no backup in more than 48 hours
+should notify its owner. Every attempt is now recorded and shown on the app and on the Backups screen,
+so the question is only whether it should also reach somebody who is not looking. That is a notification
+policy, and R-231 leaves which events notify to be decided.
 
 **O-13 — one clock, not two.** The re-authorization interval is *exactly* the assertion lifetime
 rather than an independently chosen value. Two clocks measuring the same thing drift apart the first
