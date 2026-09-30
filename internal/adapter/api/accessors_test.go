@@ -119,7 +119,10 @@ func (stubBackup) Delete(context.Context, string) error                  { retur
 
 type stubIdentity struct{ base }
 
-func (stubIdentity) Begin(context.Context, string) (*api.Redirect, error) { return nil, nil }
+func (stubIdentity) Begin(context.Context, api.BeginRequest) (*api.Redirect, error) { return nil, nil }
+func (stubIdentity) ServiceMetadata(context.Context, api.Endpoints) (*api.Metadata, error) {
+	return nil, nil
+}
 func (stubIdentity) Authenticate(context.Context, api.Credential) (api.Subject, error) {
 	return api.Subject{}, nil
 }

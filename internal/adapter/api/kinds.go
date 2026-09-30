@@ -17,6 +17,25 @@ type KindInfo struct {
 	// IDPrefix is the prefix an instance's ID conventionally takes, such as
 	// "ai_" — so a form can suggest "ai_anthropic" rather than ask for one.
 	IDPrefix string `json:"id_prefix"`
+
+	// Presets are known providers of this kind — Okta, Microsoft Entra ID —
+	// with the settings each needs filled in, so connecting one is choosing it
+	// rather than knowing its quirks. A form offers them; the settings are the
+	// same ones Fields describes.
+	Presets []Preset `json:"presets,omitempty"`
+}
+
+// Preset is a starting configuration for a known provider.
+type Preset struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+
+	// Help says where in the provider's own console to find what the form
+	// still asks for.
+	Help string `json:"help,omitempty"`
+
+	// Values are settings to fill in, keyed like Fields.
+	Values map[string]string `json:"values,omitempty"`
 }
 
 // Field is one setting.

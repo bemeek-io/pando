@@ -80,7 +80,12 @@ func (a *Adapter) Configure(_ context.Context, raw json.RawMessage) error {
 func (a *Adapter) HealthCheck(context.Context) error { return nil }
 
 // Begin returns nil: this adapter authenticates inline.
-func (a *Adapter) Begin(context.Context, string) (*api.Redirect, error) { return nil, nil }
+func (a *Adapter) Begin(context.Context, api.BeginRequest) (*api.Redirect, error) { return nil, nil }
+
+// ServiceMetadata returns nil: there is no provider to tell about Pando.
+func (a *Adapter) ServiceMetadata(context.Context, api.Endpoints) (*api.Metadata, error) {
+	return nil, nil
+}
 
 // Authenticate verifies a username and password.
 //

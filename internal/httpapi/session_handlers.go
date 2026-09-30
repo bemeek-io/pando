@@ -28,6 +28,22 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Host policy may turn password sign-in off once people sign in through
+	// an identity provider. Refused before the password is checked, so the
+	// answer says nothing about whether it was right.
+	if s.IDP != nil {
+		if err := s.IDP.PasswordSignInAllowed(r.Context()); err != nil {
+			s.audit(r, audit.Event{
+				PrincipalKind: audit.KindAnonymous,
+				Action:        "session.denied",
+				TargetKind:    "user",
+				Detail:        map[string]any{"username": req.Username, "reason": "password_sign_in_disabled"},
+			})
+			Error(w, r, err)
+			return
+		}
+	}
+
 	subject, err := s.Identity.Authenticate(r.Context(), api.Credential{
 		Username: req.Username,
 		Password: secret.New(req.Password),

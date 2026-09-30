@@ -23,6 +23,7 @@ import (
 	"github.com/trypando/pando/internal/core/clock"
 	"github.com/trypando/pando/internal/core/deploy"
 	"github.com/trypando/pando/internal/core/edge"
+	"github.com/trypando/pando/internal/core/idp"
 	"github.com/trypando/pando/internal/core/planner"
 	corepolicy "github.com/trypando/pando/internal/core/policy"
 	"github.com/trypando/pando/internal/core/source"
@@ -49,6 +50,10 @@ type Server struct {
 
 	Identity api.IdentityAdapter
 	Users    *state.Users
+
+	// IDP is external identity: providers, redirect sign-in, linking and
+	// SCIM (issue #51). Nil leaves password sign-in the only way in.
+	IDP      *idp.Service
 	Sessions *state.Sessions
 	Tokens   *state.Tokens
 	Apps     *state.Apps
@@ -317,6 +322,36 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/sessions", s.handleLogin)
 		r.Delete("/sessions", s.handleLogout)
 
+		// Signing in through an external identity provider (R-043). Public:
+		// nobody is signed in yet. Browser navigations, answered with
+		// redirects; design 06 §3.2 has the flow.
+		r.Get("/auth/options", s.handleSignInOptions)
+		r.Get("/auth/providers/{providerID}/start", s.handleSSOStart)
+		r.Get("/auth/providers/{providerID}/callback", s.handleSSOCallback)
+		r.Post("/auth/providers/{providerID}/callback", s.handleSSOCallback)
+		r.Get("/auth/providers/{providerID}/metadata", s.handleSAMLMetadata)
+		r.Get("/auth/complete", s.handleSSOComplete)
+		r.Get("/auth/failures/{flowID}", s.handleSSOFailure)
+
+		// SCIM 2.0 (R-048): a provider's own bearer token, not a Pando one.
+		// The Authenticate middleware leaves this prefix alone.
+		r.Route("/scim/v2", s.scimRoutes)
+
+		// Identity providers: read with install.view, changed with
+		// install.adapters.manage — identity is an adapter category (R-040).
+		r.Route("/identity-providers", func(r chi.Router) {
+			r.Get("/", s.handleListIdentityProviders)
+			r.Post("/", s.handleCreateIdentityProvider)
+			r.Get("/{providerID}", s.handleGetIdentityProvider)
+			r.Patch("/{providerID}", s.handlePatchIdentityProvider)
+			r.Delete("/{providerID}", s.handleDeleteIdentityProvider)
+			r.Post("/{providerID}/check", s.handleCheckIdentityProvider)
+			r.Post("/{providerID}/scim-token", s.handleRotateSCIMToken)
+			r.Delete("/{providerID}/scim-token", s.handleDisableSCIM)
+			r.Get("/{providerID}/test", s.handleTestIdentityProvider)
+			r.Get("/{providerID}/tests/{flowID}", s.handleIdentityProviderTest)
+		})
+
 		// First-run setup (R-046): public, and refused once any account
 		// exists.
 		r.Get("/setup", s.handleGetSetup)
@@ -366,6 +401,12 @@ func (s *Server) Routes() http.Handler {
 			// An administrator's reset of someone else's password (R-046).
 			r.Post("/{userID}/password", s.handleResetPassword)
 
+			// The external identities that sign in to an account, and linking
+			// one — an alias, never a merge (O-1).
+			r.Get("/{userID}/identities", s.handleListIdentities)
+			r.Post("/{userID}/identities", s.handleLinkIdentity)
+			r.Delete("/{userID}/identities", s.handleUnlinkIdentity)
+
 			// The apps an account has something on, and what (R-081).
 			r.Get("/{userID}/apps", s.handleUserApps)
 
@@ -389,6 +430,10 @@ func (s *Server) Routes() http.Handler {
 			r.Put("/{groupID}/role", s.handlePutGroupRole)
 			r.Delete("/{groupID}/role", s.handleDeleteGroupRole)
 			r.Get("/{groupID}/apps", s.handleGroupApps)
+
+			// A provider's group counting as a Pando group's members (R-078).
+			r.Put("/{groupID}/links/{syncedGroupID}", s.handleLinkGroup)
+			r.Delete("/{groupID}/links/{syncedGroupID}", s.handleUnlinkGroup)
 			r.Delete("/{groupID}", s.handleDeleteGroup)
 		})
 

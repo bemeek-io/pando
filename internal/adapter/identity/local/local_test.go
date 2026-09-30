@@ -96,7 +96,7 @@ func TestR047_AdapterDeclaresItsOwnSessionPolicy(t *testing.T) {
 }
 
 func TestBeginIsNilForAnInlineAdapter(t *testing.T) {
-	r, err := local.New(fixture(t)).Begin(context.Background(), "/")
+	r, err := local.New(fixture(t)).Begin(context.Background(), api.BeginRequest{})
 	require.NoError(t, err)
 	require.Nil(t, r, "an inline adapter has nowhere to redirect")
 }

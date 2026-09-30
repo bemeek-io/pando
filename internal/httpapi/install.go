@@ -113,7 +113,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 // one shape, so that a client reading one account does not need the list to
 // learn what role it holds.
 func accountView(u state.User, installRoleID string) map[string]any {
-	return map[string]any{
+	v := map[string]any{
 		"id":                   u.ID,
 		"adapter_id":           u.AdapterID,
 		"external_id":          u.ExternalID,
@@ -128,6 +128,12 @@ func accountView(u state.User, installRoleID string) map[string]any {
 		// client, and only one of them is an answer.
 		"install_role_id": installRoleID,
 	}
+	// An account whose identities were moved to another (O-1). Present only
+	// on those, so the console can say which account replaced it.
+	if u.AliasOf != "" {
+		v["alias_of"] = u.AliasOf
+	}
+	return v
 }
 
 // handleListRoles returns roles, read from the database rather than the Go
@@ -350,6 +356,20 @@ func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Turning password sign-in off with no identity provider on would leave
+	// nobody able to sign in (issue #51).
+	if s.IDP != nil {
+		before, err := s.PolicyStore.Load(r.Context())
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		if err := s.IDP.ValidatePolicy(r.Context(), before.DisablePasswordSignIn, doc.DisablePasswordSignIn); err != nil {
+			Error(w, r, err)
+			return
+		}
+	}
+
 	if err := s.PolicyStore.Save(r.Context(), doc, p.ID); err != nil {
 		Error(w, r, err)
 		return
@@ -364,7 +384,8 @@ func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 		Action:        "policy.update",
 		TargetKind:    "policy",
 		TargetID:      "host",
-		Detail:        map[string]any{"disabled_verbs": doc.DisabledVerbs},
+		Detail: map[string]any{"disabled_verbs": doc.DisabledVerbs,
+			"disable_password_sign_in": doc.DisablePasswordSignIn, "disable_jit_provisioning": doc.DisableJITProvisioning},
 	})
 	JSON(w, http.StatusOK, doc)
 }

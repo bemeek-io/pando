@@ -29,6 +29,8 @@ import (
 	backuplocal "github.com/trypando/pando/internal/adapter/backup/local"
 	buildkitadapter "github.com/trypando/pando/internal/adapter/builder/buildkit"
 	"github.com/trypando/pando/internal/adapter/identity/local"
+	oidcidentity "github.com/trypando/pando/internal/adapter/identity/oidc"
+	samlidentity "github.com/trypando/pando/internal/adapter/identity/saml"
 	notifyconsole "github.com/trypando/pando/internal/adapter/notify/console"
 	"github.com/trypando/pando/internal/adapter/registry/ociprobe"
 	"github.com/trypando/pando/internal/adapter/routing/cloudflare"
@@ -52,6 +54,7 @@ import (
 	"github.com/trypando/pando/internal/core/deploy"
 	"github.com/trypando/pando/internal/core/detection"
 	"github.com/trypando/pando/internal/core/edge"
+	"github.com/trypando/pando/internal/core/idp"
 	"github.com/trypando/pando/internal/core/planner"
 	corepolicy "github.com/trypando/pando/internal/core/policy"
 	"github.com/trypando/pando/internal/core/reconciler"
@@ -328,6 +331,30 @@ func serve(ctx context.Context, configPath string) error {
 	secretsAdapter, _ := registry.Secrets(secretsRef)
 	secrets := state.NewSecrets(db, secretsAdapter, secretsRef)
 
+	// External identity (issue #51). Unlike other adapter categories, a
+	// provider is built from its stored row when first used and rebuilt when
+	// it changes, so connecting one does not need a restart. The kinds are
+	// compiled in, like everything else (R-253).
+	identityService := &idp.Service{
+		Providers:   state.NewIdentityProviders(db),
+		Credentials: state.NewIdentityCredentials(db, secretsAdapter, secretsRef),
+		Identities:  state.NewIdentities(db),
+		Users:       users,
+		Sessions:    sessions,
+		Groups:      state.NewGroups(db),
+		Flows:       state.NewSSOFlows(db),
+		SCIMUsers:   state.NewSCIMUsers(db),
+		SCIMGroups:  state.NewSCIMGroups(db),
+		Policy:      policyStore,
+		Local:       identity,
+		Kinds: map[string]idp.Kind{
+			oidcidentity.Kind: {New: func() adapterapi.IdentityAdapter { return oidcidentity.New() }, Info: oidcidentity.Info()},
+			samlidentity.Kind: {New: func() adapterapi.IdentityAdapter { return samlidentity.New() }, Info: samlidentity.Info()},
+		},
+		Audit: httpapi.AuditFunc(auditor),
+		Clock: clock.System{},
+	}
+
 	// Backup and disaster recovery (Sequence D). The service does the work; the
 	// store records what it produced, and the record outlives the thing it
 	// records (R-204).
@@ -476,6 +503,7 @@ func serve(ctx context.Context, configPath string) error {
 	if err != nil {
 		return err
 	}
+	identityService.ExternalURL = externalURL
 	if externalURL == nil {
 		logger.Info("no external URL configured; session cookies are marked Secure only when Pando itself serves TLS",
 			zap.String("setting", "PANDO_SERVER_EXTERNAL_URL"))
@@ -551,6 +579,7 @@ func serve(ctx context.Context, configPath string) error {
 		Sources:  sources,
 		DB:       db,
 		Identity: identity,
+		IDP:      identityService,
 		Users:    users,
 		Sessions: sessions,
 		Tokens:   tokens,

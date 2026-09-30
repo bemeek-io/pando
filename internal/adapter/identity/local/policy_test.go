@@ -58,7 +58,7 @@ func TestConfigureRefusesADurationItCannotRead(t *testing.T) {
 
 // This adapter authenticates inline: there is nowhere to redirect to.
 func TestBeginRedirectsNowhere(t *testing.T) {
-	redirect, err := local.New(nil).Begin(context.Background(), "/apps")
+	redirect, err := local.New(nil).Begin(context.Background(), api.BeginRequest{})
 	require.NoError(t, err)
 	require.Nil(t, redirect)
 }
