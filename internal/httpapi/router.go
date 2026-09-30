@@ -20,6 +20,7 @@ import (
 	"github.com/trypando/pando/internal/core/audit"
 	"github.com/trypando/pando/internal/core/authz"
 	"github.com/trypando/pando/internal/core/backup"
+	"github.com/trypando/pando/internal/core/clock"
 	"github.com/trypando/pando/internal/core/deploy"
 	"github.com/trypando/pando/internal/core/edge"
 	"github.com/trypando/pando/internal/core/planner"
@@ -104,6 +105,10 @@ type Server struct {
 	Logs       *deploy.LogStore
 	Secrets    *state.Secrets
 	Detections *state.Detections
+
+	// Clock times a detection wait and how long one has been running. Nil is
+	// the system clock.
+	Clock clock.Clock
 
 	// Detector runs detection for an app. Nil on an install with no builder or
 	// runtime configured, in which case the detection endpoints say so rather

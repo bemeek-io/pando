@@ -32,6 +32,18 @@ type Detection struct {
 	UpdatedAt time.Time         `json:"updated_at"`
 }
 
+// DetectionSummary is where an app's detection has got to, without the
+// proposal: enough for an app's own page and the app list to say why a draft
+// is still a draft (issue #80).
+type DetectionSummary struct {
+	Status string `json:"status"`
+	// Stage is the step a running detection is on (detect.StageFetching and
+	// the rest). Empty once it has finished.
+	Stage     string    `json:"stage,omitempty"`
+	StartedAt time.Time `json:"started_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // Detections stores detection proposals.
 type Detections struct{ db *DB }
 
@@ -145,6 +157,39 @@ func (d *Detections) Get(ctx context.Context, appID string) (Detection, error) {
 	}
 	if commit != nil {
 		out.Commit = *commit
+	}
+	return out, nil
+}
+
+// Summaries returns the detection summary of each of apps that has been
+// through detection, keyed by app ID. An app that never has — one created
+// from a spec — is absent.
+func (d *Detections) Summaries(ctx context.Context, appIDs []string) (map[string]DetectionSummary, error) {
+	out := make(map[string]DetectionSummary, len(appIDs))
+	if len(appIDs) == 0 {
+		return out, nil
+	}
+	rows, err := d.db.Query(ctx, `
+		SELECT app_id, status, COALESCE(body->>'stage', ''), started_at, updated_at
+		FROM detections WHERE app_id = ANY($1)
+	`, appIDs)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the detection results.", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var appID string
+		var s DetectionSummary
+		if err := rows.Scan(&appID, &s.Status, &s.Stage, &s.StartedAt, &s.UpdatedAt); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the detection results.", err)
+		}
+		if s.Status != DetectionRunning {
+			s.Stage = ""
+		}
+		out[appID] = s
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the detection results.", err)
 	}
 	return out, nil
 }

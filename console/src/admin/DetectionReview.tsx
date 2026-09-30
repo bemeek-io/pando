@@ -75,17 +75,43 @@ export interface DetectionResponse {
   address?: string;
 }
 
+/**
+ * How long each read of a running detection waits for it to move on. Under the
+ * server's own limit of 60 seconds (detection.MaxWait).
+ */
+const DETECTION_WAIT_SECONDS = 25;
+
+/**
+ * Reads an app's detection. While the last reading was still running, it is a
+ * long poll: GET /detection?wait= is answered as soon as detection reaches a
+ * new stage or finishes — the same wait `pando app detection --wait` and
+ * pando_get_detection use (R-261, issue #80) — so a stage shows as it
+ * happens rather than up to a polling interval late.
+ */
+export function fetchDetection(appID: string, previous: DetectionResponse | undefined) {
+  const wait = previous?.status === 'running' ? `?wait=${DETECTION_WAIT_SECONDS}` : '';
+  return api.get<DetectionResponse>(`/apps/${appID}/detection${wait}`);
+}
+
+/**
+ * Asks again straight after each answer while detection runs: each ask waits
+ * on the server, so this only has to be short. A tick that lands while one is
+ * still waiting joins it rather than sending another. Stops once finished.
+ */
+export const refetchWhileRunning = (query: { state: { data?: DetectionResponse } }) =>
+  query.state.data?.status === 'running' ? 500 : false;
+
 export function DetectionReview({ appID, reviewed }: { appID: string; reviewed: boolean }) {
   const queries = useQueryClient();
   const canEdit = useCan(AppVerb.SpecEdit);
 
   const detection = useQuery({
     queryKey: ['apps', appID, 'detection'],
-    queryFn: () => api.get<DetectionResponse>(`/apps/${appID}/detection`),
-    // Detection runs in the background after an app is created, so this polls
-    // until it settles rather than asking the user to reload.
-    refetchInterval: (query) =>
-      query.state.data?.status === 'running' ? 2_000 : false,
+    queryFn: () =>
+      fetchDetection(appID, queries.getQueryData<DetectionResponse>(['apps', appID, 'detection'])),
+    // Detection runs in the background after an app is created, so this
+    // waits until it settles rather than asking the user to reload.
+    refetchInterval: refetchWhileRunning,
   });
 
   const answer = useMutation({

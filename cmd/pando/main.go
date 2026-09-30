@@ -70,8 +70,10 @@ import (
 
 func main() {
 	if err := rootCmd().Execute(); err != nil {
-		// Cobra has already printed the error.
-		os.Exit(1)
+		// Cobra has already printed the error. The code is 1 unless the
+		// command asked for another: `pando app detection --wait` exits 2 when
+		// a person has questions to answer.
+		os.Exit(cli.ExitCodeOf(err))
 	}
 	if restartRequested.Load() {
 		reexec()

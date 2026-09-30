@@ -52,7 +52,14 @@ import { Loading } from '../ui/Loading';
 import { ScoreBadge } from '../ui/ScoreBadge';
 import { Security } from './Security';
 import { deletePath } from './delete-app';
-import { Blocked, DetectionFailed, Failure, type DetectionResponse } from './DetectionReview';
+import {
+  Blocked,
+  DetectionFailed,
+  Failure,
+  fetchDetection,
+  refetchWhileRunning,
+  type DetectionResponse,
+} from './DetectionReview';
 import {
   COMPOSE_REWRITTEN,
   aiFrom,
@@ -143,9 +150,11 @@ export function AppOnboarding({
   // The same key DetectionReview uses, so the two never disagree about one app.
   const detection = useQuery({
     queryKey: ['apps', appID, 'detection'],
-    queryFn: () => api.get<DetectionResponse>(`/apps/${appID}/detection`),
-    // Polled while running: the page builds from whatever has been found so far.
-    refetchInterval: (query) => (query.state.data?.status === 'running' ? 2_000 : false),
+    queryFn: () =>
+      fetchDetection(appID, queries.getQueryData<DetectionResponse>(['apps', appID, 'detection'])),
+    // Waited on while running, a stage at a time: the page builds from
+    // whatever has been found so far.
+    refetchInterval: refetchWhileRunning,
   });
 
   // The variables form. Edits are held by variable, not as a copy of the rows,

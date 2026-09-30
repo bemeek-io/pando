@@ -209,10 +209,14 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 			}
 			var out struct {
 				Apps []struct {
-					ID    string `json:"id"`
-					Name  string `json:"name"`
-					Slug  string `json:"slug"`
-					State string `json:"state"`
+					ID        string `json:"id"`
+					Name      string `json:"name"`
+					Slug      string `json:"slug"`
+					State     string `json:"state"`
+					Detection *struct {
+						Status string `json:"status"`
+						Stage  string `json:"stage"`
+					} `json:"detection"`
 				} `json:"apps"`
 			}
 			if err := c.Do("GET", "/apps", nil, &out); err != nil {
@@ -221,7 +225,16 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 
 			t := table(cmd.OutOrStdout(), "NAME", "STATE", "ID")
 			for _, a := range out.Apps {
-				fmt.Fprintf(t, "%s\t%s\t%s\n", a.Name, a.State, a.ID)
+				state := a.State
+				// A draft says why it is still one (issue #80).
+				if a.State == "draft" && a.Detection != nil {
+					why := a.Detection.Status
+					if a.Detection.Stage != "" {
+						why += ", " + a.Detection.Stage
+					}
+					state += " (detection " + why + ")"
+				}
+				fmt.Fprintf(t, "%s\t%s\t%s\n", a.Name, state, a.ID)
 			}
 			return t.Flush()
 		},
@@ -249,10 +262,18 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 				return err
 			}
 			// 202: the app exists in draft and detection has been queued.
-			// Saying so is the difference between waiting and wondering.
+			// Saying so is the difference between waiting and wondering —
+			// and pointing at the command that says when it is done, rather
+			// than at one that does not (issue #80).
+			id, _ := app["id"].(string)
+			if wait, _ := cmd.Flags().GetBool("wait"); wait {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Created %s (%s). Working out how to run it...\n", name, id)
+				timeout, _ := cmd.Flags().GetDuration("timeout")
+				return c.waitAndReport(cmd, id, timeout)
+			}
 			fmt.Fprintf(cmd.OutOrStdout(),
-				"Created %s (%s). Pando is working out how to run it — `pando app show %s` when you're ready.\n",
-				name, app["id"], app["id"])
+				"Created %s (%s). Pando is working out how to run it — `pando app detection %s --wait` to wait for it.\n",
+				name, id, id)
 			return nil
 		},
 	}
@@ -262,7 +283,10 @@ func appCmd(client func() (*Client, error)) *cobra.Command {
 	// --name` was rejected as an unknown flag and `app list --name` quietly
 	// accepted one it ignores.
 	add.Flags().String("name", "", "name for the app (defaults to the repository name)")
+	add.Flags().Bool("wait", false, "wait for detection to finish, as `pando app detection --wait` does")
+	add.Flags().Duration("timeout", detectionTimeout, "with --wait, how long to wait before giving up")
 	cmd.AddCommand(add)
+	cmd.AddCommand(appDetectionCmd(client))
 
 	del := &cobra.Command{
 		Use:   "delete <app>",
@@ -692,54 +716,24 @@ func (c *Client) prepareUploadedApp(cmd *cobra.Command, appID string, env []stri
 	}
 	fmt.Fprintln(cmd.ErrOrStderr(), "Working out how to run it...")
 
-	type detection struct {
-		Status    string `json:"status"`
-		Detection struct {
-			Questions []struct {
-				Key      string   `json:"key"`
-				Question string   `json:"question"`
-				Valid    string   `json:"valid_answer"`
-				Deferred bool     `json:"deferred"`
-				Options  []string `json:"options"`
-			} `json:"questions"`
-			Winner struct {
-				Detector string `json:"detector"`
-				Strategy string `json:"strategy"`
-			} `json:"winning_bid"`
-		} `json:"detection"`
-		Answers map[string]string `json:"answers"`
+	// Waited on the way `pando app detection --wait` waits, reporting each
+	// stage as it is reached (issue #80).
+	d, err := c.awaitDetection(appID, detectionTimeout, func(stage string) {
+		if stage != "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "  %s...\n", stagePhrase(stage))
+		}
+	})
+	if err != nil {
+		return err
 	}
 
-	deadline := time.Now().Add(10 * time.Minute)
-	var d detection
-	for {
-		if err := c.Do("GET", "/apps/"+appID+"/detection", nil, &d); err != nil {
-			return err
-		}
-		if d.Status != "running" && d.Status != "pending" && d.Status != "" {
-			break
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("detection is still running after 10 minutes — check `pando app show %s`", appID)
-		}
-		time.Sleep(2 * time.Second)
-	}
-
-	if d.Status == "failed" {
+	if d.Status == "failed" || d.Status == "blocked" {
+		printDetection(cmd.ErrOrStderr(), appID, d)
 		return fmt.Errorf("pando could not work out how to run this directory — "+
-			"run `pando app show %s` to see what it found", appID)
+			"run `pando app detection %s` to see what it found", appID)
 	}
 
-	var open []string
-	for _, q := range d.Detection.Questions {
-		if q.Deferred {
-			continue
-		}
-		if _, answered := d.Answers[q.Key]; !answered {
-			open = append(open, q.Question)
-		}
-	}
-	if len(open) > 0 {
+	if open := d.openQuestions(); len(open) > 0 {
 		fmt.Fprintln(cmd.ErrOrStderr())
 		fmt.Fprintln(cmd.ErrOrStderr(), "Pando needs to know a few things before it can deploy this:")
 		for _, q := range open {

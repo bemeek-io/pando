@@ -21,6 +21,12 @@ Unreleased above it. -->
 
 ### Added
 
+- Waiting for detection (#80). `GET /apps/{id}/detection?wait=30` answers as soon as detection
+  reaches a new stage or finishes, and while it runs says which stage it is on and for how long.
+  `pando app detection <app> --wait` prints each stage and exits 0 when the app is ready to accept,
+  2 when there are questions to answer and 1 when detection failed or was blocked; `pando app add
+  --wait` does the same. MCP's `pando_get_detection` takes `wait_seconds`. Apps in `GET /apps`,
+  `GET /apps/{id}` and `pando app list` say where their detection is, so a draft says why.
 - Who used an app is in the audit log: `app.use`, once per visit (a browser session, or a token's use
   within twelve hours), with the first page visited. Visitors who are not signed in are recorded too,
   with the address Pando saw; host policy's **Don't record visits from people who aren't signed in**
@@ -54,6 +60,8 @@ Unreleased above it. -->
 
 ### Fixed
 
+- **`pando deploy <dir>` printed blank lines where detection's questions belonged.** It read a field
+  the server never sends. The questions are now printed exactly as Pando wrote them.
 - **A static site's pages redirected to the wrong port.** Opening a folder without its trailing slash
   (`/solutions`) on an app reached at an address with a port, such as `localhost:9001`, sent the
   browser to the same path on port 80, where nothing answers (#67). The redirect now keeps the
