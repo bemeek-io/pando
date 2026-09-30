@@ -72,6 +72,12 @@ Unreleased above it. -->
 
 ### Fixed
 
+- **Redeploying an unchanged source ran the security scan again** (#84). A deploy of a commit,
+  image or uploaded archive that already has a successful scan by the configured scanner uses that
+  scan and says so in the deploy log ("Using the security scan of … (source unchanged)"). That
+  includes a new revision of the same source, which used to be refused as never scanned where a
+  minimum score was set, and every `pando deploy .` of an unchanged directory. A scan that failed,
+  or one by a different scanner, is not reused. "Scan now" in app settings always scans.
 - **A Laravel app failed to build.** Laravel 13 needs PHP 8.3, the build installed an older PHP, and
   the build log said only `syntax error, unexpected token "{"` (#58). A Laravel app is now built on
   the newest PHP its `composer.json` allows, with the extensions it requires, its Vite assets built,
