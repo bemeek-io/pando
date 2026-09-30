@@ -10,7 +10,7 @@ specify it, the phase that builds it, and the tests that prove it. Test coverage
 | | Count | Of total |
 |---|---:|---:|
 | Requirements | 242 | — |
-| Specified in a design doc | 199 | 82% |
+| Specified in a design doc | 200 | 82% |
 | Assigned to a phase | 137 | 56% |
 | Covered by a named test | 158 | 65% |
 
@@ -131,7 +131,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-117** | P | Build filesystem is discarded after the build. | 8. Build | 03, 07 | 04 | — |
 | **R-118** | P | Build egress defaults to open, on the grounds that build output is reviewed before it runs. | 8. Build | 01, 03, 07 | 04 | — |
 | **R-119** | P | Build timeout: 30 minutes, per-app override. | 8. Build | 01 | 04 | — |
-| **R-120** | P | Deploy pins a commit SHA. | 8. Build | 01, 07, 10 | 02, 04 | `TestR120_APinnedCommitWinsOverTheBranchHead`, `TestR120_DeployPinsACommit`, `TestR120_PreparingARevisionPinsTheCommitItWillBuild` |
+| **R-120** | P | Deploy pins a commit SHA. | 8. Build | 01, 07, 09, 10 | 02, 04 | `TestR120_ACommitNamesACheckoutBeforeAnyDigest`, `TestR120_APinnedCommitWinsOverTheBranchHead`, `TestR120_DeployPinsACommit`, `TestR120_PreparingARevisionPinsTheCommitItWillBuild` |
 | **R-130** | D | An environment variable in `.env.example` is a hole with a type. | 9. Slots and Services | 03 | — | `TestR130_AValueIsNotADependency`, `TestR130_AVariableNobodyFilledInIsNotSetToNothing` |
 | **R-131** | D | A slot is resolved exactly three ways, chosen by the user: | 9. Slots and Services | 03, 04, 07 | 02, 06 | `TestR131_AComposeDatabaseArrivesAlreadyFilled`, `TestR131_AComposeDatabaseBecomesTheOnePandoProvisions`, `TestR131_AProvisionedDatabaseKeepsItsCredentialsAcrossDeploys`, `TestR131_AProvisionedSlotReachesTheWorkloadAsAValue`, `TestR131_AnUnprovisionableTypeIsRefused`, `TestR131_ProvisionFillsASlotWithSomethingRunnable`, `TestR131_ProvisioningStandsUpADatabaseTheAppCanReach`, `TestR131_ProvisioningWhatPandoDoesNotProvisionIsRefused`, `TestR131_ProvisioningWithNoProvisionerIsRefusedAtPlanTime`, `TestR131_RedeployingKeepsTheDatabaseTheAppAlreadyHas`, `TestR131_RedeployingReusesTheCredentialsTheDataWasCreatedWith`, `TestR131_ServicesForResolvesBySlotTypeNotByReference` |
 | **R-132** | D | Resolution is never silent. | 9. Slots and Services | 00, 01, 04, 05, 07, 08, 10 | 02, 03, 06 | `TestR132_ALaravelAppAsksForItsKey`, `TestR132_ANameTwoEnvFileTemplatesLeaveEmptyIsAskedForOnce`, `TestR132_ARailsAppKeepsTheValuesItAlreadyDeclares`, `TestR132_ARailsAppRunsInProductionAndAsksForItsSecret`, `TestR132_AScreenerMayFillAValueTheDeployWaitsOn`, `TestR132_AValueSetDuringReviewFillsItsSlot`, `TestR132_AnOptionalSlotLeftEmptyLeavesItsVariableUnset`, `TestR132_AnsweringMayFillTheValuesTheDeployWaitsOn`, `TestR132_EveryUnfilledSlotIsNamed`, `TestR132_FillingTwoSlotsKeepsBoth`, `TestR132_OnlyALaravelAppIsAskedForAKey`, `TestR132_PlanningAPinnedSpecReportsWhatIsMissingAtPlanTime`, `TestR132_ReviewCanKeepASlotValuePlainOrMarkASlotOptional`, `TestR132_SlotUnfilledCarriesRemedyAndDetails`, `TestR132_UnfilledRequiredSlotBlocksDeploy` |
@@ -250,7 +250,7 @@ philosophy, deferred, or a real gap, and the difference should be stated rather 
 | **R-296** | D | This does not violate R-010. | 22. Per-User Instances [LATER] | — | — | — |
 | **R-310** | D | Every app has a security score: a whole number from 0 to 100. | 23. Security Scanning | 08, 09 | — | `TestR310_AScanInProgressIsVisibleWhoeverStartedIt`, `TestR310_AScanIsRunningUntilTheLastOfItsScansEnds`, `TestR310_TheScoreIsReadableByAnyoneWhoCanSeeTheApp` |
 | **R-311** | D | The score comes from scanning what the app actually deploys — the image that was | 23. Security Scanning | — | — | `TestR311_ScanningAnImageReportsWhatIsInIt`, `TestR311_ScanningSourceFindsWhatNeverReachesAnImage` |
-| **R-312** | D | An app is scanned whenever what it runs changes, which means on every deploy, and | 23. Security Scanning | — | — | `TestR312_ADeployOfAScannedCommitDoesNotScanItAgain`, `TestR312_ADeployOfAScannedCommitUsesThatScan`, `TestR312_AcceptingAProposalDoesNotHideTheScanTakenAtDiscovery`, `TestR312_ScanningAnAppWhoseUploadIsGoneSaysHowToSendItAgain` |
+| **R-312** | D | An app is scanned whenever what it runs changes — on every deploy that changes the | 23. Security Scanning | 09 | — | `TestR312_ADeployOfAScannedCommitDoesNotScanItAgain`, `TestR312_ADeployOfAScannedCommitUsesThatScan`, `TestR312_ARedeployOfAnUnchangedSourceIsScoredByItsScan`, `TestR312_AReusedScanDescribesTheNewRevision`, `TestR312_AcceptingAProposalDoesNotHideTheScanTakenAtDiscovery`, `TestR312_AnUploadIsKnownByItsArchive`, `TestR312_ScanningAnAppWhoseUploadIsGoneSaysHowToSendItAgain`, `TestR312_UnchangedImageIsNotRescanned` |
 | **R-313** | P | The score is derived from findings by severity, starting at 100 and deducting per | 23. Security Scanning | 09 | — | `TestR313_OneCriticalCostsMoreThanFiftyLows`, `TestR313_PolicyMayCountOnlyWhatCanBeFixed` |
 | **R-314** | D | Host policy may set a minimum score, 0 to 100. | 23. Security Scanning | 09 | — | `TestR314_AReusedScanStillFacesTheThreshold`, `TestR314_ATresholdOnlyBitesWhenThereIsSomethingToEnforceIt` |
 | **R-315** | D | **An app that is already running when it falls below the threshold is not stopped on | 23. Security Scanning | 09 | — | `TestR315_AnAppThatFallsBelowIsWarnedAndNotStopped`, `TestR315_WarnOnlyNeverStops` |
@@ -306,7 +306,6 @@ Check each against the categories above before treating it as a gap.
 - **R-295** (22. Per-User Instances [LATER]) — The cold-start path needs specification: a first request arrives with nothing running, and…
 - **R-296** (22. Per-User Instances [LATER]) — This does not violate R-010.
 - **R-311** (23. Security Scanning) — The score comes from scanning what the app actually deploys — the image that was
-- **R-312** (23. Security Scanning) — An app is scanned whenever what it runs changes, which means on every deploy, and
 - **R-300** (26. Licensing and Governance) — AGPL, dual-licensed with commercial exceptions available.
 - **R-301** (26. Licensing and Governance) — A CLA is required from the first outside contribution, implemented with CLA Assistant as a…
 - **R-302** (26. Licensing and Governance) — Rationale for starting here: AGPL → MIT is reversible; MIT → AGPL is not.

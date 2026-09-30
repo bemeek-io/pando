@@ -521,6 +521,7 @@ export interface Scan {
   findings: (Finding[] | null);
   error?: string;
   ran_at: string;
+  reused_from?: string;
 }
 
 export interface Counts {
