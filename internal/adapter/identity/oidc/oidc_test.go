@@ -253,3 +253,16 @@ func TestOIDCPresetsNameOnlyRealFields(t *testing.T) {
 		}
 	}
 }
+
+// TestR050_WithoutPushTheSessionLifetimeIsTheRevocationWindow asserts R-050:
+// an adapter that cannot learn of a revocation declares expiry-only, with the
+// session lifetime it was configured with as the window core reports. Core
+// upgrades it to push only when SCIM is on (TestR048_ASCIMTokenIsOnlyASCIMToken).
+func TestR050_WithoutPushTheSessionLifetimeIsTheRevocationWindow(t *testing.T) {
+	a := oidc.New()
+	require.NoError(t, a.Configure(context.Background(),
+		json.RawMessage(`{"issuer":"https://idp.example.com","client_id":"x","session_max_lifetime":"4h"}`)))
+	p := a.SessionPolicy()
+	require.Equal(t, api.RevocationExpiryOnly, p.RevocationMode)
+	require.Equal(t, 4*time.Hour, p.MaxLifetime)
+}

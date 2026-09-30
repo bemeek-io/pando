@@ -24,26 +24,53 @@ R-020 makes this store the sole record of how every app runs, which sets the bar
 CREATE TABLE identity_adapters (
     id            text PRIMARY KEY,          -- idp_...
     kind          text NOT NULL,             -- local | oidc | saml | github
-    name          text NOT NULL,
-    config        jsonb NOT NULL DEFAULT '{}',
+    name          text NOT NULL,             -- unique, ignoring case: the sign-in page's button
+    config        jsonb NOT NULL DEFAULT '{}',   -- never a secret: CHECK refuses credentials/client_secret/scim_token
     enabled       boolean NOT NULL DEFAULT true,
+    jit_provisioning boolean NOT NULL DEFAULT false,  -- make an account at a first sign-in
+    link_by_email    boolean NOT NULL DEFAULT false,  -- link a first sign-in by verified email (O-1)
+    scim_token_hash  text,                   -- SHA-256 of the SCIM bearer token; NULL = SCIM off
+    scim_token_created_at timestamptz,
+    scim_identity_attribute text,            -- externalId | userName; NULL = the kind's default
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE identity_adapter_credentials (   -- an OIDC client secret, sealed (R-190)
+    adapter_id    text NOT NULL REFERENCES identity_adapters(id) ON DELETE CASCADE,
+    field         text NOT NULL,
+    adapter_ref   text NOT NULL,             -- the secrets adapter that sealed it
+    ciphertext    bytea,
+    external_ref  text,
+    PRIMARY KEY (adapter_id, field)
+);
+
 CREATE TABLE users (
     id            text PRIMARY KEY,          -- usr_...
-    adapter_id    text NOT NULL REFERENCES identity_adapters(id),
+    adapter_id    text NOT NULL REFERENCES identity_adapters(id),   -- the originating adapter (R-045)
     external_id   text NOT NULL,             -- subject as the adapter knows them
     email         text,
     display_name  text,
     status        text NOT NULL,             -- active | suspended | deleted  (R-049)
+    suspended_by  text,                      -- admin | scim:<idp> | alias
+    alias_of      text REFERENCES users(id), -- identities moved to another account (O-1)
     password_hash text,                      -- local adapter only, argon2id
     must_change_password boolean NOT NULL DEFAULT false,
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now(),
     deleted_at    timestamptz,
-    UNIQUE (adapter_id, external_id)
+    UNIQUE (adapter_id, external_id),
+    CHECK (alias_of IS NULL OR status <> 'active')
+);
+
+CREATE TABLE user_identities (
+    adapter_id    text NOT NULL REFERENCES identity_adapters(id),
+    external_id   text NOT NULL,             -- the provider's stable ID for the person
+    user_id       text NOT NULL REFERENCES users(id),
+    scim_user_name text, scim_external_id text, scim_resource jsonb,  -- what a SCIM client said
+    last_sign_in_at timestamptz,
+    created_by    text NOT NULL,
+    PRIMARY KEY (adapter_id, external_id)    -- one identity reaches one account
 );
 ```
 
@@ -51,10 +78,16 @@ CREATE TABLE users (
 
 **[D]** `status` is three-valued because suspended is not deleted (R-049, R-282). Destruction rules (R-280) fire on `deleted`, never on `suspended`.
 
-**[D] Resolved (O-1): linking aliases, it never merges.** No identity linking in v1. When it lands it
-is a `user_identities` join table and `users.adapter_id`/`external_id` move there — but the constraint
-that matters is what linking may *do*, and it has to be decided now because getting it wrong later is
-unrecoverable.
+**[D]** `suspended_by` says who suspended an account, because a SCIM client that re-sends
+`active: true` on every cycle — Entra does, every forty minutes — must lift only a suspension it made,
+never one an administrator made.
+
+**[D] Resolved (O-1): linking aliases, it never merges.** Shipped with issue #51. Every identity an
+external provider vouches for — the one an account came from and any linked to it — is a row in
+`user_identities`, and an external sign-in resolves through that table alone; its primary key is what
+makes one identity reach exactly one account. `users.adapter_id`/`external_id` stay as the record of
+where the account came from (R-045). Local accounts are not listed there: their identity is their
+username, which a person may change, and the local adapter resolves it as it always has.
 
 Linking a second identity to a user attaches an alias. It does **not** merge two `users` rows, and
 `users.id` never changes and is never retired. Merging is the obvious implementation and it breaks
@@ -62,10 +95,12 @@ R-054: `users.id` is the assertion `sub` claim, apps key their data on it, and P
 reach into an app and rewrite the rows it stored under the losing ID. A merge would silently orphan a
 person's data inside every app they had ever used.
 
-So: an admin linking `alice@corp` (OIDC) to an existing local `alice` picks which `users.id` survives
-as primary, every linked identity authenticates *to* that primary, and assertions always carry the
-primary. The unlinked-from row is marked as an alias, never deleted — a deletion would free its
-`external_id` for reuse by a different human.
+So: an administrator linking `alice@corp` (OIDC) to an existing local `alice` moves the identity row to
+her account, and from then on that identity authenticates *to* it and assertions carry her ID. If the
+identity already reached another account (a just-in-time account, say) and that was its only way in,
+that account becomes an alias — `alias_of` set, suspended, sessions ended — and is never deleted: a
+deletion would free its `external_id` for reuse by a different human, and apps may hold data under its
+ID. Linking by email is per provider, off by default, and only on an email the provider vouches for.
 
 ```sql
 CREATE TABLE groups (
@@ -82,9 +117,28 @@ CREATE TABLE group_members (
     user_id       text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     PRIMARY KEY (group_id, user_id)
 );
+
+CREATE TABLE group_links (                 -- a provider's group feeding a Pando group (R-078)
+    synced_group_id text NOT NULL REFERENCES groups(id) ON DELETE CASCADE,  -- adapter_id NOT NULL
+    group_id        text NOT NULL REFERENCES groups(id) ON DELETE CASCADE,  -- adapter_id IS NULL
+    PRIMARY KEY (synced_group_id, group_id)
+);
+
+CREATE VIEW effective_group_members AS     -- what authorization reads
+    SELECT group_id, user_id FROM group_members
+    UNION
+    SELECT l.group_id, m.user_id FROM group_links l JOIN group_members m ON m.group_id = l.synced_group_id;
 ```
 
 **[D]** Membership is read live at authorization time (R-079). It is never denormalized into grants.
+
+**[D]** A group with an `adapter_id` is **synced**: the provider owns its membership, through the
+groups claim of each sign-in or through SCIM (when SCIM is on for the provider, it alone). Pando owns
+what the group can do. `group_links` lets a provider's group stand in for a Pando-made one: its
+members count as that group's members, through the `effective_group_members` view, which every query
+asking "which groups is this person in" reads — the authorizer, the apps lists and the R-088 lockout
+checks — so linking cannot give a different answer in one place than another. A trigger holds the
+direction: synced to Pando-made, never the reverse.
 
 ```sql
 CREATE TABLE tokens (
@@ -413,6 +467,39 @@ CREATE INDEX ON sessions (user_id) WHERE revoked_at IS NULL;
 **[D]** Sessions are server-side rows, not stateless cookies. R-047 defers session lifetime to each adapter, but revocation has to be immediate when an adapter *can* push (R-048), and that is impossible with a stateless cookie. The cookie carries only `ses_...`.
 
 **[P]** The proxy checks session validity on every request. At single-host scale this is one indexed lookup; cache with a short TTL if it ever matters, accepting that the TTL becomes the revocation window.
+
+**[D]** `sessions.adapter_id` is the provider the session was signed in through, which is not
+necessarily the account's originating adapter once identities are linked; its lifetime is that
+provider's (R-047).
+
+```sql
+CREATE TABLE sso_flows (                    -- a redirect sign-in in progress (design 06 §3.2)
+    id            text PRIMARY KEY,         -- the state: 256 random bits
+    adapter_id    text NOT NULL REFERENCES identity_adapters(id) ON DELETE CASCADE,
+    purpose       text NOT NULL,            -- sign_in | test
+    bind_hash     text,                     -- SHA-256 of the starting browser's cookie
+    return_origin text NOT NULL,            -- the hostname the flow started on (R-172)
+    next_path     text NOT NULL,
+    callback_url  text NOT NULL, entity_id text NOT NULL,
+    flow          bytea,                    -- the adapter's PKCE verifier and nonce, or SAML request ID
+    initiated_by  text,                     -- a test sign-in's administrator
+    user_id       text REFERENCES users(id),
+    handoff_hash  text,                     -- SHA-256 of the one-time code that finishes it
+    result        jsonb, failed boolean NOT NULL DEFAULT false,
+    expires_at    timestamptz NOT NULL, consumed_at timestamptz
+);
+
+CREATE TABLE sso_replay (                   -- one-time IDs a provider promised: SAML assertion IDs
+    adapter_id text NOT NULL, one_time_id text NOT NULL, expires_at timestamptz NOT NULL,
+    PRIMARY KEY (adapter_id, one_time_id)
+);
+```
+
+**[D]** A flow is a row, not a signed cookie, because it crosses hostnames: it may start on an app's
+own hostname and the provider returns to the one callback registered with it. `flow` holds the
+adapter's own secrets for that sign-in for at most ten minutes, is cleared when the callback takes it,
+and is worthless without the provider's response. Rows are kept a day after expiry so a sign-in page
+can still say why one failed.
 
 ### 2.8 Backups
 

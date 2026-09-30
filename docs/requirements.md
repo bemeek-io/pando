@@ -123,11 +123,11 @@ exactly this.
 
 **R-042 [D]** Local users must be *secure* but are not claimed to be the most secure option. The documentation must say plainly that installs with real security requirements are expected to configure an external provider.
 
-**R-043 [D] [LATER]** Additional identity adapters: GitHub OAuth, generic OIDC, SAML.
+**R-043 [D]** Additional identity adapters: generic OIDC and SAML 2.0 (SP-initiated; signed responses or assertions required; IdP-initiated sign-in off unless an administrator allows it per provider). **[LATER]** GitHub OAuth, which is not OIDC and is tracked separately. Providers are added and changed without a restart, start turned off, and are tested with a real sign-in that reports the claims received before anyone else can use them. Setup per provider: `docs/identity-providers.md`.
 
 **R-044 [D]** Identity adapters perform **authentication only**. Authorization is always core.
 
-**R-045 [P]** Multiple identity adapters may be configured simultaneously. Each user record records its originating adapter. Two identities from different adapters are two users unless an admin explicitly links them. **[O-1]** — linking semantics unspecified.
+**R-045 [P]** Multiple identity adapters may be configured simultaneously. Each user record records its originating adapter. Two identities from different adapters are two users unless an admin explicitly links them — or, where an administrator turns it on for a provider, unless the provider vouches for an email address that exactly one active account has. Linking aliases and never merges (O-1). A first sign-in with no account is refused unless the provider is set to create accounts just in time (off by default); host policy can refuse just-in-time accounts install-wide.
 
 ### 5.2 Bootstrap
 
@@ -135,9 +135,9 @@ exactly this.
 
 ### 5.3 Sessions and revocation
 
-**R-047 [D]** Each identity adapter declares its own session policy and revocation mechanism, documented in that adapter's spec. There is no single global answer. **[O-2]**
+**R-047 [D]** Each identity adapter declares its own session policy and revocation mechanism, documented in that adapter's spec. There is no single global answer. The console and `GET /identity-providers` show each provider's session lifetime, revocation mode, and the window that results.
 
-**R-048 [D] [LATER]** **SCIM support** is the enterprise revocation and provisioning path. Where an IdP supports SCIM, Pando accepts pushed user and group lifecycle events.
+**R-048 [D]** **SCIM support** is the enterprise revocation and provisioning path. Where an IdP supports SCIM, Pando accepts pushed user and group lifecycle events (SCIM 2.0, a bearer token per provider). A pushed deactivation suspends and ends sessions at once; a pushed group change takes effect on the next request.
 
 **R-049 [D]** **Suspended is not deleted.** Pando must model at minimum: active, suspended, deleted. A suspended user loses access immediately but their data-destruction rules (R-104) do not fire.
 
@@ -899,8 +899,8 @@ tells a deployer nothing they can act on.
 
 | ID | Question | Notes |
 |---|---|---|
-| **O-1** | ~~Identity linking across adapters~~ | **Resolved.** Not in v1; when it lands, linking *aliases* and never merges — `users.id` is never retired, because merging would orphan app data keyed on the losing ID (R-054). Design 02 §2.1. |
-| **O-2** | Per-adapter session lifetime and revocation | Deliberately deferred to each adapter's spec (R-047) |
+| **O-1** | ~~Identity linking across adapters~~ | **Resolved.** Linking *aliases* and never merges — `users.id` is never retired, because merging would orphan app data keyed on the losing ID (R-054). An administrator links an identity to an account; moving one that already reaches another account leaves that account as a suspended alias. Email-based linking is off by default, per provider, and only on an email the provider vouches for. Design 02 §2.1. |
+| **O-2** | ~~Per-adapter session lifetime and revocation~~ | **Resolved.** Each adapter declares it (R-047): local revokes immediately; OIDC and SAML last their configured session length (12h default) unless SCIM is on, when revocation is pushed. Design 03 §5. |
 | **O-3** | ~~Private repo credential ownership~~ | **Resolved.** App-owned, with the supplying principal recorded in audit; deletion of that user flags affected apps for rotation rather than breaking their deploys. Design 01 §2.1. |
 | **O-4** | Required vs optional slot detection | The forty-key `.env.example` problem (R-133) |
 | **O-5** | TLS issuance | Per-adapter; ACME, wildcards, local self-signed |
@@ -919,7 +919,7 @@ tells a deployer nothing they can act on.
 Confirmed for the first release:
 
 - Core: state, authorization, audit, identity assertion path, reconciler
-- **Identity:** local users (username/password)
+- **Identity:** local users (username/password); OpenID Connect and SAML 2.0 providers; SCIM 2.0 provisioning
 - **Routing:** loopback, Traefik and Cloudflare Tunnel
 - **Secrets:** local encrypted storage
 - **Source:** public GitHub repos
@@ -932,7 +932,7 @@ Confirmed for the first release:
 - Volumes with the undeclared-persistence warning
 - Rolling backups + full-host DR bundle
 
-Explicitly deferred: per-user instances, SCIM, external identity adapters, private repos, cloud routing adapters other than Cloudflare Tunnel, external secrets adapters, VM runtime adapters, setting profiles, per-user quotas, notification adapters, log masking.
+Explicitly deferred: per-user instances, GitHub OAuth sign-in, private repos, cloud routing adapters other than Cloudflare Tunnel, external secrets adapters, VM runtime adapters, setting profiles, per-user quotas, notification adapters, log masking.
 
 ---
 

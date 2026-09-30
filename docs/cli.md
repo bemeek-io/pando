@@ -638,6 +638,140 @@ pando group role <group-id> [role-id]
 | --- | --- | --- |
 | `--clear` |  | take the group's installation role away |
 
+### `identity-provider`
+
+Connect identity providers: OpenID Connect, SAML and SCIM
+
+```
+pando identity-provider
+```
+
+#### `identity-provider add`
+
+Add an identity provider
+
+```
+pando identity-provider add <oidc|saml>
+```
+
+Adds an identity provider, turned off until you test it and turn it on. --preset fills in what a
+known provider needs (okta, entra, google, keycloak, authentik); --set KEY=VALUE sets the rest.
+A client secret is asked for without echoing it.
+
+  pando idp add oidc --preset okta --name Okta --set issuer=https://example.okta.com --set client_id=0oa…
+  pando idp add saml --preset entra --name Entra --set idp_metadata_url=https://login.microsoftonline.com/…
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--enable` |  | turn it on now, without testing it first |
+| `--jit` |  | create an account at someone's first sign-in |
+| `--link-by-email` |  | link a first sign-in to an existing account by verified email |
+| `--name` |  | what the sign-in page calls it, such as Okta |
+| `--preset` |  | a known provider's settings: okta, entra, google, keycloak, authentik |
+| `--set` | `[]` | a setting, KEY=VALUE; repeat for more |
+
+#### `identity-provider check`
+
+Check that Pando can reach the provider
+
+```
+pando identity-provider check <provider-id>
+```
+
+#### `identity-provider link`
+
+Link a provider's identity to an account
+
+```
+pando identity-provider link <user-id> <provider-id> <external-id>
+```
+
+Whoever signs in with that identity signs in to that account. Nothing is merged: with --replace,
+an account the identity already reaches is kept, suspended, as an alias.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--replace` |  | move the identity here if it already signs in to another account |
+
+#### `identity-provider link-group`
+
+Make a provider's group count as members of a Pando group
+
+```
+pando identity-provider link-group <group-id> <provider-group-id>
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--remove` |  | remove the link instead |
+
+#### `identity-provider list`
+
+Show the identity providers, what to register with each, and how soon each can revoke
+
+```
+pando identity-provider list
+```
+
+#### `identity-provider remove`
+
+Remove an identity provider nobody has signed in through
+
+```
+pando identity-provider remove <provider-id>
+```
+
+#### `identity-provider scim-token`
+
+Turn SCIM on for a provider and print its token, or replace it
+
+```
+pando identity-provider scim-token <provider-id>
+```
+
+Prints the SCIM base URL and a new token. The token is shown once; running this again replaces it.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--off` |  | turn SCIM off instead |
+
+#### `identity-provider set`
+
+Change an identity provider
+
+```
+pando identity-provider set <provider-id>
+```
+
+Changes a provider. --set KEY=VALUE changes one setting and keeps the rest; --secret asks for a
+new client secret; --enable and --disable turn it on and off.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--disable` |  | turn it off |
+| `--enable` |  | turn it on |
+| `--jit` |  | true or false: create an account at first sign-in |
+| `--link-by-email` |  | true or false: link by verified email |
+| `--name` |  | a new name |
+| `--secret` |  | ask for a new client secret |
+| `--set` | `[]` | a setting, KEY=VALUE; repeat for more |
+
+#### `identity-provider test`
+
+Print the address that starts a test sign-in in your browser
+
+```
+pando identity-provider test <provider-id>
+```
+
+#### `identity-provider unlink`
+
+Unlink a provider's identity from an account
+
+```
+pando identity-provider unlink <user-id> <provider-id> <external-id>
+```
+
 ### `login`
 
 Sign in and store a token for this machine

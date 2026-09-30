@@ -48,7 +48,9 @@ one of these harder to enforce, the change is wrong.
 | Adapters never touch authz, audit, or state | R-027 | CI import lint (`.golangci.yml` depguard) | design 03 §9 |
 | The audit log cannot be rewritten | R-027 | DB grant: no `UPDATE`/`DELETE` on `audit_events` | design 02 §2.6, 06 §6 |
 | Secrets never reach a log line | R-194 | `secret.Value` renders `[redacted]` in every marshaler | design 00 §3.3 |
-| Adapter credentials are never stored in the clear | R-190 | `adapter_credentials` holds ciphertext only; a CHECK refuses `credentials` in `adapter_configs.config` | design 10 §7 |
+| Adapter credentials are never stored in the clear | R-190 | `adapter_credentials` and `identity_adapter_credentials` hold ciphertext only; CHECKs refuse `credentials` in `adapter_configs.config` and any secret key in `identity_adapters.config` | design 10 §7, 02 §2.1 |
+| A redirect sign-in finishes only in the browser that started it | R-043 | Flow bound to a cookie digest; one-time handoff code; `TestR043_ASignInFinishesOnlyInTheBrowserThatStartedIt` | design 06 §3.2 |
+| Deprovisioning suspends, never deletes | R-049 | SCIM `active:false` and `DELETE` call `SetStatusBy(suspended)`; nothing in SCIM reaches `Users.Delete` | design 04 §2.7a |
 | No container runtime socket in a build | R-112 | Integration test asserting build container mounts | design 07 B |
 | Inbound `X-Pando-*` headers are always stripped | R-053 | Unconditional strip in the proxy + forged-header test | design 06 §4, 07 C |
 | Outbound `pando_*` cookies never reach an app | R-173 | Namespace strip in the proxy + forwarded-cookie test | design 06 §4 |

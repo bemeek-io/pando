@@ -438,7 +438,7 @@ type TestReport struct {
 	Error      *Problem            `json:"error,omitempty"`
 	Subject    *SubjectView        `json:"subject,omitempty"`
 	Attributes map[string][]string `json:"attributes,omitempty"`
-	Outcome    *SignInOutcome            `json:"outcome,omitempty"`
+	Outcome    *SignInOutcome      `json:"outcome,omitempty"`
 }
 
 // TestResult returns a test sign-in's report, to the administrator who ran it.

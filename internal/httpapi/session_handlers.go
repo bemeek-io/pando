@@ -340,6 +340,14 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, errs.New(errs.AuthInvalid, "This account no longer exists."))
 		return
 	}
+	// An account from an identity provider has no Pando password; asking
+	// for its "current password" would only ever say it was wrong.
+	if user.AdapterID != state.LocalAdapterID {
+		Error(w, r, errs.New(errs.ValidInvalid,
+			"This account signs in through an identity provider, so it has no Pando password to change.").
+			WithRemedy("Change your password where you sign in, at your organization's identity provider."))
+		return
+	}
 
 	if _, err := s.Identity.Authenticate(r.Context(), api.Credential{
 		Username: user.ExternalID,

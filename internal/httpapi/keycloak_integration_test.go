@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -691,4 +692,61 @@ func TestR047_JITFollowsHostPolicyAndPasswordSignInCanBeTurnedOff(t *testing.T) 
 	off := inst.do(admin, http.MethodPatch, "/identity-providers/"+p.ID, map[string]any{"enabled": false})
 	require.Equal(t, http.StatusBadRequest, off.Code, off.String())
 	require.Contains(t, off.String(), "last identity provider")
+}
+
+// localtestHosts says every *.localtest.me hostname belongs to an app.
+type localtestHosts struct{}
+
+func (localtestHosts) IsAppHostname(_ context.Context, host string) (bool, error) {
+	return strings.HasSuffix(host, ".localtest.me"), nil
+}
+
+// TestR172_ASignInStartedOnAnAppsHostnameFinishesThere asserts that a person
+// sent to sign in from an app's own hostname (R-172) comes back signed in on
+// that hostname — though the provider can only return them to the one
+// callback address registered with it, on Pando's own.
+func TestR172_ASignInStartedOnAnAppsHostnameFinishesThere(t *testing.T) {
+	kc := keycloak(t)
+	inst, pando := served(t)
+	inst.Server.AppHosts = localtestHosts{}
+	admin := inst.admin()
+	kca := newKCAdmin(t, kc)
+	realm := fmt.Sprintf("hosts%d", time.Now().UnixNano())
+	kca.realm(realm)
+	kca.must(http.MethodPost, "/realms/"+realm+"/clients", map[string]any{
+		"clientId": "pando", "enabled": true, "protocol": "openid-connect", "publicClient": false,
+		"secret": "s3cret", "standardFlowEnabled": true, "redirectUris": []string{pando + "/*"},
+	})
+	created := inst.do(admin, http.MethodPost, "/identity-providers", map[string]any{
+		"kind": "oidc", "name": "Corp", "enabled": true, "jit_provisioning": true,
+		"config":      map[string]any{"issuer": kc + "/realms/" + realm, "client_id": "pando"},
+		"credentials": map[string]string{"client_secret": "s3cret"},
+	})
+	var p struct {
+		ID string `json:"id"`
+	}
+	created.JSON(t, &p)
+
+	// A browser that reaches notes.localtest.me at Pando's listener, as DNS
+	// would send it there.
+	listener := mustURL(pando).Host
+	b := newBrowser(t)
+	b.client.Transport = &http.Transport{DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if strings.HasPrefix(addr, "notes.localtest.me:") || strings.HasPrefix(addr, "evil.example:") {
+			addr = listener
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}}
+	app := "http://notes.localtest.me:" + mustURL(pando).Port()
+
+	b.get(app + "/.pando/api/v1/auth/providers/" + p.ID + "/start?next=/dashboard")
+	b.through("alice", "alice-password")
+	require.Equal(t, "notes.localtest.me:"+mustURL(pando).Port(), b.last.Request.URL.Host, "back on the app's hostname")
+	require.Equal(t, "/dashboard", b.last.Request.URL.Path)
+	require.NotEmpty(t, b.cookie(app, httpapi.SessionCookie), "the session is on the app's hostname")
+	require.Empty(t, b.cookie(pando, httpapi.SessionCookie), "and nowhere else")
+
+	// A hostname Pando does not serve cannot be where a sign-in finishes.
+	b.get("http://evil.example:" + mustURL(pando).Port() + "/.pando/api/v1/auth/providers/" + p.ID + "/start")
+	require.Equal(t, http.StatusBadRequest, b.last.StatusCode, b.body)
 }

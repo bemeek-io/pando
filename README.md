@@ -61,7 +61,13 @@ gating.
   do to one app, and what they can do to the installation. The four built-in roles cannot be edited,
   and custom roles are composed from the verb list. Access can be granted to a group as easily as to
   a person, and group membership is read at the moment of the decision rather than copied into
-  grants. Accounts are local to the installation in this version.
+  grants.
+- **Single sign-on and provisioning.** People sign in with a local password or through your identity
+  provider over OpenID Connect or SAML 2.0 — Okta, Microsoft Entra ID, Google Workspace, Keycloak,
+  Authentik or any other. A provider's groups arrive in Pando, where you decide what they can do, and
+  SCIM 2.0 creates, suspends and regroups people the moment the provider says so. Each provider is
+  tested with a real sign-in before anyone else sees it, and password sign-in can be turned off once
+  it is working. See [`docs/identity-providers.md`](docs/identity-providers.md).
 - **Two separate planes.** Being able to *use* an app and being able to *administer* it are separate
   grants, so somebody who runs an application need not be able to open it, and somebody who uses it
   daily need not be able to change it.
@@ -159,7 +165,9 @@ account:
 docker compose exec pando pando admin reset-password
 ```
 
-`pando admin` talks to the database rather than the API, so it works when nobody can sign in.
+`pando admin` talks to the database rather than the API, so it works when nobody can sign in —
+including when password sign-in is turned off and no identity provider works:
+`pando admin enable-password-sign-in` turns it back on.
 
 ### Deploying your first app
 
@@ -300,6 +308,8 @@ and will break under a path prefix, Pando says so; it does not rewrite the app's
 - [`docs/reference.md`](docs/reference.md) — the external interfaces in one place: the HTTP API, what
   an app receives, every configuration variable, and the guarantees worth relying on.
 - [`docs/design/04-api.md`](docs/design/04-api.md) — the full API reference.
+- [`docs/identity-providers.md`](docs/identity-providers.md) — connecting Okta, Entra ID, Google
+  Workspace, Keycloak, Authentik or another provider, and SCIM.
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release, and whether you need to act.
 
 ## Reporting a problem

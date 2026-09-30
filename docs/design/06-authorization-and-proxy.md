@@ -148,6 +148,19 @@ app, searched and capped at twenty of each: enough to find Dana, not a way to ta
 
 **[P]** Cached per session with a short TTL (60s), invalidated immediately on a SCIM push (R-048). The TTL is the effective propagation delay for a group removal on adapters without push, and must be documented as such rather than implied to be instant.
 
+**[D] As built: not cached at all.** Membership is one indexed read per request
+(`effective_group_members`), so a SCIM push — or an administrator's change — takes effect on the next
+request, and the 60s row in the table below is an upper bound nothing currently reaches. If a cache is
+ever added it is invalidated on every SCIM push, and its TTL stays under the window.
+
+**[D] Where membership comes from (issue #51).** A group with an identity provider as its source is
+**synced**: its members are set by that provider — from the groups claim at each sign-in, or, when SCIM
+is on for the provider, by SCIM alone — and never by hand. `group_links` lets a provider's group count
+as members of a Pando-made group. Authorization reads both through one view, so a linked group's
+members hold the Pando group's grants exactly as direct members do, live (R-079), and the R-088 lockout
+checks count them the same way. What any group can do is Pando's (R-078): a claim or a push can put a
+person in a group, never give the group a role.
+
 ### 3.1 The revocation window
 
 **[D]** Access does not stop the instant it is revoked, and the design contains four separate delays
@@ -182,6 +195,52 @@ is one more reason the app-developer documentation states that assertions are pe
 
 **[P]** If the session check is ever cached for throughput, its TTL joins this table and the window is
 recomputed. It does not get to be a hidden fifth delay.
+
+### 3.2 Redirect sign-in (issue #51)
+
+An external provider signs someone in through two redirects, and the second arrives at one callback
+address registered with the provider — on Pando's external URL — while the person may have started on
+an app's own hostname (R-172), where the session cookie must end up. So a sign-in is three steps:
+
+```
+1. GET {any hostname}/.pando/api/v1/auth/providers/{id}/start?next=/path
+     core makes a flow: state = 256 random bits, return_origin = this hostname,
+     the adapter's Flow (PKCE verifier + nonce, or SAML request ID) stored with it;
+     browser gets pando_sso_bind = random, and the flow keeps its SHA-256
+     → 302 to the provider, with state / RelayState
+2. GET|POST {external URL}/api/v1/auth/providers/{id}/callback
+     the flow is taken once (replays find it spent); the adapter verifies the response;
+     one-time IDs recorded (SAML assertion replay); core decides the account (below);
+     a one-time code is issued, its digest kept, valid two minutes
+     → 303 to {return_origin}/.pando/api/v1/auth/complete?code=…
+3. GET {return_origin}/.pando/api/v1/auth/complete
+     the code is spent once; pando_sso_bind must hash to the flow's bind_hash;
+     the request's origin must be the flow's; the session cookie is set on this hostname
+     → 302 to next (a path on this host, never a URL)
+```
+
+**[D] The bind cookie is the login-CSRF defence.** Without it, someone could start a sign-in as
+themselves, stop at the code, and send the link to a victim, who would then be signed in as the
+attacker — and whatever they typed into an app would be the attacker's to read. The code only works in
+the browser that started the flow. It is SameSite=Lax, which a top-level GET navigation carries even
+after a cross-site SAML POST, and in Pando's cookie namespace, so the proxy strips it from every
+request an app sees (R-173).
+
+**[D]** `return_origin` is a hostname Pando serves — its own, or an app's (`AppHosts`) — checked when the
+flow starts; a flow cannot be made to finish anywhere else. The callback never chooses where the
+browser goes from anything the provider sent.
+
+**[D] Which account.** In order: the account the identity already reaches (`user_identities`); a
+suspended, deleted or aliased one is refused, never replaced. Else, if the provider allows it and the
+provider vouches for the email, the one active account with that email — linked, as an alias (O-1).
+Else, if the provider creates accounts and host policy does not refuse it, a new account with no
+access. Else refused, in a sentence that says whom to ask and gives the ID they need. Group
+memberships at that provider are then set from the claims unless SCIM owns them.
+
+**[D] Test sign-in** runs steps 1–2 with `purpose = test`: it decides the account without creating or
+linking anything, and stores a report — what the provider sent, what Pando read from it, and what a
+real sign-in would have done — for the administrator who started it. It works on a provider that is
+off, which is when it is needed.
 
 ---
 
