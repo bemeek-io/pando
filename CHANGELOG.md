@@ -60,6 +60,13 @@ Unreleased above it. -->
 
 ### Fixed
 
+- **A Laravel app failed to build.** Laravel 13 needs PHP 8.3, the build installed an older PHP, and
+  the build log said only `syntax error, unexpected token "{"` (#58). A Laravel app is now built on
+  the newest PHP its `composer.json` allows, with the extensions it requires, its Vite assets built,
+  and served by Apache from `public/`; it runs its migrations before it starts. When a dependency
+  needs a PHP version or extension the build does not have, the build fails saying which. Deploying
+  one now asks for `APP_KEY`, which the app cannot serve a page without; `php artisan key:generate
+  --show` prints one. Detect a Laravel app again to pick this up.
 - **`pando deploy <dir>` printed blank lines where detection's questions belonged.** It read a field
   the server never sends. The questions are now printed exactly as Pando wrote them.
 - **A static site's pages redirected to the wrong port.** Opening a folder without its trailing slash
