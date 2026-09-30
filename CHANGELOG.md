@@ -21,6 +21,18 @@ Unreleased above it. -->
 
 ### Added
 
+- Single sign-on and provisioning (#51). Connect an identity provider over **OpenID Connect** or
+  **SAML 2.0** on the new **Sign-in** screen, with presets for Okta, Microsoft Entra ID, Google
+  Workspace, Keycloak and Authentik; test it with a real sign-in that shows every claim the provider
+  sent and what Pando would do with it; then turn it on. Providers are added and changed without a
+  restart. **SCIM 2.0** per provider creates, updates and suspends accounts and sets group membership
+  at once; deprovisioning suspends and never deletes. A provider's groups become synced groups that
+  you give roles and app access, or link to an existing Pando group. Accounts are made at a first
+  sign-in only when a provider is set to (off by default), and an administrator links an identity to
+  an existing account — email linking is opt-in and only on a verified email. Host policy gains
+  **Turn off password sign-in** and **Don't create accounts at first sign-in**. The CLI has
+  `pando identity-provider` (`pando idp`); setup per provider is in `docs/identity-providers.md`.
+
 - Waiting for detection (#80). `GET /apps/{id}/detection?wait=30` answers as soon as detection
   reaches a new stage or finishes, and while it runs says which stage it is on and for how long.
   `pando app detection <app> --wait` prints each stage and exits 0 when the app is ready to accept,
@@ -91,6 +103,13 @@ Unreleased above it. -->
   backup" only when one was taken.
 
 ### Upgrade notes
+
+- Migration 000037 adds the external identity tables and the `effective_group_members` view, which
+  authorization now reads for group membership. No existing behavior changes until a provider is
+  added. To use identity providers behind a proxy, set `PANDO_SERVER_EXTERNAL_URL`: the addresses you
+  register with a provider are built from it.
+- `pando admin enable-password-sign-in` is new: the way back in from the host if password sign-in is
+  off and no provider works.
 
 - An install with more than one AI adapter of the same provider must remove all but one before
   upgrading; the migration stops with a message naming the provider otherwise.

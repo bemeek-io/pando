@@ -620,20 +620,51 @@ type IdentityAdapter interface {
 
     // Begin returns where to send the user, or nil for adapters that
     // authenticate inline (local username/password).
-    Begin(ctx context.Context, redirect string) (*Redirect, error)
+    Begin(ctx context.Context, req BeginRequest) (*Redirect, error)
 
     // Authenticate resolves an inbound callback or credential to a subject.
     Authenticate(ctx context.Context, c Credential) (Subject, error)
 
+    // ServiceMetadata is what the provider is given to trust Pando: SAML SP
+    // metadata. Nil for adapters that have none.
+    ServiceMetadata(ctx context.Context, e Endpoints) (*Metadata, error)
+
     SessionPolicy() SessionPolicy   // R-047: each adapter declares its own
-    SupportsPush() bool             // SCIM or webhook (R-048)
+    SupportsPush() bool             // the provider can push through SCIM (R-048)
+}
+
+type Endpoints struct {
+    CallbackURL string   // OIDC redirect_uri; SAML ACS URL
+    EntityID    string   // SAML SP entity ID, also its metadata URL
+}
+
+type BeginRequest struct {
+    Endpoints
+    State string         // core's: random, bound to the browser
+}
+
+type Redirect struct {
+    URL  string
+    Flow []byte          // the adapter's own data for this sign-in, returned in Credential.Flow
+}
+
+type Credential struct {
+    Username string; Password secret.Value   // inline adapters
+    Callback url.Values                      // redirect adapters: what the provider sent back
+    Flow     []byte                          // nil for a sign-in the provider started
+    Endpoints
 }
 
 type Subject struct {
-    ExternalID  string   // stable within this adapter
-    Email       string
-    DisplayName string
-    Groups      []string // external group identifiers
+    ExternalID    string   // stable within this adapter
+    Email         string
+    EmailVerified bool     // the provider vouches for it; linking by email needs it (O-1)
+    DisplayName   string
+    Username      string
+    Groups        []string // external group identifiers
+    Attributes    map[string][]string  // everything sent, for a test sign-in to show; read by nothing
+    OneTimeID     string   // e.g. a SAML assertion ID, used once
+    OneTimeUntil  time.Time
 }
 
 type SessionPolicy struct {
@@ -647,7 +678,34 @@ type SessionPolicy struct {
 
 **[D]** `SessionPolicy` is how R-047 is honored mechanically: each adapter declares its own lifetime and revocation mode, and the console can display the effective revocation window per adapter rather than implying a global guarantee.
 
----
+**[D] Adapters stay stateless across a redirect (issue #51).** A redirect sign-in spans two requests,
+and what the adapter must check the second against — a PKCE verifier and nonce, a SAML request ID —
+goes back to core as `Redirect.Flow` and returns in `Credential.Flow`. Core stores it with the flow,
+binds the flow to the browser that started it, and consumes it once (design 06 §3.2). Core also owns
+the `State` and the `Endpoints`: an adapter never works out its own address, because behind a
+TLS-terminating proxy it would get it wrong and a redirect URI must match to the character. This
+changed `Begin`'s signature from `(ctx, redirect string)` to `(ctx, BeginRequest)` and replaced
+`Credential.Code`/`State` with the raw callback parameters, since SAML sends neither; nothing used the
+old fields.
+
+**[D] Identity adapters are built on use, not at startup.** Every other category is registered once
+from `adapter_configs` (R-253, §9). An identity provider is a row in `identity_adapters`, and core
+builds its adapter when first used and again whenever the row changes, so connecting or fixing a
+provider is not a restart in front of everyone who signs in. The kinds are still compiled in; only
+their configuration is read live.
+
+**[D]** `SupportsPush` says the provider *can* push. Whether it does is core's to know: SCIM is on when
+the provider has a token, and only then does core report the provider's revocation as `push`. OIDC and
+SAML declare `expiry_only` — Pando keeps no provider tokens to refresh — so without SCIM the session
+lifetime is the revocation window (R-050), and the console says so.
+
+**[D] What the two external adapters check.** OIDC: authorization code flow with PKCE (S256), nonce,
+ID token signature/issuer/audience/expiry via discovery and JWKS, RFC 9207 `iss` when sent, userinfo
+merged only for the same `sub`. SAML: SP-initiated HTTP-Redirect, response over HTTP-POST; a
+signature on the response or the assertion is required; issuer, audience, recipient, destination and
+`InResponseTo` are checked with three minutes of clock skew; IdP-initiated responses are refused
+unless the provider allows them; assertion IDs are single-use through `OneTimeID`. A transient NameID
+is refused, because it cannot identify anyone twice.
 
 ## 6. Secrets
 
@@ -893,6 +951,8 @@ func (r *Registry) Default(c Category) (Adapter, error)
 | Category | Kind | Note |
 |---|---|---|
 | identity | `local` | username/password, argon2id |
+| identity | `oidc` | any OpenID Connect provider by issuer; presets for Okta, Entra ID, Google Workspace, Keycloak, Authentik (§5) |
+| identity | `saml` | SAML 2.0 SP; IdP metadata by URL (re-read daily) or pasted; same presets (§5) |
 | routing | `loopback` | port mode, no TLS, laptop default |
 | routing | `traefik` | subdomain and path, TLS; Pando runs it by default (§4.4) |
 | routing | `cloudflare` | Cloudflare Tunnel; subdomain and path, TLS at Cloudflare's edge (§4.5) |

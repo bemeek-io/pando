@@ -69,7 +69,13 @@ apps binding to one external target.
 ## Registration
 
 Happens in `main` at startup, from compiled-in packages (R-253). Configured instances come from the
-`adapter_configs` table.
+`adapter_configs` table — except identity providers, which live in `identity_adapters` and are built by
+`core/idp` on first use and rebuilt when their row changes, so connecting one needs no restart.
+
+**Identity adapters stay stateless across a redirect.** Whatever the callback must be checked against
+(PKCE verifier, nonce, SAML request ID) goes back to core as `Redirect.Flow` and returns in
+`Credential.Flow`; core owns the state, the endpoints, the browser binding and replay. An adapter that
+keeps a map of pending sign-ins has broken R-027's spirit and will break on the first restart.
 
 ## Traefik lands last, deliberately
 

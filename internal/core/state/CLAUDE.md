@@ -29,6 +29,8 @@ a migration simpler.
 | `UNIQUE (app_id, plane, principal_kind, principal_id)` on `grants` | Two planes stay two rows (R-073) |
 | `grants (role_id, role_scope) → roles (id, scope)` + `grants_install_has_no_app` | R-080 — an install role cannot be granted on one app and an app role cannot be granted install-wide; "no app" and "carries install verbs" cannot come apart |
 | `grants_data_plane_is_app_scoped` | R-070 — data-plane use is per-app and binary; there is no install-wide "use" |
+| `user_identities` PK and `users_alias_is_suspended` | O-1 — an identity reaches one account; linking aliases and never merges |
+| `identity_adapters_no_inline_credentials` | R-190 — an identity provider's secret lives only in `identity_adapter_credentials` |
 
 ## Things deliberately absent from the schema
 
@@ -52,6 +54,9 @@ Adding any of these is a design change, not a refactor:
 - `users.status` is three-valued: suspended is **not** deleted (R-049, R-282). Destruction rules
   (R-280) fire on `deleted`, never on `suspended`.
 - Group membership is read live at authorization time (R-079), never denormalized into grants.
+  Authorization reads it through the `effective_group_members` view (direct members plus those of
+  linked provider groups); a new query asking "which groups is this person in" must read the view,
+  not `group_members`, or linked groups stop counting there.
 - `grants.app_id IS NULL` means **install-scoped** (O-17), and the unique index above is
   `NULLS NOT DISTINCT` — so it already reads "one control grant per principal, install-wide" for
   those rows. Do not add a second index for install grants; it would be redundant.

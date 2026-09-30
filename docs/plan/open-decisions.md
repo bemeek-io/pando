@@ -201,7 +201,7 @@ failure surfaces as a browser warning to a user rather than as a message to an o
 
 | ID | Question | Resolution | Where |
 |---|---|---|---|
-| **O-1** | Identity linking across adapters | Not in v1. When it lands, linking **aliases and never merges** — `users.id` is never retired | design 02 §2.1 |
+| **O-1** | Identity linking across adapters | Linking **aliases and never merges** — `users.id` is never retired. Shipped with issue #51: admin linking, a moved identity leaves a suspended alias, email linking opt-in per provider on verified email only | design 02 §2.1 |
 | **O-2** | Per-adapter session lifetime and revocation | Deferring to each adapter's `SessionPolicy` *is* the answer (R-047) | design 03 §5 |
 | **O-3** | Private repo credential ownership | App-owned, attributed to the supplier in audit; offboarding flags rather than breaks | design 01 §2.1 |
 | **O-7** | Exec command recording | Command recorded at open; PTY stream not captured | design 03 §2.3 |
@@ -355,7 +355,15 @@ a policy is saved, and R-085's install-wide exec disable, both of which needed t
 **O-1 — linking aliases, it never merges.** Merging two `users` rows is the obvious implementation and
 it breaks R-054: `users.id` is the assertion `sub` claim, apps key their data on it, and Pando cannot
 reach into an app to rewrite rows stored under the losing ID. A merge silently orphans a person's data
-inside every app they ever used. Decided now because getting it wrong later is unrecoverable.
+inside every app they ever used. Decided now because getting it wrong later is unrecoverable. When
+it shipped (issue #51) the rule held: identities live in `user_identities`, and moving one that already
+reaches another account leaves that account as a suspended alias (`users.alias_of`) rather than
+deleting or merging it.
+
+**GitHub OAuth (R-043) — a follow-up, not part of issue #51.** GitHub is OAuth 2 without OpenID
+Connect: no ID token, and organization and team membership come from the REST API rather than claims.
+It fits the same `IdentityAdapter` interface (organizations and teams map to synced groups) and needs
+its own adapter.
 
 **O-7 — the command, not the stream.** A captured PTY stream is a durable, searchable store of every
 secret an operator ever typed, sitting in the one table deliberately readable by anyone with audit

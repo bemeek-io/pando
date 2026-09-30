@@ -238,6 +238,57 @@ counts.
 **[D]** `GET /users/{id}` is not public to signed-in callers. An account carries an email address and
 a display name, and "every user can enumerate every user" is a disclosure nobody asked for.
 
+### 2.7a External identity (issue #51)
+
+```
+GET    /api/v1/auth/options                        public: password sign-in on?, providers turned on
+GET    /api/v1/auth/providers/{id}/start           public, a navigation: redirects to the provider
+GET    /api/v1/auth/providers/{id}/callback        public: OIDC redirect URI
+POST   /api/v1/auth/providers/{id}/callback        public: SAML ACS (HTTP-POST binding)
+GET    /api/v1/auth/providers/{id}/metadata        public: SAML SP metadata; its URL is the entity ID
+GET    /api/v1/auth/complete?code=                 public: finishes a sign-in in the browser that began it
+GET    /api/v1/auth/failures/{flowID}              public: why a sign-in failed, for the sign-in page
+
+GET    /api/v1/identity-providers                  install.view; with the kinds and their presets
+POST   /api/v1/identity-providers                  install.adapters.manage; starts turned off
+GET    /api/v1/identity-providers/{id}             install.view
+PATCH  /api/v1/identity-providers/{id}             install.adapters.manage; no restart
+DELETE /api/v1/identity-providers/{id}             install.adapters.manage; refused once used
+POST   /api/v1/identity-providers/{id}/check       install.adapters.manage
+POST   /api/v1/identity-providers/{id}/scim-token  install.adapters.manage; token returned once
+DELETE /api/v1/identity-providers/{id}/scim-token  install.adapters.manage
+GET    /api/v1/identity-providers/{id}/test        install.adapters.manage, a navigation: test sign-in
+GET    /api/v1/identity-providers/{id}/tests/{fid} the report, to the administrator who ran it
+
+GET    /api/v1/users/{id}/identities               self, or install.view
+POST   /api/v1/users/{id}/identities               install.users.manage; replace_account moves one
+DELETE /api/v1/users/{id}/identities?adapter_id=&external_id=
+PUT    /api/v1/groups/{id}/links/{syncedID}        install.users.manage (R-078)
+DELETE /api/v1/groups/{id}/links/{syncedID}
+
+/api/v1/scim/v2/{ServiceProviderConfig,ResourceTypes,Schemas,Users[/{id}],Groups[/{id}]}
+                                                   SCIM 2.0; the provider's own bearer token
+```
+
+**[D]** Identity providers are adapters (R-040), so the verbs are the adapters' verbs: read with
+`install.view`, changed with `install.adapters.manage`. Linking an identity to an account is account
+administration, `install.users.manage`.
+
+**[D]** The sign-in endpoints are browser navigations and answer with redirects, never JSON a person
+would see. A failure goes to the sign-in page with a flow ID or a fixed key, and the page asks
+`/auth/failures/{id}` for the message: nothing in a URL is ever shown as text, so a link cannot put
+words on Pando's sign-in page.
+
+**[D] SCIM authenticates with the provider's token, not a Pando token.** The Authenticate middleware
+lets `/api/v1/scim/v2/` through untouched and the SCIM handlers resolve the bearer token to its
+provider by digest. A SCIM token is not a principal: it reaches these endpoints and nothing else, and
+a Pando token does not reach them. Errors use SCIM's own error schema (RFC 7644 §3.12), not the
+envelope, because SCIM clients parse that. PATCH accepts what Okta and Entra actually send —
+`replace` with a value object and no path, capitalized ops, `"False"` as a string, and filtered paths
+such as `emails[type eq "work"].value` — and is tested against those shapes. Filters are
+`attribute eq "value"` only: every provisioning client needs "does this person exist", and nothing
+more is kept for nobody. `DELETE /Users` suspends (R-049).
+
 ### 2.8 Platform
 
 ```
