@@ -32,6 +32,7 @@ type fakeProvider struct {
 	nonce     string
 	challenge string
 	userinfo  map[string]any
+	noIDToken bool
 }
 
 func newFake(t *testing.T) *fakeProvider {
@@ -85,7 +86,11 @@ func newFake(t *testing.T) *fakeProvider {
 		require.NoError(t, err)
 		idToken, _ := jws.CompactSerialize()
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "at", "token_type": "Bearer", "id_token": idToken})
+		reply := map[string]any{"access_token": "at", "token_type": "Bearer", "id_token": idToken}
+		if f.noIDToken {
+			delete(reply, "id_token")
+		}
+		_ = json.NewEncoder(w).Encode(reply)
 	})
 	return f
 }
@@ -265,4 +270,61 @@ func TestR050_WithoutPushTheSessionLifetimeIsTheRevocationWindow(t *testing.T) {
 	p := a.SessionPolicy()
 	require.Equal(t, api.RevocationExpiryOnly, p.RevocationMode)
 	require.Equal(t, 4*time.Hour, p.MaxLifetime)
+}
+
+// A provider that is not acting as OpenID Connect, or cannot be reached, is
+// named as the problem, with what to check.
+func TestR043_OIDCSaysWhatIsWrongWithTheProvider(t *testing.T) {
+	f := newFake(t)
+	f.claims = map[string]any{"sub": "u1"}
+	f.noIDToken = true
+	_, err := signIn(t, f, configured(t, f, nil), nil)
+	require.Error(t, err)
+	require.Contains(t, errs.As(err).Message, "no ID token")
+
+	down := oidc.New()
+	require.NoError(t, down.Configure(context.Background(), json.RawMessage(`{"issuer":"https://127.0.0.1:1","client_id":"x"}`)))
+	err = down.HealthCheck(context.Background())
+	require.Error(t, err)
+	require.Equal(t, errs.AdapterUnavailable, errs.CodeOf(err))
+	_, err = down.Begin(context.Background(), api.BeginRequest{State: "s", Endpoints: api.Endpoints{CallbackURL: "https://p/cb"}})
+	require.Error(t, err)
+	_, err = configured(t, f, nil).Begin(context.Background(), api.BeginRequest{})
+	require.Error(t, err, "a sign-in needs core's state and callback")
+
+	md, err := configured(t, f, nil).ServiceMetadata(context.Background(), api.Endpoints{})
+	require.NoError(t, err)
+	require.Nil(t, md, "OpenID Connect has no metadata to give a provider")
+}
+
+// The prompt and Google's domain hint reach the provider; userinfo is not
+// asked when turned off; claims arrive in the shapes providers send them.
+func TestR043_OIDCSendsHintsAndReadsClaimsAsSent(t *testing.T) {
+	f := newFake(t)
+	f.claims = map[string]any{"sub": "u-1", "employee_id": 12345.0, "email": "a@example.com", "email_verified": "true",
+		"groups": "a, b", "given_name": "Ann", "family_name": "Lee"}
+	f.userinfo = map[string]any{"sub": "u-1", "name": "From Userinfo"}
+	a := configured(t, f, map[string]any{"subject_claim": "employee_id", "prompt": "select_account", "hosted_domain": "example.com",
+		"disable_userinfo": true, "scopes": "openid,email"})
+
+	r, err := a.Begin(context.Background(), api.BeginRequest{State: "s", Endpoints: api.Endpoints{CallbackURL: "https://p/cb"}})
+	require.NoError(t, err)
+	u, _ := url.Parse(r.URL)
+	require.Equal(t, "select_account", u.Query().Get("prompt"))
+	require.Equal(t, "example.com", u.Query().Get("hd"))
+	require.Equal(t, "openid email", u.Query().Get("scope"))
+
+	f.claims["hd"] = "example.com"
+	s, err := signIn(t, f, a, nil)
+	require.NoError(t, err)
+	require.Equal(t, "12345", s.ExternalID, "a numeric subject is read as its digits")
+	require.True(t, s.EmailVerified, `"true" as a string counts`)
+	require.Equal(t, []string{"a", "b"}, s.Groups)
+	require.Equal(t, "Ann Lee", s.DisplayName, "userinfo was not asked, so the name comes from its parts")
+	require.Equal(t, []string{"12345"}, s.Attributes["employee_id"])
+
+	f.claims = map[string]any{"email": "x@example.com"}
+	_, err = signIn(t, f, configured(t, f, nil), nil)
+	require.Error(t, err)
+	require.Contains(t, errs.As(err).Message, `"sub"`)
 }
