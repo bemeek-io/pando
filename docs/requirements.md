@@ -842,9 +842,13 @@ the findings behind it available to anyone who can view the app.
 built and the source it was built from — not from a questionnaire and not from the repository's
 reputation.
 
-**R-312 [D]** **An app is scanned whenever what it runs changes**, which means on every deploy, and
-**on demand** from the app's settings at any time. A score describes a specific spec revision and
-the image built from it.
+**R-312 [D]** **An app is scanned whenever what it runs changes** — on every deploy that changes the
+source it is built from (a new commit, a new upload, a new image digest) or the scanner that looks
+at it — and **on demand** from the app's settings at any time. A deploy of a source that already has
+a successful scan uses that scan and says so; a score depends on what the app is, not on how often
+somebody pressed deploy. A score describes a specific spec revision and the source it was built
+from. *(Amended by issue #84: "which means on every deploy" assumed every deploy changes what runs,
+and a redeploy of an unchanged commit does not.)*
 
 **R-313 [P]** **The score is derived from findings by severity**, starting at 100 and deducting per
 finding: critical 25, high 10, medium 3, low 1, floored at 0. The weights are a proposal — the
@@ -910,7 +914,7 @@ tells a deployer nothing they can act on.
 | **O-9** | ~~Share notifications~~ | **Resolved.** No message; the launcher tile is the notification. R-266, design 08 §1.1. |
 | **O-10** | ~~Retroactive policy application~~ | **Resolved.** Running apps are untouched; the next deploy fails at plan time with `POLICY_*`. Report now, block on next deploy. Design 05 §3. |
 | **O-19** | What "bad code practice" covers | The first scanner reports vulnerable dependencies, leaked secrets and misconfiguration. Static analysis of the app's own code — a different class of tool, per-language, and noisy — is not in the score yet. R-311, design 09 §2. |
-| **O-20** | Whether a score ages | A scan from three weeks ago describes three-week-old vulnerability data, and nothing rescans an app that has not been deployed since. A scheduled rescan is the obvious answer and needs a decision about what it costs on a small host. Design 09 §5. |
+| **O-20** | Whether a score ages | A scan from three weeks ago describes three-week-old vulnerability data, and nothing rescans an app that has not been deployed since. A scheduled rescan is the obvious answer and needs a decision about what it costs on a small host. It also decides how old a scan a deploy may reuse (R-312, issue #84): today there is no limit, and whether a scanner database update invalidates reuse is part of the same question. Design 09 §4.1, §5. |
 
 ---
 

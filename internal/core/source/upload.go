@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
@@ -125,17 +127,31 @@ func (s Sources) fetchUpload(_ context.Context, src spec.Source) (*Checkout, err
 		return nil, errs.Wrap(errs.Internal, "Pando could not unpack the uploaded source.", err)
 	}
 
-	if err := extract(f, dir); err != nil {
+	// Hashed while it is read rather than in a second pass: the digest is of
+	// the bytes that were unpacked, which a second read of a file the next
+	// upload may replace could not promise.
+	sum := sha256.New()
+	if err := extract(io.TeeReader(f, sum), dir); err != nil {
 		_ = os.RemoveAll(dir)
 		return nil, err
 	}
+	// The rest of the file, if the archive ended before it did: a digest of
+	// part of an archive names nothing.
+	if _, err := io.Copy(sum, f); err != nil {
+		_ = os.RemoveAll(dir)
+		return nil, errs.Wrap(errs.Internal, "Pando could not read the uploaded source.", err)
+	}
 	// No commit: an upload has no revision. The deploy records the archive it
-	// came from instead, which is the honest answer to "what was deployed".
+	// came from instead, which is the honest answer to "what was deployed",
+	// and the archive's digest is what a scan of it is known by.
 	//
 	// With the same cleanup a clone has. Without it every detection and every
 	// deploy of an uploaded app left a full copy of its source in the
 	// temporary directory for as long as the server ran (issue #55).
-	return &Checkout{Dir: dir, Commit: "", cleanup: func() { _ = os.RemoveAll(dir) }}, nil
+	return &Checkout{
+		Dir: dir, Commit: "", Digest: "sha256:" + hex.EncodeToString(sum.Sum(nil)),
+		cleanup: func() { _ = os.RemoveAll(dir) },
+	}, nil
 }
 
 // extract unpacks a gzipped tar, refusing anything that escapes the directory.

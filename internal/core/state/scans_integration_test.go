@@ -5,6 +5,7 @@ package state_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -92,7 +93,7 @@ func TestR312_ADeployOfAScannedCommitUsesThatScan(t *testing.T) {
 	require.NoError(t, err)
 	scans := state.NewScans(db)
 
-	_, found, err := scans.ForCommit(ctx, app.ID, "abc123")
+	_, found, err := scans.ForSource(ctx, app.ID, "abc123", "scn")
 	require.NoError(t, err)
 	require.False(t, found, "never scanned")
 
@@ -100,18 +101,82 @@ func TestR312_ADeployOfAScannedCommitUsesThatScan(t *testing.T) {
 	require.NoError(t, err)
 	_, err = scans.Record(ctx, state.Scan{AppID: app.ID, ScannerRef: "scn", Score: score(90)})
 	require.NoError(t, err)
-	_, found, err = scans.ForCommit(ctx, app.ID, "abc123")
+	_, found, err = scans.ForSource(ctx, app.ID, "abc123", "scn")
 	require.NoError(t, err)
 	require.False(t, found, "a failed scan, and one of no known commit, cover nothing")
 
 	atDiscovery, err := scans.Record(ctx, state.Scan{AppID: app.ID, Commit: "abc123", ScannerRef: "scn", Score: score(72)})
 	require.NoError(t, err)
-	got, found, err := scans.ForCommit(ctx, app.ID, "abc123")
+	got, found, err := scans.ForSource(ctx, app.ID, "abc123", "scn")
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, atDiscovery.ID, got.ID)
+	require.Equal(t, 72, *got.Score)
 
-	_, found, err = scans.ForCommit(ctx, app.ID, "def456")
+	_, found, err = scans.ForSource(ctx, app.ID, "def456", "scn")
 	require.NoError(t, err)
 	require.False(t, found, "a new commit is scanned")
+
+	_, found, err = scans.ForSource(ctx, app.ID, "abc123", "scn_other")
+	require.NoError(t, err)
+	require.False(t, found, "another scanner's findings are not this scanner's (issue #84)")
+}
+
+// TestR312_AReusedScanDescribesTheNewRevision asserts the other half of reuse
+// (issue #84): a new revision of an unchanged source is scored by the scan of
+// that source, so the threshold and the console see a scanned revision — and
+// the app's history still shows one scan, not one per deploy.
+func TestR312_AReusedScanDescribesTheNewRevision(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := connected(t)
+	alice := seedUser(t, db, "alice")
+	apps := state.NewApps(db)
+	scans := state.NewScans(db)
+	app, err := apps.Create(ctx, "rota", "rota", alice.ID, alice.ID,
+		spec.Source{Type: spec.SourceGit, URL: "https://example.test/rota"})
+	require.NoError(t, err)
+
+	first, err := apps.CreateRevision(ctx, app.ID, minimalSpec(), spec.OriginDetected, alice.ID)
+	require.NoError(t, err)
+	ran, err := scans.Record(ctx, state.Scan{
+		AppID: app.ID, SpecID: first.ID, Commit: "abc123", ScannerRef: "scn", Score: score(64),
+		Findings: []api.Finding{{ID: "CVE-1", Severity: api.SeverityHigh}},
+	})
+	require.NoError(t, err)
+
+	second, err := apps.CreateRevision(ctx, app.ID, minimalSpec(), spec.OriginEdited, alice.ID)
+	require.NoError(t, err)
+	_, found, err := scans.Latest(ctx, app.ID, second.ID)
+	require.NoError(t, err)
+	require.False(t, found, "before the reuse, the new revision has no scan")
+
+	from, found, err := scans.ForSource(ctx, app.ID, "abc123", "scn")
+	require.NoError(t, err)
+	require.True(t, found)
+	reused, err := scans.Reuse(ctx, from, second.ID)
+	require.NoError(t, err)
+
+	got, found, err := scans.Latest(ctx, app.ID, second.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, reused.ID, got.ID)
+	require.Equal(t, ran.ID, got.ReusedFrom)
+	require.Equal(t, ran.ID, got.Origin())
+	require.Equal(t, 64, *got.Score)
+	require.Len(t, got.Findings, 1)
+	require.WithinDuration(t, ran.RanAt, got.RanAt, time.Millisecond,
+		"findings are as old as the scan that found them")
+
+	// A copy of a copy names the scan that ran.
+	third, err := apps.CreateRevision(ctx, app.ID, minimalSpec(), spec.OriginEdited, alice.ID)
+	require.NoError(t, err)
+	again, err := scans.Reuse(ctx, got, third.ID)
+	require.NoError(t, err)
+	require.Equal(t, ran.ID, again.ReusedFrom)
+
+	history, err := scans.History(ctx, app.ID, 0)
+	require.NoError(t, err)
+	require.Len(t, history, 1, "one scan ran, however many revisions it describes")
+	require.Equal(t, ran.ID, history[0].ID)
 }

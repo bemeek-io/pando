@@ -227,7 +227,7 @@ func (r *Runner) run(ctx context.Context, appID, slug string, src spec.Source) (
 		// Reported as its own stage: a scan can take a while, and the
 		// onboarding page shows it as a step of the plan.
 		detect.Report(ctx, detect.StageScanning, &proposal)
-		r.Scanner.ScanSource(ctx, appID, checkout.Dir, checkout.Commit)
+		r.Scanner.ScanSource(ctx, appID, checkout.Dir, checkout.Identity())
 	}
 
 	// Fill in the install's own answers before the proposal is shown, not when

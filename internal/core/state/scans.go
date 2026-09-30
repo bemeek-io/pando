@@ -24,8 +24,9 @@ type Scan struct {
 	ID     string `json:"id"`
 	AppID  string `json:"app_id"`
 	SpecID string `json:"spec_id,omitempty"`
-	// Commit is the source commit the scan read, when it read one. A deploy
-	// of that commit uses this scan rather than scanning again (ForCommit).
+	// Commit names the source the scan read, when it read one: a git commit,
+	// an image digest, or an upload's archive digest. A deploy of that source
+	// uses this scan rather than scanning again (ForSource).
 	Commit     string `json:"commit,omitempty"`
 	ScannerRef string `json:"scanner_ref"`
 	Scanner    string `json:"scanner,omitempty"`
@@ -38,6 +39,12 @@ type Scan struct {
 	Findings     []api.Finding `json:"findings"`
 	Error        string        `json:"error,omitempty"`
 	RanAt        time.Time     `json:"ran_at"`
+
+	// ReusedFrom is the scan this one repeats, when a deploy of a new revision
+	// of an unchanged source reused it rather than scanning again (Reuse).
+	// RanAt is that scan's: the findings are as old as the scan that found
+	// them, not as the deploy that reused them.
+	ReusedFrom string `json:"reused_from,omitempty"`
 }
 
 // Scans stores them.
@@ -66,10 +73,11 @@ func (s *Scans) Record(ctx context.Context, scan Scan) (Scan, error) {
 
 	_, err = s.db.Exec(ctx, `
 		INSERT INTO app_scans (id, app_id, spec_id, scanner_ref, scanner, score, score_fixable,
-		                       findings, error, ran_at, commit)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		                       findings, error, ran_at, commit, reused_from)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 		scan.ID, scan.AppID, nullable(scan.SpecID), scan.ScannerRef, scan.Scanner,
-		scan.Score, scan.ScoreFixable, body, scan.Error, scan.RanAt, nullable(scan.Commit))
+		scan.Score, scan.ScoreFixable, body, scan.Error, scan.RanAt, nullable(scan.Commit),
+		nullable(scan.ReusedFrom))
 	if err != nil {
 		return Scan{}, errs.Wrap(errs.Internal, "Could not record the scan.", err)
 	}
@@ -90,7 +98,7 @@ func (s *Scans) Record(ctx context.Context, scan Scan) (Scan, error) {
 func (s *Scans) Latest(ctx context.Context, appID, specID string) (Scan, bool, error) {
 	query := `
 		SELECT id, app_id, coalesce(spec_id, ''), scanner_ref, scanner, score, score_fixable,
-		       findings, error, ran_at
+		       findings, error, ran_at, coalesce(reused_from, '')
 		FROM app_scans
 		WHERE app_id = $1 AND ($2 = '' OR spec_id = $2 OR spec_id IS NULL)
 		ORDER BY (spec_id IS NOT NULL) DESC, ran_at DESC
@@ -100,7 +108,7 @@ func (s *Scans) Latest(ctx context.Context, appID, specID string) (Scan, bool, e
 	var findings []byte
 	err := s.db.QueryRow(ctx, query, appID, specID).Scan(
 		&scan.ID, &scan.AppID, &scan.SpecID, &scan.ScannerRef, &scan.Scanner,
-		&scan.Score, &scan.ScoreFixable, &findings, &scan.Error, &scan.RanAt)
+		&scan.Score, &scan.ScoreFixable, &findings, &scan.Error, &scan.RanAt, &scan.ReusedFrom)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Scan{}, false, nil
 	}
@@ -113,31 +121,66 @@ func (s *Scans) Latest(ctx context.Context, appID, specID string) (Scan, bool, e
 	return scan, true, nil
 }
 
-// ForCommit returns the newest scan of an app's source at a commit that ran —
-// a scanner that failed produced no finding worth reusing. Found is false for
-// an empty commit, which names no source.
-func (s *Scans) ForCommit(ctx context.Context, appID, commit string) (Scan, bool, error) {
-	if commit == "" {
+// ForSource returns the newest scan of an app's source that ran, by the
+// scanner named — a scanner that failed produced no finding worth reusing
+// (R-318), and another scanner's findings are not this one's. Found is false
+// for an empty source, which names nothing.
+func (s *Scans) ForSource(ctx context.Context, appID, source, scannerRef string) (Scan, bool, error) {
+	if source == "" {
 		return Scan{}, false, nil
 	}
 	var scan Scan
+	var findings []byte
 	err := s.db.QueryRow(ctx, `
-		SELECT id, coalesce(spec_id, ''), ran_at
+		SELECT id, app_id, coalesce(spec_id, ''), scanner_ref, scanner, score, score_fixable,
+		       findings, error, ran_at, coalesce(reused_from, '')
 		FROM app_scans
-		WHERE app_id = $1 AND commit = $2 AND error = '' AND score IS NOT NULL
-		ORDER BY ran_at DESC
-		LIMIT 1`, appID, commit).Scan(&scan.ID, &scan.SpecID, &scan.RanAt)
+		WHERE app_id = $1 AND commit = $2 AND scanner_ref = $3 AND error = '' AND score IS NOT NULL
+		ORDER BY ran_at DESC, (reused_from IS NULL) DESC
+		LIMIT 1`, appID, source, scannerRef).Scan(
+		&scan.ID, &scan.AppID, &scan.SpecID, &scan.ScannerRef, &scan.Scanner,
+		&scan.Score, &scan.ScoreFixable, &findings, &scan.Error, &scan.RanAt, &scan.ReusedFrom)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Scan{}, false, nil
 	}
 	if err != nil {
 		return Scan{}, false, errs.Wrap(errs.Internal, "Could not read the app's scans.", err)
 	}
-	scan.AppID, scan.Commit = appID, commit
+	if len(findings) > 0 {
+		_ = json.Unmarshal(findings, &scan.Findings)
+	}
+	scan.Commit = source
 	return scan, true, nil
 }
 
+// Reuse attaches an earlier scan to another revision, as a new row with the
+// same findings, score and ran_at, naming the scan it repeats.
+//
+// A revision's score is the newest scan of that revision (Latest). A deploy of
+// a new revision of an unchanged source does not scan again, and without this
+// the revision would have no scan: refused as never scanned where a threshold
+// is set, and shown as "not scanned" everywhere else.
+func (s *Scans) Reuse(ctx context.Context, from Scan, specID string) (Scan, error) {
+	reused := from
+	reused.SpecID = specID
+	// Always the scan that ran, never a copy of a copy: the chain would say
+	// nothing a single hop does not.
+	reused.ReusedFrom = from.Origin()
+	return s.Record(ctx, reused)
+}
+
+// Origin is the ID of the scan that ran: this one, or the one it repeats.
+func (s Scan) Origin() string {
+	if s.ReusedFrom != "" {
+		return s.ReusedFrom
+	}
+	return s.ID
+}
+
 // History returns an app's scans, newest first.
+//
+// The scans that ran. A reuse (Reuse) is the same scan attached to another
+// revision, and listing it would show one scan twice at the same time.
 func (s *Scans) History(ctx context.Context, appID string, limit int) ([]Scan, error) {
 	if limit <= 0 {
 		limit = 20
@@ -147,7 +190,7 @@ func (s *Scans) History(ctx context.Context, appID string, limit int) ([]Scan, e
 		SELECT id, app_id, coalesce(spec_id, ''), scanner_ref, scanner, score, score_fixable,
 		       findings, error, ran_at
 		FROM app_scans
-		WHERE app_id = $1
+		WHERE app_id = $1 AND reused_from IS NULL
 		ORDER BY ran_at DESC
 		LIMIT $2`, appID, limit)
 	if err != nil {

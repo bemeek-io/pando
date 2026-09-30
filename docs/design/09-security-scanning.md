@@ -118,12 +118,33 @@ scan orders the same way twice.
 
 ### 4.1 At deploy (R-314)
 
-**[D] Scanned once per source, not once per deploy.** A scan records the commit it read. Detection
-scans the commit it reads, a person can ask for a scan (`POST /security/scan`), and a deploy of a commit
-nobody has scanned scans it — but a deploy of a commit that already has a successful scan uses that one
-and says so in the deploy log ("Using the security scan of 3f9a2c1 from …"). The threshold below is
-checked either way. The trade: a deploy that reuses the source scan does not also scan the built image's
-OS packages, which only a deploy-time scan saw; a new commit, or a scan somebody asks for, still does.
+**[D] Scanned once per source, not once per deploy (R-312).** A scan records the source it read: the
+commit for a repository, the digest for a published image, and for an upload the SHA-256 of the
+archive (`sha256:<hex>`, never written into the spec as a commit — R-120). Detection scans the source
+it reads, a person can ask for a scan (`POST /security/scan`), and a deploy of a source nobody has
+scanned scans it — but a deploy of a source that already has a successful scan **by the scanner
+configured now** uses that one and says so in the deploy log ("Using the security scan of 3f9a2c1 from
+… (source unchanged)", or "of the uploaded source" for an upload). The threshold below is checked
+either way, and a refusal carries the reused scan's worst findings. The trade: a deploy that reuses the
+source scan does not also scan the built image's OS packages, which only a deploy-time scan saw; a new
+source, a new scanner, or a scan somebody asks for, still does.
+
+What is not reused: a failed scan (R-318 — the next deploy tries again), another scanner's scan (its
+findings are not the ones this installation's scanner reports), and a scan of another source. A scan
+somebody asks for always runs.
+
+**A reused scan is attached to the revision being deployed.** A revision's score is the newest scan of
+that revision (§3), and a new revision of an unchanged source — a variable edited, or every
+`pando deploy .` of the same directory — would otherwise have none: refused as never scanned where a
+threshold is set. The reuse is recorded as a new `app_scans` row for the new revision with the
+original's findings, score and `ran_at`, and `reused_from` naming the scan that ran. The table stays
+append-only; the scan history lists scans that ran and leaves reuses out, so one scan is shown once.
+
+**[O] How old a reused scan may be** (O-20). Nothing bounds it today: an app redeployed from an
+unchanged source for a month carries a month-old score, as an app not redeployed at all does. New CVEs
+against an unchanged source are the job of the on-demand scan and a scheduled rescan, not of redeploys —
+a score that refreshed with every click on deploy would describe the clicking. Whether a maximum age
+belongs in host policy, and whether a scanner database update invalidates reuse, are part of O-20.
 
 In the planner, beside the other plan-time refusals, so it fails before anything is created:
 
