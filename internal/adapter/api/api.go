@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/egress"
 	"github.com/trypando/pando/internal/secret"
 )
 
@@ -99,6 +100,11 @@ type RuntimeCapabilities struct {
 	// routing adapter that needs one is refused a start on a runtime without
 	// it, rather than configured and silently unreachable.
 	SupportsEdge bool
+
+	// SupportsEgressRestriction means the runtime enforces NetworkPlan.Egress
+	// when it restricts anything (R-186). Without it, a plan whose rules
+	// refuse something is refused, never deployed with them ignored.
+	SupportsEgressRestriction bool
 }
 
 // RoutingCapabilities describes what a routing adapter can do.
@@ -463,9 +469,17 @@ type NetworkPlan struct {
 	// capability check instead of silently placing workloads on a shared one.
 	Private bool
 
-	EgressMode  EgressMode
-	EgressAllow []string
+	// Egress is the rules the app's workloads run with, already merged from
+	// the installation's and the app's (R-182). A runtime enforces every
+	// layer, or says it cannot (SupportsEgressRestriction) and is refused at
+	// plan time (R-186). When Egress.Restricted() is false nothing may be put
+	// in the app's path: an app with no restriction runs exactly as it would
+	// with no egress controls at all.
+	Egress EgressRules
 }
+
+// EgressRules is what decides whether a workload's connection may leave.
+type EgressRules = egress.Rules
 
 // ObservedBundle is what actually exists.
 type ObservedBundle struct {

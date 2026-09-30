@@ -18,7 +18,22 @@ var descriptions = map[string]string{
 		"(only behind the app's passcode), or none.",
 	"min_build_isolation":   "Minimum isolation for builds, as an isolation class number (10 is a container).",
 	"min_runtime_isolation": "Minimum isolation for running apps, as an isolation class number (10 is a container).",
-	"egress_allowlist":      "Where apps may connect out to, by default. An app's own list replaces this one.",
+	"egress_allowlist":      "Older form of egress_mode allowlist with egress_list. Prefer those.",
+	"egress_mode": "Where apps may connect out to: allow_all (anywhere), denylist (anywhere except egress_list), " +
+		"or allowlist (only egress_list). Apps can narrow it; loosening it is governed by egress_loosening.",
+	"egress_list": "The installation's egress list: hostnames, *.wildcards, addresses or ranges, each optionally " +
+		"with a port. Read by egress_mode.",
+	"egress_block_private": "Stop apps connecting to private addresses — the local network, loopback, and the " +
+		"cloud metadata address — whatever egress_mode says.",
+	"egress_loosening": "Whether an app may loosen the installation's egress rules (add to an allowlist, remove from " +
+		"a denylist, unblock private addresses): verb (somebody holding app.egress.loosen may), approval (its " +
+		"deploy needs approval), or forbidden.",
+	"deploy_approval_required": "Every app's deploys need approval from somebody holding install.deploys.approve " +
+		"or app.deploy.approve. Automatic deploys stop while it is on.",
+	"deploy_approval_apps":  "Apps, by ID, whose deploys need approval whatever their owners say.",
+	"deploy_approval_count": "How many approvals a deploy needs. 0 means one.",
+	"deploy_approval_expiry_hours": "How long a deploy waits for approval before it expires, in hours. 0 means " +
+		"it waits until somebody answers.",
 	"require_backup_before_destroy": "Require a backup before anything is destroyed: an app's storage is " +
 		"backed up before the app or its volumes are deleted.",
 	"max_token_lifetime_days": "Longest a token may live, in days. 0 means no limit.",

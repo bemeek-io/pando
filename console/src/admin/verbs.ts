@@ -29,7 +29,9 @@ export const AppVerb = {
   GrantsManage: 'app.grants.manage',
   RoutingOverride: 'app.routing.override',
   ResourcesOverride: 'app.resources.override',
-  EgressOverride: 'app.egress.override',
+  EgressTighten: 'app.egress.tighten',
+  EgressLoosen: 'app.egress.loosen',
+  DeployApprove: 'app.deploy.approve',
   Delete: 'app.delete',
 } as const;
 

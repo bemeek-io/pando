@@ -310,7 +310,21 @@ func (r *Runner) Run(ctx context.Context, dep state.Deployment, rev state.Revisi
 		return fail("apply", err)
 	}
 
-	bundle, err := r.bundlePlan(appSpec, image, perWorkload, secrets, svcs)
+	// Egress resolved against policy as it is now, the same answer the plan
+	// gave (R-188), and recorded so the reconciler restores exactly these.
+	var rules api.EgressRules
+	if r.planner != nil {
+		eff, err := r.planner.Egress(ctx, appSpec)
+		if err != nil {
+			return fail("apply", err)
+		}
+		rules = eff.Rules
+	}
+	if err := r.deploys.SetEgressRules(ctx, dep.ID, rules); err != nil {
+		return fail("apply", err)
+	}
+
+	bundle, err := r.bundlePlan(appSpec, image, perWorkload, secrets, svcs, rules)
 	if err != nil {
 		return fail("apply", err)
 	}
@@ -602,21 +616,25 @@ func startCommand(s *spec.AppSpec, wb *spec.WorkloadBuild) string {
 // for every app. That comparison needs the shape — workloads, images, ports,
 // mounts, volumes — and must never be a reason to decrypt a secret, so this
 // stops short of environment and R-193's fingerprint covers the rest.
-func BundlePlanShape(s *spec.AppSpec, image string, perWorkload map[string]string) (api.BundlePlan, error) {
-	return bundlePlanFor(s, image, perWorkload, nil, provisioned{}, false)
+//
+// Egress is the rules the app's last successful deploy ran with, which the
+// deployment records: rules take effect at a deploy and a running app is not
+// changed underneath it (R-183, O-10), so correcting drift restores what was
+// deployed rather than what policy says now.
+func BundlePlanShape(s *spec.AppSpec, image string, perWorkload map[string]string, rules api.EgressRules) (api.BundlePlan, error) {
+	return bundlePlanFor(s, image, perWorkload, nil, provisioned{}, false, rules)
 }
 
-func (r *Runner) bundlePlan(s *spec.AppSpec, image string, perWorkload map[string]string, secrets map[string]secret.Value, svcs provisioned) (api.BundlePlan, error) {
-	return bundlePlanFor(s, image, perWorkload, secrets, svcs, true)
+func (r *Runner) bundlePlan(s *spec.AppSpec, image string, perWorkload map[string]string, secrets map[string]secret.Value, svcs provisioned, rules api.EgressRules) (api.BundlePlan, error) {
+	return bundlePlanFor(s, image, perWorkload, secrets, svcs, true, rules)
 }
 
-func bundlePlanFor(s *spec.AppSpec, image string, perWorkload map[string]string, secrets map[string]secret.Value, svcs provisioned, withEnv bool) (api.BundlePlan, error) {
+func bundlePlanFor(s *spec.AppSpec, image string, perWorkload map[string]string, secrets map[string]secret.Value, svcs provisioned, withEnv bool, rules api.EgressRules) (api.BundlePlan, error) {
 	plan := api.BundlePlan{
 		BundleID: s.AppID,
 		Network: api.NetworkPlan{
-			Private:     true, // R-026, always.
-			EgressMode:  s.Egress.Mode,
-			EgressAllow: s.Egress.Allowlist,
+			Private: true, // R-026, always.
+			Egress:  rules,
 		},
 		Labels: map[string]string{"pando.app": s.AppID},
 	}

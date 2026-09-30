@@ -101,18 +101,20 @@ func TestR081_SeededVerbSetsMatchTheRequirement(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, operator.Has(authz.AppSecretsRead), "R-083")
 	require.False(t, operator.Has(authz.AppExec), "R-084")
-	for _, v := range []authz.Verb{authz.AppRoutingOverride, authz.AppResourceOverride, authz.AppEgressOverride} {
+	for _, v := range []authz.Verb{authz.AppRoutingOverride, authz.AppResourceOverride, authz.AppEgressLoosen} {
 		require.False(t, operator.Has(v), "%s is Owner-only", v)
 	}
+	require.True(t, operator.Has(authz.AppEgressTighten), "R-184: tightening is Operator's too")
 
-	// Owner holds every *app* verb and no install verb. An owner of one app
-	// administers nothing: R-031 gives every app an owner of record, and that
-	// is not the same office as administering the installation (O-17).
+	// Owner holds every *app* verb but app.deploy.approve, and no install
+	// verb. An owner of one app administers nothing: R-031 gives every app an
+	// owner of record, and that is not the same office as administering the
+	// installation (O-17). Approving deploys is no built-in role's (R-155).
 	owner, err := store.Role(ctx, authz.RoleOwner)
 	require.NoError(t, err)
 	for _, v := range authz.Verbs {
-		if authz.InstallScoped(v) {
-			require.False(t, owner.Has(v), "owner must not hold the install verb %s", v)
+		if authz.InstallScoped(v) || v == authz.AppDeployApprove {
+			require.False(t, owner.Has(v), "owner must not hold %s", v)
 			continue
 		}
 		require.True(t, owner.Has(v), "owner is missing %s", v)
@@ -128,8 +130,8 @@ func TestR081_SeededVerbSetsMatchTheRequirement(t *testing.T) {
 		require.Equal(t, authz.InstallScoped(v), admin.Has(v),
 			"administrator should hold %s only if it is install-scoped", v)
 	}
-	require.Equal(t, len(authz.Verbs), len(owner.Verbs)+len(admin.Verbs),
-		"the two built-in top roles partition the catalog exactly")
+	require.Equal(t, len(authz.Verbs)-1, len(owner.Verbs)+len(admin.Verbs),
+		"the two built-in top roles partition the catalog but for app.deploy.approve")
 }
 
 // TestR081_AdministratorIsImmutableToo asserts the fourth built-in role is

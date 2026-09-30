@@ -49,7 +49,7 @@ func provisionedPostgres() provisioned {
 // a connection string in an environment variable, which is the whole promise.
 func TestR131_AProvisionedSlotReachesTheWorkloadAsAValue(t *testing.T) {
 	s := specWithProvisionedSlot()
-	plan, err := bundlePlanFor(s, "app:latest", nil, nil, provisionedPostgres(), true)
+	plan, err := bundlePlanFor(s, "app:latest", nil, nil, provisionedPostgres(), true, api.EgressRules{})
 	require.NoError(t, err)
 
 	require.Equal(t, "postgres://app:pw@svc-01hq9:5432/app", plan.Workloads[0].Env["DATABASE_URL"].Reveal())
@@ -60,7 +60,7 @@ func TestR131_AProvisionedSlotReachesTheWorkloadAsAValue(t *testing.T) {
 // the failure mode R-132 exists to prevent, and it should not come back in by
 // the side door.
 func TestAnUnprovisionedSlotStopsTheDeploy(t *testing.T) {
-	_, err := bundlePlanFor(specWithProvisionedSlot(), "app:latest", nil, nil, provisioned{}, true)
+	_, err := bundlePlanFor(specWithProvisionedSlot(), "app:latest", nil, nil, provisioned{}, true, api.EgressRules{})
 	require.Error(t, err)
 }
 
@@ -70,7 +70,7 @@ func TestAnUnprovisionedSlotStopsTheDeploy(t *testing.T) {
 // backed up, offered at delete and reclaimed afterwards by code that knows
 // nothing about services.
 func TestR135_ProvisionedStorageIsAnOrdinaryAppVolume(t *testing.T) {
-	plan, err := bundlePlanFor(specWithProvisionedSlot(), "app:latest", nil, nil, provisionedPostgres(), true)
+	plan, err := bundlePlanFor(specWithProvisionedSlot(), "app:latest", nil, nil, provisionedPostgres(), true, api.EgressRules{})
 	require.NoError(t, err)
 
 	require.Len(t, plan.Volumes, 1)
@@ -84,7 +84,7 @@ func TestR135_ProvisionedStorageIsAnOrdinaryAppVolume(t *testing.T) {
 // app's limits.
 func TestR222_AProvisionedServiceIsCappedLikeAnyOtherWorkload(t *testing.T) {
 	s := specWithProvisionedSlot()
-	plan, err := bundlePlanFor(s, "app:latest", nil, nil, provisionedPostgres(), true)
+	plan, err := bundlePlanFor(s, "app:latest", nil, nil, provisionedPostgres(), true, api.EgressRules{})
 	require.NoError(t, err)
 
 	var service api.WorkloadPlan
@@ -105,7 +105,7 @@ func TestR222_AProvisionedServiceIsCappedLikeAnyOtherWorkload(t *testing.T) {
 // check. What covers the rest of the race is the restart policy.
 func TestTheAppStartsAfterTheServiceItDependsOn(t *testing.T) {
 	s := specWithProvisionedSlot()
-	plan, err := bundlePlanFor(s, "app:latest", nil, nil, provisionedPostgres(), true)
+	plan, err := bundlePlanFor(s, "app:latest", nil, nil, provisionedPostgres(), true, api.EgressRules{})
 	require.NoError(t, err)
 
 	require.Equal(t, []string{"svc-01hq9"}, plan.Workloads[0].DependsOn)
@@ -117,7 +117,7 @@ func TestAWorkloadThatNeedsNoServiceWaitsForNothing(t *testing.T) {
 	s := specWithProvisionedSlot()
 	s.Workloads = append(s.Workloads, spec.Workload{Name: "worker"})
 
-	plan, err := bundlePlanFor(s, "app:latest", nil, nil, provisionedPostgres(), true)
+	plan, err := bundlePlanFor(s, "app:latest", nil, nil, provisionedPostgres(), true, api.EgressRules{})
 	require.NoError(t, err)
 	require.Empty(t, plan.Workloads[1].DependsOn)
 }
@@ -134,7 +134,7 @@ func TestR148_AProvisionedServiceIsPartOfWhatShouldBeRunning(t *testing.T) {
 	s := specWithProvisionedSlot()
 	svcs := provisionedPostgres()
 
-	plan, err := bundlePlanFor(s, "app:latest", nil, nil, svcs, true)
+	plan, err := bundlePlanFor(s, "app:latest", nil, nil, svcs, true, api.EgressRules{})
 	require.NoError(t, err)
 
 	names := map[string]bool{}
@@ -150,7 +150,7 @@ func TestR148_AProvisionedServiceIsPartOfWhatShouldBeRunning(t *testing.T) {
 // seconds for every app; reading a connection string that often would make the
 // cheap path the expensive one.
 func TestTheComparedShapeCarriesNoEnvironment(t *testing.T) {
-	plan, err := bundlePlanFor(specWithProvisionedSlot(), "app:latest", nil, nil, provisionedPostgres(), false)
+	plan, err := bundlePlanFor(specWithProvisionedSlot(), "app:latest", nil, nil, provisionedPostgres(), false, api.EgressRules{})
 	require.NoError(t, err)
 
 	for _, w := range plan.Workloads {
@@ -180,7 +180,7 @@ func TestR096_AComposeAppGetsOneImagePerServiceThatBuilds(t *testing.T) {
 
 	built := map[string]string{"web": "sha256:web", "worker": "sha256:worker"}
 
-	plan, err := bundlePlanFor(s, "", built, nil, provisioned{}, true)
+	plan, err := bundlePlanFor(s, "", built, nil, provisioned{}, true, api.EgressRules{})
 	require.NoError(t, err)
 
 	images := map[string]string{}

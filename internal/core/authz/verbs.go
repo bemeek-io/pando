@@ -47,6 +47,13 @@ const (
 	// somebody who runs its CI to hold one without the other.
 	InstallTokensManage Verb = "install.tokens.manage"
 
+	// InstallDeploysApprove approves or rejects any deploy that needs
+	// approval, on any app, including the holder's own (R-155). The install
+	// half of approval; app.deploy.approve is the per-app half. Not reached
+	// through install.apps.manage: approval is a trust an installation hands
+	// out on purpose, and managing apps does not imply it.
+	InstallDeploysApprove Verb = "install.deploys.approve"
+
 	// AppCreate is install-scoped despite its name: there is no app yet when it
 	// is checked. Sequence A step 1 has always called it install-level.
 	AppCreate Verb = "app.create"
@@ -62,8 +69,26 @@ const (
 	AppGrantsManage     Verb = "app.grants.manage"
 	AppRoutingOverride  Verb = "app.routing.override"
 	AppResourceOverride Verb = "app.resources.override"
-	AppEgressOverride   Verb = "app.egress.override"
-	AppDelete           Verb = "app.delete"
+
+	// AppEgressTighten changes an app's egress within the installation's
+	// rules (R-182, R-184): its own list, additions to a denylist, removals
+	// from an allowlist, private addresses blocked. Never beyond policy
+	// (R-272), so Operator holds it as well as Owner.
+	AppEgressTighten Verb = "app.egress.tighten"
+
+	// AppEgressLoosen loosens the installation's egress rules for an app,
+	// where host policy permits loosening by verb (R-183, R-184). It was
+	// app.egress.override until issue #79; the migration renamed it in every
+	// role that held it. Holding it covers every egress change, tightening
+	// included.
+	AppEgressLoosen Verb = "app.egress.loosen"
+
+	// AppDeployApprove approves or rejects this app's deploys that need
+	// approval (R-155). In no built-in role: an installation grants it
+	// deliberately, through a custom role.
+	AppDeployApprove Verb = "app.deploy.approve"
+
+	AppDelete Verb = "app.delete"
 )
 
 // Verbs is the catalog (design 06 §5, R-080).
@@ -83,6 +108,7 @@ var Verbs = []Verb{
 	InstallAppsView,
 	InstallAppsManage,
 	InstallTokensManage,
+	InstallDeploysApprove,
 	AppCreate,
 
 	AppView,
@@ -96,7 +122,9 @@ var Verbs = []Verb{
 	AppGrantsManage,
 	AppRoutingOverride,
 	AppResourceOverride,
-	AppEgressOverride,
+	AppEgressTighten,
+	AppEgressLoosen,
+	AppDeployApprove,
 	AppDelete,
 }
 
@@ -172,7 +200,8 @@ func InstallScoped(v Verb) bool {
 	switch v {
 	case InstallView, InstallUsersManage, InstallPolicyManage,
 		InstallAdaptersManage, InstallAuditRead, InstallBackupManage,
-		InstallAppsView, InstallAppsManage, InstallTokensManage, AppCreate:
+		InstallAppsView, InstallAppsManage, InstallTokensManage,
+		InstallDeploysApprove, AppCreate:
 		return true
 	default:
 		return false
@@ -195,12 +224,13 @@ func AppVerbs() []Verb {
 //
 // This is the one place an install verb implies app verbs, and it is a table
 // rather than a rule so that it can be read in one look. install.apps.view is
-// the Viewer role's verbs; install.apps.manage is all of them, which is the
-// Owner role's (R-081).
+// the Viewer role's verbs; install.apps.manage is the Owner role's (R-081),
+// which is every app verb but app.deploy.approve. Approving deploys is
+// install.deploys.approve's, checked on its own (R-155).
 func everyApp(install Verb, verb Verb) bool {
 	switch install {
 	case InstallAppsManage:
-		return !InstallScoped(verb)
+		return !InstallScoped(verb) && verb != AppDeployApprove
 	case InstallAppsView:
 		return verb == AppView || verb == AppLogsRead
 	default:

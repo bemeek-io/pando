@@ -1516,6 +1516,9 @@ func startupPolicy(cfg *config.Config) (*corepolicy.Overlay, error) {
 		return nil, err
 	}
 	fixed := overlay.Apply(corepolicy.Document{})
+	if err := fixed.ValidateRules(); err != nil {
+		return nil, fmt.Errorf("the startup policy has a setting Pando cannot use: %w", err)
+	}
 	for _, verbs := range [][]string{fixed.DisabledVerbs, fixed.AgentDisabledVerbs} {
 		for _, v := range verbs {
 			if !authz.IsVerb(authz.Verb(v)) {

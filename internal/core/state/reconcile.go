@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/trypando/pando/internal/egress"
 	"github.com/trypando/pando/internal/errs"
 )
 
@@ -38,6 +39,11 @@ type Reconcilable struct {
 	// that can be compared against one — and a tag can point somewhere new
 	// without the reference changing at all.
 	ImageDigest string
+
+	// EgressRules is what the last successful deployment ran with. Rules
+	// take effect at a deploy (R-183, O-10), so the reconciler restores these
+	// rather than resolving policy afresh and changing a running app.
+	EgressRules egress.Rules
 }
 
 // Reconciles reads and writes the reconciler's view of an app.
@@ -80,6 +86,11 @@ func (r *Reconciles) Due(ctx context.Context, now time.Time, limit int) ([]Recon
 		           SELECT d.workload_images FROM deployments d
 		           WHERE d.app_id = a.id AND d.status = 'succeeded' AND d.workload_images IS NOT NULL
 		           ORDER BY d.started_at DESC LIMIT 1
+		       ),
+		       (
+		           SELECT d.egress_rules FROM deployments d
+		           WHERE d.app_id = a.id AND d.status = 'succeeded'
+		           ORDER BY d.started_at DESC LIMIT 1
 		       )
 		FROM apps a
 		WHERE a.deleted_at IS NULL
@@ -100,12 +111,12 @@ func (r *Reconciles) Due(ctx context.Context, now time.Time, limit int) ([]Recon
 		var owner, pinned *string
 		var source []byte
 
-		var workloadImages []byte
+		var workloadImages, egressRules []byte
 		if err := rows.Scan(&a.ID, &a.Name, &a.Slug, &owner, &a.State, &a.DesiredState,
 			&pinned, &source, &a.CreatedAt, &a.UpdatedAt,
 			&a.ConsecutiveFailures, &a.LastFailureAt,
 			&a.NextAttemptAt, &a.UnobservableSince,
-			&a.AppliedEnvHash, &a.ImageRef, &a.ImageDigest, &workloadImages); err != nil {
+			&a.AppliedEnvHash, &a.ImageRef, &a.ImageDigest, &workloadImages, &egressRules); err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not read which apps need attention.", err)
 		}
 		if len(workloadImages) > 0 {
@@ -114,6 +125,11 @@ func (r *Reconciles) Due(ctx context.Context, now time.Time, limit int) ([]Recon
 			// reconciler then knows nothing per workload, which is where it
 			// started, rather than knowing something wrong.
 			_ = json.Unmarshal(workloadImages, &a.WorkloadImages)
+		}
+		if len(egressRules) > 0 {
+			// A deployment from before egress was enforced records none, and
+			// ran unrestricted, which is what an empty value restores.
+			_ = json.Unmarshal(egressRules, &a.EgressRules)
 		}
 		if owner != nil {
 			a.OwnerUserID = *owner

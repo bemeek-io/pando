@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/trypando/pando/internal/egress"
 	"github.com/trypando/pando/internal/errs"
 	"github.com/trypando/pando/internal/id"
 )
@@ -248,6 +249,20 @@ func (d *Deployments) SetImageRef(ctx context.Context, deploymentID, imageRef, d
 		  WHERE id = $1`, deploymentID, imageRef, digest, encoded)
 	if err != nil {
 		return errs.Wrap(errs.Internal, "Could not record the deployed image.", err)
+	}
+	return nil
+}
+
+// SetEgressRules records the egress rules a deployment runs with, so the
+// reconciler can restore them rather than re-resolving policy under a running
+// app (R-183, O-10).
+func (d *Deployments) SetEgressRules(ctx context.Context, deploymentID string, rules egress.Rules) error {
+	encoded, err := json.Marshal(rules)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not record the deploy's egress rules.", err)
+	}
+	if _, err := d.db.Exec(ctx, `UPDATE deployments SET egress_rules = $2 WHERE id = $1`, deploymentID, encoded); err != nil {
+		return errs.Wrap(errs.Internal, "Could not record the deploy's egress rules.", err)
 	}
 	return nil
 }

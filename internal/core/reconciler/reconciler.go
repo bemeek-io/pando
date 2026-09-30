@@ -273,7 +273,7 @@ func (r *Reconciler) reconcileOne(ctx context.Context, app state.Reconcilable) {
 // fingerprints, and a fingerprint is built from secret *versions* — so the loop
 // that runs every fifteen seconds for every app never decrypts anything.
 func (r *Reconciler) desired(ctx context.Context, app state.Reconcilable, s *spec.AppSpec, observed api.ObservedBundle) (api.BundlePlan, Inputs, error) {
-	want := PlanShape(s, app.ImageRef, app.WorkloadImages)
+	want := PlanShape(s, app.ImageRef, app.WorkloadImages, app.EgressRules)
 
 	// A provisioned database is part of what should be running (R-131).
 	//

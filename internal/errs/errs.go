@@ -61,6 +61,10 @@ const (
 	// security score and this app does not have one, or does not clear it.
 	PlanSecurityBelowThreshold Code = "PLAN_SECURITY_BELOW_THRESHOLD"
 
+	// PlanEgressLooseningForbidden is R-183: the app loosens the install's
+	// egress rules and host policy says no app may.
+	PlanEgressLooseningForbidden Code = "PLAN_EGRESS_LOOSENING_FORBIDDEN"
+
 	// STATE_* — object in the wrong state for this action. 409.
 	StateInvalid                Code = "STATE_INVALID"
 	StateBackupDecisionRequired Code = "STATE_BACKUP_DECISION_REQUIRED" // R-204/205

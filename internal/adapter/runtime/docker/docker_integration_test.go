@@ -33,7 +33,7 @@ func adapter(t *testing.T) *dockeradapter.Adapter {
 func bundle(bundleID string, env map[string]secret.Value) api.BundlePlan {
 	return api.BundlePlan{
 		BundleID: bundleID,
-		Network:  api.NetworkPlan{Private: true, EgressMode: spec.EgressAllowAll},
+		Network:  api.NetworkPlan{Private: true},
 		Labels:   map[string]string{"pando.app": bundleID},
 		Workloads: []api.WorkloadPlan{{
 			Name:    "web",

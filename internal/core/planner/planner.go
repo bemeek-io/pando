@@ -74,6 +74,10 @@ type Plan struct {
 	Bundle api.BundlePlan    `json:"-"`
 	Notes  []string          `json:"notes,omitempty"`
 	Checks map[string]string `json:"checks"`
+
+	// Egress is the rules the app would run with, merged, with where each
+	// part came from and what every loosening needs (R-188).
+	Egress policy.EffectiveEgress `json:"egress"`
 }
 
 // Check runs steps 1-7 and returns the plan, or the first blocking error.
@@ -112,6 +116,19 @@ func (p *Planner) Check(ctx context.Context, s *spec.AppSpec) (*Plan, error) {
 	}
 	plan.Checks["capabilities"] = "ok"
 
+	// 4b. Egress (R-183, R-186). After capabilities because the refusal for a
+	// runtime that cannot restrict egress is a capability refusal.
+	eff, err := p.Egress(ctx, s)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkEgress(s, eff, runtimeCaps); err != nil {
+		return nil, err
+	}
+	plan.Egress = eff
+	plan.Notes = append(plan.Notes, egressNotes(eff)...)
+	plan.Checks["egress"] = "ok"
+
 	// 5. Isolation floors (R-024, R-114).
 	if err := p.checkIsolation(ctx, s, runtimeCaps); err != nil {
 		return nil, err
@@ -136,8 +153,62 @@ func (p *Planner) Check(ctx context.Context, s *spec.AppSpec) (*Plan, error) {
 	}
 	plan.Checks["log_retention"] = "ok"
 
-	plan.Bundle = p.bundlePlan(s)
+	plan.Bundle = p.bundlePlan(s, eff.Rules)
 	return plan, nil
+}
+
+// Egress resolves an app's egress rules against host policy as it stands
+// (R-182). The deploy runner asks this too, so what the plan showed is what
+// the runtime is given.
+func (p *Planner) Egress(ctx context.Context, s *spec.AppSpec) (policy.EffectiveEgress, error) {
+	doc := policy.Default()
+	if p.policy != nil {
+		var err error
+		if doc, err = p.policy.Document(ctx); err != nil {
+			return policy.EffectiveEgress{}, err
+		}
+	}
+	return doc.EgressFor(s.Egress), nil
+}
+
+// checkEgress refuses a plan whose egress cannot be honored: a loosening
+// policy forbids (R-183), or restrictions the runtime cannot enforce (R-186).
+func checkEgress(s *spec.AppSpec, eff policy.EffectiveEgress, caps api.RuntimeCapabilities) error {
+	if eff.Forbidden() {
+		entries := make([]string, 0, len(eff.Loosenings))
+		for _, l := range eff.Loosenings {
+			entries = append(entries, l.Message)
+		}
+		return errs.Newf(errs.PlanEgressLooseningForbidden,
+			"This app loosens the installation's egress rules, and this installation does not let any app do that. %s",
+			strings.Join(entries, " ")).
+			WithRemedy("Remove the loosening from the app's egress settings, or ask an administrator to allow apps to loosen egress rules in host policy.").
+			WithDetail("loosenings", eff.Loosenings)
+	}
+	if eff.Restricted && !caps.SupportsEgressRestriction {
+		return errs.Newf(errs.PlanCapabilityUnsupported,
+			"This app's egress rules limit where it may connect, and %q cannot enforce egress rules. Pando will not run the app with its rules ignored.",
+			s.Runtime.AdapterRef).
+			WithRemedy("Deploy to a runtime that can enforce egress rules, or remove the restrictions: the installation's egress mode and private-address block, and the app's own list.").
+			WithDetail("adapter_ref", s.Runtime.AdapterRef).
+			WithDetail("capability", "egress_restriction")
+	}
+	return nil
+}
+
+// egressNotes are what somebody reading the plan should know about its
+// egress. Notes, never blockers.
+func egressNotes(eff policy.EffectiveEgress) []string {
+	var out []string
+	if eff.Restricted {
+		// R-187: said wherever a restriction is in effect.
+		out = append(out, "This app's outbound connections are limited. Only HTTP and HTTPS through Pando's egress gateway leave it: its workloads are given HTTP_PROXY and HTTPS_PROXY, and anything that does not use them cannot connect out.")
+	}
+	if eff.NeedsApproval() {
+		out = append(out, "This app loosens the installation's egress rules, so its deploy needs approval.")
+	}
+	out = append(out, eff.Unused...)
+	return out
 }
 
 func (p *Planner) resolveAdapters(ctx context.Context, s *spec.AppSpec) (api.RuntimeAdapter, api.RoutingAdapter, error) {
@@ -502,13 +573,12 @@ func (p *Planner) checkCapacity(ctx context.Context, s *spec.AppSpec, runtime ap
 // Env is deliberately left empty here: resolving it means reading secrets, which
 // is a side effect and belongs after the plan boundary (design 05 §3, step 11).
 // The planner proves a deploy *could* work; it does not assemble the values.
-func (p *Planner) bundlePlan(s *spec.AppSpec) api.BundlePlan {
+func (p *Planner) bundlePlan(s *spec.AppSpec, rules api.EgressRules) api.BundlePlan {
 	plan := api.BundlePlan{
 		BundleID: s.AppID,
 		Network: api.NetworkPlan{
-			Private:     true, // R-026, always.
-			EgressMode:  s.Egress.Mode,
-			EgressAllow: s.Egress.Allowlist,
+			Private: true, // R-026, always.
+			Egress:  rules,
 		},
 		Labels: map[string]string{"pando.app": s.AppID},
 	}

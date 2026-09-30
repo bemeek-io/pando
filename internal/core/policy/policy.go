@@ -61,10 +61,41 @@ type Document struct {
 	MinBuildIsolation   spec.IsolationClass `json:"min_build_isolation,omitempty"`
 	MinRuntimeIsolation spec.IsolationClass `json:"min_runtime_isolation,omitempty"`
 
-	// EgressAllowlist is the install-wide default. An app-level list REPLACES
-	// it rather than narrowing it (R-182, R-183), which is why defining one is
-	// gated by app.egress.override (R-184) — this is a default, not a ceiling.
+	// Egress (R-181 – R-185). The install's rules are a floor (R-183): an
+	// app's own list narrows them, and only the loosening moves EgressFor
+	// names — adding to an allowlist, removing from a denylist, turning
+	// private-range blocking off — are subject to EgressLoosening.
+	//
+	// EgressMode is allow_all (empty), denylist or allowlist, and EgressList
+	// is the list it reads. EgressBlockPrivate works with any mode.
+	EgressMode         spec.EgressMode `json:"egress_mode,omitempty"`
+	EgressList         []string        `json:"egress_list,omitempty"`
+	EgressBlockPrivate bool            `json:"egress_block_private,omitempty"`
+
+	// EgressLoosening is whether an app may loosen the rules above: by
+	// somebody holding app.egress.loosen (empty, the default, R-270), only
+	// after a deploy approval (R-154), or never.
+	EgressLoosening EgressLoosening `json:"egress_loosening,omitempty"`
+
+	// EgressAllowlist is the field before issue #79, when there was no mode
+	// and an app's list replaced this one. Still read — a non-empty one with
+	// no EgressMode is an allowlist — so a policy file that sets it keeps
+	// meaning what its author wrote. Never enforced before, so an install that
+	// set it starts being held to it; that is what the setting said.
 	EgressAllowlist []string `json:"egress_allowlist,omitempty"`
+
+	// Deploy approval (R-154 – R-159). Off unless something here, or the app's
+	// own spec, turns it on.
+	//
+	// DeployApprovalRequired: every app's deploys need approval.
+	// DeployApprovalApps: these apps' deploys do, whatever their owners say.
+	// DeployApprovalCount: how many approvals a deploy needs; zero is one.
+	// DeployApprovalExpiryHours: how long a request waits; zero is forever.
+	// Default() ships seven days.
+	DeployApprovalRequired    bool     `json:"deploy_approval_required,omitempty"`
+	DeployApprovalApps        []string `json:"deploy_approval_apps,omitempty"`
+	DeployApprovalCount       int      `json:"deploy_approval_count,omitempty"`
+	DeployApprovalExpiryHours int      `json:"deploy_approval_expiry_hours,omitempty"`
 
 	// RequireBackupBeforeDestroy: an admin sets "never destroy without backup"
 	// once, and app owners cannot override downward (R-284).
@@ -213,6 +244,8 @@ func Default() Document {
 		AllowAnonymousGrants: &allowAnonymous,
 		MinBuildIsolation:    spec.IsolationContainer,
 		MinRuntimeIsolation:  spec.IsolationContainer,
+
+		DeployApprovalExpiryHours: DefaultDeployApprovalExpiryHours,
 
 		// Design 04 §3's exclusions, as the shipped default rather than as a
 		// hard-coded list in the MCP server (O-12). These are the
@@ -430,3 +463,49 @@ func orUnknown(host string) string {
 }
 
 var _ authz.Policy = (*Evaluator)(nil)
+
+// DefaultDeployApprovalExpiryHours is how long a deploy request waits for
+// approval when policy does not say (R-156): a week, so a request made on a
+// Friday survives the weekend.
+const DefaultDeployApprovalExpiryHours = 7 * 24
+
+// DeployApprovalFor reports whether host policy requires approval for an
+// app's deploys: install-wide, or for this app by name. The app's own spec
+// can require it too, which the approval service reads (R-154).
+func (d Document) DeployApprovalFor(appID string) bool {
+	if d.DeployApprovalRequired {
+		return true
+	}
+	for _, id := range d.DeployApprovalApps {
+		if id == appID {
+			return true
+		}
+	}
+	return false
+}
+
+// ApprovalsNeeded is how many approvals a deploy needs, with the default of
+// one applied.
+func (d Document) ApprovalsNeeded() int {
+	if d.DeployApprovalCount > 0 {
+		return d.DeployApprovalCount
+	}
+	return 1
+}
+
+// ValidateRules checks the settings that would otherwise be saved and enforce
+// nothing, or enforce something nobody meant: an egress mode or entry that
+// does not parse, or an approval count below zero. Written for the
+// administrator who typed it (R-105).
+func (d Document) ValidateRules() error {
+	if err := d.ValidateEgress(); err != nil {
+		return err
+	}
+	if d.DeployApprovalCount < 0 {
+		return fmt.Errorf("deploy_approval_count is %d; it is how many approvals a deploy needs, so use 1 or more (0 also means 1)", d.DeployApprovalCount)
+	}
+	if d.DeployApprovalExpiryHours < 0 {
+		return fmt.Errorf("deploy_approval_expiry_hours is %d; use a number of hours, or 0 for requests that wait until somebody answers", d.DeployApprovalExpiryHours)
+	}
+	return nil
+}
