@@ -79,3 +79,71 @@ func TestAnAppWithAMainPackageOrAnEntryPointIsNotALibrary(t *testing.T) {
 		})
 	}
 }
+
+// TestR132_ALaravelAppAsksForItsKey asserts R-132. Every Laravel .env.example
+// names APP_KEY with no value; left that way the app answers every page with
+// "No application encryption key has been specified" (issue #58). The key is
+// the person's to supply, so it is a required value, asked for once.
+func TestR132_ALaravelAppAsksForItsKey(t *testing.T) {
+	result, err := detect.NewAuction(detect.BuildpackDetector{}).Run(context.Background(), memSource{
+		"artisan":       "#!/usr/bin/env php\n",
+		"composer.json": `{"require": {"php": "^8.3", "laravel/framework": "^13.0"}}`,
+		"package.json":  `{"scripts": {"build": "vite build"}}`,
+		".env.example":  "APP_NAME=Laravel\nAPP_KEY=\nDB_CONNECTION=sqlite\n",
+	})
+	require.NoError(t, err)
+	draft := result.Winner.Draft
+
+	require.Contains(t, result.Winner.Evidence[0], "PHP", "its package.json builds assets; it is a PHP app")
+
+	count := 0
+	for _, e := range draft.Workloads[0].Env {
+		if e.Key == "APP_KEY" {
+			count++
+			require.NotNil(t, e.SlotRef, "the variable is filled from the slot")
+		}
+	}
+	require.Equal(t, 1, count)
+
+	var key *spec.Slot
+	for i, s := range draft.Slots {
+		if s.Key == "APP_KEY" {
+			key = &draft.Slots[i]
+		}
+	}
+	require.NotNil(t, key)
+	require.True(t, key.Required)
+	require.Contains(t, key.Evidence[0], "php artisan key:generate --show", "the evidence says how to make one")
+}
+
+// An APP_KEY .env.example declares empty is asked for once, not kept beside
+// the slot, and a Composer package built on Laravel is not an app that needs
+// one.
+func TestR132_OnlyALaravelAppIsAskedForAKey(t *testing.T) {
+	for name, src := range map[string]memSource{
+		"declared empty": {
+			"artisan": "", "composer.json": `{"require": {"laravel/framework": "^13.0"}}`,
+			".env.example": "APP_KEY=\n",
+		},
+		"package": {
+			"composer.json": `{"require": {"laravel/framework": "^13.0"}}`,
+			".env.example":  "APP_KEY=\n",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := detect.NewAuction(detect.BuildpackDetector{}).Run(context.Background(), src)
+			require.NoError(t, err)
+			slots := 0
+			for _, s := range result.Winner.Draft.Slots {
+				if s.Key == "APP_KEY" {
+					slots++
+				}
+			}
+			if name == "package" {
+				require.Zero(t, slots)
+			} else {
+				require.Equal(t, 1, slots)
+			}
+		})
+	}
+}

@@ -486,6 +486,15 @@ func (d BuildpackDetector) Bid(ctx context.Context, src api.SourceView) (Candida
 			break
 		}
 	}
+	// A Laravel app has a package.json too, for its assets, and is a PHP app
+	// all the same (issue #58).
+	if isLaravelApp(src) {
+		for i := range languages {
+			if languages[i].file == "composer.json" {
+				signal = &languages[i]
+			}
+		}
+	}
 	if signal == nil {
 		return d.bidFromPlanOnly(ctx, src)
 	}
@@ -739,7 +748,71 @@ func (d BuildpackDetector) bidFor(ctx context.Context, src api.SourceView, signa
 		c.Evidence = append(c.Evidence,
 			"a Rails app, run in production: SECRET_KEY_BASE is needed before it can start")
 	}
+	if isLaravelApp(src) {
+		c.Draft = withLaravelKey(c.Draft)
+		c.Evidence = append(c.Evidence,
+			"a Laravel app: APP_KEY is needed before it can serve a page")
+	}
 	return c
+}
+
+// isLaravelApp reports a Laravel application: an artisan script beside a
+// composer.json that requires the framework. A package built on Laravel has no
+// artisan.
+func isLaravelApp(src api.SourceView) bool {
+	if info, err := src.Stat("artisan"); err != nil || info.IsDir {
+		return false
+	}
+	var manifest struct {
+		Require map[string]string `json:"require"`
+	}
+	if !readJSON(src, "composer.json", &manifest) {
+		return false
+	}
+	_, ok := manifest.Require["laravel/framework"]
+	return ok
+}
+
+// laravelKeyEvidence says what APP_KEY is and how to make one, for a person
+// who has never run artisan (R-105).
+const laravelKeyEvidence = "Laravel encrypts sessions and cookies with APP_KEY and answers every page " +
+	"with an error until it has one. Valid answer: \"base64:\" followed by 32 random bytes in base64, " +
+	"which `php artisan key:generate --show` prints, as does `echo \"base64:$(openssl rand -base64 32)\"`. " +
+	"Keep it: changing it signs everyone out."
+
+// withLaravelKey asks for APP_KEY as a required value (R-132).
+//
+// It is the secret a Laravel app encrypts with, the person deploying owns it,
+// and Pando does not invent it — as with SECRET_KEY_BASE for Rails. Every
+// Laravel .env.example names it with no value, which on its own would become an
+// empty variable, unset at deploy, and the app would fail on its first page
+// with "No application encryption key has been specified". So an empty
+// declaration is replaced by the slot; a declared value stands.
+func withLaravelKey(d Draft) Draft {
+	const key = "APP_KEY"
+	for _, s := range d.Slots {
+		if s.Key == key {
+			return d
+		}
+	}
+	env := d.Workloads[0].Env[:0:0]
+	for _, e := range d.Workloads[0].Env {
+		if e.Key == key {
+			if e.Source != spec.EnvFromDetection || e.Value == nil || *e.Value != "" {
+				return d
+			}
+			continue
+		}
+		env = append(env, e)
+	}
+	ref := key
+	env = append(env, spec.EnvEntry{Key: key, SlotRef: &ref, Source: spec.EnvFromDetection})
+	d.Workloads[0].Env = env
+	d.Slots = append(d.Slots, spec.Slot{
+		Key: key, Type: spec.SlotUnknown, Required: true,
+		Evidence: []string{laravelKeyEvidence},
+	})
+	return d
 }
 
 // isRailsApp reports a Rails application rather than a gem that uses Rails.

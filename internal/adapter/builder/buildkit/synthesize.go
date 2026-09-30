@@ -138,6 +138,13 @@ const nixpacksBinary = "nixpacks"
 // the source *with* the generated directory inside it. The checkout is a
 // throwaway clone, so nothing anybody keeps is touched.
 func buildpackDockerfile(req api.BuildRequest, contextDir string) (string, error) {
+	// A Laravel app, on the PHP its composer.json asks for (laravel.go). Its
+	// package.json builds assets for the app, not a site or a server of its
+	// own. An answered start command is honored by the runtime, which runs it
+	// in place of the image's own.
+	if app, ok := readLaravelApp(contextDir); ok {
+		return writeLaravelPlan(contextDir, app)
+	}
 	// A site that builds to static files is planned here rather than by
 	// nixpacks (staticsite.go), unless somebody said how it starts — then it
 	// is not being served as files.
