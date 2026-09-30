@@ -1,6 +1,6 @@
 //go:build integration
 
-package security_test
+package state_test
 
 import (
 	"context"
@@ -13,10 +13,13 @@ import (
 	"github.com/trypando/pando/internal/core/security"
 	"github.com/trypando/pando/internal/core/spec"
 	"github.com/trypando/pando/internal/core/state"
-	"github.com/trypando/pando/internal/core/state/statetest"
-	"github.com/trypando/pando/internal/hash"
-	"github.com/trypando/pando/internal/secret"
 )
+
+// In the state package's tests rather than the security package's: this
+// package already has a Postgres, and every package with integration tests
+// starts one of its own. One more container binding a host port in parallel
+// was enough to make an unrelated test's start fail with "address already in
+// use" on CI.
 
 // idleScanner is a scanner that is configured and never asked to scan: these
 // tests are about the scans that do not run.
@@ -33,7 +36,7 @@ func (idleScanner) Scan(context.Context, api.ScanRequest) (api.ScanResult, error
 	panic("a reused scan must not run the scanner")
 }
 
-func revisionSpec() *spec.AppSpec {
+func scannedSpec() *spec.AppSpec {
 	return &spec.AppSpec{
 		SchemaVersion: spec.SchemaVersion,
 		Source:        spec.Source{Type: spec.SourceGit, URL: "https://example.test/rota", Commit: "abc123"},
@@ -53,22 +56,16 @@ func revisionSpec() *spec.AppSpec {
 func TestR312_ARedeployOfAnUnchangedSourceIsScoredByItsScan(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db, _ := statetest.Connect(t)
-
-	users := state.NewUsers(db)
-	require.NoError(t, users.EnsureLocalAdapter(ctx))
-	digest, err := hash.New(secret.New("correct-password"))
-	require.NoError(t, err)
-	alice, err := users.Create(ctx, state.LocalAdapterID, "alice", "alice@corp.com", "alice", digest, false)
-	require.NoError(t, err)
+	db := connected(t)
+	alice := seedUser(t, db, "alice")
 
 	apps := state.NewApps(db)
 	app, err := apps.Create(ctx, "rota", "rota", alice.ID, alice.ID,
 		spec.Source{Type: spec.SourceGit, URL: "https://example.test/rota"})
 	require.NoError(t, err)
-	first, err := apps.CreateRevision(ctx, app.ID, revisionSpec(), spec.OriginDetected, alice.ID)
+	first, err := apps.CreateRevision(ctx, app.ID, scannedSpec(), spec.OriginDetected, alice.ID)
 	require.NoError(t, err)
-	second, err := apps.CreateRevision(ctx, app.ID, revisionSpec(), spec.OriginEdited, alice.ID)
+	second, err := apps.CreateRevision(ctx, app.ID, scannedSpec(), spec.OriginEdited, alice.ID)
 	require.NoError(t, err)
 
 	registry := api.NewRegistry()
