@@ -55,6 +55,29 @@ func (d Document) EgressInstallMode() (spec.EgressMode, []string) {
 	return spec.EgressAllowAll, nil
 }
 
+// InstallEgress is the installation's egress rules as an app's owner edits
+// against them (R-182): the mode and list in force, whether private addresses
+// are blocked, and what loosening them needs (R-183).
+type InstallEgress struct {
+	Mode         spec.EgressMode `json:"mode"`
+	List         []string        `json:"list"`
+	BlockPrivate bool            `json:"block_private"`
+	Loosening    EgressLoosening `json:"loosening"`
+}
+
+// InstallEgress is the installation's egress rules in force, with the
+// defaults and the field from before issue #79 read the way EgressFor reads
+// them, so what an owner is shown is what their app is held to.
+func (d Document) InstallEgress() InstallEgress {
+	mode, list := d.EgressInstallMode()
+	return InstallEgress{
+		Mode:         mode,
+		List:         nonNil(append([]string(nil), list...)),
+		BlockPrivate: d.EgressBlockPrivate,
+		Loosening:    d.EgressLooseningRule(),
+	}
+}
+
 // ValidateEgress checks the install's egress settings can be read.
 func (d Document) ValidateEgress() error {
 	switch d.EgressMode {

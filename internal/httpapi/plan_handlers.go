@@ -10,6 +10,8 @@ import (
 	"github.com/trypando/pando/internal/config"
 	"github.com/trypando/pando/internal/core/authz"
 	"github.com/trypando/pando/internal/core/edge"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/specgate"
 	"github.com/trypando/pando/internal/core/state"
 	"github.com/trypando/pando/internal/errs"
 )
@@ -46,12 +48,44 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Whether deploying it would need approval, measured against what the app
+	// runs now (R-154). Not a refusal: the plan is fine, somebody has to sign
+	// it off.
+	doc, err := s.hostPolicy(r.Context())
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	var running *spec.AppSpec
+	if s.Deployments != nil {
+		runningID, err := s.Deployments.RunningSpecID(r.Context(), app.ID)
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		if runningID != "" {
+			if rr, found, err := s.Apps.RevisionByID(r.Context(), runningID); err != nil {
+				Error(w, r, err)
+				return
+			} else if found {
+				running = rr.Body
+			}
+		}
+	}
+
+	notes := plan.Notes
+	if notes == nil {
+		notes = []string{}
+	}
 	JSON(w, http.StatusOK, map[string]any{
 		"app_id":    plan.AppID,
 		"revision":  rev.Revision,
 		"checks":    plan.Checks,
 		"workloads": len(plan.Bundle.Workloads),
 		"volumes":   len(plan.Bundle.Volumes),
+		"egress":    plan.Egress, // R-188
+		"notes":     notes,
+		"approval":  specgate.ApprovalFor(doc, app.ID, running, rev.Body),
 	})
 }
 
