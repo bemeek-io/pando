@@ -43,6 +43,14 @@ func Carry(pinned, next *AppSpec) *AppSpec {
 	if pinned.Routing.Mode != "" {
 		out.Routing = pinned.Routing
 	}
+
+	// What the app may reach, and whether its deploys need approval. Neither
+	// is read from the repository either. Dropping them on a re-detection
+	// would widen what the app can reach without anybody holding
+	// app.egress.loosen deciding it (R-184), and would turn off the app's own
+	// approval requirement without that change being approved (R-154).
+	out.Egress = pinned.Egress
+	out.Deploy.RequireApproval = pinned.Deploy.RequireApproval
 	return &out
 }
 

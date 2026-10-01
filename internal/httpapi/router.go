@@ -589,6 +589,10 @@ func (s *Server) Routes() http.Handler {
 				// every spec edit (design 04 §2.3).
 				r.Post("/plan", s.handlePlan)
 
+				// The app's egress rules, merged, and the installation's they
+				// are edited against (R-182, R-188). Changed by writing a spec.
+				r.Get("/egress", s.handleGetEgress)
+
 				r.Get("/status", s.handleAppStatus)
 				r.Get("/usage", s.handleAppUsage)
 				r.Get("/logs", s.handleAppLogs)

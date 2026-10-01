@@ -636,12 +636,15 @@ func (s *Server) handleCreateSpec(w http.ResponseWriter, r *http.Request) {
 	// the app already had it. Checked against the pinned spec, and ModeSource
 	// set from the adapter rather than taken on the author's word.
 	p := PrincipalFrom(r.Context())
+	pinned, err := s.pinnedSpec(r.Context(), app)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
 	if s.Address != nil {
 		var current *spec.Routing
-		if app.PinnedSpecID != "" {
-			if pinned, found, err := s.Apps.RevisionByID(r.Context(), app.PinnedSpecID); err == nil && found && pinned.Body != nil {
-				current = &pinned.Body.Routing
-			}
+		if pinned != nil {
+			current = &pinned.Routing
 		}
 		override, err := s.Address.Overrides(r.Context(), current, &body.Routing)
 		if err != nil {
@@ -657,6 +660,14 @@ func (s *Server) handleCreateSpec(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := spec.Validate(&body); err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	// Egress (R-182 – R-184) and auto-deploy under approval (R-158), judged
+	// against the pinned spec. After validation, so an entry that does not
+	// parse is reported as such rather than resolved around.
+	if _, err := s.gateSpec(r, app, pinned, &body); err != nil {
 		Error(w, r, err)
 		return
 	}

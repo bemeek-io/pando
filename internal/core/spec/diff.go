@@ -426,6 +426,12 @@ func mountPaths(mounts []Mount) []string {
 	return out
 }
 
+// Same reports whether two egress settings say the same thing once each is
+// read in today's terms (Normalize). Whether a change needs app.egress.tighten
+// or app.egress.loosen starts from this (R-184): a spec written before issue
+// #79 that is saved again unchanged has not changed its egress.
+func (e Egress) Same(o Egress) bool { return sameEgress(e, o) }
+
 // sameEgress compares two egress settings as they read after Normalize.
 func sameEgress(a, b Egress) bool {
 	a.Normalize()

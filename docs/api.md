@@ -98,14 +98,15 @@ one verb says nothing about another (R-082).
 | Endpoint | Verb | What it does |
 | --- | --- | --- |
 | `GET /api/v1/apps/{appID}/specs` | `app.view` | Every spec revision, and which one is pinned. Revisions are append-only (R-152). |
-| `POST /api/v1/apps/{appID}/specs` | `app.spec.edit` | Write a new spec revision. It does not deploy and does not become pinned. A routing mode other than its adapter's default, where the app did not already have one, also needs app.routing.override (R-163). |
+| `POST /api/v1/apps/{appID}/specs` | `app.spec.edit` | Write a new spec revision. It does not deploy and does not become pinned. A routing mode other than its adapter's default, where the app did not already have one, also needs app.routing.override (R-163). A change to `egress` needs app.egress.tighten or app.egress.loosen; one that newly loosens the installation's egress rules needs app.egress.loosen where policy gates loosening by verb, is refused with PLAN_EGRESS_LOOSENING_FORBIDDEN where policy forbids it, and makes the next deploy need approval where policy says so (R-183, R-184). Turning on automatic deploys while the app's deploys need approval is refused (R-158). |
 | `GET /api/v1/apps/{appID}/routing` | `app.view` | Where the app is reached, where it will be after the next deploy when a change is saved (`next_address`), and the routing adapters it could move to, with the modes each serves and defaults to. |
 | `PUT /api/v1/apps/{appID}/routing` | `app.spec.edit` | Change where a configured app is reached: `adapter_ref`, `mode`, and `hostname` or `path_prefix` (such as `/team/notes`), each defaulting to the adapter's own. Writes a revision the next deploy ships. A change needs `confirm: true`, since the old address stops working; a mode the adapter does not default to also needs app.routing.override (R-163). An address another app holds, or a path inside or around another app's, is refused with STATE_ADDRESS_TAKEN. |
 | `GET /api/v1/apps/{appID}/specs/{rev}` | `app.view` | One revision, in full. |
 | `POST /api/v1/apps/{appID}/specs/{rev}/pin` | `app.spec.edit` | Pin a revision: what the reconciler converges to, and what the next deploy ships. |
 | `GET /api/v1/apps/{appID}/specs/{a}/diff/{b}` | `app.view` | The classified difference between two revisions — what a deploy of it would restart, rebuild or leave alone. |
 | `GET /api/v1/apps/{appID}/export` | `app.view` | The app's configuration as a document, with every secret redacted (R-194). |
-| `POST /api/v1/apps/{appID}/plan` | `app.view` | What a deploy would do, and every reason it would refuse — before anything is created. |
+| `POST /api/v1/apps/{appID}/plan` | `app.view` | What a deploy of the pinned spec would do, and every reason it would refuse — before anything is created. Carries the egress rules the app would run with, merged, with where each part came from and what every loosening needs (`egress`, R-188), `notes`, and whether the deploy would need approval and why (`approval`, R-154). |
+| `GET /api/v1/apps/{appID}/egress` | `app.view` | The installation's egress rules (`install`: mode, list, private-address blocking, and what loosening them needs), the rules the pinned spec runs with, merged, with every loosening and what it needs (`effective`), the pinned spec's own egress settings (`spec`), and which revision those are (`revision`). `?revision=N`, or `?revision=latest` for the newest, reads that revision instead — what a saved change not yet deployed would run with. Change them by writing a spec (R-182, R-188). |
 | `GET /api/v1/apps/{appID}/slots` | `app.view` | The things the app says it needs, and what fills each one (R-130). |
 | `PUT /api/v1/apps/{appID}/slots/{key}` | `app.spec.edit` | Fill a slot: provision one, bind to something already running, or set a value. Takes effect at the next deploy. |
 
@@ -285,6 +286,7 @@ that finds the log line. Branch on the code; the message may be reworded.
 | `PLAN_ADAPTER_NOT_CONFIGURED` | 409 | The spec names an adapter this installation does not have. |
 | `PLAN_CAPABILITY_UNSUPPORTED` | 409 | The spec asks for something the chosen adapter does not do (R-254). |
 | `PLAN_COMPOSE_CONSTRUCT_REJECTED` | 409 | The compose file uses a construct Pando will not translate (R-099). |
+| `PLAN_EGRESS_LOOSENING_FORBIDDEN` | 409 | The app loosens the installation's egress rules, and host policy says no app may (R-183). |
 | `PLAN_NO_ADAPTER_MEETS_POLICY` | 409 | No configured adapter can satisfy this spec under host policy (R-024, R-114). |
 | `PLAN_SECURITY_BELOW_THRESHOLD` | 409 | This installation requires a security score, and this app is below it or has never been scanned (R-314). |
 | `PLAN_SLOT_UNFILLED` | 409 | A required dependency has nothing filling it, so the deploy would start an app that cannot connect (R-132). |

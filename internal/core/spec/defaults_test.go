@@ -177,6 +177,9 @@ func TestR270_BuildEgressStartsPermissiveAndAppEgressInherits(t *testing.T) {
 	// allowlist replaces it rather than narrowing it, so nothing here writes one.
 	require.Equal(t, spec.EgressInherit, s.Egress.Mode)
 	require.Empty(t, s.Egress.Allowlist)
+	require.Empty(t, s.Egress.List)
+	require.Empty(t, s.Egress.Add)
+	require.Nil(t, s.Egress.BlockPrivate)
 }
 
 func TestApplyOfANilSpecDoesNothingRatherThanPanicking(t *testing.T) {
