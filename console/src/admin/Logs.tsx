@@ -23,6 +23,9 @@ import { MEASURE } from '../ui/layout';
 import { Parts, useParts, labelFor } from './Parts';
 import { deployLabel, deployStatus } from '../ui/deploys';
 import { Table } from '../ui/Table';
+import { ApprovalRequest } from './ApprovalRequest';
+import { isAwaiting } from './approval';
+import type { ApprovalDeployment } from './approval';
 
 /**
  * A log, at a height that leaves the rest of the page reachable.
@@ -169,7 +172,7 @@ export function DeploymentLog({
 export function Logs({ app, workload }: { app: App; workload?: string }) {
   const deployments = useQuery({
     queryKey: ['apps', app.id, 'deployments'],
-    queryFn: () => api.get<{ deployments: Deployment[] | null }>(`/apps/${app.id}/deployments`),
+    queryFn: () => api.get<{ deployments: ApprovalDeployment[] | null }>(`/apps/${app.id}/deployments`),
     refetchInterval: app.state === 'deploying' ? 3_000 : false,
   });
 
@@ -190,7 +193,7 @@ export function Logs({ app, workload }: { app: App; workload?: string }) {
           <Table
             loading={deployments.isPending}
             skeletonRows={3}
-            onRowClick={(row: Deployment) => setSelected(row.id)}
+            onRowClick={(row: ApprovalDeployment) => setSelected(row.id)}
             columns={[
               {
                 key: 'started_at',
@@ -225,13 +228,29 @@ export function Logs({ app, workload }: { app: App; workload?: string }) {
 
         {shown && (
           <div style={{ marginTop: 'var(--space-5)' }}>
-            <DeploymentLog appID={app.id} deployment={shown} />
+            {/* A deploy that never started has no log to show (R-154): the
+                request itself, while it waits, and a sentence after. */}
+            {isAwaiting(shown) ? (
+              <ApprovalRequest deployment={shown} />
+            ) : NEVER_RAN[shown.status] ? (
+              <Quiet>{NEVER_RAN[shown.status]}</Quiet>
+            ) : (
+              <DeploymentLog appID={app.id} deployment={shown} />
+            )}
           </div>
         )}
       </section>
     </div>
   );
 }
+
+/** What a deploy that never started says in place of its log. */
+const NEVER_RAN: Record<string, string> = {
+  rejected: 'This deploy was rejected, so it never ran. The reasons and who rejected it are in the audit log.',
+  expired: 'Nobody approved this deploy in time, so it never ran. Deploy again to ask again.',
+  // Not superseded: that status is older than approval, and a deploy replaced
+  // part-way through a build has a log worth reading.
+};
 
 const TAIL = 500;
 

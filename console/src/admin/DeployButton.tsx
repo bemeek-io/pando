@@ -33,10 +33,14 @@ interface PastDeploy {
 export function DeployButton({
   app,
   onRefused,
+  onWaiting,
 }: {
   app: App;
   /** The refusal to show, or an empty message to clear one. */
   onRefused: (message: string, remedy?: string, code?: string) => void;
+  /** The deploy was accepted and is waiting for approval (R-154): it has not
+   *  started, and the screen has to say so rather than "Deploying". */
+  onWaiting?: () => void;
 }) {
   const queries = useQueryClient();
 
@@ -72,10 +76,17 @@ export function DeployButton({
 
   const deploy = useMutation({
     mutationFn: () =>
-      api.post(`/apps/${app.id}/deployments`, unshipped ? { spec_revision: newest?.revision } : {}),
+      api.post<{ status?: string } | undefined>(
+        `/apps/${app.id}/deployments`,
+        unshipped ? { spec_revision: newest?.revision } : {},
+      ),
     // ['apps'] rather than this app alone, so the list's status follows it
     // through building to running.
-    onSuccess: () => queries.invalidateQueries({ queryKey: ['apps'] }),
+    onSuccess: (deployment) => {
+      if (deployment?.status === 'awaiting_approval') onWaiting?.();
+      void queries.invalidateQueries({ queryKey: ['apps'] });
+      void queries.invalidateQueries({ queryKey: ['approvals'] });
+    },
   });
 
   const failed = deploy.error instanceof RequestFailed ? deploy.error : null;

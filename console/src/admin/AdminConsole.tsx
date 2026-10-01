@@ -48,6 +48,7 @@ import { Logs } from './Logs';
 import { Resources } from './Resources';
 import { AddApp } from './AddApp';
 import { Reference } from './Reference';
+import { Approvals, useApprovals } from './Approvals';
 import { DeleteApp } from './DeleteApp';
 import { DeployButton } from './DeployButton';
 import { Lifecycle } from './Lifecycle';
@@ -115,6 +116,15 @@ export function AdminConsole({
   const canManagePolicy = useInstallVerb(InstallVerb.PolicyManage);
   const canReadAudit = useInstallVerb(InstallVerb.AuditRead);
   const canManageBackups = useInstallVerb(InstallVerb.BackupManage);
+  const canApproveAll = useInstallVerb(InstallVerb.DeploysApprove);
+
+  // Deploys waiting for approval (R-154). Asked by anybody who administers an
+  // app, not only by holders of install.deploys.approve: app.deploy.approve is
+  // granted per app, through a custom role, and the sidebar has no other way
+  // to know who holds it. The item is shown to an install-wide approver
+  // always, and to anybody else while something is waiting that they can see.
+  const approvals = useApprovals(administrative || canApproveAll);
+  const waiting = approvals.data?.approvals ?? [];
 
   const apps = useQuery({
     queryKey: ['apps'],
@@ -147,6 +157,10 @@ export function AdminConsole({
   const items: SidebarItem[] = [];
   if (administrative) {
     items.push({ value: 'apps', label: 'Apps', trailing: <Badge count={rows.length} /> });
+  }
+  // Beside Apps: a request is about an app, and answering one is app work.
+  if (canApproveAll || waiting.length > 0 || section === 'approvals') {
+    items.push({ value: 'approvals', label: 'Approvals', trailing: <Badge count={waiting.length} /> });
   }
   // Reading accounts needs install.view; changing one needs
   // install.users.manage. Either is a reason to see the screen, and the screen
@@ -340,6 +354,9 @@ export function AdminConsole({
           />
         )}
         {section === 'api' && <Reference />}
+        {section === 'approvals' && (
+          <Approvals onOpenApp={(appID) => go({ view: 'admin', section: 'apps', appID })} />
+        )}
         {section === 'apps' &&
           (selectedID ? (
             <AppScreen
@@ -510,6 +527,9 @@ const REFUSALS: Record<string, { label: string; tab: string; focus?: string }> =
   PLAN_SLOT_UNFILLED: { label: 'Fill it in', tab: 'resources', focus: 'dependencies' },
   PLAN_CAPABILITY_UNSUPPORTED: { label: 'Open settings', tab: 'resources' },
   PLAN_SECURITY_BELOW_THRESHOLD: { label: 'See the findings', tab: 'overview' },
+  // R-183: the refusal names the entries; the app's egress section is where
+  // they are taken out.
+  PLAN_EGRESS_LOOSENING_FORBIDDEN: { label: 'Open egress', tab: 'resources', focus: 'egress' },
   VALID_PRIMARY_WORKLOAD: { label: 'Open configuration', tab: 'detection' },
   VALID_DANGLING_MOUNT: { label: 'Open storage', tab: 'resources', focus: 'storage' },
   VALID_DANGLING_SLOT_REF: { label: 'Open dependencies', tab: 'resources', focus: 'dependencies' },
@@ -563,6 +583,10 @@ function AppScreen({
   const [refusal, setRefusal] = useState<{ message: string; remedy?: string; code?: string } | null>(
     null,
   );
+  // A deploy that was accepted and is waiting for approval (R-154). Said where
+  // it was started, because the button would otherwise go quiet and the app
+  // would look as if nothing happened — or, worse, as if it were deploying.
+  const [waiting, setWaiting] = useState(false);
   const setTab = (next: string, at?: string) => {
     setFocus(at);
     onTab(next);
@@ -706,9 +730,11 @@ function AppScreen({
                 {app.data.pinned_spec_id && can(verbs, AppVerb.Deploy) && (
                   <DeployButton
                     app={app.data}
-                    onRefused={(message, remedy, code) =>
-                      setRefusal(message ? { message, remedy, code } : null)
-                    }
+                    onRefused={(message, remedy, code) => {
+                      setRefusal(message ? { message, remedy, code } : null);
+                      if (message) setWaiting(false);
+                    }}
+                    onWaiting={() => setWaiting(true)}
                   />
                 )}
 
@@ -763,6 +789,34 @@ function AppScreen({
             >
               {refusal.message}
               {refusal.remedy ? ` ${refusal.remedy}` : ''}
+            </Banner>
+          </div>
+        )}
+
+        {waiting && (
+          <div style={{ paddingBottom: 'var(--space-4)', maxWidth: MEASURE }}>
+            <Banner
+              tone="info"
+              action={
+                tab === 'overview' ? (
+                  <Button variant="ghost" onClick={() => setWaiting(false)}>
+                    Dismiss
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setTab('overview');
+                      setWaiting(false);
+                    }}
+                  >
+                    See the request
+                  </Button>
+                )
+              }
+            >
+              This deploy is waiting for approval. Nothing changes until enough people approve it, and
+              the app keeps running what it runs now.
             </Banner>
           </div>
         )}

@@ -196,7 +196,15 @@ export interface Document {
   public_sharing?: string;
   min_build_isolation?: number;
   min_runtime_isolation?: number;
+  egress_mode?: string;
+  egress_list?: (string[] | null);
+  egress_block_private?: boolean;
+  egress_loosening?: string;
   egress_allowlist?: (string[] | null);
+  deploy_approval_required?: boolean;
+  deploy_approval_apps?: (string[] | null);
+  deploy_approval_count?: number;
+  deploy_approval_expiry_hours?: number;
   require_backup_before_destroy?: boolean;
   max_token_lifetime_days?: number;
   max_log_disk_bytes?: number;
@@ -419,6 +427,7 @@ export interface Deploy {
   strategy: string;
   auto_deploy: AutoDeploy;
   auto_rollback: boolean;
+  require_approval?: boolean;
 }
 
 export interface Health {
@@ -439,6 +448,10 @@ export interface Resources {
 
 export interface Egress {
   mode: string;
+  list?: (string[] | null);
+  add?: (string[] | null);
+  remove?: (string[] | null);
+  block_private?: boolean;
   allowlist?: (string[] | null);
 }
 
