@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/trypando/pando/internal/egress"
 	"github.com/trypando/pando/internal/errs"
 )
 
@@ -38,6 +39,7 @@ func Validate(s *AppSpec) error {
 	validateSlots(s, add)
 	validateRouting(s, add)
 	validateBuild(s, add)
+	validateEgress(s, add)
 
 	switch len(problems) {
 	case 0:
@@ -429,5 +431,41 @@ func sortStrings(s []string) {
 		for j := i; j > 0 && s[j] < s[j-1]; j-- {
 			s[j], s[j-1] = s[j-1], s[j]
 		}
+	}
+}
+
+// validateEgress checks an app's egress rules can be read (R-185). Whether
+// they are allowed is policy's question, answered against the install's rules
+// (R-183); this is only whether they mean anything.
+func validateEgress(s *AppSpec, add func(*errs.Error)) {
+	e := s.Egress
+	e.Normalize()
+	switch e.Mode {
+	case EgressInherit:
+		if len(e.List) > 0 {
+			add(errs.New(errs.ValidInvalid,
+				"This app lists egress destinations of its own but does not say whether they are allowed or denied.").
+				WithRemedy("Set egress.mode to allowlist (only these may be reached) or denylist (these may not be reached), or remove egress.list."))
+		}
+	case EgressAllowlist, EgressDenylist:
+	default:
+		add(errs.Newf(errs.ValidInvalid,
+			"Egress mode %q is not one Pando knows.", e.Mode).
+			WithRemedy("Use inherit to keep the installation's rules, or allowlist or denylist for a list of the app's own on top of them."))
+	}
+	for _, field := range []struct {
+		name  string
+		items []string
+	}{{"egress.list", e.List}, {"egress.add", e.Add}, {"egress.remove", e.Remove}} {
+		for _, raw := range field.items {
+			if _, err := egress.Parse(raw); err != nil {
+				add(errs.Newf(errs.ValidInvalid, "In %s, %s.", field.name, err.Error()))
+			}
+		}
+	}
+	if s.Deploy.RequireApproval && s.Deploy.AutoDeploy.Enabled {
+		add(errs.New(errs.ValidInvalid,
+			"This app asks for its deploys to be approved and also deploys automatically, and the two cannot be combined.").
+			WithRemedy("Turn off automatic deploys, or stop requiring approval. An approval request for every push would queue up faster than anyone could read it (R-158)."))
 	}
 }

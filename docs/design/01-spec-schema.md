@@ -253,6 +253,7 @@ type Deploy struct {
     Strategy   DeployStrategy `json:"strategy"`    // recreate (default, R-144) | start_then_swap
     AutoDeploy AutoDeploy     `json:"auto_deploy"`
     AutoRollback bool         `json:"auto_rollback"` // default false, R-147
+    RequireApproval bool      `json:"require_approval,omitempty"` // R-154
 }
 
 type AutoDeploy struct {
@@ -263,6 +264,13 @@ type AutoDeploy struct {
 ```
 
 **[D]** `ModeSource` is retained so the console can show whether a routing mode was inherited or deliberately chosen — relevant when host policy later restricts overrides (R-274 / O-10).
+
+**[D]** `RequireApproval` is the app asking for a sign-off on its own deploys (R-154). It is read from
+the **running** spec as well as the one being deployed, so the deploy that turns it off is itself
+approved. It is one of four reasons a deploy waits; the other three are host policy's, which is where
+an administrator puts a requirement the app's owner cannot remove (design 05 §3.3). It cannot be
+combined with `AutoDeploy.Enabled`: validation refuses the pair (R-158), and a spec save refuses
+auto-deploy whenever host policy requires approval for the app.
 
 ### 2.7 Health, resources, egress, retention
 
@@ -284,8 +292,13 @@ type Resources struct {
 }
 
 type Egress struct {
-    Mode      EgressMode `json:"mode"`       // inherit | allowlist (R-182)
-    Allowlist []string   `json:"allowlist,omitempty"`
+    Mode   EgressMode `json:"mode"`             // inherit | allowlist | denylist (R-182)
+    List   []string   `json:"list,omitempty"`   // the app's own list, read per Mode
+    Add    []string   `json:"add,omitempty"`    // entries added to the install's list
+    Remove []string   `json:"remove,omitempty"` // entries removed from the install's list
+    BlockPrivate *bool `json:"block_private,omitempty"` // nil keeps the install's switch
+
+    Allowlist []string `json:"allowlist,omitempty"` // before issue #79; read by Normalize, never written
 }
 
 type Retention struct {
@@ -295,7 +308,33 @@ type Retention struct {
 }
 ```
 
-**[D]** `Egress.Mode == allowlist` **replaces** the install-wide list rather than intersecting (R-182). The field name and its documentation must say so, because "allowlist" reads like narrowing and it is not.
+**[D]** An app's egress **starts from the install's rules and is layered on them** (R-182). It never
+replaces them. *(Amended by issue #79, O-25: `Mode == allowlist` used to replace the install-wide list,
+which made the install's list a default rather than a boundary.)* Two moves, which combine:
+
+- `Add` / `Remove` edit the install's list for this app. What they do depends on the install's mode:
+  adding to a denylist or removing from an allowlist tightens; adding to an allowlist or removing from a
+  denylist loosens. Against an allow-all install they change nothing, and the plan says so in a note.
+- `Mode` `allowlist` or `denylist` with `List` is a list of the app's own, applied **on top**: a
+  destination leaves only if every layer allows it. It can only narrow, so an app on an allow-all
+  install can lock itself down without anyone's permission.
+
+`BlockPrivate` true turns private-range blocking on (tightening); false turns it off, which loosens
+when the install has it on. An entry is a hostname, a `*.` wildcard, an address or a CIDR, optionally
+with a port, or `*` (R-185; parsing and matching in `internal/egress`).
+
+**[D]** Exactly three things **loosen**: `allowlist_add`, `denylist_remove`, `block_private_off`.
+Everything else an app can write tightens, is always within policy (R-272), and is gated only by
+`app.egress.tighten`. Loosening is gated by host policy's `egress_loosening` — `forbidden`, `verb`
+(needs `app.egress.loosen`), or `approval` (the deploy needs approval, R-154) — see R-183, R-184 and
+design 06 §5. Whether a change loosens depends on the install's rules, which a spec cannot see, so the
+classification is `policy.Document.EgressFor`'s, not the spec's.
+
+**[D]** `Normalize` reads a spec written before issue #79 in today's terms, and never loosens: an empty
+or `allow_all` mode is `inherit`; the old `block_private` mode is `inherit` with `BlockPrivate` true; an
+old `Allowlist` becomes `List` under `allowlist` mode, which now narrows where it used to replace.
+
+Build egress (`Build.EgressMode`, R-118) is a separate setting and does not follow this model (R-189).
 
 ### 2.8 Warnings
 
@@ -334,6 +373,10 @@ Run on every spec before it is pinned, and again at plan time.
 | Routing mode is advertised by the routing adapter | `PLAN_CAPABILITY_UNSUPPORTED` |
 | No workload requests a rejected compose construct | `PLAN_COMPOSE_CONSTRUCT_REJECTED` |
 | Every `Required` slot has a `Resolution` | `PLAN_SLOT_UNFILLED` |
+| Every egress entry parses; no egress `List` under `inherit` (R-185) | `VALID_INVALID` |
+| Not both `Deploy.RequireApproval` and `AutoDeploy.Enabled` (R-158) | `VALID_INVALID` |
+| No egress loosening host policy forbids (R-183) | `PLAN_EGRESS_LOOSENING_FORBIDDEN` |
+| Egress restricted only on a runtime that enforces it (R-186) | `PLAN_CAPABILITY_UNSUPPORTED` |
 
 ---
 
@@ -349,6 +392,10 @@ Diff operates on the spec tree and classifies each change:
 | `restart` | Env, resources, health | Shown; requires restart |
 | `rebuild` | Source, build config | Shown; triggers a build |
 | `destructive` | Volume removed, slot resolution changed from provisioned to bound, routing mode changed, **runtime adapter changed** | **Shown prominently, requires explicit confirmation** |
+
+**[D]** An egress change is `restart` whichever way it goes. Whether it loosens depends on the
+install's rules, which a diff of two specs cannot see; the verb and policy gates that can see them are
+the control (R-183, R-184). A change to `Deploy.RequireApproval` is `benign`.
 
 **[D]** Re-detection (R-022) presents this diff. So does promoting a compose service to Pando-managed (R-100). Same machinery.
 

@@ -294,11 +294,15 @@ func compareOperational(old, next *AppSpec, add func(Class, string, string, any,
 		add(Benign, "deploy.auto_rollback", "Automatic rollback setting changed.", old.Deploy.AutoRollback, next.Deploy.AutoRollback)
 	}
 
-	// Egress allowlists replace rather than narrow (R-182), so a change here
-	// can widen access as easily as restrict it. Still a restart rather than
-	// destructive: nothing is lost, and the verb gate (R-184) is the control.
-	if old.Egress.Mode != next.Egress.Mode || !sameStrings(old.Egress.Allowlist, next.Egress.Allowlist) {
+	// Whether an egress change loosens or tightens depends on the install's
+	// rules, which a diff of two specs cannot see (R-182). The verb and policy
+	// gates see them (R-183, R-184); here it is a restart, because nothing is
+	// lost either way.
+	if !sameEgress(old.Egress, next.Egress) {
 		add(Restart, "egress", "Which addresses this app can reach changed.", old.Egress, next.Egress)
+	}
+	if old.Deploy.RequireApproval != next.Deploy.RequireApproval {
+		add(Benign, "deploy.require_approval", "Whether this app's deploys need approval changed.", old.Deploy.RequireApproval, next.Deploy.RequireApproval)
 	}
 
 	if old.Retention != next.Retention {
@@ -420,4 +424,25 @@ func mountPaths(mounts []Mount) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// Same reports whether two egress settings say the same thing once each is
+// read in today's terms (Normalize). Whether a change needs app.egress.tighten
+// or app.egress.loosen starts from this (R-184): a spec written before issue
+// #79 that is saved again unchanged has not changed its egress.
+func (e Egress) Same(o Egress) bool { return sameEgress(e, o) }
+
+// sameEgress compares two egress settings as they read after Normalize.
+func sameEgress(a, b Egress) bool {
+	a.Normalize()
+	b.Normalize()
+	bp := func(p *bool) string {
+		if p == nil {
+			return "inherit"
+		}
+		return fmt.Sprint(*p)
+	}
+	return a.Mode == b.Mode && sameStrings(a.List, b.List) &&
+		sameStrings(a.Add, b.Add) && sameStrings(a.Remove, b.Remove) &&
+		bp(a.BlockPrivate) == bp(b.BlockPrivate)
 }

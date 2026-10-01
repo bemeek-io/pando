@@ -136,6 +136,18 @@ func (p *Planner) violation(ctx context.Context, app InventoryApp, caps map[stri
 		runtimeCaps = c
 	}
 
+	// Egress (R-183, R-186): a loosening the candidate forbids, or rules it
+	// restricts on a runtime that cannot enforce them. Both are refused at
+	// the app's next deploy, with these words. That a policy would make a
+	// deploy need approval (R-154) is not here: it blocks nothing, and this
+	// list is what the next deploy would fail with.
+	eff, err := p.Egress(ctx, s)
+	if err == nil {
+		if err := checkEgress(s, eff, runtimeCaps); err != nil {
+			return asViolation(app, err), true
+		}
+	}
+
 	if err := p.checkIsolation(ctx, s, runtimeCaps); err != nil {
 		// checkIsolation also reports a missing builder, which is not a policy
 		// consequence — see the note above.

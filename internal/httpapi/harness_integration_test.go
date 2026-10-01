@@ -25,6 +25,7 @@ import (
 	identitysaml "github.com/trypando/pando/internal/adapter/identity/saml"
 	secretslocal "github.com/trypando/pando/internal/adapter/secrets/local"
 	"github.com/trypando/pando/internal/config"
+	"github.com/trypando/pando/internal/core/approval"
 	"github.com/trypando/pando/internal/core/assertion"
 	"github.com/trypando/pando/internal/core/assist"
 	"github.com/trypando/pando/internal/core/audit"
@@ -239,6 +240,22 @@ func newInstallWith(t *testing.T, overlay *corepolicy.Overlay, startup *config.C
 			Auditor:     auditor,
 			Logger:      zap.NewNop(),
 		},
+	}
+
+	// Every deploy starts through the approval service (R-154), wired as main
+	// wires it. Its Planner, Deployer and Notifier are interfaces a test may
+	// replace, since the harness has no runtime to plan or deploy onto.
+	srv.Approvals = &approval.Service{
+		Deployments: deployments,
+		Apps:        apps,
+		Authz:       authorizer,
+		Policy:      effectivePolicy,
+		Planner:     appPlanner,
+		Deployer:    deployer,
+		Audit:       httpapi.AuditFunc(auditor),
+		Approvers:   authzStore,
+		Clock:       clock.System{},
+		Logger:      logger,
 	}
 
 	// External identity, with the kinds main compiles in.

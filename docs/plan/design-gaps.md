@@ -21,6 +21,12 @@ operator chose" verb, and like those two it sits with **Owner only** — not Ope
 beyond tidiness: an app-level allowlist *replaces* the install-wide list rather than narrowing it
 (R-182, R-183), so defining one is an escalation. Ungated, the install-wide list would be advisory.
 
+*Superseded by issue #79 (O-25):* an app's list now sits on top of the install's and only narrows, so
+the verb split in two by what a change does. `app.egress.tighten` (Owner and Operator) covers changes
+within the install's rules; `app.egress.loosen` — `app.egress.override` renamed by migration 000039 —
+covers loosening where host policy permits it by verb. Host policy's `egress_loosening`, not the verb,
+is what makes the install's rules a floor (design 06 §5).
+
 **R-171 — stacked logins had no console treatment.** An app with its own login page sits behind
 Pando's auth and the user sees two login screens.
 

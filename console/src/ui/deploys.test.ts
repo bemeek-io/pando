@@ -23,6 +23,21 @@ describe('how a deploy reads in a list', () => {
     expect(deployStatus('succeeded')).toBe('running');
   });
 
+  // R-154: a deploy waiting for approval has not started. Reading it as
+  // "Deploying" would have its requester watch for something not happening.
+  it('says a deploy is waiting for approval, never that it is deploying', () => {
+    expect(deployLabel('awaiting_approval')).toBe('Waiting for approval');
+    expect(deployStatus('awaiting_approval')).toBe('info');
+  });
+
+  // A decision, not a failure: no marker red.
+  it('reads a rejected, expired or replaced request as not going ahead', () => {
+    expect(deployLabel('rejected')).toBe('Rejected');
+    expect(deployLabel('expired')).toBe('Expired, not approved');
+    expect(deployLabel('superseded')).toBe('Replaced by a newer deploy');
+    for (const s of ['rejected', 'expired', 'superseded']) expect(deployStatus(s)).toBe('stopped');
+  });
+
   it('leaves the failures alone', () => {
     expect(deployLabel('failed')).toBe('Failed');
     expect(deployStatus('failed')).toBe('failed');

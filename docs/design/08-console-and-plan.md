@@ -330,6 +330,29 @@ stays. When host policy forbids it (R-076), the option is visible but disabled w
 **Deploy settings** — R-145, R-147.
 Start-then-swap shows its constraint in body text at the point of enabling, not a tooltip: *two copies of your app run at the same time during a deploy. Do not enable this if your app writes to a local file or runs migrations on startup.* Auto-rollback likewise explains why it is off by default.
 
+**Egress** — R-182, R-187, R-188.
+The plan and the app's egress settings show the rules **merged**, from the plan's `egress`: the
+effective mode, the effective list with each entry marked as the installation's or the app's, the
+app's own list on top, private-range blocking and where it came from, and every loosening with what it
+needs: forbidden, `app.egress.loosen`, or approval. A forbidden
+loosening is a blocker; the rest are notes. Wherever a restriction is in effect the R-187 note is in
+body text, not a tooltip: only HTTP and HTTPS through Pando's gateway leave the app, even under a
+denylist. The settings read the installation's rules from `GET /apps/{id}/egress`, so an owner without
+`install.view` edits against what they can see; the controls follow the caller's `verbs` (tighten,
+loosen) like every other control. As the draft changes the editor asks the server with a dry-run save
+(design 04 §2.3) and shows its answer — the refusal as written, or what the draft newly loosens and
+whether deploying it would need approval — and Save stays off while the server would refuse.
+
+**Deploy approval** — R-154 – R-159.
+A deploy that waits says so where it was started, with the reasons and how many approvals it needs,
+and the app shows it among its deploys as *awaiting approval* — never as *deploying*, because the app
+has not changed. `rejected`, `expired` and `superseded` read as outcomes of the request, not as
+failures of the app. An **Approvals** screen lists `GET /approvals`: each request's app, revision,
+requester, reasons, approvals so far and expiry, with *Approve* and *Reject* (an optional comment)
+where `can_decide` is true and read-only otherwise. An app whose auto-deploy is paused by approval
+(`auto_deploy_paused`) says so on the app, and the deploy settings explain why auto-deploy cannot be
+turned on while approval is required (R-158). (Implementation: see `console/src`.)
+
 ### 1.4 Design principle
 
 **[D]** R-005 and R-104. The default path shows almost nothing — name, source, deploy. Everything with a sane default is behind **Advanced** and never surfaced during setup. If a new setting is added to the primary flow, someone must justify why it is a blocker rather than configuration.

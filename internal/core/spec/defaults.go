@@ -147,12 +147,9 @@ func (d Defaults) applyLimits(s *AppSpec) {
 		s.Resources.DiskBytes = d.Resources.DiskBytes
 	}
 
-	if s.Egress.Mode == "" {
-		// R-182: inherit means the install-wide list applies. An app-level
-		// allowlist replaces it rather than narrowing it, which is why nothing
-		// here ever writes one.
-		s.Egress.Mode = EgressInherit
-	}
+	// R-182: inherit means the install's rules apply unchanged. Nothing here
+	// ever writes a list — an app's egress moves only when somebody moves it.
+	s.Egress.Normalize()
 
 	if s.Retention.SpecRevisions == 0 {
 		s.Retention.SpecRevisions = d.Retention.SpecRevisions

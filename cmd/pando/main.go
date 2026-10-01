@@ -44,6 +44,7 @@ import (
 	"github.com/trypando/pando/internal/config"
 	"github.com/trypando/pando/internal/console"
 	"github.com/trypando/pando/internal/core/address"
+	"github.com/trypando/pando/internal/core/approval"
 	"github.com/trypando/pando/internal/core/assertion"
 	"github.com/trypando/pando/internal/core/assist"
 	"github.com/trypando/pando/internal/core/audit"
@@ -117,6 +118,10 @@ func rootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&configPath, "config", "", "path to a config file")
 
 	root.AddCommand(serveCmd(&configPath), migrateCmd(&configPath), adminCmd(&configPath), versionCmd())
+
+	// Hidden: started by the Docker runtime in front of a restricted app, from
+	// Pando's own image, never by a person (R-187).
+	root.AddCommand(egressGatewayCmd())
 
 	// The client half (design 04 §4). In the same binary because Pando ships as
 	// one, and a client of the API like any other (R-261) — internal/cli
@@ -520,6 +525,22 @@ func serve(ctx context.Context, configPath string) error {
 	}
 	authorizer := authz.New(authzStore, hostPolicy, auditDenials{auditor})
 
+	// Every deploy starts through here, and the ones that need somebody's
+	// approval wait here for it (R-154 – R-159).
+	approvals := &approval.Service{
+		Deployments: deployments,
+		Apps:        apps,
+		Authz:       authorizer,
+		Policy:      policyStore,
+		Planner:     appPlanner,
+		Deployer:    deployer,
+		Audit:       httpapi.AuditFunc(auditor),
+		Notifier:    registryNotifier{registry: registry, logger: logger},
+		Approvers:   authzStore,
+		Clock:       clock.System{},
+		Logger:      logger,
+	}
+
 	// One resolver, used by the proxy to route and by the router to tell an
 	// app's hostname from Pando's own.
 	appResolver := proxy.NewStateResolver(apps)
@@ -622,6 +643,7 @@ func serve(ctx context.Context, configPath string) error {
 		Deployments: deployments,
 		Reconciles:  reconciles,
 		Deployer:    deployer,
+		Approvals:   approvals,
 		Logs:        logStore,
 		Secrets:     secrets,
 		Detections:  detections,
@@ -743,7 +765,16 @@ func serve(ctx context.Context, configPath string) error {
 			go deployer.Run(context.WithoutCancel(ctx), dep, rev) //nolint:errcheck // recorded on the deployment
 		},
 		Logger: logger,
+		// An app whose deploys now need approval stops auto-deploying
+		// (R-158).
+		Policy: policyStore,
 	}).Run(loopCtx)
+
+	// Deploy requests nobody answered in time expire (R-156), once a minute.
+	// Approving or rejecting one also expires it on the spot, so the minute
+	// is how long the list can show one that has already run out, not how
+	// long one can be approved late.
+	go approvals.RunExpiry(loopCtx, time.Minute)
 
 	// Port-mode apps answer at the root of their own port (design 03 §4.2).
 	//
@@ -1465,6 +1496,28 @@ func (n securityNotifier) Notify(ctx context.Context, userID, appID, subject, bo
 	}, 0)
 }
 
+// registryNotifier sends a notification through every configured notify
+// adapter: the console's own, and any other an installation added (R-231).
+// One that fails is logged and the rest still send — telling people is best
+// effort and never blocks what it is about (R-159).
+type registryNotifier struct {
+	registry *adapterapi.Registry
+	logger   *zap.Logger
+}
+
+func (n registryNotifier) Notify(ctx context.Context, msg adapterapi.Notification) error {
+	for _, ref := range n.registry.ByCategory(adapterapi.CategoryNotify) {
+		adapter, ok := n.registry.Notify(ref)
+		if !ok {
+			continue
+		}
+		if err := adapter.Notify(ctx, msg); err != nil {
+			n.logger.Warn("a notification adapter could not send", zap.String("adapter", ref), zap.Error(err))
+		}
+	}
+	return nil
+}
+
 // sourceScanner scores a checkout during detection (R-312).
 //
 // A shim rather than the security service directly: detection knows an app ID
@@ -1516,6 +1569,9 @@ func startupPolicy(cfg *config.Config) (*corepolicy.Overlay, error) {
 		return nil, err
 	}
 	fixed := overlay.Apply(corepolicy.Document{})
+	if err := fixed.ValidateRules(); err != nil {
+		return nil, fmt.Errorf("the startup policy has a setting Pando cannot use: %w", err)
+	}
 	for _, verbs := range [][]string{fixed.DisabledVerbs, fixed.AgentDisabledVerbs} {
 		for _, v := range verbs {
 			if !authz.IsVerb(authz.Verb(v)) {

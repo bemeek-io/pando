@@ -62,6 +62,7 @@ type RuntimeCapabilities struct {
     SupportsStartThenSwap   bool   // R-145
     ReportsUsage            bool   // R-245
     MaxWorkloadsPerBundle   int    // 0 = unlimited
+    SupportsEgressRestriction bool // enforces NetworkPlan.Egress (R-186)
 }
 
 type RoutingCapabilities struct {
@@ -165,15 +166,89 @@ type WorkloadPlan struct {
 }
 
 type NetworkPlan struct {
-    Private     bool       // always true (R-026)
-    EgressMode  EgressMode // allow_all | block_private | allowlist
-    EgressAllow []string
+    Private bool        // always true (R-026)
+    Egress  EgressRules // = egress.Rules, merged from the install's and the app's (R-182)
+}
+
+// internal/egress
+type Rules struct {
+    Layers       []Layer // every layer must allow a destination
+    BlockPrivate bool
+}
+type Layer struct {
+    Mode Mode     // allowlist | denylist
+    List []string // entries (R-185)
+    From string   // install | app — named in a refusal
 }
 ```
 
 **[D]** `Env` arrives fully resolved. Adapters never see a slot, never talk to the secrets adapter, and never learn that a value was sensitive. That keeps R-027's identity/authz/secrets boundary intact and keeps the interface small.
 
 **[D]** `NetworkPlan.Private` is always true. It is a field rather than an assumption so an adapter that cannot provide a private network fails loudly at capability check (`SupportsPrivateNetwork`) rather than silently placing workloads on a shared network.
+
+**[D]** `NetworkPlan.Egress` arrives resolved: core merged the install's rules with the app's
+(`policy.Document.EgressFor`) and decided every loosening before the plan existed. The adapter sees
+layers, never policy, verbs or where a rule came from beyond the `From` label it repeats in a refusal
+(R-027). `internal/egress` is a leaf package, so the adapter, the plan and the gateway read one
+definition of "does this entry match" (`Rules.Compile`, `Compiled.Allows`). A runtime has exactly two
+options (R-186):
+
+- **Enforce every layer** and `BlockPrivate`, advertising `SupportsEgressRestriction`. Partial
+  enforcement — the allowlist but not the private block, names but not addresses — is not an option.
+- **Say it cannot.** The planner then refuses any plan whose `Egress.Restricted()` is true with
+  `PLAN_CAPABILITY_UNSUPPORTED` (capability `egress_restriction`). Never deployed with the rules ignored.
+
+**[D]** When `Egress.Restricted()` is false — no layers, or only an empty denylist, and no private
+block — **nothing goes in the app's path.** The app runs exactly as it did before egress controls
+existed: no gateway, no proxy variables, the ordinary network (R-186). Every existing app on a default
+install is in this case, and must not notice the feature.
+
+**[D] The Docker runtime's mechanism (v1).** A restricted app's bundle network is created `internal`,
+so it has no route out. A per-app **egress gateway** container sits on that network and on one that
+does reach out; it is an HTTP forward and `CONNECT` proxy that decides each connection with
+`egress.Compiled` — the name before resolving (`AllowsName`), then the resolved address (`Allows`), so a
+public name that resolves to a private address is refused under `BlockPrivate` (R-185). Every workload
+is given `HTTP_PROXY` and `HTTPS_PROXY` naming it. The gateway runs Pando's own image by default, so an
+install pulls nothing new, and a refused connection is logged with `Decision.Reason`, which is written
+for the app's owner.
+
+- **Networks.** A restricted bundle runs on `pando-<bundle>-internal` (`Internal: true`), not on the
+  ordinary `pando-<bundle>`. A separate network is used rather than recreating the ordinary one,
+  because removing a network means detaching Pando's own container from it first, which `Destroy`
+  avoids (on Docker Desktop it drops Pando's published ports). Switching posture recreates each
+  workload on the other network; the old one is removed when empty, or by `ReclaimNetworks` at the
+  next start. The gateway alone also sits on `pando-<bundle>-outbound`, an ordinary bridge. That
+  network is **per app**, not shared: on a shared one, an app whose rules allow private addresses could
+  ask its gateway for another app's gateway and through it reach that app's network (R-180).
+- **The gateway container** is `pando-egress-<bundle>`: Pando's binary with the hidden
+  `pando egress-gateway` command. Its rules come in `PANDO_EGRESS_RULES` and its label
+  `io.pando.egress.digest` hashes image, binary and rules, so changed rules recreate the gateway and
+  nothing else. It runs as nonroot with a read-only root filesystem, no capabilities and small limits,
+  and restarts itself (`unless-stopped`, like the edge), because `Observe` does not report it as one of
+  the app's workloads and the reconciler would never notice it down. `Destroy` removes it and all three
+  networks.
+- **Workloads** get `HTTP_PROXY`, `HTTPS_PROXY` and their lower-case forms set to
+  `http://pando-egress:3128`, and `NO_PROXY` naming localhost and every workload in the bundle, which
+  talk to each other directly.
+- **The gateway** refuses a name before looking it up when no entry could allow it, so a refused name
+  is not leaked through DNS. It resolves once and dials only an address it checked, so rebinding cannot
+  get around the private block. It never connects to its own loopback.
+- **Image.** The adapter's `egress_gateway_image` setting, or else the image of Pando's own container.
+  With neither (Pando run on the host), `SupportsEgressRestriction` is false and restricted plans are
+  refused (R-186).
+
+**[D] The limitation is stated, not hidden (R-187).** Only traffic through the gateway leaves. Raw TCP,
+UDP, and clients that ignore the proxy variables do not — **even under a denylist**, where an owner
+would expect everything else to keep working. The plan carries a note saying so whenever a restriction
+is in effect. A transparent mechanism would lift this; v1 does not have one, and
+adding one later is a change the plan note would have to follow. Two smaller gaps: on Docker versions
+whose embedded DNS still answers outside names on an internal network, a workload can leak data
+through lookups (clients do not need them, since they hand names to the proxy); and after a posture
+switch the old network stays until Pando's next start.
+
+**[D]** The rules a runtime enforces are the ones recorded on the deployment (`deployments.egress_rules`,
+design 02 §2.3), which the reconciler passes back on every converge. Build egress is `BuildRequest`'s own
+setting and untouched by any of this (R-118, R-189).
 
 ### 2.2 Observation
 
@@ -957,7 +1032,7 @@ func (r *Registry) Default(c Category) (Adapter, error)
 | routing | `traefik` | subdomain and path, TLS; Pando runs it by default (§4.4) |
 | routing | `cloudflare` | Cloudflare Tunnel; subdomain and path, TLS at Cloudflare's edge (§4.5) |
 | builder | `buildkit` | rootless, containerized, no socket (R-111) |
-| runtime | `docker` | container isolation class; `sandboxed` when `oci_runtime` names gVisor (`runsc`) or a Kata runtime (R-115), which the daemon must have registered or the adapter reports itself unavailable. A sandboxed trial run still reports whether the app started, but not its ports or writes — both are read from outside the container, and a sandbox hides them. Also drives rootless Podman through its Docker-compatible socket (see below). |
+| runtime | `docker` | enforces app egress through an internal network and a per-app gateway proxy (§2.1, R-187); container isolation class; `sandboxed` when `oci_runtime` names gVisor (`runsc`) or a Kata runtime (R-115), which the daemon must have registered or the adapter reports itself unavailable. A sandboxed trial run still reports whether the app started, but not its ports or writes — both are read from outside the container, and a sandbox hides them. Also drives rootless Podman through its Docker-compatible socket (see below). |
 | secrets | `local` | encrypted at rest, key on disk (R-190) |
 | backup | `local` | a filesystem path; retention owned by Pando |
 | services | `docker` | postgres, mysql, redis in-bundle |

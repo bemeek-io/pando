@@ -122,10 +122,15 @@ const (
 type EgressMode string
 
 const (
-	EgressAllowAll     EgressMode = "allow_all"
+	EgressAllowAll  EgressMode = "allow_all"
+	EgressDenylist  EgressMode = "denylist"
+	EgressAllowlist EgressMode = "allowlist"
+	EgressInherit   EgressMode = "inherit"
+
+	// EgressBlockPrivate is a build egress mode (R-118). For an app it used to
+	// be a mode too and is now a switch that works alongside any list
+	// (Egress.BlockPrivate, R-181); a spec that still says it is read that way.
 	EgressBlockPrivate EgressMode = "block_private"
-	EgressAllowlist    EgressMode = "allowlist"
-	EgressInherit      EgressMode = "inherit"
 )
 
 // KV is a name/value pair.
@@ -507,6 +512,12 @@ type Deploy struct {
 	// signal is running rather than unhealthy, and rolling back on a signal
 	// that does not exist would be worse than leaving it alone.
 	AutoRollback bool `json:"auto_rollback"`
+
+	// RequireApproval is the app asking for a second pair of eyes on its own
+	// deploys (R-154). Read from the running spec as well as the one being
+	// deployed, so switching it off is itself approved. Host policy can require
+	// the same of an app without its owner being able to turn it off.
+	RequireApproval bool `json:"require_approval,omitempty"`
 }
 
 // HealthSource is where a health signal comes from, in precedence order
@@ -556,14 +567,58 @@ type Resources struct {
 	Overridden bool `json:"overridden"`
 }
 
-// Egress controls outbound access.
+// Egress is how an app's outbound access differs from the installation's
+// (R-181 – R-185, design 01 §2.7).
 //
-// Mode == allowlist REPLACES the install-wide list rather than intersecting it
-// (R-182). "Allowlist" reads like narrowing and it is not, which is why
-// defining one is gated by app.egress.override (R-184).
+// The install's rules are the starting point, always. An app moves from there
+// in two ways, which may be combined:
+//
+//   - Add and Remove edit the install's list for this app. Which of them
+//     loosens depends on the install's mode: adding to an allowlist loosens,
+//     adding to a denylist tightens, and removing is the reverse.
+//   - Mode allowlist or denylist, with List, is a list of the app's own
+//     applied on top of the install's: a destination must pass both. It can
+//     only narrow, so it never needs policy's permission.
+//
+// BlockPrivate nil keeps the install's switch; true turns it on (tightening);
+// false turns it off, which loosens when the install has it on.
+//
+// Loosening is gated by host policy (R-183) and by app.egress.loosen;
+// everything else by app.egress.tighten (R-184). policy.Document.EgressFor
+// resolves this against the installation and says which parts loosen.
 type Egress struct {
-	Mode      EgressMode `json:"mode"`
-	Allowlist []string   `json:"allowlist,omitempty"`
+	Mode EgressMode `json:"mode"`
+	List []string   `json:"list,omitempty"`
+
+	Add    []string `json:"add,omitempty"`
+	Remove []string `json:"remove,omitempty"`
+
+	BlockPrivate *bool `json:"block_private,omitempty"`
+
+	// Allowlist is the field Mode allowlist used before issue #79, when an
+	// app's list replaced the install's instead of narrowing it. Read as List
+	// by Normalize and never written.
+	Allowlist []string `json:"allowlist,omitempty"`
+}
+
+// Normalize reads a spec written before issue #79 in today's terms. It never
+// loosens: an old allowlist becomes the app's own list, which narrows, where
+// it used to replace the install's.
+func (e *Egress) Normalize() {
+	switch e.Mode {
+	case "", EgressAllowAll:
+		e.Mode = EgressInherit
+	case EgressBlockPrivate:
+		e.Mode = EgressInherit
+		if e.BlockPrivate == nil {
+			on := true
+			e.BlockPrivate = &on
+		}
+	}
+	if len(e.Allowlist) > 0 && len(e.List) == 0 {
+		e.List = e.Allowlist
+	}
+	e.Allowlist = nil
 }
 
 // Retention caps what is kept.

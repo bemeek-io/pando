@@ -141,7 +141,13 @@ func TestRestartChanges(t *testing.T) {
 			s.Volumes = []spec.Volume{{ID: "vol_new", Name: "cache", Declared: spec.VolumeFromUser}}
 		},
 		"egress changed": func(s *spec.AppSpec) {
-			s.Egress = spec.Egress{Mode: spec.EgressAllowlist, Allowlist: []string{"api.stripe.com"}}
+			s.Egress = spec.Egress{Mode: spec.EgressAllowlist, List: []string{"api.stripe.com"}}
+		},
+		"egress addition": func(s *spec.AppSpec) {
+			s.Egress = spec.Egress{Add: []string{"api.stripe.com"}}
+		},
+		"private addresses blocked": func(s *spec.AppSpec) {
+			s.Egress = spec.Egress{BlockPrivate: ptr(true)}
 		},
 	} {
 		next := valid()
@@ -155,6 +161,7 @@ func TestBenignChangesCollapse(t *testing.T) {
 		"retention":     func(s *spec.AppSpec) { s.Retention.LogBytes = 1 << 20 },
 		"auto deploy":   func(s *spec.AppSpec) { s.Deploy.AutoDeploy = spec.AutoDeploy{Enabled: true, Branch: "main"} },
 		"auto rollback": func(s *spec.AppSpec) { s.Deploy.AutoRollback = true },
+		"approval":      func(s *spec.AppSpec) { s.Deploy.RequireApproval = true },
 	} {
 		next := valid()
 		mutate(next)
@@ -163,6 +170,17 @@ func TestBenignChangesCollapse(t *testing.T) {
 		require.Equal(t, spec.Benign, d.Class(), name)
 		require.False(t, d.RequiresConfirmation(), name)
 	}
+}
+
+// An egress written before issue #79, saved again unchanged in today's
+// shape, is not a change (R-182).
+func TestEgressInAnOlderShapeIsNotAChange(t *testing.T) {
+	old := valid()
+	old.Egress = spec.Egress{Mode: spec.EgressAllowlist, Allowlist: []string{"api.stripe.com"}}
+	next := valid()
+	next.Egress = spec.Egress{Mode: spec.EgressAllowlist, List: []string{"api.stripe.com"}}
+	_, found := changeAt(spec.Compare(old, next), "egress")
+	require.False(t, found)
 }
 
 // The overall class is the worst change present, not the most common.

@@ -38,6 +38,15 @@ func (a *Adapter) Usage(ctx context.Context, ref api.BundleRef) (api.BundleUsage
 		return api.BundleUsage{}, errs.Wrap(errs.AdapterUnavailable, "Could not read what is running.", err)
 	}
 
+	// The egress gateway is Pando's, not one of the app's workloads (egress.go).
+	workloads := containers[:0]
+	for _, c := range containers {
+		if !isGateway(c.Labels) {
+			workloads = append(workloads, c)
+		}
+	}
+	containers = workloads
+
 	out := api.BundleUsage{Reported: time.Now().UTC(), Workloads: make([]api.WorkloadUsage, len(containers))}
 	var wg sync.WaitGroup
 	for i, c := range containers {

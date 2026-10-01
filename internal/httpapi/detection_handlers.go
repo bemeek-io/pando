@@ -446,8 +446,10 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 	// thing to do — unfilled the database slot and dropped the variables, while
 	// the app kept running on the old spec and said nothing. The next deploy
 	// was the first sign.
+	var pinned *spec.AppSpec
 	if app.PinnedSpecID != "" {
 		if rev, found, revErr := s.Apps.RevisionByID(r.Context(), app.PinnedSpecID); revErr == nil && found {
+			pinned = rev.Body
 			draft = *spec.Carry(rev.Body, &draft)
 		}
 	}
@@ -501,6 +503,14 @@ func (s *Server) handleAcceptDetection(w http.ResponseWriter, r *http.Request) {
 	// an app with port-mode routing and no port arrived as "0 is not a usable
 	// port number" with nothing saying which step went wrong.
 	if err := spec.Validate(&draft); err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	// Carry keeps the pinned spec's egress, so this asks nothing of an
+	// ordinary re-detection. It is here for a proposal that brings egress of
+	// its own — the same rules as a spec written by hand (R-184, R-158).
+	if _, err := s.gateSpec(r, app, pinned, &draft); err != nil {
 		Error(w, r, err)
 		return
 	}

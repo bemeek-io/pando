@@ -37,19 +37,20 @@ func newStore() *store {
 		passcode:   map[string]string{},
 		roles: map[string]authz.Role{
 			authz.RoleViewer:        {ID: authz.RoleViewer, Name: "viewer", Builtin: true, Verbs: []authz.Verb{authz.AppView, authz.AppLogsRead}},
-			authz.RoleOperator:      {ID: authz.RoleOperator, Name: "operator", Builtin: true, Verbs: []authz.Verb{authz.AppView, authz.AppLogsRead, authz.AppDeploy, authz.AppRestart, authz.AppSpecEdit, authz.AppSecretsWrite}},
+			authz.RoleOperator:      {ID: authz.RoleOperator, Name: "operator", Builtin: true, Verbs: []authz.Verb{authz.AppView, authz.AppLogsRead, authz.AppDeploy, authz.AppRestart, authz.AppSpecEdit, authz.AppSecretsWrite, authz.AppEgressTighten}},
 			authz.RoleOwner:         {ID: authz.RoleOwner, Name: "owner", Builtin: true, Verbs: appVerbs()},
 			authz.RoleAdministrator: {ID: authz.RoleAdministrator, Name: "administrator", Builtin: true, Verbs: installVerbs()},
 		},
 	}
 }
 
-// appVerbs is the owner's set: the catalog minus the install-scoped verbs.
-// Owner is an app role, and an owner of one app administers nothing (R-031).
+// appVerbs is the owner's set: the catalog minus the install-scoped verbs,
+// and minus app.deploy.approve, which no built-in role holds (R-155). Owner is
+// an app role, and an owner of one app administers nothing (R-031).
 func appVerbs() []authz.Verb {
 	var out []authz.Verb
 	for _, v := range authz.Verbs {
-		if !authz.InstallScoped(v) {
+		if !authz.InstallScoped(v) && v != authz.AppDeployApprove {
 			out = append(out, v)
 		}
 	}
@@ -341,8 +342,9 @@ func TestR060_AccountTokenIsItsOwnPrincipal(t *testing.T) {
 	require.Error(t, a.CheckControl(ctx, account, app, authz.AppExec), "operator does not hold exec")
 }
 
-// TestR081_BuiltInRoleVerbSets asserts the verb sets from R-080/R-081, including
-// that the three *.override verbs are Owner-only.
+// TestR081_BuiltInRoleVerbSets asserts the verb sets from R-080/R-081: the
+// *.override verbs and app.egress.loosen are Owner-only, app.egress.tighten is
+// Operator's too (R-184), and nobody built in holds app.deploy.approve (R-155).
 func TestR081_BuiltInRoleVerbSets(t *testing.T) {
 	s := newStore()
 
@@ -356,10 +358,14 @@ func TestR081_BuiltInRoleVerbSets(t *testing.T) {
 	require.False(t, operator.Has(authz.AppSecretsRead), "R-083: write is separable from read")
 	require.False(t, operator.Has(authz.AppExec), "R-084: exec is its own verb")
 
-	for _, v := range []authz.Verb{authz.AppRoutingOverride, authz.AppResourceOverride, authz.AppEgressOverride} {
+	for _, v := range []authz.Verb{authz.AppRoutingOverride, authz.AppResourceOverride, authz.AppEgressLoosen} {
 		require.False(t, operator.Has(v), "%s deviates from a host default and is Owner-only", v)
 		require.True(t, s.roles[authz.RoleOwner].Has(v))
 	}
+	require.True(t, operator.Has(authz.AppEgressTighten), "tightening is always within policy (R-272)")
+	require.True(t, s.roles[authz.RoleOwner].Has(authz.AppEgressTighten))
+	require.False(t, s.roles[authz.RoleOwner].Has(authz.AppDeployApprove), "R-155: no built-in role approves one app's deploys")
+	require.True(t, s.roles[authz.RoleAdministrator].Has(authz.InstallDeploysApprove))
 }
 
 // TestR082_NoVerbImplicationGraph asserts that holding one verb implies nothing.
@@ -410,12 +416,16 @@ func TestSystemPrincipalBypassesGrantsButIsStillAPrincipal(t *testing.T) {
 }
 
 func TestVerbCatalogIsClosed(t *testing.T) {
-	// 13 app verbs plus the ten install-scoped ones (O-17, R-217, R-080's
-	// install.apps.* and install.tokens.manage). The count is here
-	// deliberately: R-080 says the catalog is fixed, so adding a verb should
-	// require editing a test rather than only a constant.
-	require.Len(t, authz.Verbs, 23)
-	require.True(t, authz.IsVerb(authz.AppEgressOverride), "R-184's verb must exist")
+	// 15 app verbs plus the eleven install-scoped ones (O-17, R-217, R-080's
+	// install.apps.*, install.tokens.manage and install.deploys.approve). The
+	// count is here deliberately: R-080 says the catalog is fixed, so adding a
+	// verb should require editing a test rather than only a constant.
+	require.Len(t, authz.Verbs, 26)
+	require.True(t, authz.IsVerb(authz.AppEgressTighten), "R-184's verbs must exist")
+	require.True(t, authz.IsVerb(authz.AppEgressLoosen), "R-184's verbs must exist")
+	require.False(t, authz.IsVerb(authz.Verb("app.egress.override")), "renamed to app.egress.loosen by issue #79")
+	require.True(t, authz.IsVerb(authz.AppDeployApprove), "R-155's verbs must exist")
+	require.True(t, authz.IsVerb(authz.InstallDeploysApprove), "R-155's verbs must exist")
 	require.False(t, authz.IsVerb(authz.Verb("app.do.anything")))
 
 	var install, app int
@@ -426,8 +436,8 @@ func TestVerbCatalogIsClosed(t *testing.T) {
 			app++
 		}
 	}
-	require.Equal(t, 10, install)
-	require.Equal(t, 13, app)
+	require.Equal(t, 11, install)
+	require.Equal(t, 15, app)
 }
 
 // TestR080_InstallVerbRequiresAnInstallGrant asserts install-level
@@ -480,6 +490,12 @@ func TestR081_AdministratorsLookAfterEveryAppButDoNotUseIt(t *testing.T) {
 
 	a := authz.New(s, nil, nil)
 	for _, v := range authz.AppVerbs() {
+		if v == authz.AppDeployApprove {
+			// R-155: approval is install.deploys.approve's, checked on its
+			// own. Managing every app does not stand for it.
+			require.Error(t, a.CheckControl(ctx, adminP, app, v), v)
+			continue
+		}
 		require.NoError(t, a.CheckControl(ctx, adminP, app, v), v)
 	}
 	// Managing is not using (R-087): the data plane still needs a grant.

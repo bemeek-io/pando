@@ -18,6 +18,8 @@ import { Quiet, messageOf } from '../install/Accounts';
 import { Environment } from './Environment';
 import { CarriedFiles } from './CarriedFiles';
 import { BuildPlan } from './BuildPlan';
+import { DeploySection } from './DeploySettings';
+import { Egress } from './Egress';
 import { Table } from '../ui/Table';
 import { AppVerb, useCan } from './verbs';
 
@@ -45,6 +47,8 @@ export function Resources({ appID, focus }: { appID: string; focus?: string }) {
           the thing it is talking about rather than on this tab's first
           section. */}
       <Volumes appID={appID} focus={focus === 'storage'} />
+      <Egress appID={appID} focus={focus === 'egress'} />
+      <DeploySection appID={appID} />
     </div>
   );
 }

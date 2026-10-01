@@ -18,13 +18,13 @@ import (
 //
 // Secrets are resolved only when there is something to apply, which is the
 // uncommon case.
-func PlanShape(s *spec.AppSpec, image string, perWorkload map[string]state.WorkloadImage) api.BundlePlan {
+func PlanShape(s *spec.AppSpec, image string, perWorkload map[string]state.WorkloadImage, rules api.EgressRules) api.BundlePlan {
 	refs := make(map[string]string, len(perWorkload))
 	for name, ran := range perWorkload {
 		refs[name] = ran.Ref
 	}
 
-	plan, err := deploy.BundlePlanShape(s, image, refs)
+	plan, err := deploy.BundlePlanShape(s, image, refs, rules)
 	if err != nil {
 		return api.BundlePlan{}
 	}

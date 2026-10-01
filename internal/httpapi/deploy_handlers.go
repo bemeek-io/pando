@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"go.uber.org/zap"
 
 	"github.com/trypando/pando/internal/adapter/api"
 	"github.com/trypando/pando/internal/core/audit"
@@ -19,7 +19,6 @@ import (
 	"github.com/trypando/pando/internal/core/spec"
 	"github.com/trypando/pando/internal/core/state"
 	"github.com/trypando/pando/internal/errs"
-	"github.com/trypando/pando/internal/log"
 	"github.com/trypando/pando/internal/secret"
 )
 
@@ -97,51 +96,29 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		s.auditApp(r, app.ID, "spec.create")
 	}
 
-	// The plan runs before anything is created, so a deploy that cannot succeed
-	// is refused here rather than part-way through.
-	if _, err := s.Planner.Check(r.Context(), prepared.Body); err != nil {
-		Error(w, r, err)
-		return
-	}
-
 	trigger := state.TriggerManual
 	if req.Trigger == state.TriggerRollback {
 		trigger = state.TriggerRollback
 	}
 
-	dep, err := s.Deployments.Create(r.Context(), app.ID, prepared.ID, trigger, p.ID)
+	// Planned first, so a deploy that cannot succeed is refused before
+	// anything is created; then started, or — when the deploy needs
+	// somebody's approval (R-154) — recorded as a request waiting for it,
+	// with the app left as it is. Either way the answer is 202 and the
+	// deployment.
+	dep, err := s.Approvals.Deploy(r.Context(), p, app, prepared, trigger)
 	if err != nil {
 		Error(w, r, err)
 		return
 	}
-	if err := s.Apps.SetState(r.Context(), app.ID, state.StateDeploying); err != nil {
+
+	s.remember(r, idempotencyKey, "POST /apps/{id}/deployments", http.StatusAccepted, dep)
+	deps := []state.Deployment{dep}
+	if err := s.Approvals.Describe(r.Context(), p, deps); err != nil {
 		Error(w, r, err)
 		return
 	}
-
-	s.audit(r, audit.Event{
-		PrincipalKind: audit.PrincipalKind(p.Kind),
-		PrincipalID:   p.ID,
-		OnBehalfOf:    p.UserID,
-		Action:        "app.deploy",
-		AppID:         app.ID,
-		TargetKind:    "deployment",
-		TargetID:      dep.ID,
-		Detail:        map[string]any{"spec_revision": prepared.Revision, "trigger": trigger},
-	})
-
-	s.remember(r, idempotencyKey, "POST /apps/{id}/deployments", http.StatusAccepted, dep)
-
-	// Detached from the request context deliberately: a client that disconnects
-	// must not cancel a deploy that is already changing things.
-	runCtx := log.Into(context.WithoutCancel(r.Context()), log.From(r.Context()))
-	go func() {
-		if err := s.Deployer.Run(runCtx, dep, prepared); err != nil {
-			log.From(runCtx).Warn("deployment ended in failure", zap.Error(err))
-		}
-	}()
-
-	JSON(w, http.StatusAccepted, dep)
+	JSON(w, http.StatusAccepted, deps[0])
 }
 
 func (s *Server) revisionToDeploy(r *http.Request, app state.App, requested int) (state.Revision, error) {
@@ -182,8 +159,16 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		To int `json:"to"`
+
+		// What `pando rollback --to` sends. Read as well as "to", which it
+		// used to be ignored in favor of: the CLI's --to rolled back to the
+		// previous revision whatever it named.
+		SpecRevision int `json:"spec_revision"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.To <= 0 {
+		req.To = req.SpecRevision
+	}
 
 	if req.To <= 0 {
 		revs, err := s.Apps.ListRevisions(r.Context(), app.ID)
@@ -220,6 +205,10 @@ func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, err)
 		return
 	}
+	if err := s.Approvals.Describe(r.Context(), PrincipalFrom(r.Context()), deps); err != nil {
+		Error(w, r, err)
+		return
+	}
 	JSON(w, http.StatusOK, map[string]any{"deployments": deps})
 }
 
@@ -237,7 +226,71 @@ func (s *Server) handleGetDeployment(w http.ResponseWriter, r *http.Request) {
 		Error(w, r, errs.New(errs.NotFound, "There is no such deploy for this app."))
 		return
 	}
+	deps := []state.Deployment{dep}
+	if err := s.Approvals.Describe(r.Context(), PrincipalFrom(r.Context()), deps); err != nil {
+		Error(w, r, err)
+		return
+	}
+	JSON(w, http.StatusOK, deps[0])
+}
+
+// --- deploy approval (R-154 – R-159) ----------------------------------------
+
+type decisionRequest struct {
+	Comment string `json:"comment"`
+}
+
+// handleApproveDeploy approves a deploy waiting for approval, and starts it
+// when that is the last approval it needs. Who may is the approval service's
+// question (R-155): app.view gets the caller this far, so that somebody who
+// cannot see the app is told it does not exist rather than that they may not
+// approve it.
+func (s *Server) handleApproveDeploy(w http.ResponseWriter, r *http.Request) {
+	s.decideDeploy(w, r, s.Approvals.Approve)
+}
+
+// handleRejectDeploy rejects a deploy waiting for approval, which ends the
+// request (R-156).
+func (s *Server) handleRejectDeploy(w http.ResponseWriter, r *http.Request) {
+	s.decideDeploy(w, r, s.Approvals.Reject)
+}
+
+func (s *Server) decideDeploy(w http.ResponseWriter, r *http.Request,
+	decide func(ctx context.Context, p authz.Principal, appID, depID, comment string) (state.Deployment, error)) {
+	app, ok := s.requireControl(w, r, authz.AppView)
+	if !ok {
+		return
+	}
+	var req decisionRequest
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			Error(w, r, errs.New(errs.ValidInvalid, "The request body could not be read. Send {\"comment\": \"...\"}, or nothing."))
+			return
+		}
+	}
+	dep, err := decide(r.Context(), PrincipalFrom(r.Context()), app.ID, chi.URLParam(r, "depID"), req.Comment)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
 	JSON(w, http.StatusOK, dep)
+}
+
+// handleListApprovals lists the deploys waiting for approval on every app the
+// caller may view, each saying whether the caller may decide it. Signed in and
+// nothing more: what comes back is already limited to apps the caller sees.
+func (s *Server) handleListApprovals(w http.ResponseWriter, r *http.Request) {
+	p := PrincipalFrom(r.Context())
+	if p.Kind == authz.KindAnonymous {
+		Error(w, r, errs.New(errs.AuthRequired, "You need to sign in."))
+		return
+	}
+	waiting, err := s.Approvals.Awaiting(r.Context(), p)
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+	JSON(w, http.StatusOK, map[string]any{"approvals": waiting})
 }
 
 // handleDeploymentLogs streams build output as server-sent events.
@@ -372,6 +425,10 @@ func (s *Server) handleAppStatus(w http.ResponseWriter, r *http.Request) {
 		"app_id":        app.ID,
 		"state":         app.State,
 		"desired_state": app.DesiredState,
+
+		// R-158: the pinned spec asks for auto-deploy, and approval now
+		// stops it. The console says so on the app.
+		"auto_deploy_paused": false,
 	}
 
 	if app.PinnedSpecID != "" {
@@ -389,6 +446,14 @@ func (s *Server) handleAppStatus(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			body["revision"] = rev.Revision
+			if s.Approvals != nil {
+				paused, err := s.Approvals.AutoDeployPaused(r.Context(), app.ID, rev.Body)
+				if err != nil {
+					Error(w, r, err)
+					return
+				}
+				body["auto_deploy_paused"] = paused
+			}
 		}
 	}
 	JSON(w, http.StatusOK, body)

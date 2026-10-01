@@ -74,7 +74,7 @@ one verb says nothing about another (R-082).
 | `PUT /api/v1/apps/{appID}/icon` | `app.spec.edit` | Set the app's tile image. The body is the image itself — PNG, JPEG, WebP or GIF, at most 256 KB. SVG is refused (R-340). |
 | `DELETE /api/v1/apps/{appID}/icon` | `app.spec.edit` | Remove the app's tile image, so the tile goes back to the map generated for it. |
 | `GET /api/v1/apps/{appID}/usage` | `app.view` | What each part of the app is using now — CPU in thousandths of a core, memory and disk in bytes, and each mounted volume's size — beside its limits (0 is none; `host_cpu_millis` and `host_memory_bytes` say what none means). A reading, not a history (R-245, R-016). `supported: false` when the runtime cannot report it. |
-| `GET /api/v1/apps/{appID}/status` | `app.view` | What the app is doing now: its state, and each part separately — running, restarting and how often, health, exit code — so a single crash-looping part is visible rather than averaged into one word. |
+| `GET /api/v1/apps/{appID}/status` | `app.view` | What the app is doing now: its state, and each part separately — running, restarting and how often, health, exit code — so a single crash-looping part is visible rather than averaged into one word. `auto_deploy_paused` is true when the spec asks for auto-deploy and approval now stops it (R-158). |
 | `POST /api/v1/apps/{appID}/start` | `app.restart` | Set the app's desired state to running. The reconciler converges to it, so it survives a restart. |
 | `POST /api/v1/apps/{appID}/stop` | `app.restart` | Set the app's desired state to stopped. |
 | `POST /api/v1/apps/{appID}/restart` | `app.restart` | Restart the running workloads without changing anything. |
@@ -98,14 +98,15 @@ one verb says nothing about another (R-082).
 | Endpoint | Verb | What it does |
 | --- | --- | --- |
 | `GET /api/v1/apps/{appID}/specs` | `app.view` | Every spec revision, and which one is pinned. Revisions are append-only (R-152). |
-| `POST /api/v1/apps/{appID}/specs` | `app.spec.edit` | Write a new spec revision. It does not deploy and does not become pinned. A routing mode other than its adapter's default, where the app did not already have one, also needs app.routing.override (R-163). |
+| `POST /api/v1/apps/{appID}/specs` | `app.spec.edit` | Write a new spec revision. It does not deploy and does not become pinned. A routing mode other than its adapter's default, where the app did not already have one, also needs app.routing.override (R-163). A change to `egress` needs app.egress.tighten or app.egress.loosen; one that newly loosens the installation's egress rules needs app.egress.loosen where policy gates loosening by verb, is refused with PLAN_EGRESS_LOOSENING_FORBIDDEN where policy forbids it, and makes the next deploy need approval where policy says so (R-183, R-184). Turning on automatic deploys while the app's deploys need approval is refused (R-158). With `?dry_run=true` nothing is written: the same checks run and refuse with the same errors, and an accepted spec answers 200 with the egress rules it would run with, what it newly loosens, and whether deploying it would need approval and why. |
 | `GET /api/v1/apps/{appID}/routing` | `app.view` | Where the app is reached, where it will be after the next deploy when a change is saved (`next_address`), and the routing adapters it could move to, with the modes each serves and defaults to. |
 | `PUT /api/v1/apps/{appID}/routing` | `app.spec.edit` | Change where a configured app is reached: `adapter_ref`, `mode`, and `hostname` or `path_prefix` (such as `/team/notes`), each defaulting to the adapter's own. Writes a revision the next deploy ships. A change needs `confirm: true`, since the old address stops working; a mode the adapter does not default to also needs app.routing.override (R-163). An address another app holds, or a path inside or around another app's, is refused with STATE_ADDRESS_TAKEN. |
 | `GET /api/v1/apps/{appID}/specs/{rev}` | `app.view` | One revision, in full. |
 | `POST /api/v1/apps/{appID}/specs/{rev}/pin` | `app.spec.edit` | Pin a revision: what the reconciler converges to, and what the next deploy ships. |
 | `GET /api/v1/apps/{appID}/specs/{a}/diff/{b}` | `app.view` | The classified difference between two revisions — what a deploy of it would restart, rebuild or leave alone. |
 | `GET /api/v1/apps/{appID}/export` | `app.view` | The app's configuration as a document, with every secret redacted (R-194). |
-| `POST /api/v1/apps/{appID}/plan` | `app.view` | What a deploy would do, and every reason it would refuse — before anything is created. |
+| `POST /api/v1/apps/{appID}/plan` | `app.view` | What a deploy of the pinned spec would do, and every reason it would refuse — before anything is created. Carries the egress rules the app would run with, merged, with where each part came from and what every loosening needs (`egress`, R-188), `notes`, and whether the deploy would need approval and why (`approval`, R-154). |
+| `GET /api/v1/apps/{appID}/egress` | `app.view` | The installation's egress rules (`install`: mode, list, private-address blocking, and what loosening them needs), the rules the pinned spec runs with, merged, with every loosening and what it needs (`effective`), the pinned spec's own egress settings (`spec`), and which revision those are (`revision`). `?revision=N`, or `?revision=latest` for the newest, reads that revision instead — what a saved change not yet deployed would run with. Change them by writing a spec (R-182, R-188). |
 | `GET /api/v1/apps/{appID}/slots` | `app.view` | The things the app says it needs, and what fills each one (R-130). |
 | `PUT /api/v1/apps/{appID}/slots/{key}` | `app.spec.edit` | Fill a slot: provision one, bind to something already running, or set a value. Takes effect at the next deploy. |
 
@@ -122,10 +123,13 @@ one verb says nothing about another (R-082).
 | Endpoint | Verb | What it does |
 | --- | --- | --- |
 | `GET /api/v1/apps/{appID}/deployments` | `app.view` | Every deploy of this app, newest first. |
-| `POST /api/v1/apps/{appID}/deployments` | `app.deploy` | Deploy. Returns 202 with a deployment ID; the build runs behind it. Retrying with the same idempotency key replays the first answer rather than deploying twice (R-262). |
-| `GET /api/v1/apps/{appID}/deployments/{depID}` | `app.view` | One deploy: what it shipped, and how it ended. |
+| `POST /api/v1/apps/{appID}/deployments` | `app.deploy` | Deploy. Returns 202 with the deployment; the build runs behind it. When the deploy needs approval (R-154) it comes back `awaiting_approval` instead, the app is left as it is, the people who can approve are told, and any older request for the app still waiting is superseded. Retrying with the same idempotency key replays the first answer rather than deploying twice (R-262). |
+| `GET /api/v1/apps/{appID}/deployments/{depID}` | `app.view` | One deploy: what it shipped, and how it ended. One that needed approval carries `approvals_required`, `approval_expires_at`, `approval_reasons`, the `approvals` so far and, while it waits, `can_decide`. |
 | `GET /api/v1/apps/{appID}/deployments/{depID}/logs` | `app.logs.read` | The deploy's output as server-sent events, flushed per line while it runs (R-170). |
-| `POST /api/v1/apps/{appID}/deployments/rollback` | `app.deploy` | Deploy the last revision that ran successfully. |
+| `POST /api/v1/apps/{appID}/deployments/rollback` | `app.deploy` | Deploy the last revision that ran successfully, or the revision `to` names. Rolling back to a revision that ran successfully before never needs approval (R-157). |
+| `POST /api/v1/apps/{appID}/deployments/{depID}/approve` | `app.view` | Approve a deploy that is waiting for approval, with an optional `comment`. Takes `install.deploys.approve`, or `app.deploy.approve` on this app; either may approve its holder's own request (R-155). The last approval it needs plans it again and starts it: 200 with the deployment, `pending` once started and still `awaiting_approval` while it needs more. Refused while another deploy of the app is running; the request keeps waiting. |
+| `POST /api/v1/apps/{appID}/deployments/{depID}/reject` | `app.view` | Reject a deploy that is waiting for approval, with an optional `comment`. One rejection ends the request (R-156). The same permissions as approving. |
+| `GET /api/v1/approvals` |  | Deploys waiting for approval on every app you can see, oldest first: each deployment with `app_name`, `app_slug`, its `approval_reasons`, the `approvals` so far, and `can_decide` — whether you may approve or reject it. |
 
 ### Secrets
 
@@ -285,6 +289,7 @@ that finds the log line. Branch on the code; the message may be reworded.
 | `PLAN_ADAPTER_NOT_CONFIGURED` | 409 | The spec names an adapter this installation does not have. |
 | `PLAN_CAPABILITY_UNSUPPORTED` | 409 | The spec asks for something the chosen adapter does not do (R-254). |
 | `PLAN_COMPOSE_CONSTRUCT_REJECTED` | 409 | The compose file uses a construct Pando will not translate (R-099). |
+| `PLAN_EGRESS_LOOSENING_FORBIDDEN` | 409 | The app loosens the installation's egress rules, and host policy says no app may (R-183). |
 | `PLAN_NO_ADAPTER_MEETS_POLICY` | 409 | No configured adapter can satisfy this spec under host policy (R-024, R-114). |
 | `PLAN_SECURITY_BELOW_THRESHOLD` | 409 | This installation requires a security score, and this app is below it or has never been scanned (R-314). |
 | `PLAN_SLOT_UNFILLED` | 409 | A required dependency has nothing filling it, so the deploy would start an app that cannot connect (R-132). |

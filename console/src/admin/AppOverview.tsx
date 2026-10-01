@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Banner, Button, Card, StatusIndicator, Tag } from '@design';
 
 import { api } from '@api/client';
-import type { App, BackupAttempt, Deployment } from '@api/types.gen';
+import type { App, BackupAttempt } from '@api/types.gen';
 import { statusLabel, statusSymbol } from '../ui/status';
 import { InlineWarning } from '../ui/InlineWarning';
 import { Parts } from './Parts';
@@ -24,6 +24,9 @@ import { AppImage } from './AppImage';
 import { AppName } from './AppName';
 import { AppAddress } from './AppAddress';
 import { AppVerb, useCan } from './verbs';
+import { ApprovalRequest } from './ApprovalRequest';
+import { isAwaiting } from './approval';
+import type { ApprovalDeployment } from './approval';
 import { attemptDetail, attemptLabel, attemptSymbol } from '../ui/backupAttempt';
 
 interface SpecRevision {
@@ -52,8 +55,15 @@ export function AppOverview({
 
   const deployments = useQuery({
     queryKey: ['apps', app.id, 'deployments'],
-    queryFn: () => api.get<{ deployments: Deployment[] | null }>(`/apps/${app.id}/deployments`),
-    refetchInterval: app.state === 'deploying' ? 3_000 : false,
+    queryFn: () => api.get<{ deployments: ApprovalDeployment[] | null }>(`/apps/${app.id}/deployments`),
+    // While a deploy waits for approval, somebody else's answer is what moves
+    // it, so it is asked again now and then rather than left until a reload.
+    refetchInterval: (query) =>
+      app.state === 'deploying'
+        ? 3_000
+        : (query.state.data?.deployments ?? []).some(isAwaiting)
+          ? 15_000
+          : false,
   });
 
   // Every revision, so this screen can tell the pinned one from the newest.
@@ -91,6 +101,8 @@ export function AppOverview({
   const unshipped = Boolean(newest && pinned && newest.revision > pinned.revision);
 
   const latest = (deployments.data?.deployments ?? [])[0];
+  // A newer request supersedes an older one (R-156), so there is at most one.
+  const waiting = (deployments.data?.deployments ?? []).find(isAwaiting);
   const lastBackup = app.last_backup;
   const warnings = pinnedSpec.data?.body?.warnings ?? [];
 
@@ -124,7 +136,22 @@ export function AppOverview({
         </Banner>
       )}
 
-      {unshipped && app.state !== 'deploying' && (
+      {/* A deploy waiting for approval has not started, and the app keeps
+          running what it ran (R-154). Said here, with the request itself,
+          because this is where the person who pressed Deploy is looking. */}
+      {waiting && (
+        <div style={{ maxWidth: MEASURE }}>
+          <Card padding="md">
+            <h4 style={{ font: 'var(--type-h4)', margin: '0 0 var(--space-2)' }}>A deploy is waiting for approval</h4>
+            <p style={{ font: 'var(--type-body-ui)', color: 'var(--ink-secondary)', margin: '0 0 var(--space-3)' }}>
+              Nothing changes until it is approved. The app keeps running what it runs now.
+            </p>
+            <ApprovalRequest deployment={waiting} />
+          </Card>
+        </div>
+      )}
+
+      {unshipped && app.state !== 'deploying' && !waiting && (
         <Banner tone="info">
           The configuration has changed since this app was last deployed. Deploy to apply it.
         </Banner>
@@ -178,7 +205,11 @@ export function AppOverview({
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                   <StatusIndicator
                     status={deployStatus(latest.status, latest.result_state)}
-                    label={`${deployLabel(latest.status, latest.result_state)} ${relative(latest.finished_at ?? latest.started_at)}`}
+                    label={
+                      isAwaiting(latest)
+                        ? `${deployLabel(latest.status)}, asked ${relative(latest.started_at).toLowerCase()}`
+                        : `${deployLabel(latest.status, latest.result_state)} ${relative(latest.finished_at ?? latest.started_at)}`
+                    }
                   />
                   {canReadLogs && (
                     <Button variant="secondary" onClick={() => onGo('logs')}>

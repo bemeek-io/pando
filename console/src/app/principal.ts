@@ -37,6 +37,8 @@ export const InstallVerb = {
   AppsView: 'install.apps.view',
   AppsManage: 'install.apps.manage',
   TokensManage: 'install.tokens.manage',
+  /** Approve any deploy that needs approval, on any app (R-155). */
+  DeploysApprove: 'install.deploys.approve',
   AppCreate: 'app.create',
 } as const;
 

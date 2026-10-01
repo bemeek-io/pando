@@ -48,6 +48,7 @@ An app can be created and a spec hand-written, validated, and pinned via the API
 - Exactly one workload has `Primary: true`.
 - `Port.Source` is retained because the review UI needs it. "We watched your app bind 3000" reads
   differently from "we guessed 3000 because it's a Next.js app."
-- `Egress.Mode == allowlist` **replaces** the install-wide list rather than intersecting it (R-182).
-  The field documentation must say so — "allowlist" reads like narrowing, and it is not.
+- An app's egress is **layered on** the install's rules — additions, removals, and a list of its own
+  on top — and never replaces them (R-182, amended by issue #79; design 01 §2.7). It used to say an
+  app's allowlist replaced the install-wide one.
 - Warnings live in the spec and survive revisions until dismissed. **A warning is never a blocker.**

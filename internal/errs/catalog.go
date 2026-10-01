@@ -47,6 +47,7 @@ var meanings = map[Code]string{
 	PlanAdapterNotConfigured:     "The spec names an adapter this installation does not have.",
 	PlanComposeConstructRejected: "The compose file uses a construct Pando will not translate (R-099).",
 	PlanSecurityBelowThreshold:   "This installation requires a security score, and this app is below it or has never been scanned (R-314).",
+	PlanEgressLooseningForbidden: "The app loosens the installation's egress rules, and host policy says no app may (R-183).",
 
 	StateInvalid:                "The object is in a state this action does not apply to.",
 	StateAIFunctionAssigned:     "Another AI adapter already handles this AI function. Remove it from that adapter first.",

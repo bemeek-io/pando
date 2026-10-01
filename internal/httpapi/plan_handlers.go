@@ -10,6 +10,8 @@ import (
 	"github.com/trypando/pando/internal/config"
 	"github.com/trypando/pando/internal/core/authz"
 	"github.com/trypando/pando/internal/core/edge"
+	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/specgate"
 	"github.com/trypando/pando/internal/core/state"
 	"github.com/trypando/pando/internal/errs"
 )
@@ -46,13 +48,60 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	JSON(w, http.StatusOK, map[string]any{
+	notes := plan.Notes
+	if notes == nil {
+		notes = []string{}
+	}
+	body := map[string]any{
 		"app_id":    plan.AppID,
 		"revision":  rev.Revision,
 		"checks":    plan.Checks,
 		"workloads": len(plan.Bundle.Workloads),
 		"volumes":   len(plan.Bundle.Volumes),
-	})
+		"egress":    plan.Egress, // R-188
+		"notes":     notes,
+	}
+
+	// Whether deploying it would wait for somebody's approval, and why
+	// (R-154), so nobody finds out only after pressing Deploy. Asked of the
+	// approval service, which is what a deploy itself asks; specgate's answer
+	// is the fallback for a server built without one.
+	if s.Approvals != nil {
+		reasons, err := s.Approvals.Needed(r.Context(), app, rev, state.TriggerManual)
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		described := make([]state.ApprovalReason, 0, len(reasons))
+		for _, reason := range reasons {
+			described = append(described, state.ApprovalReason{Reason: string(reason), Message: reason.Message()})
+		}
+		body["approval"] = map[string]any{"required": len(reasons) > 0, "reasons": described}
+	} else {
+		doc, err := s.hostPolicy(r.Context())
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		var running *spec.AppSpec
+		if s.Deployments != nil {
+			runningID, err := s.Deployments.RunningSpecID(r.Context(), app.ID)
+			if err != nil {
+				Error(w, r, err)
+				return
+			}
+			if runningID != "" {
+				if rr, found, err := s.Apps.RevisionByID(r.Context(), runningID); err != nil {
+					Error(w, r, err)
+					return
+				} else if found {
+					running = rr.Body
+				}
+			}
+		}
+		body["approval"] = specgate.ApprovalFor(doc, app.ID, running, rev.Body)
+	}
+	JSON(w, http.StatusOK, body)
 }
 
 // handleAdapterKinds lists the kinds of adapter this build can run and the

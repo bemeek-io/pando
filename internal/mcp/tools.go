@@ -61,6 +61,26 @@ func appPath(id, suffix string) string {
 	return "/apps/" + url.PathEscape(id) + suffix
 }
 
+// decisionRequest is approving or rejecting a deploy waiting for approval
+// (R-154): POST .../deployments/{id}/<action>, with an optional comment.
+func decisionRequest(action string) func(args map[string]any) (string, string, any, error) {
+	return func(args map[string]any) (string, string, any, error) {
+		appID, err := stringArg(args, "app_id", true)
+		if err != nil {
+			return "", "", nil, err
+		}
+		depID, err := stringArg(args, "deployment_id", true)
+		if err != nil {
+			return "", "", nil, err
+		}
+		body := map[string]any{}
+		if comment, _ := stringArg(args, "comment", false); comment != "" {
+			body["comment"] = comment
+		}
+		return "POST", appPath(appID, "/deployments/"+url.PathEscape(depID)+action), body, nil
+	}
+}
+
 func schema(props map[string]any, required ...string) map[string]any {
 	if required == nil {
 		required = []string{}
@@ -238,8 +258,10 @@ var toolList = []tool{
 		},
 	},
 	{
-		Name:        "pando_deploy",
-		Description: "Deploy an app. Returns once the deployment has been accepted, not once it is running.",
+		Name: "pando_deploy",
+		Description: "Deploy an app. Returns once the deployment has been accepted, not once it is running. " +
+			"When the deploy needs somebody's approval, it comes back with status `awaiting_approval` and " +
+			"`approval_reasons` saying why; it runs once a person approves it.",
 		Schema: schema(map[string]any{
 			"app_id":          str("The app's ID."),
 			"idempotency_key": str("A key you choose. Retrying with the same key will not deploy twice."),
@@ -256,6 +278,39 @@ var toolList = []tool{
 			}
 			return "POST", appPath(id, "/deployments"), body, nil
 		},
+	},
+	{
+		Name: "pando_list_approvals",
+		Description: "List the deploys waiting for approval on every app you can see. Each says which app, " +
+			"why it needs approval, the approvals it has so far, and `can_decide`: whether you may approve or reject it.",
+		Schema: schema(map[string]any{}),
+		request: func(map[string]any) (string, string, any, error) {
+			return "GET", "/approvals", nil, nil
+		},
+	},
+	{
+		Name: "pando_approve_deploy",
+		Description: "Approve a deploy that is waiting for approval. When it is the last approval the deploy " +
+			"needs, the deploy starts. Approval is a person's sign-off, so by default an installation does not " +
+			"let an agent's token approve; the refusal says so.",
+		Schema: schema(map[string]any{
+			"app_id":        str("The app's ID."),
+			"deployment_id": str("The deploy's ID, as pando_list_approvals or pando_deploy returned it."),
+			"comment":       str("Optional. A note recorded with the approval."),
+		}, "app_id", "deployment_id"),
+		request: decisionRequest("/approve"),
+	},
+	{
+		Name: "pando_reject_deploy",
+		Description: "Reject a deploy that is waiting for approval. One rejection ends the request, and the " +
+			"deploy does not run. Approval is a person's sign-off, so by default an installation does not let " +
+			"an agent's token reject either.",
+		Schema: schema(map[string]any{
+			"app_id":        str("The app's ID."),
+			"deployment_id": str("The deploy's ID, as pando_list_approvals or pando_deploy returned it."),
+			"comment":       str("Optional. Why, recorded with the rejection and shown to whoever asked."),
+		}, "app_id", "deployment_id"),
+		request: decisionRequest("/reject"),
 	},
 	{
 		Name: "pando_get_logs",

@@ -1,12 +1,13 @@
 # Open decisions
 
-Twenty-three questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
+Twenty-six questions. O-1 through O-10 come from requirements §23; O-11 through O-14 were added during
 design; O-15 through O-17 were found while implementing phases 6, 7 and 8; O-18 was found while
 setting up the release build; O-19 was found by turning `gosec` on; O-20 was found while building the
 first AI adapter; O-21 and O-22 came from issue #74, AI functions beyond detection; O-23 came from
-building the Cloudflare Tunnel adapter. **Twenty are resolved. Three remain.** O-4 needs a
-measurement, O-18 needs somebody to pick a host and pay for it, and O-23 is kept open deliberately so
-it is revisited.
+building the Cloudflare Tunnel adapter; O-24 came from issue #87; O-25 from issue #79, egress rules;
+O-26 from issue #39, deploy approval. **Twenty-two are resolved. Four remain.** O-4 needs a
+measurement, O-18 needs somebody to pick a host and pay for it, O-23 is kept open deliberately so
+it is revisited, and O-24 needs a product call on stopped apps.
 
 O-5 was the other long-standing one and is now resolved: "per-adapter" answered it until R-174 made
 Pando run the edge and write its configuration, at which point Pando became the thing choosing.
@@ -219,6 +220,73 @@ failure surfaces as a browser warning to a user rather than as a message to an o
 | **O-17** | What an "administrative verb" is (R-265) | Install-scoped verbs, held as a grant with no app; a fourth built-in role | design 06 §2.1, R-080/R-081 |
 | **O-22** | Whether successful use of an app is audited, so audit search can answer "who accessed this app" | Yes: `app.use`, once per visit, anonymous visitors included by default and turned off by host policy (`disable_anonymous_use_audit`) | R-227, design 06 §4, §6 |
 | **O-21** | How AI functions are assigned, named and gated, and how the config file declares them (issue #74) | The config file wins over a stored assignment or adapter, and the stored one is shown as overridden; declared and console-managed adapters mix; plan chat stays `revise_plan`; access drafting is one function; each function is gated by the verb its ordinary endpoint needs | R-259, R-271, R-343 – R-346, design 10 §7.1, §9, §10 |
+| **O-25** | Egress rules: install allow/denylist with app-level overrides (issue #79) | The install picks allow-all, a denylist or an allowlist, plus a separate private-range switch. An app adds or removes entries and may keep its own list **on top** — it never replaces. Tightening is always allowed (`app.egress.tighten`); loosening is gated by `egress_loosening`: forbidden, a verb (`app.egress.loosen`), or deploy approval | R-181 – R-189, design 01 §2.7, 03 §2.1, 06 §5 |
+| **O-26** | Require approval before deployments (issue #39) | Off by default. Required by host policy for every app or named apps, by the app's own spec, or by a new egress loosening. Two verbs: `install.deploys.approve` (Administrator) and `app.deploy.approve` (no built-in role); self-approval allowed. Count and expiry configurable (1, seven days). Rollback to a revision that ran, restarts and rotations are free. Auto-deploy and approval do not combine | R-154 – R-159, design 02 §2.3, 05 §3.3, 06 §5, 07 B |
+
+### O-25 — egress: layered, and only loosening is gated
+
+Issue #79 asked to replace R-182's rule that an app's allowlist **replaces** the install's, which made
+the install's list a default rather than a boundary. Its questions, and the answers:
+
+- **Can an app remove entries from an install denylist, or add to an install allowlist?** Yes, and
+  those are two of the three **loosenings** (`denylist_remove`, `allowlist_add`). Whether they are
+  allowed is host policy's `egress_loosening`: `forbidden` (refused at plan time,
+  `PLAN_EGRESS_LOOSENING_FORBIDDEN`), `verb` (whoever holds `app.egress.loosen`; the default, R-270),
+  or `approval` (the deploy waits for an approver, O-26). Tightening — adding to a denylist, removing
+  from an allowlist — is always allowed (R-272).
+- **Can an app under an install denylist switch itself to an allowlist?** Yes, ungated beyond
+  `app.egress.tighten`. It does not switch: its own list is a second layer, and a destination must pass
+  both. That is also how an app on an open install locks itself down.
+- **How does blocking private ranges combine with a list?** It is a separate switch beside any mode,
+  allow-all included, checked against resolved addresses. An app may turn it on; turning it off when
+  the install has it on is the third loosening (`block_private_off`).
+- **Should build egress follow the same model?** No. It stays separate (R-118, R-189): a build runs
+  before anybody has reviewed its output, so what it may reach is a different question.
+- **Entry format?** Hostname, `*.` wildcard of subdomains, IP address or CIDR, each optionally with a
+  port, and `*` (R-185). Hostname entries match the name asked for; address entries match where it
+  resolved. The Docker runtime enforces all of them through its gateway; a runtime that cannot enforce
+  a restriction says so and the plan is refused (R-186).
+- **Should `app.egress.override` split?** Yes: `app.egress.tighten` (Owner and Operator) and
+  `app.egress.loosen` (Owner; the old verb, renamed by migration in every role and policy list).
+- **How are the effective rules shown?** Merged, in the plan and the console: the effective mode and
+  list with where each entry came from, the app's own list, private-range blocking and its origin, and
+  every loosening with what it needs (R-188). The plan also says, wherever a restriction is in effect,
+  that only HTTP and HTTPS through the gateway leave the app (R-187).
+
+The issue's "install-level switch for whether overrides are allowed at all" became the loosening gate
+rather than an override switch, because an override that only tightens never needed one. Rules take
+effect at deploy, are recorded on the deployment, and a policy edit does not change a running app (O-10).
+
+### O-26 — deploy approval
+
+Issue #39 asked for a request-then-approve flow for change control. Its questions, and the answers:
+
+1. **Scope?** All of them: host policy for every app (`deploy_approval_required`), host policy for
+   named apps (`deploy_approval_apps`, which the app's owner cannot turn off), and the app's own spec
+   (`deploy.require_approval`, read from the running spec and the next, so turning it off is approved).
+   A new egress loosening under `egress_loosening: approval` is a fourth reason (R-154).
+2. **Auto-deploy?** Refuses to combine. A spec that turns auto-deploy on is refused while approval is
+   required; an app that already auto-deploys is skipped when policy starts requiring it, and the
+   console says so (R-158). A request per push is a backlog nobody reads.
+3. **Rollbacks, restarts, secret rotations?** None needs approval. A rollback to a revision that ran
+   was approved, or did not need it, when it first ran; restarts and rotations change no spec (R-157).
+4. **Can a requester approve their own deploy?** Yes. The issue proposed no by default; the decision
+   was to keep the rule simple and put the control in who holds the verb. `install.deploys.approve`
+   (Administrator) approves anything; `app.deploy.approve` (no built-in role, granted through a custom
+   role) approves one app's. An install that wants two people keeps the verb from the people who
+   deploy (R-155). Owner does not get `app.deploy.approve`, and `install.apps.manage` does not stand
+   for it. Agents' tokens are denied both by default (`agent_disabled_verbs`): approval is a human
+   sign-off.
+5. **Do requests expire?** Yes, after `deploy_approval_expiry_hours` (default 168, seven days; 0 means
+   never). A newer request for the same app supersedes an older waiting one (R-156).
+6. **One approval or a count?** A count, `deploy_approval_count`, default one. Any rejection ends the
+   request.
+
+The issue's other proposals stand as written: tied to one spec revision and commit (R-120); approvers
+notified through the notification adapter; every step audited (R-159); and no path to `failed`
+(R-151). One changed: the waiting state is not *before* planning. The plan runs when the deploy is
+requested, so a deploy that cannot succeed is refused before anybody is asked to approve it, and runs
+again at approval because policy may have changed meanwhile.
 
 ### O-21 — AI functions: assignment, naming and gating
 

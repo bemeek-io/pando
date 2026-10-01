@@ -18,21 +18,56 @@
 // shown as they are, disabled, and there is no Save.
 
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { Button, Checkbox, Switch } from '@design';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Banner, Button, Checkbox, Switch } from '@design';
 
 import { api, RequestFailed } from '@api/client';
 import type { AppSpec } from '@api/types.gen';
 import { MEASURE } from '../ui/layout';
+import { useNewestSpec } from './newestSpec';
 import { AppVerb, useCan } from './verbs';
 
-export function DeploySettings({ appID, spec }: { appID: string; spec: AppSpec }) {
+/**
+ * The deploy settings of an app, on its newest revision, with the status that
+ * says whether approval has paused its auto-deploy (R-158).
+ */
+export function DeploySection({ appID }: { appID: string }) {
+  const newest = useNewestSpec(appID);
+  // The same key Parts reads the status under, so it is one request.
+  const status = useQuery({
+    queryKey: ['apps', appID, 'status'],
+    queryFn: () => api.get<{ auto_deploy_paused?: boolean }>(`/apps/${appID}/status`),
+  });
+  if (!newest.spec) return null;
+  return (
+    <DeploySettings
+      // A new revision starts the form again from what it says.
+      key={JSON.stringify(newest.spec.deploy ?? {})}
+      appID={appID}
+      spec={newest.spec}
+      autoDeployPaused={status.data?.auto_deploy_paused ?? false}
+    />
+  );
+}
+
+export function DeploySettings({
+  appID,
+  spec,
+  autoDeployPaused = false,
+}: {
+  appID: string;
+  spec: AppSpec;
+  /** The pinned spec deploys automatically, and approval now stops it (R-158). */
+  autoDeployPaused?: boolean;
+}) {
+  const queries = useQueryClient();
   const canEdit = useCan(AppVerb.SpecEdit);
   const [startThenSwap, setStartThenSwap] = useState(
     spec.deploy?.strategy === 'start_then_swap',
   );
   const [autoRollback, setAutoRollback] = useState(spec.deploy?.auto_rollback ?? false);
   const [autoDeploy, setAutoDeploy] = useState(spec.deploy?.auto_deploy?.enabled ?? false);
+  const [requireApproval, setRequireApproval] = useState(spec.deploy?.require_approval ?? false);
 
   const save = useMutation({
     mutationFn: () =>
@@ -43,25 +78,61 @@ export function DeploySettings({ appID, spec }: { appID: string; spec: AppSpec }
           strategy: startThenSwap ? 'start_then_swap' : 'recreate',
           auto_rollback: autoRollback,
           auto_deploy: { ...spec.deploy?.auto_deploy, enabled: autoDeploy },
+          require_approval: requireApproval,
         },
       }),
+    onSuccess: () => void queries.invalidateQueries({ queryKey: ['apps', appID] }),
   });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: MEASURE }}>
+      {/* R-158: said on the app, because otherwise a branch moves and nothing
+          happens, and nobody is told why. */}
+      {autoDeployPaused && (
+        <Banner tone="info">
+          Auto-deploy is paused. This app’s deploys now need approval, and a deploy that waits for
+          somebody can’t start on its own. Deploy by hand to ask for approval.
+        </Banner>
+      )}
+
       <Setting
         title="Deploy when the branch changes"
         control={
           <Checkbox
             checked={autoDeploy}
             onChange={(e) => setAutoDeploy(e.target.checked)}
-            disabled={!canEdit}
+            disabled={!canEdit || requireApproval}
             label="Deploy automatically"
           />
         }
       >
         Pando checks the branch every few minutes and deploys when it moves. Off by default, so
-        nothing ships without someone asking for it.
+        nothing ships without someone asking for it. Not available while this app’s deploys need
+        approval.
+      </Setting>
+
+      <Setting
+        title="Require approval for this app’s deploys"
+        control={
+          <Switch
+            checked={requireApproval}
+            onChange={(e) => {
+              setRequireApproval(e.target.checked);
+              // R-158: the two do not combine, and the server refuses a spec
+              // asking for both. Turning approval on says so by doing it.
+              if (e.target.checked) setAutoDeploy(false);
+            }}
+            disabled={!canEdit}
+            label="Wait for approval before each deploy"
+          />
+        }
+      >
+        {/* R-154: turning it off is read from the running configuration too,
+            so switching it off is itself a deploy somebody approves. */}
+        Each deploy waits until somebody allowed to approve it says yes. Turning this on turns
+        auto-deploy off, because a request for every push is a backlog nobody reads. Turning it off
+        again needs one last approval. An administrator can also require approval for an app, and
+        then it applies whatever this says.
       </Setting>
 
       <Setting
@@ -98,8 +169,10 @@ export function DeploySettings({ appID, spec }: { appID: string; spec: AppSpec }
 
       {canEdit && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+          {/* Secondary: Deploy, in the app's header, is the one primary
+              button on this screen. */}
           <Button
-            variant="primary"
+            variant="secondary"
             onClick={() => save.mutate()}
             disabled={save.isPending}
             style={{ alignSelf: 'flex-start' }}

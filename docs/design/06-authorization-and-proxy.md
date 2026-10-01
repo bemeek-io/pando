@@ -354,13 +354,15 @@ var Verbs = []Verb{
     // Install-scoped: held through a grant with no app (§2.1).
     "install.view", "install.users.manage", "install.policy.manage",
     "install.adapters.manage", "install.audit.read", "install.backup.manage",
-    "install.apps.view", "install.apps.manage", "install.tokens.manage", "app.create",
+    "install.apps.view", "install.apps.manage", "install.tokens.manage",
+    "install.deploys.approve", "app.create",
 
     // App-scoped.
     "app.view", "app.logs.read", "app.deploy", "app.restart",
     "app.spec.edit", "app.secrets.write", "app.secrets.read",
     "app.exec", "app.grants.manage", "app.routing.override",
-    "app.resources.override", "app.egress.override", "app.delete",
+    "app.resources.override", "app.egress.tighten", "app.egress.loosen",
+    "app.deploy.approve", "app.delete",
 }
 ```
 
@@ -376,22 +378,56 @@ anyone else's needs `install.users.manage` (write) or `install.view` (read). Wit
 install with one administrator could not let anyone manage their own account; without the second, any
 signed-in account could suspend the administrator — which it could, until O-17 was resolved.
 
-**[D]** The three `*.override` verbs form a set: routing, resources, and egress. Each one permits
-deviating from a default the host operator chose, which is why none of them is in Operator and all
-three sit with Owner. `app.egress.override` is what R-184 requires — an app-level allowlist
-**replaces** the install-wide list rather than narrowing it (R-182, R-183), so defining one is an
-escalation and has to be gated. Adding it to the catalog without gating it would make the install-wide
-list advisory.
+**[D]** The two `*.override` verbs, `app.routing.override` and `app.resources.override`, each permit
+deviating from a default the host operator chose, which is why neither is in Operator and both sit
+with Owner.
 
-**[D]** Administrator holds every install verb and no app verb; Owner is the mirror image. The two
-partition the catalog. Two of the install verbs reach into apps, and they are the only ones that do:
-`install.apps.manage` stands for every app verb on every app, and `install.apps.view` for the
-Viewer's two (`app.view`, `app.logs.read`). So an administrator can look after any app without a
-grant on it (R-081). This is an implication, the one this design allows between verbs, and it lives in
-exactly one place — `CheckControl`, step 6b, reading the table in `authz.everyApp` — after the app's
-own grants and after host policy, which still denies an administrator (R-272). `CheckData` does not
-read it: managing an app is not using it, and R-087's line holds on the data plane — the supported
-path to *use* an app is a data grant or ownership.
+**[D] Egress is split into tighten and loosen, by what a change does to the install's rules** (R-182 –
+R-184; amended by issue #79, O-25). There used to be a third override, `app.egress.override`, because an
+app's allowlist **replaced** the install's and so defining one was an escalation. An app's own list now
+sits on top of the install's and can only narrow, so most egress changes cannot escalate, and gating
+them like one kept Operators from locking an app down. The split follows the risk:
+
+- `app.egress.tighten` — any change that stays within the install's rules: the app's own list, adding
+  to a denylist, removing from an allowlist, turning private-range blocking on. Always within policy
+  (R-272), so Owner **and Operator** hold it.
+- `app.egress.loosen` — `app.egress.override` renamed by migration 000039 in every role and policy list
+  that named it. Needed for a loosening (`allowlist_add`, `denylist_remove`, `block_private_off`) when
+  host policy's `egress_loosening` is `verb`. Holding it covers every egress change, tightening
+  included. Owner only.
+
+The spec save asks: did egress change at all → `tighten` **or** `loosen`. Is there a loosening the
+running spec does not already carry (`policy.NewLoosenings`)? Then `forbidden` refuses it
+(`PLAN_EGRESS_LOOSENING_FORBIDDEN`), `verb` needs `app.egress.loosen`, and `approval` lets anyone who may
+change egress propose it, because the deploy will wait for an approver (R-154). Policy, not the verb, is
+what makes the install's rules a floor: with loosening `forbidden`, no grant gets an app past them.
+
+**[D] Deploy approval has two verbs** (R-155). `install.deploys.approve` approves or rejects any
+deploy on any app; Administrator holds it. `app.deploy.approve` does the same for one app's deploys and
+is in **no** built-in role — signing off is a trust an installation hands to people it names, through a
+custom role (R-082). Owner does not get it, because an owner approving their own app's deploys is the
+case approval was turned on to prevent. Either verb may approve its holder's own request: Pando does
+not enforce two people, an install that wants two keeps the verb from the people who deploy. By default
+both are in `agent_disabled_verbs` (design 04 §3): approval is a human sign-off.
+
+**[D]** Administrator holds every install verb and no app verb; Owner holds every app verb but
+`app.deploy.approve`. The two partition the catalog **but for that one verb**, which neither holds.
+Two of the install verbs stand for app verbs, and they are the only ones that do:
+`install.apps.manage` stands for every app verb on every app **except `app.deploy.approve`**, and
+`install.apps.view` for the Viewer's two (`app.view`, `app.logs.read`). So an administrator can look
+after any app without a grant on it (R-081). This is an implication, the one this design allows between
+verbs, and it lives in exactly one place — `CheckControl`, step 6b, reading the table in
+`authz.everyApp` — after the app's own grants and after host policy, which still denies an
+administrator (R-272). `CheckData` does not read it: managing an app is not using it, and R-087's line
+holds on the data plane — the supported path to *use* an app is a data grant or ownership.
+
+**[D]** The `app.deploy.approve` exception is deliberate (R-155). Managing every app is not a mandate
+to sign off on every deploy; an administrator approves through `install.deploys.approve`, a verb of its
+own that a custom install-scoped role can carry or leave out independently of `install.apps.manage`.
+The approval service accepts either: `install.deploys.approve` install-wide, or `app.deploy.approve` on
+the app. It asks the install verb first with `Authorizer.AllowsInstall`, which answers without auditing
+a denial, so an approver holding only the app verb does not leave a spurious refusal in the log; only a
+caller holding neither is audited as denied.
 
 **[D]** What the caller may do on an app is on the wire: `GET /apps/{id}` returns `verbs`, computed by
 `Authorizer.AppVerbs`, which asks `CheckControl`'s own question for each app verb without auditing a

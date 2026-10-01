@@ -59,6 +59,22 @@ Unreleased above it. -->
   now**). The API reports it as `scanning_since` on `GET /apps/{id}/security` and
   `security_scanning` on each app in `GET /apps`.
 
+- **Egress rules** (#79). Host policy sets where apps may connect out to: anywhere, anywhere except
+  a denylist, or only an allowlist, plus a separate switch that blocks private addresses (the local
+  network, loopback, the cloud metadata address). An app can add or remove entries, or keep a list of
+  its own that narrows the installation's. Changes that loosen the installation's rules are allowed by
+  permission, only after a deploy approval, or never, as policy says. The plan and the app's
+  **Settings** tab show the merged rules and where each came from. On Docker, a restricted app runs
+  on a network with no route out and reaches the internet only through a per-app egress gateway, as
+  HTTP or HTTPS via `HTTP_PROXY`/`HTTPS_PROXY`; an app with no restriction runs exactly as before.
+- **Deploy approval** (#39). Policy can require approval for every app's deploys or for chosen apps,
+  and an app can require it of itself. A deploy then waits until enough people holding
+  `install.deploys.approve` (administrators) or `app.deploy.approve` (no built-in role) approve it,
+  with a configurable count and expiry (default one approval, seven days). Rolling back to a revision
+  that ran needs no approval; auto-deploy is refused while approval is required. The console has an
+  **Approvals** screen; the API, `pando approvals` and three MCP tools do the same. Agent tokens
+  cannot approve by default.
+
 ### Changed
 
 - An install has at most one AI adapter per provider, and an AI adapter has no default: each AI
@@ -69,6 +85,10 @@ Unreleased above it. -->
 - Pando moved to the `trypando` GitHub organization. The repository is
   `github.com/trypando/pando`, the Go module path is `github.com/trypando/pando`, and the Homebrew tap
   is `trypando/tap/pando`. Old `github.com/bemeek-io/...` URLs redirect.
+
+- `app.egress.override` is now `app.egress.loosen`, and a new `app.egress.tighten` (Owner and
+  Operator) changes an app's egress within the installation's rules. An app's own allowlist now
+  narrows the installation's instead of replacing it.
 
 ### Fixed
 
@@ -109,6 +129,16 @@ Unreleased above it. -->
   backup" only when one was taken.
 
 ### Upgrade notes
+
+- Migration 000039 renames `app.egress.override` to `app.egress.loosen` in every role that held it,
+  custom roles included, and in host policy's disabled-verb lists. Scripts that name the old verb need
+  the new one.
+- **An install that set `egress_allowlist` is now held to it.** That setting was never enforced
+  before; after upgrading, apps reach only what it lists. Clear it, or set `egress_mode`, before
+  upgrading if that is not what you want. Rules take effect at each app's next deploy.
+- Restricted egress on Docker needs the gateway image: Pando uses its own container's image, or the
+  runtime adapter's `egress_gateway_image`. Pando run directly on a host has neither, so a deploy with
+  a restriction is refused with a message saying why.
 
 - Migration 000037 adds the external identity tables and the `effective_group_members` view, which
   authorization now reads for group membership. No existing behavior changes until a provider is

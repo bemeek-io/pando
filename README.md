@@ -72,8 +72,10 @@ gating.
   grants, so somebody who runs an application need not be able to open it, and somebody who uses it
   daily need not be able to change it.
 - **Host policy**, set once and enforced everywhere: which sources apps may be deployed from, whether
-  apps may be made public, minimum isolation for builds and for runtime, an egress allowlist, whether
-  a backup is required before anything is destroyed, a maximum lifetime for API tokens, and verbs
+  apps may be made public, minimum isolation for builds and for runtime, where apps may connect out
+  to (an allowlist or a denylist, which apps may narrow and loosen only as policy allows), deploys
+  that wait for somebody's approval, whether a backup is required before anything is destroyed, a
+  maximum lifetime for API tokens, and verbs
   disabled installation-wide — `app.exec` most often, and separately for automated tokens.
 - **An audit log that cannot be rewritten.** Every action is recorded with who did it, and the
   database role Pando runs as holds no `UPDATE` or `DELETE` on that table, so neither Pando nor an

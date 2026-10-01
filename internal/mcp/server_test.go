@@ -236,6 +236,11 @@ func TestEachToolMapsToItsEndpoint(t *testing.T) {
 		{"pando_accept_proposal", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/detection/accept"},
 		{"pando_plan", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/plan"},
 		{"pando_deploy", `{"app_id":"app_01HQ8"}`, "POST", "/apps/app_01HQ8/deployments"},
+
+		// R-154: deploy approval, from every surface (R-261).
+		{"pando_list_approvals", `{}`, "GET", "/approvals"},
+		{"pando_approve_deploy", `{"app_id":"app_01HQ8","deployment_id":"dep_01"}`, "POST", "/apps/app_01HQ8/deployments/dep_01/approve"},
+		{"pando_reject_deploy", `{"app_id":"app_01HQ8","deployment_id":"dep_01","comment":"not yet"}`, "POST", "/apps/app_01HQ8/deployments/dep_01/reject"},
 		{"pando_get_logs", `{"app_id":"app_01HQ8"}`, "GET", "/apps/app_01HQ8/logs"},
 		// R-261: the console and the CLI can read one part of a multi-part
 		// app's logs, so an agent can too.

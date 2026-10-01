@@ -55,6 +55,7 @@ func Commands() []*cobra.Command {
 		withServer(auditCmd(client)),
 		withServer(configCmd(client)),
 		withServer(rollbackCmd(client)),
+		withServer(approvalsCmd(client)),
 		withServer(exportCmd(client)),
 		withServer(backupCmd(client)),
 		withServer(policyCmd(client)),
@@ -690,9 +691,13 @@ func deployCmd(client func() (*Client, error)) *cobra.Command {
 				target = appID
 			}
 
-			var dep map[string]any
+			var dep waitingDeploy
 			if err := c.Do("POST", "/apps/"+target+"/deployments", map[string]any{}, &dep); err != nil {
 				return err
+			}
+			if dep.Status == "awaiting_approval" {
+				printAwaiting(cmd.OutOrStdout(), target, dep)
+				return nil
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Deploying. Watch it with `pando logs %s -f`.\n", target)
 			return nil
@@ -1377,9 +1382,15 @@ func rollbackCmd(client func() (*Client, error)) *cobra.Command {
 			if to > 0 {
 				body["spec_revision"] = to
 			}
-			var out map[string]any
+			var out waitingDeploy
 			if err := c.Do("POST", "/apps/"+args[0]+"/deployments/rollback", body, &out); err != nil {
 				return err
+			}
+			// A revision that never ran successfully is not a rollback R-157
+			// exempts, so it can wait for approval like any other deploy.
+			if out.Status == "awaiting_approval" {
+				printAwaiting(cmd.OutOrStdout(), args[0], out)
+				return nil
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "Rolling back.")
 			return nil

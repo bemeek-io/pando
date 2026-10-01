@@ -344,6 +344,13 @@ func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Egress and approval settings: a mode or entry that does not parse would
+	// be saved and enforce nothing (R-181, R-185).
+	if err := doc.ValidateRules(); err != nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "This policy has a setting Pando cannot use: "+err.Error()+"."))
+		return
+	}
+
 	// A disabled verb must be a real verb. Policy can only deny (R-272), so a
 	// typo here denies nothing and looks exactly like a rule that works —
 	// the worst failure mode a security control has.
@@ -422,6 +429,11 @@ func (s *Server) handlePreviewPolicy(w http.ResponseWriter, r *http.Request) {
 				WithRemedy("Use one of the verbs from GET /roles, for example app.exec."))
 			return
 		}
+	}
+
+	if err := doc.ValidateRules(); err != nil {
+		Error(w, r, errs.New(errs.ValidInvalid, "This policy has a setting Pando cannot use: "+err.Error()+"."))
+		return
 	}
 
 	// Previewed as it would apply: with the startup fields over it.

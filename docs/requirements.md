@@ -236,6 +236,7 @@ Install-scoped:
 | `install.apps.view` | See every app read-only: `app.view` and `app.logs.read` on each, without a grant on it |
 | `install.apps.manage` | Manage every app: every app-scoped verb on each, without a grant on it |
 | `install.tokens.manage` | List, create and revoke service tokens (R-060) |
+| `install.deploys.approve` | Approve or reject any deploy that needs approval, on any app, including one's own (R-155) |
 | `app.create` | Create an app. Install-scoped despite the name: there is no app yet when it is checked |
 
 App-scoped:
@@ -253,7 +254,9 @@ App-scoped:
 | `app.grants.manage` | Grant and revoke access |
 | `app.routing.override` | Deviate from the provider's default routing mode |
 | `app.resources.override` | Deviate from host default resource limits |
-| `app.egress.override` | Define an app-level egress allowlist, replacing the install-wide one (R-184) |
+| `app.egress.tighten` | Change an app's egress rules within the install's (R-182, R-184) |
+| `app.egress.loosen` | Loosen the install's egress rules for an app, where policy permits it by verb (R-183, R-184) |
+| `app.deploy.approve` | Approve or reject a deploy of this app that needs approval (R-155). In no built-in role |
 | `app.delete` | Delete the app |
 
 **R-081 [D]** Five **immutable** built-in roles ship out of the box. They cannot be edited; Pando may add newly-introduced verbs to them across versions.
@@ -261,15 +264,18 @@ App-scoped:
 | Role | Scope | Verbs |
 |---|---|---|
 | **Viewer** | app | `app.view`, `app.logs.read` |
-| **Operator** | app | Viewer + `app.deploy`, `app.restart`, `app.spec.edit`, `app.secrets.write` |
-| **Owner** | app | All app-scoped verbs |
+| **Operator** | app | Viewer + `app.deploy`, `app.restart`, `app.spec.edit`, `app.secrets.write`, `app.egress.tighten` |
+| **Owner** | app | All app-scoped verbs except `app.deploy.approve` (R-155) |
 | **Administrator** | install | All install-scoped verbs |
 | **Creator** | install | `app.create` — makes apps, and so owns and manages the ones it makes (R-073), and nothing else |
 
-Owner and Administrator partition the catalog; neither contains a verb from the other's scope. An
+Owner and Administrator partition the catalog but for one verb, and neither contains a verb from the
+other's scope. The exception is `app.deploy.approve`, which no built-in role holds: signing off on a
+deploy is a trust an installation hands out deliberately, to people it names (R-155). An
 Owner of every app in the installation still administers nothing. An Administrator holds
-`install.apps.manage`, so it can view and manage **any** app, whoever made it, with every app verb —
-subject to host policy like everyone (R-272). It is still not the app's owner of record (R-031), and
+`install.apps.manage`, so it can view and manage **any** app, whoever made it, with every app verb
+but `app.deploy.approve` — it approves through `install.deploys.approve` instead — subject to host
+policy like everyone (R-272). It is still not the app's owner of record (R-031), and
 managing an app is not using it: opening an app through the proxy still needs a data grant or
 ownership (R-072, R-087). A custom role may hold `install.apps.view` alone, to see every app and
 change none.
@@ -548,7 +554,27 @@ reference is dropped. It describes and never acts. Any signed-in user may ask.
 
 **R-152 [P]** Revision history retains the last 10 pinned specs for rollback.
 
-### 10.5 Scale
+### 10.5 Deploy approval
+
+**R-154 [D]** **A deploy may need somebody's approval before it runs.** It is off by default and adds nothing to an app that does not need it (R-002). A deploy needs approval when any of these is true:
+- host policy requires approval for every app;
+- host policy requires it for this app. An administrator sets this, and the app's owner cannot turn it off;
+- the app requires it of itself (`deploy.require_approval` in its spec). The requirement is read from both the running spec and the one being deployed, so turning it off is itself approved;
+- the deploy loosens the install's egress rules and policy says loosening needs approval (R-183).
+
+Approval is a human sign-off on a change. It is not a test gate (R-011).
+
+**R-155 [D]** **Two verbs approve.** Anyone holding `install.deploys.approve` may approve or reject any deploy on any app. The Administrator role holds it. Anyone holding `app.deploy.approve` on an app may approve or reject deploys of that app. No built-in role holds it, so an installation grants it through a custom role (R-082). Either verb may approve its holder's own request. An installation that wants two people keeps the verb from the people who deploy. `install.apps.manage` does not stand for `app.deploy.approve`.
+
+**R-156 [D]** **A request is tied to one spec revision**, and so to one commit (R-120). Approving it deploys that revision through the ordinary plan and deploy path. The plan runs again at approval, because policy may have changed while the request waited. A newer request for the same app supersedes an older one that is still waiting. Host policy sets how many approvals a deploy needs (default one) and how long a request waits before it expires (default seven days; zero means never). A rejection by any approver ends the request.
+
+**R-157 [D]** **Rolling back to a revision that was already running does not need approval.** It was approved, or did not need to be, when it first ran, and rollback is how a bad deploy is undone quickly (R-152). Restarts and secret rotations (R-193) change no spec, so they need no approval either.
+
+**R-158 [D]** **Auto-deploy and approval do not combine.** A spec that turns on auto-deploy (R-141) is refused while its app needs approval, and the refusal says why. An app that already auto-deploys stops doing so when policy starts requiring approval for it, and the console says so on the app. Queuing an approval request for every push produces a backlog of requests that nobody wants to read.
+
+**R-159 [D]** Every request, approval, rejection, expiry and supersession is an audit event (R-227). Approvers are told through the notification adapter when a request is waiting.
+
+### 10.6 Scale
 
 **R-153 [D]** One app, one place (R-010). Replica counts from compose are rejected (R-099).
 
@@ -592,13 +618,27 @@ reference is dropped. It describes and never acts. Any signed-in user may ask.
 
 **R-180 [D]** Apps are isolated from each other (R-025). If something gets into an app, it cannot get out of that app into another.
 
-**R-181 [D]** **Egress defaults to allow-all.** Host configuration may change the mode to allow-internet-but-block-private-ranges, or default-deny with an allowlist.
+**R-181 [D]** **Egress defaults to allow-all.** Host policy may change the install's mode to a **denylist** (anywhere except the listed destinations) or an **allowlist** (only the listed destinations). Blocking private address ranges is a separate switch that works with any mode, including allow-all. *(Amended by issue #79: a denylist mode was added, and blocking private ranges stopped being a mode of its own.)*
 
-**R-182 [D]** There is an **install-wide allowlist**. An app owner may enable an **app-specific allowlist**, which **replaces** the install-wide one for that app rather than intersecting with it.
+**R-182 [D]** **An app's egress rules start from the install's and move only as policy lets them.** An app may:
+- **add entries to or remove entries from** the install's list, and
+- **keep a list of its own** — an allowlist or a denylist — which is applied **on top of** the install's rules: a destination is reachable only if both allow it. An app on an install with no list can lock itself down this way.
 
-**R-183 [D]** Because app lists replace rather than narrow, the install-wide allowlist is **a default, not a security boundary**. Enforcement comes from host policy forcing apps to use their own list, and from gating who may define one.
+Changes are classed by what they do to the install's rules, not by what they look like. **Tightening** — adding to the install's denylist, removing from its allowlist, keeping a list of the app's own, turning private-range blocking on — is always within policy (R-272). **Loosening** — removing from the install's denylist, adding to its allowlist, turning private-range blocking off when the install has it on — is the only kind host policy gates. *(Amended by issue #79. It used to say an app's allowlist **replaced** the install's.)*
 
-**R-184 [P]** Defining an app-level allowlist is gated by a verb, so an admin can restrict it.
+**R-183 [D]** **The install's rules are a floor.** An app list that is layered on top can only narrow them, so the install's list is a security boundary unless policy permits loosening it. Host policy decides whether it may be loosened: **never**, **by someone holding a verb**, or **only after a deploy approval** (R-154). With loosening forbidden, the floor holds for every app. Rules take effect at an app's deploy. A running app is not changed underneath it, as with any other policy change (O-10). When policy stops permitting a loosening that an app runs with, the app's next deploy is refused at plan time until the loosening is removed, and the refusal says which entries. *(Amended by issue #79. It used to say the install list was a default and not a security boundary, which was a consequence of R-182's old replace rule.)*
+
+**R-184 [D]** Egress changes are gated by two verbs. `app.egress.tighten` changes an app's egress within the install's rules. `app.egress.loosen` loosens them, where policy permits loosening by verb. Both belong to Owner, and `app.egress.tighten` also belongs to Operator. *(Amended by issue #79. There was one verb, `app.egress.override`, which became `app.egress.loosen`.)*
+
+**R-185 [D]** **An entry names a destination**: a hostname (`api.example.com`), a wildcard of its subdomains (`*.example.com`), an IP address, or a CIDR range, each optionally with a port (`api.example.com:443`, `[2001:db8::1]:443`). `*` names everywhere. A hostname entry matches the name the app asked for. An address or range entry matches where that name resolved. Blocking private ranges is also checked against resolved addresses, so a public name that resolves to a private address is refused too.
+
+**R-186 [D]** **A runtime adapter either enforces egress rules or says it cannot.** A plan whose rules restrict anything is refused at plan time by a runtime without the capability (R-254). It is never deployed with the rules silently ignored. An app with no restriction in effect runs exactly as it would with no egress controls: nothing is placed in its path.
+
+**R-187 [D]** **Where egress is restricted, only traffic through Pando's egress gateway leaves the app.** On the Docker runtime a restricted app's network has no route out. Its workloads are given `HTTP_PROXY` and `HTTPS_PROXY` naming a gateway that enforces the rules. Traffic that does not use the gateway — raw TCP, or a client that ignores the proxy variables — does not leave, even under a denylist. The plan says so wherever a restriction is in effect, because an app owner choosing a denylist would otherwise expect everything else to keep working.
+
+**R-188 [D]** **The rules an app runs with are shown, merged.** The plan and the console show the effective mode, the effective list, private-range blocking, and where each part came from (the install or the app), along with every loosening and what it needs: forbidden, a verb, or approval.
+
+**R-189 [P]** Build egress (R-118) is a separate setting and does not follow this model. A build runs before anybody has reviewed its output, so what it may reach is a different question.
 
 ---
 
@@ -680,7 +720,7 @@ without touching core (O-6 resolved).
 
 **R-226 [D]** The audit log is in core and cannot be written or rewritten by an adapter (R-027).
 
-**R-227 [P]** Auditable events: every spec mutation, every grant change, every deploy, every secret write, every token creation and use, every exec session, every policy change, every delete, every use of an app — once per visit, anonymous visitors included unless host policy turns that off — and every call that sends data to an AI adapter's provider, naming the function, the adapter and the model but not what was sent (R-337).
+**R-227 [P]** Auditable events: every spec mutation, every grant change, every deploy and every step of a deploy approval (R-159), every secret write, every token creation and use, every exec session, every policy change, every delete, every use of an app — once per visit, anonymous visitors included unless host policy turns that off — and every call that sends data to an AI adapter's provider, naming the function, the adapter and the model but not what was sent (R-337).
 
 **R-228 [P]** Exec sessions are audited as a distinct event type — principal, app, workload, start and end. Command contents are **not** recorded. **[O-7]**
 

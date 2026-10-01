@@ -397,6 +397,46 @@ What each part of an app is using right now, beside its limits (R-245).
 
 CPU is in cores; a part with no limit may use what the host has. A reading, not a history.
 
+### `approvals`
+
+See and decide deploys waiting for approval
+
+```
+pando approvals
+```
+
+#### `approvals approve`
+
+Approve a deploy waiting for approval; the last approval it needs starts it
+
+```
+pando approvals approve <app> <deployment>
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--comment` |  | a note recorded with the decision |
+
+#### `approvals list`
+
+Deploys waiting for approval on the apps you can see
+
+```
+pando approvals list
+```
+
+#### `approvals reject`
+
+Reject a deploy waiting for approval, which ends the request
+
+```
+pando approvals reject <app> <deployment>
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--comment` |  | a note recorded with the decision |
+
 ### `audit`
 
 Read the audit log
