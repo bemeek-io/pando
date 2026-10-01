@@ -12,6 +12,7 @@ import { Badge, Banner, Button, Checkbox, Dialog, Input, Select, Tag } from '@de
 
 import { api } from '@api/client';
 import { Quiet, RoleLabel, Screen, messageOf, refusal, sentence } from './Accounts';
+import { VERB_NOTES } from './verbNotes';
 import { AccountApps } from './AccountApps';
 import { NoMatches, SearchField } from '../ui/SearchField';
 import { matches } from '../ui/search';
@@ -604,7 +605,13 @@ function AddRole({ onClose }: { onClose: () => void }) {
             </Loading>
           )}
           {available.map((v) => (
-            <Checkbox key={v.verb} checked={verbs.includes(v.verb)} label={v.verb} onChange={() => toggle(v.verb)} />
+            <Checkbox
+              key={v.verb}
+              checked={verbs.includes(v.verb)}
+              label={v.verb}
+              description={VERB_NOTES[v.verb]}
+              onChange={() => toggle(v.verb)}
+            />
           ))}
         </div>
 

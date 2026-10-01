@@ -1,0 +1,86 @@
+// Approvals: every deploy waiting for somebody's sign-off (R-154 – R-156).
+//
+// The approver's inbox. `GET /approvals` answers with the waiting requests on
+// apps the caller can view, each saying whether this caller may decide it, so
+// the screen is the same for an administrator holding install.deploys.approve
+// and for somebody holding app.deploy.approve on two apps: what they may answer
+// has buttons, and the rest is shown read-only.
+
+import { useQuery } from '@tanstack/react-query';
+import { Button, EmptyState } from '@design';
+
+import { api } from '@api/client';
+import { Quiet, Screen, messageOf } from '../install/Accounts';
+import { MEASURE } from '../ui/layout';
+import { LineSkeleton, Loading } from '../ui/Loading';
+import { ApprovalRequest } from './ApprovalRequest';
+import type { ApprovalRow } from './approval';
+
+/**
+ * The waiting requests. One query key for the sidebar's count and this screen,
+ * so the two cannot disagree. A caller the endpoint refuses has nothing waiting
+ * for them, which is an answer rather than an error, so it is not retried.
+ */
+export function useApprovals(enabled: boolean) {
+  return useQuery({
+    queryKey: ['approvals'],
+    queryFn: () => api.get<{ approvals: ApprovalRow[] | null }>('/approvals'),
+    enabled,
+    retry: false,
+    // Somebody else's answer, or a new request, changes this list.
+    refetchInterval: 30_000,
+  });
+}
+
+export function Approvals({ onOpenApp }: { onOpenApp: (appID: string) => void }) {
+  const approvals = useApprovals(true);
+  const rows = approvals.data?.approvals ?? [];
+
+  return (
+    <Screen heading="Approvals">
+      <div style={{ maxWidth: MEASURE, display: 'flex', flexDirection: 'column' }}>
+        <Quiet>
+          Deploys waiting for somebody to approve them. A deploy runs once it has enough approvals,
+          and any one rejection ends it. Until then the app keeps running what it runs now.
+        </Quiet>
+
+        {approvals.isPending && (
+          <Loading gap="var(--space-3)">
+            <LineSkeleton width="24ch" font="var(--type-h4)" />
+            <LineSkeleton width="52ch" />
+            <LineSkeleton width="40ch" />
+          </Loading>
+        )}
+        {approvals.isError && <Quiet>{messageOf(approvals.error)}</Quiet>}
+
+        {approvals.isSuccess && rows.length === 0 && (
+          <EmptyState heading="Nothing is waiting for approval">
+            When a deploy needs approval, it is listed here until somebody answers it.
+          </EmptyState>
+        )}
+
+        {rows.map((row) => (
+          <section
+            key={row.id}
+            style={{ padding: 'var(--space-5) 0', borderTop: 'var(--border-width) solid var(--rule)' }}
+          >
+            <ApprovalRequest
+              deployment={row}
+              heading={
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 'var(--space-3)' }}>
+                  <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>{row.app_name}</h4>
+                  <span style={{ font: 'var(--type-code-sm)', color: 'var(--ink-secondary)' }}>
+                    {row.spec_id}
+                  </span>
+                  <Button variant="ghost" onClick={() => onOpenApp(row.app_id)}>
+                    Open app
+                  </Button>
+                </div>
+              }
+            />
+          </section>
+        ))}
+      </div>
+    </Screen>
+  );
+}

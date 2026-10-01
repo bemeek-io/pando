@@ -10,6 +10,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import {
   Banner,
   Button,
+  Checkbox,
   EmptyState,
   Icon,
   Input,
@@ -43,6 +44,16 @@ import type { AuditFilters } from './audit';
 import { AIButton } from '../ui/AskAI';
 import { AuditAI } from './AuditAI';
 import { PolicyAI } from './PolicyAI';
+import {
+  EGRESS_MODES,
+  ENTRY_FORMS,
+  LOOSENING,
+  approvalsNeeded,
+  egressPatch,
+  installEgress,
+  looseningRule,
+} from './policyEgress';
+import { ListField } from '../ui/ListField';
 
 /** Where the config file declares an adapter, in words. */
 function declaredAt(row: AdapterRow): string {
@@ -223,7 +234,20 @@ interface PolicyDoc {
   disabled_verbs?: string[];
   allow_anonymous_grants?: boolean;
   public_sharing?: 'allowed' | 'passcode_only' | 'none';
+  // Egress (R-181 – R-185). egress_allowlist is the field from before issue
+  // #79, still read as an allowlist when egress_mode is unset.
+  egress_mode?: string;
+  egress_list?: string[];
+  egress_block_private?: boolean;
+  egress_loosening?: string;
   egress_allowlist?: string[];
+
+  // Deploy approval (R-154 – R-156).
+  deploy_approval_required?: boolean;
+  deploy_approval_apps?: string[];
+  deploy_approval_count?: number;
+  deploy_approval_expiry_hours?: number;
+
   require_backup_before_destroy?: boolean;
   max_token_lifetime_days?: number;
   min_build_isolation?: number;
@@ -582,8 +606,8 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
         </PolicySection>
 
         <PolicySection
-          heading="Isolation and egress"
-          note="The floor every app runs at, and where they may connect out to."
+          heading="Isolation"
+          note="The floor every app runs at, for what builds and for what runs."
         >
           <Fixed field="min_build_isolation">
             <Select
@@ -607,21 +631,12 @@ export function Policy({ canEdit }: { canEdit: boolean }) {
             />
           </Fixed>
 
-          <Fixed field="egress_allowlist">
-            <Input
-              label="Where apps may connect out to"
-              as="textarea"
-              rows={3}
-              mono
-              disabled={locked('egress_allowlist')}
-              value={(current.egress_allowlist ?? []).join('\n')}
-              helper="One host per line. Empty means anywhere, which is the shipped default."
-              onChange={(e) =>
-                edit({ egress_allowlist: e.target.value.split('\n').map((l) => l.trim()).filter(Boolean) })
-              }
-            />
-          </Fixed>
         </PolicySection>
+
+        <EgressPolicy current={current} edit={edit} locked={locked} fixed={fixed} />
+
+        <DeployApprovalPolicy current={current} edit={edit} locked={locked} />
+
 
         <PolicySection
           heading="Tokens and agents"
@@ -999,6 +1014,218 @@ function PolicySection({
     </section>
   );
 }
+
+interface PolicyControls {
+  current: PolicyDoc;
+  edit: (patch: Partial<PolicyDoc>) => void;
+  locked: (field: string) => boolean;
+}
+
+/**
+ * Where apps may connect out to (R-181 – R-185).
+ *
+ * Three questions, in the order an administrator answers them: which mode and
+ * which list, whether private addresses are blocked — a separate switch that
+ * works with any mode, including anywhere — and what an app may do to loosen
+ * the rules for itself. Build egress is a different setting (R-189) and is not
+ * here.
+ */
+function EgressPolicy({ current, edit, locked, fixed }: PolicyControls & { fixed: Map<string, Source> }) {
+  const { mode, list } = installEgress(current);
+  // The field from before issue #79, fixed at startup, decides the mode and
+  // the list as well: writing the new fields here would be overridden by it,
+  // or override it, and neither is what the file says.
+  const legacyFixed = fixed.has('egress_allowlist') && !fixed.has('egress_mode');
+  const modeField = legacyFixed ? 'egress_allowlist' : 'egress_mode';
+  const listField = legacyFixed ? 'egress_allowlist' : 'egress_list';
+  const modeLocked = locked(modeField) || locked('egress_list');
+  const listLocked = locked(listField) || locked('egress_mode');
+  const loosening = looseningRule(current);
+
+  return (
+    <PolicySection
+      heading="Where apps may connect out to"
+      note="The installation’s rules for traffic leaving an app. They are a floor: an app can narrow them, and loosens them only as the last setting here allows (R-183). Rules take effect at each app’s next deploy."
+    >
+      <Fixed field={modeField}>
+        <fieldset style={FIELDSET}>
+          <legend style={LEGEND}>Where apps may connect</legend>
+          {EGRESS_MODES.map(([value, label, description]) => (
+            <Radio
+              key={value}
+              name="egress_mode"
+              value={value}
+              label={label}
+              description={description}
+              checked={mode === value}
+              disabled={modeLocked}
+              onChange={() => edit(egressPatch(value, list))}
+            />
+          ))}
+        </fieldset>
+      </Fixed>
+
+      {mode !== 'allow_all' && (
+        <Fixed field={listField}>
+          <ListField
+            label={mode === 'allowlist' ? 'Destinations apps may reach' : 'Destinations apps may not reach'}
+            disabled={listLocked}
+            value={list}
+            helper={ENTRY_FORMS}
+            onChange={(next) => edit(egressPatch(mode, next))}
+          />
+        </Fixed>
+      )}
+
+      <Fixed field="egress_block_private">
+        <Switch
+          checked={current.egress_block_private ?? false}
+          disabled={locked('egress_block_private')}
+          label="Block private addresses"
+          description="Apps can’t reach the local network, this host’s loopback, or a cloud provider’s metadata address. Checked against where a name resolves, so a public name pointing at a private address is blocked too."
+          onChange={(e) => edit({ egress_block_private: e.target.checked })}
+        />
+      </Fixed>
+
+      <Fixed field="egress_loosening">
+        <fieldset style={FIELDSET}>
+          <legend style={LEGEND}>App changes that loosen these rules</legend>
+          <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: '0 0 var(--space-1)' }}>
+            Loosening is adding to the allowlist, removing from the denylist, or turning private-address
+            blocking off for one app. Narrowing the rules is always allowed to whoever may change the
+            app’s egress.
+          </p>
+          {LOOSENING.map(([value, label, description]) => (
+            <Radio
+              key={value}
+              name="egress_loosening"
+              value={value}
+              label={label}
+              description={description}
+              checked={loosening === value}
+              disabled={locked('egress_loosening')}
+              onChange={() => edit({ egress_loosening: value })}
+            />
+          ))}
+        </fieldset>
+      </Fixed>
+    </PolicySection>
+  );
+}
+
+/**
+ * Who has to sign off on a deploy before it runs (R-154 – R-156).
+ *
+ * Off unless something here, or an app's own settings, turns it on. Each
+ * setting says what it does to auto-deploy, because that is the consequence
+ * an administrator finds out about later otherwise (R-158).
+ */
+function DeployApprovalPolicy({ current, edit, locked }: PolicyControls) {
+  const apps = useQuery({
+    queryKey: ['apps'],
+    queryFn: () => api.get<{ apps: Array<{ id: string; name: string }> | null }>('/apps'),
+    retry: false,
+  });
+  const chosen = current.deploy_approval_apps ?? [];
+  const known = apps.data?.apps ?? [];
+  // An app that was chosen and has since gone — or that this account cannot
+  // see — stays listed by its ID, so it can still be taken off.
+  const unknown = chosen.filter((id) => !known.some((a) => a.id === id));
+  const everyApp = current.deploy_approval_required ?? false;
+  const toggle = (id: string, on: boolean) => {
+    const rest = chosen.filter((x) => x !== id);
+    edit({ deploy_approval_apps: on ? [...rest, id] : rest });
+  };
+
+  return (
+    <PolicySection
+      heading="Deploy approval"
+      note="A deploy that needs approval waits until enough people with permission to approve it say yes. Rolling back to a version that already ran, restarting, and rotating a secret never wait. An app that needs approval can’t deploy automatically."
+    >
+      <Fixed field="deploy_approval_required">
+        <Switch
+          checked={everyApp}
+          disabled={locked('deploy_approval_required')}
+          label="Require approval for every app"
+          description="Every app’s deploys wait for approval, and auto-deploy stops on every app."
+          onChange={(e) => edit({ deploy_approval_required: e.target.checked })}
+        />
+      </Fixed>
+
+      <Fixed field="deploy_approval_apps">
+        <fieldset style={FIELDSET}>
+          <legend style={LEGEND}>Apps that always need approval</legend>
+          <p style={{ font: 'var(--type-caption)', color: 'var(--ink-secondary)', margin: '0 0 var(--space-1)' }}>
+            {everyApp
+              ? 'Every app needs approval while the setting above is on, so this list has no effect.'
+              : 'These apps’ deploys wait for approval whatever their owners set, and their owners can’t turn it off.'}
+          </p>
+          {apps.isPending && <LineSkeleton width="24ch" />}
+          {apps.isError && <Quiet>{messageOf(apps.error)}</Quiet>}
+          {apps.isSuccess && known.length === 0 && unknown.length === 0 && <Quiet>There are no apps yet.</Quiet>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxHeight: '16rem', overflowY: 'auto' }}>
+            {known.map((a) => (
+              <Checkbox
+                key={a.id}
+                label={a.name}
+                checked={chosen.includes(a.id)}
+                disabled={locked('deploy_approval_apps') || everyApp}
+                onChange={(e) => toggle(a.id, e.target.checked)}
+              />
+            ))}
+            {unknown.map((id) => (
+              <Checkbox
+                key={id}
+                label={id}
+                description="Pando can’t find this app. It may have been deleted."
+                checked
+                disabled={locked('deploy_approval_apps')}
+                onChange={() => toggle(id, false)}
+              />
+            ))}
+          </div>
+        </fieldset>
+      </Fixed>
+
+      <Fixed field="deploy_approval_count">
+        <Input
+          label="Approvals needed"
+          type="number"
+          min={1}
+          disabled={locked('deploy_approval_count')}
+          value={String(approvalsNeeded(current.deploy_approval_count))}
+          helper="How many different people must approve a deploy. Any one rejection ends the request."
+          onChange={(e) => edit({ deploy_approval_count: Math.max(1, Math.round(Number(e.target.value) || 1)) })}
+        />
+      </Fixed>
+
+      <Fixed field="deploy_approval_expiry_hours">
+        <Input
+          label="Requests expire after, in hours"
+          type="number"
+          min={0}
+          disabled={locked('deploy_approval_expiry_hours')}
+          value={String(current.deploy_approval_expiry_hours ?? 0)}
+          helper="A request nobody answers in this time expires and has to be made again. Zero means requests wait until somebody answers. The shipped default is 168, a week."
+          onChange={(e) =>
+            edit({ deploy_approval_expiry_hours: Math.max(0, Math.round(Number(e.target.value) || 0)) })
+          }
+        />
+      </Fixed>
+    </PolicySection>
+  );
+}
+
+const FIELDSET: React.CSSProperties = {
+  border: 0,
+  margin: 0,
+  padding: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 'var(--space-3)',
+};
+
+const LEGEND: React.CSSProperties = { font: 'var(--type-label)', color: 'var(--ink)', marginBottom: 'var(--space-2)' };
 
 /** 0 to 100, because a threshold outside it is a threshold nothing can meet. */
 function clamp(n: number): number {
