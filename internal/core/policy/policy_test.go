@@ -44,6 +44,8 @@ func TestO12_AgentExclusionsShipAsPolicyAndApplyToEverySurface(t *testing.T) {
 	for _, verb := range []authz.Verb{
 		authz.AppExec, authz.AppSecretsRead, authz.AppGrantsManage,
 		authz.InstallPolicyManage, authz.InstallUsersManage, authz.InstallBackupManage,
+		// R-154: approval is a human sign-off.
+		authz.InstallDeploysApprove, authz.AppDeployApprove,
 	} {
 		require.Error(t, e.Allows(ctx(), agent, verb, "app_01HQ8"), "%s", verb)
 		require.NoError(t, e.Allows(ctx(), person, verb, "app_01HQ8"),

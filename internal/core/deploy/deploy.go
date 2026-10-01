@@ -165,6 +165,20 @@ func (r *Runner) WithSources(sources source.Sources) *Runner {
 	return r
 }
 
+// Start runs a deployment in the background and returns at once.
+//
+// Detached from ctx's cancellation deliberately: a client that disconnects
+// must not cancel a deploy that is already changing things. The logger
+// travels with it, so the deploy's lines still carry the request's fields.
+func (r *Runner) Start(ctx context.Context, dep state.Deployment, rev state.Revision) {
+	runCtx := log.Into(context.WithoutCancel(ctx), log.From(ctx))
+	go func() {
+		if err := r.Run(runCtx, dep, rev); err != nil {
+			log.From(runCtx).Warn("deployment ended in failure", zap.Error(err))
+		}
+	}()
+}
+
 // Run executes a deployment to completion.
 //
 // The app's state moves to deploying at the start and to running or degraded at

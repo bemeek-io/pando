@@ -259,6 +259,12 @@ func Default() Document {
 			string(authz.InstallPolicyManage),
 			string(authz.InstallUsersManage),
 			string(authz.InstallBackupManage),
+
+			// Approval is a human sign-off on a change (R-154). An agent
+			// approving a deploy — possibly one it asked for itself — is
+			// the second pair of eyes being nobody's.
+			string(authz.InstallDeploysApprove),
+			string(authz.AppDeployApprove),
 		},
 	}
 }

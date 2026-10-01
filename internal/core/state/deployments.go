@@ -21,6 +21,22 @@ const (
 	DeploySucceeded  = "succeeded"
 	DeployFailed     = "failed"
 	DeploySuperseded = "superseded"
+
+	// Deploy approval (R-154 – R-159). A deploy that needs approval is a
+	// deployment that waits in awaiting_approval, tied to one spec revision
+	// (R-156), and moves to pending — the ordinary path — once it has its
+	// approvals. Rejected and expired are where a request that never ran
+	// ends. None of the three is in flight: a request waiting for somebody
+	// does not stop the app being deployed some other way.
+	DeployAwaitingApproval = "awaiting_approval"
+	DeployRejected         = "rejected"
+	DeployExpired          = "expired"
+)
+
+// Decisions on a deploy that needs approval.
+const (
+	DecisionApprove = "approve"
+	DecisionReject  = "reject"
 )
 
 // Deployment triggers.
@@ -56,6 +72,49 @@ type Deployment struct {
 	StartedAt   time.Time  `json:"started_at"`
 	FinishedAt  *time.Time `json:"finished_at,omitempty"`
 	CreatedBy   string     `json:"created_by"`
+
+	// SpecRevision is the revision number SpecID is, and RequestedByName who
+	// CreatedBy is, for showing: a person deciding whether to approve a
+	// deploy wants "revision 7, asked for by Ada", not two IDs.
+	SpecRevision    int    `json:"spec_revision,omitempty"`
+	RequestedByName string `json:"requested_by_name,omitempty"`
+
+	// Deploy approval (R-154 – R-159), on a deploy that needed it. The count
+	// and the expiry are fixed when the request is made, so a policy edit
+	// does not move a waiting request's goalposts.
+	ApprovalsRequired int                `json:"approvals_required,omitempty"`
+	ApprovalExpiresAt *time.Time         `json:"approval_expires_at,omitempty"`
+	ApprovalReasons   []ApprovalReason   `json:"approval_reasons,omitempty"`
+	Approvals         []ApprovalDecision `json:"approvals,omitempty"`
+
+	// CanDecide is whether the caller may approve or reject this deploy. Set
+	// by the approval service, per caller, on a deploy that is waiting; the
+	// store never fills it in.
+	CanDecide bool `json:"can_decide,omitempty"`
+}
+
+// ApprovalReason is why a deploy needed approval. The store holds the reason;
+// the approval service, which owns the wording, fills in Message.
+type ApprovalReason struct {
+	Reason  string `json:"reason"`
+	Message string `json:"message"`
+}
+
+// ApprovalDecision is one person's answer to a deploy that needs approval.
+type ApprovalDecision struct {
+	PrincipalID   string    `json:"principal_id"`
+	PrincipalName string    `json:"principal_name"`
+	Decision      string    `json:"decision"`
+	Comment       string    `json:"comment,omitempty"`
+	DecidedAt     time.Time `json:"decided_at"`
+}
+
+// AwaitingApproval is a deploy waiting for approval, with the app it is for:
+// the list of everything waiting across apps (GET /approvals).
+type AwaitingApproval struct {
+	Deployment
+	AppName string `json:"app_name"`
+	AppSlug string `json:"app_slug"`
 }
 
 // Deployments stores deployment records.
@@ -147,19 +206,42 @@ func (d *Deployments) AbandonInFlight(ctx context.Context) (int64, error) {
 
 // ByID returns one deployment.
 func (d *Deployments) ByID(ctx context.Context, deploymentID string) (Deployment, bool, error) {
-	var dep Deployment
-	var code *string
-	var detail []byte
-	err := d.db.QueryRow(ctx, `
-		SELECT id, app_id, spec_id, trigger, status, coalesce(result_state, ''), error_code, error_detail, started_at, finished_at, created_by
-		FROM deployments WHERE id = $1`, deploymentID).
-		Scan(&dep.ID, &dep.AppID, &dep.SpecID, &dep.Trigger, &dep.Status, &dep.ResultState, &code, &detail,
-			&dep.StartedAt, &dep.FinishedAt, &dep.CreatedBy)
+	dep, err := scanDeployment(d.db.QueryRow(ctx, `
+		SELECT `+deploymentColumns+` FROM deployments d WHERE d.id = $1`, deploymentID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Deployment{}, false, nil
 	}
 	if err != nil {
 		return Deployment{}, false, errs.Wrap(errs.Internal, "Could not read the deploy.", err)
+	}
+	decisions, err := d.Decisions(ctx, []string{dep.ID})
+	if err != nil {
+		return Deployment{}, false, err
+	}
+	dep.Approvals = decisions[dep.ID]
+	return dep, true, nil
+}
+
+// deploymentColumns is what scanDeployment reads, from a table aliased d.
+const deploymentColumns = `d.id, d.app_id, d.spec_id, d.trigger, d.status, coalesce(d.result_state, ''),
+	d.error_code, d.error_detail, d.started_at, d.finished_at, d.created_by,
+	coalesce(d.approvals_required, 0), d.approval_expires_at, coalesce(d.approval_reasons, '{}'),
+	coalesce((SELECT r.revision FROM spec_revisions r WHERE r.id = d.spec_id), 0),
+	coalesce((SELECT coalesce(nullif(u.display_name, ''), nullif(u.email, ''), u.external_id)
+	          FROM users u WHERE u.id = d.created_by),
+	         (SELECT t.name FROM tokens t WHERE t.id = d.created_by),
+	         d.created_by)`
+
+func scanDeployment(row pgx.Row, extra ...any) (Deployment, error) {
+	var dep Deployment
+	var code *string
+	var detail []byte
+	var reasons []string
+	dest := []any{&dep.ID, &dep.AppID, &dep.SpecID, &dep.Trigger, &dep.Status, &dep.ResultState,
+		&code, &detail, &dep.StartedAt, &dep.FinishedAt, &dep.CreatedBy,
+		&dep.ApprovalsRequired, &dep.ApprovalExpiresAt, &reasons, &dep.SpecRevision, &dep.RequestedByName}
+	if err := row.Scan(append(dest, extra...)...); err != nil {
+		return Deployment{}, err
 	}
 	if code != nil {
 		dep.ErrorCode = *code
@@ -170,34 +252,286 @@ func (d *Deployments) ByID(ctx context.Context, deploymentID string) (Deployment
 			dep.ErrorDetail = parsed["message"]
 		}
 	}
-	return dep, true, nil
+	for _, r := range reasons {
+		dep.ApprovalReasons = append(dep.ApprovalReasons, ApprovalReason{Reason: r})
+	}
+	return dep, nil
 }
 
-// ListForApp returns an app's deployments, newest first.
+// ListForApp returns an app's deployments, newest first, with the decisions
+// on any that needed approval.
 func (d *Deployments) ListForApp(ctx context.Context, appID string) ([]Deployment, error) {
 	rows, err := d.db.Query(ctx, `
-		SELECT id, app_id, spec_id, trigger, status, coalesce(result_state, ''), error_code, started_at, finished_at, created_by
-		FROM deployments WHERE app_id = $1 ORDER BY started_at DESC LIMIT 50`, appID)
+		SELECT `+deploymentColumns+`
+		FROM deployments d WHERE d.app_id = $1 ORDER BY d.started_at DESC LIMIT 50`, appID)
 	if err != nil {
 		return nil, errs.Wrap(errs.Internal, "Could not list the app's deploys.", err)
 	}
 	defer rows.Close()
 
 	var out []Deployment
+	var needDecisions []string
 	for rows.Next() {
-		var dep Deployment
-		var code *string
-		if err := rows.Scan(&dep.ID, &dep.AppID, &dep.SpecID, &dep.Trigger, &dep.Status,
-			&dep.ResultState, &code,
-			&dep.StartedAt, &dep.FinishedAt, &dep.CreatedBy); err != nil {
+		dep, err := scanDeployment(rows)
+		if err != nil {
 			return nil, errs.Wrap(errs.Internal, "Could not list the app's deploys.", err)
 		}
-		if code != nil {
-			dep.ErrorCode = *code
+		if dep.ApprovalsRequired > 0 {
+			needDecisions = append(needDecisions, dep.ID)
+		}
+		out = append(out, dep)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not list the app's deploys.", err)
+	}
+	if len(needDecisions) > 0 {
+		decisions, err := d.Decisions(ctx, needDecisions)
+		if err != nil {
+			return nil, err
+		}
+		for i := range out {
+			out[i].Approvals = decisions[out[i].ID]
+		}
+	}
+	return out, nil
+}
+
+// --- deploy approval (R-154 – R-159) ---------------------------------------
+
+// CreateAwaiting records a deploy that needs approval before it runs: tied to
+// one spec revision (R-156), needing required approvals, waiting until
+// expiresAt (nil waits until somebody answers), for the reasons given.
+func (d *Deployments) CreateAwaiting(ctx context.Context, appID, specID, trigger, createdBy string,
+	required int, expiresAt *time.Time, reasons []string) (Deployment, error) {
+	if required < 1 {
+		required = 1
+	}
+	if reasons == nil {
+		reasons = []string{}
+	}
+	dep := Deployment{
+		ID:                id.New(id.Deployment),
+		AppID:             appID,
+		SpecID:            specID,
+		Trigger:           trigger,
+		Status:            DeployAwaitingApproval,
+		CreatedBy:         createdBy,
+		ApprovalsRequired: required,
+		ApprovalExpiresAt: expiresAt,
+	}
+	for _, r := range reasons {
+		dep.ApprovalReasons = append(dep.ApprovalReasons, ApprovalReason{Reason: r})
+	}
+	err := d.db.QueryRow(ctx, `
+		INSERT INTO deployments (id, app_id, spec_id, trigger, status, created_by,
+		                         approvals_required, approval_expires_at, approval_reasons)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING started_at`,
+		dep.ID, appID, specID, trigger, DeployAwaitingApproval, createdBy,
+		required, expiresAt, reasons).Scan(&dep.StartedAt)
+	if err != nil {
+		return Deployment{}, errs.Wrap(errs.Internal, "Could not record the deploy request.", err)
+	}
+	return dep, nil
+}
+
+// Decide records one principal's decision on a deploy. A principal decides
+// once per request (the table's primary key): deciding again replaces the
+// earlier answer rather than counting twice, so a retried approval is
+// harmless and two approvals from one person are one.
+func (d *Deployments) Decide(ctx context.Context, deploymentID, principalID, decision, comment string) error {
+	_, err := d.db.Exec(ctx, `
+		INSERT INTO deployment_approvals (deployment_id, principal_id, decision, comment)
+		VALUES ($1, $2, $3, NULLIF($4, ''))
+		ON CONFLICT (deployment_id, principal_id) DO UPDATE
+		   SET decision = EXCLUDED.decision, comment = EXCLUDED.comment, decided_at = now()`,
+		deploymentID, principalID, decision, comment)
+	if err != nil {
+		return errs.Wrap(errs.Internal, "Could not record the decision on this deploy.", err)
+	}
+	return nil
+}
+
+// Decisions returns the decisions on each deployment, oldest first, with
+// each decider's name for showing.
+func (d *Deployments) Decisions(ctx context.Context, deploymentIDs []string) (map[string][]ApprovalDecision, error) {
+	out := map[string][]ApprovalDecision{}
+	if len(deploymentIDs) == 0 {
+		return out, nil
+	}
+	rows, err := d.db.Query(ctx, `
+		SELECT a.deployment_id, a.principal_id,
+		       coalesce(nullif(u.display_name, ''), nullif(u.email, ''), u.external_id, t.name, a.principal_id),
+		       a.decision, coalesce(a.comment, ''), a.decided_at
+		FROM deployment_approvals a
+		LEFT JOIN users u ON u.id = a.principal_id
+		LEFT JOIN tokens t ON t.id = a.principal_id
+		WHERE a.deployment_id = ANY($1)
+		ORDER BY a.decided_at, a.principal_id`, deploymentIDs)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read the decisions on this deploy.", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var depID string
+		var dec ApprovalDecision
+		if err := rows.Scan(&depID, &dec.PrincipalID, &dec.PrincipalName, &dec.Decision, &dec.Comment, &dec.DecidedAt); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read the decisions on this deploy.", err)
+		}
+		out[depID] = append(out[depID], dec)
+	}
+	return out, rows.Err()
+}
+
+// StartApproved moves a deploy that has its approvals from awaiting_approval
+// to pending, the ordinary path, and reports whether it did.
+//
+// Conditional, so that two approvals arriving together start it once: the
+// second finds it no longer waiting. And conditional on nothing else being in
+// flight for the app, in the same statement, so an approval cannot start a
+// deploy alongside one that began a moment earlier (the check-then-start a
+// caller makes first has that gap). started_at becomes the time it started,
+// so a list of deploys reads in the order they ran; when it was asked for is
+// the deploy.request audit event.
+func (d *Deployments) StartApproved(ctx context.Context, deploymentID string) (bool, error) {
+	tag, err := d.db.Exec(ctx, `
+		UPDATE deployments d SET status = $2, started_at = now()
+		WHERE d.id = $1 AND d.status = $3
+		  AND NOT EXISTS (
+		      SELECT 1 FROM deployments other
+		      WHERE other.app_id = d.app_id AND other.status IN ($2, $4, $5))`,
+		deploymentID, DeployPending, DeployAwaitingApproval, DeployBuilding, DeployApplying)
+	if err != nil {
+		return false, errs.Wrap(errs.Internal, "Could not start the approved deploy.", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// EndAwaiting closes a deploy that is still waiting for approval — rejected,
+// expired, superseded, or failed because its plan no longer passes — and
+// reports whether it was still waiting. Conditional for the same reason as
+// StartApproved: whichever of a rejection, an expiry and a final approval
+// lands first decides.
+func (d *Deployments) EndAwaiting(ctx context.Context, deploymentID, status, errorCode, message string) (bool, error) {
+	var detail any
+	if message != "" {
+		if encoded, err := json.Marshal(map[string]string{"message": message}); err == nil {
+			detail = encoded
+		}
+	}
+	tag, err := d.db.Exec(ctx, `
+		UPDATE deployments SET status = $2, error_code = $3, error_detail = $4, finished_at = now()
+		WHERE id = $1 AND status = $5`,
+		deploymentID, status, nullable(errorCode), detail, DeployAwaitingApproval)
+	if err != nil {
+		return false, errs.Wrap(errs.Internal, "Could not update the deploy request.", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// SupersedeAwaiting ends every request for an app still waiting for approval,
+// except the one named, and returns the ones it ended. A newer request
+// supersedes an older one (R-156): approving the older would deploy a
+// revision nobody is asking for any more.
+func (d *Deployments) SupersedeAwaiting(ctx context.Context, appID, exceptID string) ([]string, error) {
+	rows, err := d.db.Query(ctx, `
+		UPDATE deployments SET status = $3, finished_at = now()
+		WHERE app_id = $1 AND id <> $2 AND status = $4
+		RETURNING id`, appID, exceptID, DeploySuperseded, DeployAwaitingApproval)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not supersede the app's waiting deploy requests.", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var depID string
+		if err := rows.Scan(&depID); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not supersede the app's waiting deploy requests.", err)
+		}
+		out = append(out, depID)
+	}
+	return out, rows.Err()
+}
+
+// ExpireDue ends every request whose wait ran out at or before now, and
+// returns them. A request with no expiry waits until somebody answers.
+func (d *Deployments) ExpireDue(ctx context.Context, now time.Time) ([]Deployment, error) {
+	detail, err := json.Marshal(map[string]string{
+		"message": "Nobody approved this deploy before its request expired. Deploy again to ask again.",
+	})
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not expire deploy requests.", err)
+	}
+	rows, err := d.db.Query(ctx, `
+		UPDATE deployments d SET status = $1, error_code = $2, error_detail = $3, finished_at = now()
+		WHERE d.status = $4 AND d.approval_expires_at IS NOT NULL AND d.approval_expires_at <= $5
+		RETURNING `+deploymentColumns,
+		DeployExpired, string(errs.StateInvalid), detail, DeployAwaitingApproval, now)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not expire deploy requests.", err)
+	}
+	defer rows.Close()
+	var out []Deployment
+	for rows.Next() {
+		dep, err := scanDeployment(rows)
+		if err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not expire deploy requests.", err)
 		}
 		out = append(out, dep)
 	}
 	return out, rows.Err()
+}
+
+// ListAwaiting returns every deploy waiting for approval on an app that has
+// not been deleted, oldest request first, with its decisions so far. Who may
+// see each is the caller's to decide.
+func (d *Deployments) ListAwaiting(ctx context.Context) ([]AwaitingApproval, error) {
+	rows, err := d.db.Query(ctx, `
+		SELECT `+deploymentColumns+`, a.name, a.slug
+		FROM deployments d JOIN apps a ON a.id = d.app_id
+		WHERE d.status = $1 AND a.deleted_at IS NULL
+		ORDER BY d.started_at, d.id`, DeployAwaitingApproval)
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not list the deploys waiting for approval.", err)
+	}
+	defer rows.Close()
+	var out []AwaitingApproval
+	var ids []string
+	for rows.Next() {
+		var item AwaitingApproval
+		dep, err := scanDeployment(rows, &item.AppName, &item.AppSlug)
+		if err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not list the deploys waiting for approval.", err)
+		}
+		item.Deployment = dep
+		ids = append(ids, dep.ID)
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not list the deploys waiting for approval.", err)
+	}
+	decisions, err := d.Decisions(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Approvals = decisions[out[i].ID]
+	}
+	return out, nil
+}
+
+// RanSuccessfully reports whether a spec revision of an app has been deployed
+// successfully before — what makes rolling back to it free of approval
+// (R-157). A deploy that succeeded is the proof it ran; being pinned is not,
+// since a revision can be pinned by hand without ever being deployed.
+func (d *Deployments) RanSuccessfully(ctx context.Context, appID, specID string) (bool, error) {
+	var exists bool
+	err := d.db.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM deployments
+		WHERE app_id = $1 AND spec_id = $2 AND status = $3)`, appID, specID, DeploySucceeded).Scan(&exists)
+	if err != nil {
+		return false, errs.Wrap(errs.Internal, "Could not read the app's deploys.", err)
+	}
+	return exists, nil
 }
 
 // InFlight reports whether a deployment is already running for an app.

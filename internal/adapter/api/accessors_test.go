@@ -167,6 +167,13 @@ func TestTypedAccessorsResolveTheirOwnCategory(t *testing.T) {
 	bk, ok := r.Backup("bk_local")
 	require.True(t, ok)
 	require.NotNil(t, bk)
+
+	n, ok := r.Notify("ntf_console")
+	require.True(t, ok)
+	require.NotNil(t, n)
+
+	_, ok = r.Notify("bk_local")
+	require.False(t, ok, "a backup adapter is not a notifier")
 }
 
 func TestATypedAccessorRefusesAnotherCategorysAdapter(t *testing.T) {

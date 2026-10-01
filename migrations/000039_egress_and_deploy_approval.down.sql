@@ -14,6 +14,9 @@ ALTER TABLE deployments ADD CONSTRAINT deployments_status_check
 
 ALTER TABLE deployments DROP COLUMN egress_rules;
 
+UPDATE host_policy SET body = body - 'deploy_approval_expiry_hours'
+    - 'deploy_approval_required' - 'deploy_approval_apps' - 'deploy_approval_count';
+
 UPDATE host_policy
 SET body = jsonb_set(body, '{disabled_verbs}',
         (SELECT coalesce(jsonb_agg(CASE WHEN v = 'app.egress.loosen' THEN 'app.egress.override' ELSE v END), '[]'::jsonb)

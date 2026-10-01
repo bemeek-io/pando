@@ -43,6 +43,13 @@ SET body = jsonb_set(body, '{agent_disabled_verbs}',
          FROM jsonb_array_elements_text(body->'agent_disabled_verbs') AS v))
 WHERE body->'agent_disabled_verbs' ? 'app.egress.override';
 
+-- Requests wait seven days by default (R-156). Default() says so, but an
+-- install already has a stored policy row, which is read instead of Default()
+-- and would otherwise read the missing key as zero — "never expires".
+UPDATE host_policy
+SET body = jsonb_set(body, '{deploy_approval_expiry_hours}', '168'::jsonb)
+WHERE NOT body ? 'deploy_approval_expiry_hours';
+
 -- The egress rules a deployment ran with, merged from the install's and the
 -- app's. The reconciler restores these, so a running app is not changed
 -- underneath it by a policy edit (R-183, O-10). NULL for a deployment from

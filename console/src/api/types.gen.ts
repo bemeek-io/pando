@@ -59,6 +59,36 @@ export interface Deployment {
   started_at: string;
   finished_at?: string;
   created_by: string;
+  spec_revision?: number;
+  requested_by_name?: string;
+  approvals_required?: number;
+  approval_expires_at?: string;
+  approval_reasons?: (ApprovalReason[] | null);
+  approvals?: (ApprovalDecision[] | null);
+  can_decide?: boolean;
+}
+
+export interface AwaitingApproval {
+  id: string;
+  app_id: string;
+  spec_id: string;
+  trigger: string;
+  status: string;
+  result_state?: string;
+  error_code?: string;
+  error_detail?: string;
+  started_at: string;
+  finished_at?: string;
+  created_by: string;
+  spec_revision?: number;
+  requested_by_name?: string;
+  approvals_required?: number;
+  approval_expires_at?: string;
+  approval_reasons?: (ApprovalReason[] | null);
+  approvals?: (ApprovalDecision[] | null);
+  can_decide?: boolean;
+  app_name: string;
+  app_slug: string;
 }
 
 export interface Detection {
@@ -319,6 +349,19 @@ export interface DetectionSummary {
   stage?: string;
   started_at: string;
   updated_at: string;
+}
+
+export interface ApprovalReason {
+  reason: string;
+  message: string;
+}
+
+export interface ApprovalDecision {
+  principal_id: string;
+  principal_name: string;
+  decision: string;
+  comment?: string;
+  decided_at: string;
 }
 
 export interface TrialObservation {

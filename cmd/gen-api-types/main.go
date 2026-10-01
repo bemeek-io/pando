@@ -46,6 +46,8 @@ var exported = []any{
 	state.Section{},
 	state.Revision{},
 	state.Deployment{},
+	// A deploy waiting for approval, as GET /approvals lists it (R-154).
+	state.AwaitingApproval{},
 	state.Detection{},
 	state.GrantRow{},
 	state.User{},

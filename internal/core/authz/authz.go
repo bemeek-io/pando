@@ -209,6 +209,48 @@ func (a *Authorizer) Allows(ctx context.Context, p Principal, appID string, verb
 	return denial == nil, nil
 }
 
+// AllowsInstall reports whether CheckInstall would allow the verb, without
+// auditing a denial. For a decision with two ways to be allowed — deploy
+// approval is install.deploys.approve or app.deploy.approve (R-155) — where
+// failing the first is not a denial at all if the second succeeds, and an
+// audit log full of denials nobody suffered would bury the ones that matter.
+func (a *Authorizer) AllowsInstall(ctx context.Context, p Principal, verb Verb) (bool, error) {
+	if !InstallScoped(verb) {
+		return false, errs.Newf(errs.Internal,
+			"%s is a per-app permission and cannot be checked installation-wide.", verb)
+	}
+	if p.Kind == KindSystem {
+		return true, nil
+	}
+	if !a.passesInstallFloor(ctx, p, verb) {
+		return false, nil
+	}
+	grants, err := a.store.InstallGrantsFor(ctx, p)
+	if err != nil {
+		return false, err
+	}
+	for _, g := range grants {
+		role, err := a.store.Role(ctx, g.RoleID)
+		if err != nil {
+			return false, err
+		}
+		if role.Has(verb) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// passesInstallFloor reports whether the principal and host policy steps
+// allow an install verb. Each of them can only deny, so a "no" from either is
+// the answer, not a failure to give one.
+func (a *Authorizer) passesInstallFloor(ctx context.Context, p Principal, verb Verb) bool {
+	if a.checkPrincipal(ctx, p) != nil {
+		return false
+	}
+	return a.policy == nil || a.policy.Allows(ctx, p, verb, "") == nil
+}
+
 // control evaluates steps 1–7 for one app verb. It returns the reason for a
 // denial, or a failure to evaluate at all, and audits neither.
 func (a *Authorizer) control(ctx context.Context, p Principal, appID string, verb Verb) (denial, failure error) {
