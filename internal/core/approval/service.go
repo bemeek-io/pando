@@ -233,7 +233,21 @@ func (s *Service) needs(ctx context.Context, app state.App, rev state.Revision, 
 			running = ran.Body
 		}
 	}
-	return doc, Reasons(doc, app.ID, running, rev.Body), nil
+	reasons := Reasons(doc, app.ID, running, rev.Body)
+
+	// The app's own requirement also stands when it is in the pinned spec but
+	// nothing has run it yet: the app asked for approval, and deploying a
+	// revision that switches it off is still a deploy it asked about.
+	if app.PinnedSpecID != "" && !hasReason(reasons, ReasonAppSpec) {
+		pinned, found, err := s.Apps.RevisionByID(ctx, app.PinnedSpecID)
+		if err != nil {
+			return doc, nil, err
+		}
+		if found && pinned.Body.Deploy.RequireApproval {
+			reasons = append(reasons, ReasonAppSpec)
+		}
+	}
+	return doc, reasons, nil
 }
 
 // request records a deploy waiting for approval, supersedes any older one for
@@ -781,4 +795,13 @@ func (s *Service) RunExpiry(ctx context.Context, every time.Duration) {
 			}
 		}
 	}
+}
+
+func hasReason(reasons []Reason, want Reason) bool {
+	for _, r := range reasons {
+		if r == want {
+			return true
+		}
+	}
+	return false
 }

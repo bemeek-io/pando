@@ -759,3 +759,28 @@ func TestR159_EveryStepOfAnApprovalIsAudited(t *testing.T) {
 	require.Equal(t, superseded.ID, records[0].TargetID)
 	require.Equal(t, rejected.ID, records[0].Detail["superseded_by"])
 }
+
+// TestR154_DeployingTheSpecThatLoosensEgressWaitsForApproval asserts that an
+// egress loosening is measured against what the app last ran, not its pinned
+// spec. A deploy normally deploys the pinned spec, so comparing against it
+// would compare the revision with itself and never find the loosening new.
+func TestR154_DeployingTheSpecThatLoosensEgressWaitsForApproval(t *testing.T) {
+	t.Parallel()
+	a := newApprovals(t)
+	admin := a.admin()
+	appID := a.createApp(admin, "notes")
+	a.policy(func(d *corepolicy.Document) {
+		d.EgressBlockPrivate = true
+		d.EgressLoosening = corepolicy.EgressLooseningApproval
+	})
+
+	// Turning the installation's private-address block off for this app is
+	// a loosening (R-182); under this policy it needs approval (R-183).
+	loose := minimalSpec()
+	loose["egress"] = map[string]any{"mode": "inherit", "block_private": false}
+	a.pinSpec(admin, appID, a.writeSpec(admin, appID, loose))
+
+	dep := a.deploy(admin, appID)
+	require.Equal(t, state.DeployAwaitingApproval, dep.Status)
+	require.Equal(t, "egress_loosening", dep.ApprovalReasons[0].Reason)
+}
