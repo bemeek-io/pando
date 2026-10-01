@@ -210,14 +210,41 @@ does reach out; it is an HTTP forward and `CONNECT` proxy that decides each conn
 public name that resolves to a private address is refused under `BlockPrivate` (R-185). Every workload
 is given `HTTP_PROXY` and `HTTPS_PROXY` naming it. The gateway runs Pando's own image by default, so an
 install pulls nothing new, and a refused connection is logged with `Decision.Reason`, which is written
-for the app's owner. How the gateway is configured, named and replaced when rules change:
-implementation, see `internal/adapter/runtime/docker` and `internal/egress`.
+for the app's owner.
+
+- **Networks.** A restricted bundle runs on `pando-<bundle>-internal` (`Internal: true`), not on the
+  ordinary `pando-<bundle>`. A separate network is used rather than recreating the ordinary one,
+  because removing a network means detaching Pando's own container from it first, which `Destroy`
+  avoids (on Docker Desktop it drops Pando's published ports). Switching posture recreates each
+  workload on the other network; the old one is removed when empty, or by `ReclaimNetworks` at the
+  next start. The gateway alone also sits on `pando-<bundle>-outbound`, an ordinary bridge. That
+  network is **per app**, not shared: on a shared one, an app whose rules allow private addresses could
+  ask its gateway for another app's gateway and through it reach that app's network (R-180).
+- **The gateway container** is `pando-egress-<bundle>`: Pando's binary with the hidden
+  `pando egress-gateway` command. Its rules come in `PANDO_EGRESS_RULES` and its label
+  `io.pando.egress.digest` hashes image, binary and rules, so changed rules recreate the gateway and
+  nothing else. It runs as nonroot with a read-only root filesystem, no capabilities and small limits,
+  and restarts itself (`unless-stopped`, like the edge), because `Observe` does not report it as one of
+  the app's workloads and the reconciler would never notice it down. `Destroy` removes it and all three
+  networks.
+- **Workloads** get `HTTP_PROXY`, `HTTPS_PROXY` and their lower-case forms set to
+  `http://pando-egress:3128`, and `NO_PROXY` naming localhost and every workload in the bundle, which
+  talk to each other directly.
+- **The gateway** refuses a name before looking it up when no entry could allow it, so a refused name
+  is not leaked through DNS. It resolves once and dials only an address it checked, so rebinding cannot
+  get around the private block. It never connects to its own loopback.
+- **Image.** The adapter's `egress_gateway_image` setting, or else the image of Pando's own container.
+  With neither (Pando run on the host), `SupportsEgressRestriction` is false and restricted plans are
+  refused (R-186).
 
 **[D] The limitation is stated, not hidden (R-187).** Only traffic through the gateway leaves. Raw TCP,
 UDP, and clients that ignore the proxy variables do not — **even under a denylist**, where an owner
 would expect everything else to keep working. The plan carries a note saying so whenever a restriction
 is in effect. A transparent mechanism would lift this; v1 does not have one, and
-adding one later is a change the plan note would have to follow.
+adding one later is a change the plan note would have to follow. Two smaller gaps: on Docker versions
+whose embedded DNS still answers outside names on an internal network, a workload can leak data
+through lookups (clients do not need them, since they hand names to the proxy); and after a posture
+switch the old network stays until Pando's next start.
 
 **[D]** The rules a runtime enforces are the ones recorded on the deployment (`deployments.egress_rules`,
 design 02 §2.3), which the reconciler passes back on every converge. Build egress is `BuildRequest`'s own

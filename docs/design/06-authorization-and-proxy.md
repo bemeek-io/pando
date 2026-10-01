@@ -425,7 +425,9 @@ holds on the data plane — the supported path to *use* an app is a data grant o
 to sign off on every deploy; an administrator approves through `install.deploys.approve`, a verb of its
 own that a custom install-scoped role can carry or leave out independently of `install.apps.manage`.
 The approval service accepts either: `install.deploys.approve` install-wide, or `app.deploy.approve` on
-the app (implementation: see `internal/core/approval`).
+the app. It asks the install verb first with `Authorizer.AllowsInstall`, which answers without auditing
+a denial, so an approver holding only the app verb does not leave a spurious refusal in the log; only a
+caller holding neither is audited as denied.
 
 **[D]** What the caller may do on an app is on the wire: `GET /apps/{id}` returns `verbs`, computed by
 `Authorizer.AppVerbs`, which asks `CheckControl`'s own question for each app verb without auditing a

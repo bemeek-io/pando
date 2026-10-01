@@ -324,10 +324,11 @@ apply new alongside old → wait for health → repoint proxy → stop old
 ```
             needs approval (step 7b)                 enough approvals: plan re-run
 request ──────────────────────────> awaiting_approval ─────────────────────────> pending ──> building ──> applying ──> succeeded | failed
-   │                                   │  │  │
-   │ no approval needed                │  │  └─ newer request for the app ──> superseded
-   └──────────────> pending            │  └──── any rejection ──────────────> rejected
-                                       └─────── expiry passes ──────────────> expired
+   │                                   │  │  │  │
+   │ no approval needed                │  │  │  └─ re-run plan refuses the revision ──> failed (deployment)
+   └──────────────> pending            │  │  └──── newer request or deploy ─────────> superseded
+                                       │  └─────── any rejection ──────────────────> rejected
+                                       └────────── expiry passes ──────────────────> expired
 ```
 
 The **app's** state machine (§1) is untouched. A deploy waiting for approval does not move the app to
@@ -339,15 +340,24 @@ for the deployment and say nothing about the app. In particular approval adds **
 the plan succeeds (step 7b): host policy for every app; host policy for this app; the app's own
 `deploy.require_approval` in the running **or** the next spec; a **new** egress loosening under
 `egress_loosening: approval` (R-154). A loosening the running spec already carries was approved when it
-first ran. The request copies the approval count and expiry from policy (design 02 §2.3). Approving
+first ran. "Running" is the spec of the app's newest **successful** deploy, not its pinned spec: a
+deploy normally deploys the pinned spec, and comparing a revision with itself would never find a
+loosening new. A pinned spec that asks for approval still counts when nothing has run it yet. The request copies the approval count and expiry from policy (design 02 §2.3). Approving
 re-runs steps 1–7 against policy as it now is (R-156) and continues at step 8 with the same spec
-revision. Exempt: rollback to a revision that previously ran, restarts, and secret rotations (R-157).
+revision. If that plan refuses the revision itself (a `PLAN_*`, `POLICY_*`, `VALID_*` or `CAPACITY_*`
+code), the approval is recorded and the deployment ends `failed` with that code: no further approval
+could make it pass, and fixing it makes a new revision anyway. If it cannot plan at all (an adapter
+unreachable), the request keeps waiting. Approving while another deploy of the app is in flight is
+refused and the request keeps waiting; the start re-checks, so two approvals arriving together start
+it once. Exempt: rollback to a revision that previously ran, restarts, and secret rotations (R-157).
 
-**[D]** A newer request for an app supersedes an older `awaiting_approval` one (R-156). An **expiry
-sweep** moves requests past `approval_expires_at` to `expired`; a NULL expiry waits until answered.
+**[D]** A newer request for an app supersedes an older `awaiting_approval` one (R-156), and so does a
+deploy that needs no approval: approving the old request afterwards would put back an older revision.
+An **expiry sweep**, once a minute beside the auto-deploy job, moves requests past
+`approval_expires_at` to `expired`, and approving or rejecting checks expiry too; a NULL expiry waits
+until answered. A restart's abandon step leaves waiting requests alone: they are not in flight.
 Every request, approval, rejection, expiry and supersession is an audit event — `deploy.request`,
-`deploy.approve`, `deploy.reject`, `deploy.expire`, `deploy.supersede` (R-159). Where the sweep runs and
-how often: implementation, see `internal/core/approval`.
+`deploy.approve`, `deploy.reject`, `deploy.expire`, `deploy.supersede` (R-159).
 
 **[D] Egress rules take effect at deploy and are recorded there.** The deploy runner resolves them with
 the same `Planner.Egress` the plan showed, so what was shown is what runs, and writes them to
