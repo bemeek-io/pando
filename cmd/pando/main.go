@@ -118,6 +118,10 @@ func rootCmd() *cobra.Command {
 
 	root.AddCommand(serveCmd(&configPath), migrateCmd(&configPath), adminCmd(&configPath), versionCmd())
 
+	// Hidden: started by the Docker runtime in front of a restricted app, from
+	// Pando's own image, never by a person (R-187).
+	root.AddCommand(egressGatewayCmd())
+
 	// The client half (design 04 §4). In the same binary because Pando ships as
 	// one, and a client of the API like any other (R-261) — internal/cli
 	// imports no core package, so a command that needed something the API

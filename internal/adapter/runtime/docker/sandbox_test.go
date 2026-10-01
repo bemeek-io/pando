@@ -157,7 +157,7 @@ func TestR255_AnEngineThatIgnoresTheRuntimeRunsNothing(t *testing.T) {
 	createdRuntimes(f, "oci")
 
 	plan := api.BundlePlan{BundleID: "app_01HQ8", Network: api.NetworkPlan{Private: true}}
-	err := a.applyWorkload(ctx, plan, api.WorkloadPlan{Name: "web", Image: "nginx:1"}, "net1")
+	err := a.applyWorkload(ctx, plan, api.WorkloadPlan{Name: "web", Image: "nginx:1"}, "net1", nil)
 	require.Equal(t, errs.AdapterFailed, errs.CodeOf(err))
 	require.Contains(t, errs.As(err).Message, `"runsc"`, "R-105: it names what was asked for")
 	require.Contains(t, errs.As(err).Message, `"oci"`, "and what the engine did instead")
@@ -180,7 +180,7 @@ func TestR255_AppCodeRunsUnderTheConfiguredRuntime(t *testing.T) {
 	got := createdRuntimes(f)
 
 	plan := api.BundlePlan{BundleID: "app_01HQ8", Network: api.NetworkPlan{Private: true}}
-	require.NoError(t, a.applyWorkload(ctx, plan, api.WorkloadPlan{Name: "web", Image: "nginx:1"}, "net1"))
+	require.NoError(t, a.applyWorkload(ctx, plan, api.WorkloadPlan{Name: "web", Image: "nginx:1"}, "net1", nil))
 
 	_, err := a.startTrialContainer(ctx, api.TrialRequest{TrialID: "tr1", Image: "nginx:1"}, "net2")
 	require.NoError(t, err)
@@ -192,7 +192,7 @@ func TestR255_AppCodeRunsUnderTheConfiguredRuntime(t *testing.T) {
 	// keeps it.
 	f, plain := newFakeDaemon(t, nil)
 	got = createdRuntimes(f)
-	require.NoError(t, plain.applyWorkload(ctx, plan, api.WorkloadPlan{Name: "web", Image: "nginx:1"}, "net1"))
+	require.NoError(t, plain.applyWorkload(ctx, plan, api.WorkloadPlan{Name: "web", Image: "nginx:1"}, "net1", nil))
 	require.Equal(t, []string{""}, *got)
 }
 
@@ -217,7 +217,7 @@ func TestR255_ChangingTheRuntimeMovesAppsOnTheirNextDeploy(t *testing.T) {
 			"Config":     map[string]any{"Image": "nginx:1", "Labels": map[string]string{}},
 			"HostConfig": map[string]any{"Runtime": running},
 		}))
-		ok, err := a.matchesPlan(context.Background(), "c1", w)
+		ok, err := a.matchesPlan(context.Background(), "c1", w, "pando-app", nil)
 		require.NoError(t, err)
 		return ok
 	}
