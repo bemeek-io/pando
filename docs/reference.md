@@ -140,14 +140,29 @@ name that is not a policy setting, or a value that does not read as one, stops P
 rather than being ignored.
 
 The settings are `source_allowlist`, `disabled_verbs`, `agent_disabled_verbs`,
-`public_sharing`, `allow_anonymous_grants`, `min_build_isolation`, `min_runtime_isolation`, `egress_allowlist`,
-`require_backup_before_destroy`, `max_token_lifetime_days`, `max_log_disk_bytes`,
-`disable_ai_screening`, `min_security_score`, `insecure_action`, `insecure_grace_hours` and
-`ignore_unfixable_findings`.
+`public_sharing`, `allow_anonymous_grants`, `min_build_isolation`, `min_runtime_isolation`,
+`egress_mode`, `egress_list`, `egress_block_private`, `egress_loosening`, `egress_allowlist`,
+`deploy_approval_required`, `deploy_approval_apps`, `deploy_approval_count`,
+`deploy_approval_expiry_hours`, `require_backup_before_destroy`, `max_token_lifetime_days`,
+`max_log_disk_bytes`, `disable_ai_screening`, `disable_anonymous_use_audit`,
+`disable_password_sign_in`, `disable_jit_provisioning`, `min_security_score`, `insecure_action`,
+`insecure_grace_hours` and `ignore_unfixable_findings`.
 
 `public_sharing` is how an app may be shared with everyone: `allowed` (with or without a passcode),
 `passcode_only`, or `none`. The older `allow_anonymous_grants: false` still means `none` when
 `public_sharing` is unset.
+
+`egress_mode` is where apps may connect out to: `allow_all` (the default), `denylist` (anywhere except
+`egress_list`) or `allowlist` (only `egress_list`). `egress_block_private` blocks private addresses
+under any mode. `egress_loosening` is whether an app may loosen those rules — add to the allowlist,
+remove from the denylist, unblock private addresses: `verb` (the default; whoever holds
+`app.egress.loosen`), `approval` (its deploy needs approval) or `forbidden`. Apps may always narrow
+them. The older `egress_allowlist` still means `allowlist` mode when `egress_mode` is unset.
+
+`deploy_approval_required` makes every app's deploys wait for approval, and `deploy_approval_apps`
+does so for the listed app IDs. `deploy_approval_count` is how many approvals a deploy needs (0 means
+one) and `deploy_approval_expiry_hours` how long a request waits (default 168; 0 means until somebody
+answers).
 
 `GET /api/v1/config`, `pando config` and the Policy screen list every setting Pando started with,
 its value, and where it came from. Secrets are never shown.

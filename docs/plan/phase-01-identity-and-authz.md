@@ -21,7 +21,9 @@ phase where the two-plane distinction is either established correctly or quietly
 - [x] `roles` seeded by migration with the immutability trigger (R-081)
 - [x] The verb catalog (design 06 §5) and custom roles as arbitrary subsets (R-082) — **no implication
       graph**. Thirteen verbs, including `app.egress.override` (R-184); the three `*.override` verbs
-      are Owner-only, not Operator
+      are Owner-only, not Operator. *Since issue #79 and #39:* `app.egress.override` is
+      `app.egress.loosen`, `app.egress.tighten` (Owner and Operator) joined it, and the approval verbs
+      `install.deploys.approve` and `app.deploy.approve` were added (design 06 §5)
 - [x] `grants` table; app creation writes two rows, one per plane (R-073)
 - [x] The authorizer: `CheckControl` and `CheckData`, in the fixed evaluation order
 - [x] Live group resolution with the documented cache TTL (R-079)

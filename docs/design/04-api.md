@@ -127,8 +127,54 @@ GET  /api/v1/apps/{id}/deployments
 GET  /api/v1/apps/{id}/deployments/{did}
 GET  /api/v1/apps/{id}/deployments/{did}/logs     SSE stream of build output
 POST /api/v1/apps/{id}/deployments:rollback       to a prior revision (R-152)
+POST /api/v1/apps/{id}/deployments/{did}/approve  {comment?}; app.deploy.approve or install.deploys.approve (R-155)
+POST /api/v1/apps/{id}/deployments/{did}/reject   {comment?}; same verbs
 POST /api/v1/apps/{id}:plan                       dry run — plan without applying
+GET  /api/v1/apps/{id}/egress                     install rules + effective rules; app.view (R-188)
+GET  /api/v1/approvals                            deploys awaiting approval on apps the caller can view
 ```
+
+**[D] Deploy approval (R-154 – R-159).** `POST /deployments` takes the same request whether or not
+approval is needed. When it is, the answer is still 202, with the deployment in status
+`awaiting_approval` — the app's state does **not** move to `deploying`, and nothing is built. A
+deployment's statuses are `awaiting_approval`, `pending`, `building`, `applying`, `succeeded`, `failed`,
+`superseded`, `rejected`, `expired`. A deployment gains, all omitted when empty:
+`approvals_required`, `approval_expires_at`, `approval_reasons` (`[{reason, message}]`, reason one of
+`install | app_policy | app_spec | egress_loosening`), `approvals`
+(`[{principal_id, principal_name, decision, comment, decided_at}]`), and `can_decide` — whether the
+caller may approve or reject it, on `awaiting_approval` ones only, so the console never offers a button
+that will be refused.
+
+**[D]** `approve` returns 200 with the deployment: still `awaiting_approval` while more approvals are
+needed, `pending` or later once it has enough and has started. It re-runs the plan first, because
+policy may have changed while the request waited (R-156); a plan-time refusal comes back as the plan's
+own error. `reject` returns 200 with the deployment `rejected`; one rejection ends a request. Either
+verb may decide its holder's own request (R-155). `install.apps.manage` does not stand for
+`app.deploy.approve` (design 06 §5). A rollback to a revision that previously ran is never held for
+approval, and restarts and secret rotations are not deploys (R-157).
+
+**[D]** `GET /approvals` returns `{"approvals": [deployment + app_name, app_slug]}` for
+`awaiting_approval` deployments on apps the caller can view, each with `can_decide`. It is the
+approver's inbox; approvers are also told through the notification adapter (R-159).
+
+**[D]** `GET /apps/{id}/status` gains `auto_deploy_paused`: the pinned spec has auto-deploy on, but the
+app now needs approval, so the auto-deploy job skips it (R-158).
+
+**[D] Egress.** An app's egress is changed the ordinary way: a new spec revision with `egress` changed.
+The save checks, against the rules the app runs with now: any change needs `app.egress.tighten` or
+`app.egress.loosen`; a **new** loosening under `egress_loosening: forbidden` is refused with
+`PLAN_EGRESS_LOOSENING_FORBIDDEN`, under `verb` needs `app.egress.loosen` (else `PERM_VERB_REQUIRED`),
+and under `approval` is saved and its deploy waits (R-183, R-184). A loosening the running spec already
+carries is not asked about again. `GET /apps/{id}/egress` returns
+`{install: {mode, list, block_private, loosening}, effective, spec}` — the installation's rules, the
+merged rules for the pinned spec, and the spec's own egress object — so an owner without
+`install.view` can see the rules they are editing against.
+
+**[D]** The plan response gains `egress` (the merged `EffectiveEgress`: mode, list with each entry's
+origin, the app's own list, private-range blocking and its origin, every loosening with the gate it
+needs, and whether anything is restricted — R-188), `notes` (never blockers: the R-187 proxy-only note
+wherever a restriction is in effect, additions and removals that change nothing), and
+`approval: {required, reasons}` compared against the pinned spec.
 
 **[D]** `:plan` exists as its own endpoint because every plan-time failure in the requirements (R-024, R-132, R-242, R-254) is more useful before a user commits than during a deploy. The console calls it on every spec edit.
 
@@ -463,6 +509,9 @@ rather than a second opinion about authorization (R-261).
 | `pando_deploy` | `POST /apps/{id}/deployments` |
 | `pando_get_logs` | `GET /apps/{id}/logs` |
 | `pando_get_status` | `GET /apps/{id}/status` |
+| `pando_list_approvals` | `GET /approvals` |
+| `pando_approve_deploy` | `POST /apps/{id}/deployments/{did}/approve` |
+| `pando_reject_deploy` | `POST /apps/{id}/deployments/{did}/reject` |
 | `pando_list_ai_functions` | `GET /ai/functions` |
 | `pando_assign_ai_function` | `PUT /ai/functions/{function}` |
 | `pando_unassign_ai_function` | `DELETE /ai/functions/{function}` |
@@ -479,6 +528,12 @@ policy mutation that test keeps out.
 **[D]** An agent holds a token and is a principal like any other (R-262). No MCP tool bypasses authorization, and every action lands in the audit log under the token's owner.
 
 **[D] Not exposed via MCP:** exec, secret value reads, grant mutation, policy mutation, user deletion. Rationale — these are the highest-consequence actions in the system and R-086 already concedes exec is not bounded by the verb list. An agent should not hold the most dangerous capabilities by default.
+
+**[D]** Approving a deploy is excluded by the same default, for a different reason: approval is a
+human sign-off on a change (R-154), and an agent approving the deploy it — or another agent — just
+requested is the check signing itself. `policy.Default()` puts `install.deploys.approve` and
+`app.deploy.approve` in `agent_disabled_verbs`. The approval tools exist so an install that lifts that
+rule does not have to reach for the REST API; out of the box they list, and refuse to decide.
 
 **[D] Resolved (O-12): policy-controlled, default-closed, and expressed as host policy — not as an MCP
 list.** The exclusions above are the shipped default and an install can lift them, but the knob is the
@@ -512,6 +567,8 @@ pando secret set <app> <key>
 pando slot set <app> <key> --provision|--bind=<target>|--literal
 pando grant add <app> --user=<u> --plane=data
 pando rollback <app> [--to=<rev>]
+pando approvals list
+pando deploy approve|reject <app> <deployment> [--comment=...]
 pando export <app>
 pando backup create|verify|restore
 pando policy show|set

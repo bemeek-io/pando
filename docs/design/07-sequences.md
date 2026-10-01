@@ -64,8 +64,6 @@ User → POST /apps/{id}/detection:accept
 User → POST /apps/{id}/deployments { spec_revision: 1 }
 
   authz: app.deploy
-  create deployment row, status = pending
-  app.state = deploying
 
   ── PLAN (no side effects) ──
   1. validate spec                       → VALID_*
@@ -73,10 +71,32 @@ User → POST /apps/{id}/deployments { spec_revision: 1 }
   3. resolve adapters + HealthCheck()    → ADAPTER_UNAVAILABLE
   4. capability check                    → PLAN_CAPABILITY_UNSUPPORTED
        routing mode advertised? isolation floors met? (R-024, R-114, R-254)
+  4b. egress: policy.EgressFor(spec.egress) → merged rules + loosenings (R-182, R-188)
+       loosening, egress_loosening = forbidden → PLAN_EGRESS_LOOSENING_FORBIDDEN (R-183)
+       restricted, runtime can't enforce       → PLAN_CAPABILITY_UNSUPPORTED (R-186)
   5. every Required slot resolved?       → PLAN_SLOT_UNFILLED  (R-132)
   6. capacity: sum(allocated) + requested ≤ adapter-reported total
                                          → CAPACITY_WOULD_OVERSUBSCRIBE (R-242)
   ── plan boundary ──
+
+  6b. approval.Reasons(policy, app, running spec, this spec)   (R-154)
+        none, or rollback to a revision that ran (R-157)
+          → create deployment row, status = pending; app.state = deploying
+        any → create deployment row, status = awaiting_approval,
+              approvals_required + approval_expires_at from policy, reasons recorded;
+              an older awaiting request for the app → superseded;
+              audit: deploy.request; notify approvers (R-159)
+              → 202. app.state UNCHANGED. Stop.
+
+      Approver → POST /apps/{id}/deployments/{did}/approve
+        authz: install.deploys.approve, or app.deploy.approve on the app (R-155)
+        record decision; audit: deploy.approve
+        fewer than approvals_required → stays awaiting_approval
+        enough → re-run steps 1–6 against policy as it is now (R-156)
+                 ✗ → the plan's own error; the request does not run
+                 ✓ → status = pending; app.state = deploying; continue at 7
+      reject → status = rejected; audit: deploy.reject. app.state UNCHANGED.
+      expiry passes → status = expired; audit: deploy.expire.
 
   7.  clone, resolve ref → commit SHA; write it into the spec  (R-120)
   8.  Build:
@@ -88,7 +108,10 @@ User → POST /apps/{id}/deployments { spec_revision: 1 }
   9.  provision slots marked provisioned → workloads joined to bundle (R-134)
   10. secrets.Get() → materialize WorkloadPlan.Env (fully resolved, §03 2.1)
   11. runtime.CreateVolume() for any missing
-  12. runtime.Apply():
+  12. runtime.Apply(), with NetworkPlan.Egress = the rules from 4b,
+      recorded on the deployment for the reconciler (O-10):
+        restricted → internal network + egress gateway, HTTP(S)_PROXY set (R-187)
+        unrestricted → nothing in the app's path (R-186)
         recreate (R-144): stop old → start new
         start_then_swap (R-145): only if capability + explicit opt-in
   13. routing.Ensure() → points at the PANDO PROXY, never the workload (§00 1.3)
@@ -104,6 +127,10 @@ User → POST /apps/{id}/deployments { spec_revision: 1 }
 - Traefik's generated config points at Pando's proxy address, not at the workload's.
 - Secrets never appear in build logs, deployment records, or audit detail.
 - Every plan-stage rejection happens before any clone, build, or container creation.
+- A deploy that needs approval clones, builds and creates nothing, and leaves the app's state as it
+  was until it is approved; a rejected or expired one never touches it.
+- An app with no egress restriction in effect gets no gateway, no proxy variables, and an ordinary
+  network. A restricted one reaches an allowed destination through the gateway and nothing else.
 
 ---
 

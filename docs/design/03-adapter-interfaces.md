@@ -62,6 +62,7 @@ type RuntimeCapabilities struct {
     SupportsStartThenSwap   bool   // R-145
     ReportsUsage            bool   // R-245
     MaxWorkloadsPerBundle   int    // 0 = unlimited
+    SupportsEgressRestriction bool // enforces NetworkPlan.Egress (R-186)
 }
 
 type RoutingCapabilities struct {
@@ -165,15 +166,62 @@ type WorkloadPlan struct {
 }
 
 type NetworkPlan struct {
-    Private     bool       // always true (R-026)
-    EgressMode  EgressMode // allow_all | block_private | allowlist
-    EgressAllow []string
+    Private bool        // always true (R-026)
+    Egress  EgressRules // = egress.Rules, merged from the install's and the app's (R-182)
+}
+
+// internal/egress
+type Rules struct {
+    Layers       []Layer // every layer must allow a destination
+    BlockPrivate bool
+}
+type Layer struct {
+    Mode Mode     // allowlist | denylist
+    List []string // entries (R-185)
+    From string   // install | app — named in a refusal
 }
 ```
 
 **[D]** `Env` arrives fully resolved. Adapters never see a slot, never talk to the secrets adapter, and never learn that a value was sensitive. That keeps R-027's identity/authz/secrets boundary intact and keeps the interface small.
 
 **[D]** `NetworkPlan.Private` is always true. It is a field rather than an assumption so an adapter that cannot provide a private network fails loudly at capability check (`SupportsPrivateNetwork`) rather than silently placing workloads on a shared network.
+
+**[D]** `NetworkPlan.Egress` arrives resolved: core merged the install's rules with the app's
+(`policy.Document.EgressFor`) and decided every loosening before the plan existed. The adapter sees
+layers, never policy, verbs or where a rule came from beyond the `From` label it repeats in a refusal
+(R-027). `internal/egress` is a leaf package, so the adapter, the plan and the gateway read one
+definition of "does this entry match" (`Rules.Compile`, `Compiled.Allows`). A runtime has exactly two
+options (R-186):
+
+- **Enforce every layer** and `BlockPrivate`, advertising `SupportsEgressRestriction`. Partial
+  enforcement — the allowlist but not the private block, names but not addresses — is not an option.
+- **Say it cannot.** The planner then refuses any plan whose `Egress.Restricted()` is true with
+  `PLAN_CAPABILITY_UNSUPPORTED` (capability `egress_restriction`). Never deployed with the rules ignored.
+
+**[D]** When `Egress.Restricted()` is false — no layers, or only an empty denylist, and no private
+block — **nothing goes in the app's path.** The app runs exactly as it did before egress controls
+existed: no gateway, no proxy variables, the ordinary network (R-186). Every existing app on a default
+install is in this case, and must not notice the feature.
+
+**[D] The Docker runtime's mechanism (v1).** A restricted app's bundle network is created `internal`,
+so it has no route out. A per-app **egress gateway** container sits on that network and on one that
+does reach out; it is an HTTP forward and `CONNECT` proxy that decides each connection with
+`egress.Compiled` — the name before resolving (`AllowsName`), then the resolved address (`Allows`), so a
+public name that resolves to a private address is refused under `BlockPrivate` (R-185). Every workload
+is given `HTTP_PROXY` and `HTTPS_PROXY` naming it. The gateway runs Pando's own image by default, so an
+install pulls nothing new, and a refused connection is logged with `Decision.Reason`, which is written
+for the app's owner. How the gateway is configured, named and replaced when rules change:
+implementation, see `internal/adapter/runtime/docker` and `internal/egress`.
+
+**[D] The limitation is stated, not hidden (R-187).** Only traffic through the gateway leaves. Raw TCP,
+UDP, and clients that ignore the proxy variables do not — **even under a denylist**, where an owner
+would expect everything else to keep working. The plan carries a note saying so whenever a restriction
+is in effect. A transparent mechanism would lift this; v1 does not have one, and
+adding one later is a change the plan note would have to follow.
+
+**[D]** The rules a runtime enforces are the ones recorded on the deployment (`deployments.egress_rules`,
+design 02 §2.3), which the reconciler passes back on every converge. Build egress is `BuildRequest`'s own
+setting and untouched by any of this (R-118, R-189).
 
 ### 2.2 Observation
 
@@ -957,7 +1005,7 @@ func (r *Registry) Default(c Category) (Adapter, error)
 | routing | `traefik` | subdomain and path, TLS; Pando runs it by default (§4.4) |
 | routing | `cloudflare` | Cloudflare Tunnel; subdomain and path, TLS at Cloudflare's edge (§4.5) |
 | builder | `buildkit` | rootless, containerized, no socket (R-111) |
-| runtime | `docker` | container isolation class; `sandboxed` when `oci_runtime` names gVisor (`runsc`) or a Kata runtime (R-115), which the daemon must have registered or the adapter reports itself unavailable. A sandboxed trial run still reports whether the app started, but not its ports or writes — both are read from outside the container, and a sandbox hides them. Also drives rootless Podman through its Docker-compatible socket (see below). |
+| runtime | `docker` | enforces app egress through an internal network and a per-app gateway proxy (§2.1, R-187); container isolation class; `sandboxed` when `oci_runtime` names gVisor (`runsc`) or a Kata runtime (R-115), which the daemon must have registered or the adapter reports itself unavailable. A sandboxed trial run still reports whether the app started, but not its ports or writes — both are read from outside the container, and a sandbox hides them. Also drives rootless Podman through its Docker-compatible socket (see below). |
 | secrets | `local` | encrypted at rest, key on disk (R-190) |
 | backup | `local` | a filesystem path; retention owned by Pando |
 | services | `docker` | postgres, mysql, redis in-bundle |

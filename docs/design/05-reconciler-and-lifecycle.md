@@ -50,7 +50,7 @@ any state ──delete──> archived
 | From | Event | To | Notes |
 |---|---|---|---|
 | `draft` | proposal accepted | `proposed` | Spec revision 1 written |
-| `proposed` | deploy requested | `deploying` | |
+| `proposed` | deploy requested | `deploying` | Not while it awaits approval: the app's state does not move (§3.3) |
 | `deploying` | apply succeeded, health passing | `running` | |
 | `deploying` | apply succeeded, health never passes | `degraded` | Enters backoff |
 | `deploying` | build failed | *unchanged* | R-146 — old version keeps serving |
@@ -259,10 +259,13 @@ A deployment is a foreground operation, not the reconciler's work. The reconcile
 2.  Evaluate host policy                   → POLICY_*
 3.  Check source allowlist (pre-clone)     → POLICY_SOURCE_NOT_ALLOWED   (R-092)
 4.  Resolve adapters, check capabilities   → PLAN_CAPABILITY_UNSUPPORTED (R-254)
+4b. Resolve egress against policy          → PLAN_EGRESS_LOOSENING_FORBIDDEN (R-183)
+                                           → PLAN_CAPABILITY_UNSUPPORTED (R-186)
 5.  Check isolation floors (build+runtime) → PLAN_NO_ADAPTER_MEETS_POLICY (R-024, R-114)
 6.  Check every required slot is resolved  → PLAN_SLOT_UNFILLED          (R-132)
 7.  Check capacity                         → CAPACITY_WOULD_OVERSUBSCRIBE (R-242)
     ── plan boundary: nothing has been created yet ──
+7b. Needs approval? → deployment awaiting_approval; stop here (§3.3, R-154)
 8.  Clone source, resolve ref → commit SHA
 9.  Build (isolated, no socket)            → BUILD_*                     (R-024, R-112)
 10. Provision unfilled provisioned slots
@@ -314,6 +317,45 @@ apply new alongside old → wait for health → repoint proxy → stop old
 
 **[D]** The console must show the R-145 warning text at the point of enabling, not in a tooltip: *two copies of your app run at the same time during a deploy. Do not enable this if your app writes to a local file or runs migrations on startup.*
 
+### 3.3 Approval and egress
+
+**[D] A deployment has a lifecycle of its own, and approval lives entirely in it.**
+
+```
+            needs approval (step 7b)                 enough approvals: plan re-run
+request ──────────────────────────> awaiting_approval ─────────────────────────> pending ──> building ──> applying ──> succeeded | failed
+   │                                   │  │  │
+   │ no approval needed                │  │  └─ newer request for the app ──> superseded
+   └──────────────> pending            │  └──── any rejection ──────────────> rejected
+                                       └─────── expiry passes ──────────────> expired
+```
+
+The **app's** state machine (§1) is untouched. A deploy waiting for approval does not move the app to
+`deploying`, and the app keeps running what it ran. `rejected`, `expired` and `superseded` are terminal
+for the deployment and say nothing about the app. In particular approval adds **no path to `failed`**
+(R-151): nothing about waiting, being refused, or timing out is an app failure.
+
+**[D]** Whether a deploy needs approval is `approval.Reasons(policy, app, running, next)`, decided after
+the plan succeeds (step 7b): host policy for every app; host policy for this app; the app's own
+`deploy.require_approval` in the running **or** the next spec; a **new** egress loosening under
+`egress_loosening: approval` (R-154). A loosening the running spec already carries was approved when it
+first ran. The request copies the approval count and expiry from policy (design 02 §2.3). Approving
+re-runs steps 1–7 against policy as it now is (R-156) and continues at step 8 with the same spec
+revision. Exempt: rollback to a revision that previously ran, restarts, and secret rotations (R-157).
+
+**[D]** A newer request for an app supersedes an older `awaiting_approval` one (R-156). An **expiry
+sweep** moves requests past `approval_expires_at` to `expired`; a NULL expiry waits until answered.
+Every request, approval, rejection, expiry and supersession is an audit event — `deploy.request`,
+`deploy.approve`, `deploy.reject`, `deploy.expire`, `deploy.supersede` (R-159). Where the sweep runs and
+how often: implementation, see `internal/core/approval`.
+
+**[D] Egress rules take effect at deploy and are recorded there.** The deploy runner resolves them with
+the same `Planner.Egress` the plan showed, so what was shown is what runs, and writes them to
+`deployments.egress_rules`. The reconciler converges toward the **recorded** rules (`state.Reconcilable`),
+never a fresh resolution against today's policy, so a policy edit does not change a running app
+underneath it (R-183, O-10). When policy stops permitting a loosening an app runs with, the app keeps
+running it and its next deploy is refused at step 4b, naming the entries.
+
 ---
 
 ## 4. Health
@@ -338,6 +380,13 @@ being retried forever.
 **[P]** Poll interval: 5 minutes for branch tracking, 15 for release tags.
 
 **[D]** If a deployment is already in flight for an app, the trigger is skipped, not queued. Queued auto-deploys on a fast-moving branch produce a backlog nobody wants.
+
+**[D]** The same reasoning keeps auto-deploy and approval apart (R-158). A spec save refuses
+`auto_deploy.enabled` while the app needs approval for every deploy (`approval.BlocksAutoDeploy`; an
+egress loosening is not such a reason, since it needs approval only for the deploy that introduces it).
+When policy starts requiring approval for an app that already auto-deploys, the job **skips** it rather
+than queuing a request per push, and `GET /apps/{id}/status` reports `auto_deploy_paused` so the
+console can say why nothing is deploying.
 
 ---
 

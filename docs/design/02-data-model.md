@@ -176,6 +176,13 @@ CREATE TABLE roles (
 
 **[D]** Built-in rows (`viewer`, `operator`, `owner`, `administrator`, `creator`) are seeded by migration and protected by a trigger against `UPDATE`/`DELETE` (R-081). New verbs added in a later Pando version are added to built-in roles **by migration**, which is the mechanism R-081 promises.
 
+**[D]** Migration 000039 is the worked example (issues #79, #39). It renames `app.egress.override` to
+`app.egress.loosen` in **every** role that held it, custom roles included, and in host policy's
+`disabled_verbs` and `agent_disabled_verbs` — the meaning carried over, and silently dropping a grant
+would take away something an administrator gave on purpose. It adds `app.egress.tighten` to Owner and
+Operator and `install.deploys.approve` to Administrator. `app.deploy.approve` joins the catalog in no
+built-in role (R-155). The trigger is disabled for the length of the migration and re-enabled in it.
+
 **[D]** A role is scoped. A role carrying install verbs granted on a single app is nonsense, and a role carrying app verbs granted install-wide is worse. `administrator` is the only install-scoped built-in; custom roles (R-082) are composed within one scope.
 
 **[D]** The `UNIQUE (id, scope)` index is redundant as a uniqueness constraint — `id` is already the primary key — and exists solely so `grants` can reference the pair. It is the cheapest way to make the correspondence a foreign key instead of a convention.
@@ -265,14 +272,45 @@ CREATE TABLE deployments (
     app_id       text NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
     spec_id      text NOT NULL REFERENCES spec_revisions(id),
     trigger      text NOT NULL,               -- manual | branch_updated | release_tagged | rollback
-    status       text NOT NULL,               -- pending|building|applying|succeeded|failed|superseded
+    status       text NOT NULL,               -- awaiting_approval|pending|building|applying|
+                                              -- succeeded|failed|superseded|rejected|expired (CHECK)
     error_code   text,
     error_detail jsonb,
+    egress_rules jsonb,                       -- egress.Rules the deploy ran with (R-183, O-10)
+    approvals_required  integer,              -- R-156; fixed when the request is made
+    approval_expires_at timestamptz,          -- NULL: waits until answered
+    approval_reasons    text[],               -- install | app_policy | app_spec | egress_loosening
     started_at   timestamptz NOT NULL DEFAULT now(),
     finished_at  timestamptz,
     created_by   text NOT NULL
 );
+CREATE INDEX deployments_awaiting_idx ON deployments (approval_expires_at)
+    WHERE status = 'awaiting_approval';
+
+CREATE TABLE deployment_approvals (
+    deployment_id text NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
+    principal_id  text NOT NULL,
+    decision      text NOT NULL CHECK (decision IN ('approve', 'reject')),
+    comment       text,
+    decided_at    timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (deployment_id, principal_id)
+);
 ```
+
+**[D]** `egress_rules` is the merged rules (`policy.EffectiveEgress.Rules`) resolved when the deploy
+ran, and the reconciler restores **these**, not a fresh resolution against today's policy. A policy
+edit takes effect at an app's next deploy and never changes a running app underneath it (R-183, O-10).
+NULL is a deployment from before egress was enforced, which ran unrestricted.
+
+**[D]** A deploy that needs approval is a deployment row that waits, not a separate request object
+(R-156). It is tied to one `spec_id` and so one commit, listed with the app's other deploys, and moves
+to `pending` — the ordinary path — once it has `approvals_required` approvals. The count and the expiry
+are copied from host policy when the request is made, so a policy edit does not move a waiting
+request's goalposts. `approval_reasons` records why it waited, for the approver and the audit log.
+
+**[D]** One `deployment_approvals` row per principal per request: approving twice does not count twice.
+A single `reject` row ends the request (R-156). The rows are what the audit log's `deploy.approve` and
+`deploy.reject` events describe (R-159); the audit log remains the record (R-027).
 
 ### 2.4 Volumes, secrets, services
 
@@ -397,6 +435,24 @@ CREATE TABLE host_policy (
 **[D]** Singleton by constraint. One install, one org (R-015) — encode it so nobody accidentally builds multi-tenancy in.
 
 **[D]** Policy is a single versioned document, not scattered columns, so R-274's "apply policy to a running install" is one transaction and one audit event.
+
+**[D]** Egress and deploy approval are `body` fields (`policy.Document`):
+
+| Field | Meaning |
+|---|---|
+| `egress_mode` | `allow_all` (unset) \| `denylist` \| `allowlist` (R-181) |
+| `egress_list` | the list `egress_mode` reads (R-185) |
+| `egress_block_private` | block private ranges; works with any mode, allow-all included |
+| `egress_loosening` | `verb` (unset, R-270) \| `approval` \| `forbidden` (R-183) |
+| `egress_allowlist` | before issue #79; read as `allowlist` mode when `egress_mode` is unset, never written |
+| `deploy_approval_required` | every app's deploys need approval (R-154) |
+| `deploy_approval_apps` | these app IDs' deploys do, whatever their owners' specs say |
+| `deploy_approval_count` | approvals a deploy needs; 0 is 1 (R-156) |
+| `deploy_approval_expiry_hours` | how long a request waits; 0 is forever; `Default()` ships 168 |
+
+`PUT /policy` refuses a mode, loosening rule or entry that does not parse, and a negative count or
+expiry (`Document.ValidateRules`). The requirement an administrator places on one app lives here rather
+than in the app's spec so that the app's owner cannot remove it (R-154).
 
 **[D]** Startup configuration can fix any policy field (R-271): a `policy:` section in the config file or `PANDO_POLICY_<FIELD>`, the environment winning. A fixed field is laid over the stored document by the policy store itself (`policy.Overlay.Wrap`), so every reader — evaluator, handlers, the security pass — sees it; `PUT /policy` refuses to change it and the store never writes it into `body`, so removing it from the config and restarting restores what was stored. An unknown field or a value of the wrong type stops startup, because a policy that silently does not apply is worse than one that refuses to start. `GET /config` reports every non-secret startup setting and each fixed field with its source (env var, or file and key), and the console shows fixed fields disabled with that source on hover.
 
