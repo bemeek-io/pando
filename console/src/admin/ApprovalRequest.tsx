@@ -65,7 +65,11 @@ export function ApprovalRequest({
         <StatusIndicator status="info" label="Waiting for approval" />
         <span style={CAPTION}>
           Asked {relative(d.started_at).toLowerCase()} by{' '}
-          <span style={{ font: 'var(--type-code-sm)' }}>{d.created_by}</span>
+          {d.requested_by_name ? (
+            d.requested_by_name
+          ) : (
+            <span style={{ font: 'var(--type-code-sm)' }}>{d.created_by}</span>
+          )}
         </span>
       </div>
 

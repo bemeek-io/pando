@@ -1,37 +1,21 @@
 // Deploy approval, as the console reads it (R-154 – R-159).
 //
-// The fields below arrive on a deployment from `GET /apps/{id}/deployments`
-// and `GET /approvals`. They are written here by hand, beside the generated
-// Deployment, because only a deployment waiting for approval carries them.
+// The shapes are the server's own, generated from the Go types: a deployment
+// carries its approval fields, and `GET /approvals` adds the app it is for.
 
-import type { Deployment } from '@api/types.gen';
+import type {
+  ApprovalDecision,
+  ApprovalReason,
+  AwaitingApproval,
+  Deployment,
+} from '@api/types.gen';
 
-export interface ApprovalReason {
-  /** install | app_policy | app_spec | egress_loosening */
-  reason: string;
-  /** Written for the person deciding (R-105), shown as it is. */
-  message: string;
-}
+export type { ApprovalDecision, ApprovalReason };
 
-export interface ApprovalDecision {
-  principal_id: string;
-  principal_name?: string;
-  decision: 'approve' | 'reject';
-  comment?: string;
-  decided_at: string;
-}
-
-export type ApprovalDeployment = Deployment & {
-  approvals_required?: number;
-  approval_expires_at?: string;
-  approval_reasons?: ApprovalReason[] | null;
-  approvals?: ApprovalDecision[] | null;
-  /** Whether the caller may approve or reject it. Only on waiting ones. */
-  can_decide?: boolean;
-};
+export type ApprovalDeployment = Deployment;
 
 /** One row of `GET /approvals`: a waiting deployment and the app it is for. */
-export type ApprovalRow = ApprovalDeployment & { app_name: string; app_slug?: string };
+export type ApprovalRow = AwaitingApproval;
 
 export function isAwaiting(d: { status: string } | undefined): boolean {
   return d?.status === 'awaiting_approval';

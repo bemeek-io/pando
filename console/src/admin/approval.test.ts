@@ -13,7 +13,7 @@ const base: ApprovalDeployment = {
   created_by: 'usr_01',
 };
 
-const yes = (id: string) => ({ principal_id: id, decision: 'approve' as const, decided_at: '2026-10-01T01:00:00Z' });
+const yes = (id: string) => ({ principal_id: id, principal_name: '', decision: 'approve', decided_at: '2026-10-01T01:00:00Z' });
 
 describe('a deploy request reads as how far it has got (R-156)', () => {
   it('reads the default of one approval plainly', () => {

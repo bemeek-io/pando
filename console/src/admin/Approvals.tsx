@@ -70,7 +70,7 @@ export function Approvals({ onOpenApp }: { onOpenApp: (appID: string) => void })
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 'var(--space-3)' }}>
                   <h4 style={{ font: 'var(--type-h4)', margin: 0 }}>{row.app_name}</h4>
                   <span style={{ font: 'var(--type-code-sm)', color: 'var(--ink-secondary)' }}>
-                    {row.spec_id}
+                    {row.spec_revision ? `Revision ${row.spec_revision}` : row.spec_id}
                   </span>
                   <Button variant="ghost" onClick={() => onOpenApp(row.app_id)}>
                     Open app
