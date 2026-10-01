@@ -5,6 +5,8 @@ package docker_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,6 +65,35 @@ func inApp(bundleID, workload, script string) (string, bool) {
 	return string(out), err == nil
 }
 
+// networkGateway is the host's address on a network: its IPv4 gateway.
+//
+// Read from the network's IPAM configuration, and worked out from the subnet
+// when that leaves the gateway empty — newer Docker does for a network created
+// with a subnet and no gateway, and puts the gateway at the subnet's first
+// address, which is what this returns.
+func networkGateway(name string) (string, error) {
+	raw, err := dockerCLI("network", "inspect", "-f", "{{json .IPAM.Config}}", name)
+	if err != nil {
+		return "", err
+	}
+	var configs []struct {
+		Subnet  string `json:"Subnet"`
+		Gateway string `json:"Gateway"`
+	}
+	if err := json.Unmarshal([]byte(raw), &configs); err != nil {
+		return "", fmt.Errorf("reading %s's address configuration %q: %w", name, raw, err)
+	}
+	for _, c := range configs {
+		if gw, err := netip.ParseAddr(c.Gateway); err == nil && gw.Is4() {
+			return gw.String(), nil
+		}
+		if p, err := netip.ParsePrefix(c.Subnet); err == nil && p.Addr().Is4() {
+			return p.Masked().Addr().Next().String(), nil
+		}
+	}
+	return "", fmt.Errorf("network %s has no IPv4 address configuration: %s", name, raw)
+}
+
 // TestR187_ARestrictedAppReachesOnlyWhatItsRulesAllowThroughTheGateway asserts
 // R-185 – R-187 end to end on a real daemon: a restricted app's workload has no
 // route out of its network, reaches an allowed destination through the
@@ -91,7 +122,7 @@ func TestR187_ARestrictedAppReachesOnlyWhatItsRulesAllowThroughTheGateway(t *tes
 	plan := bundle(id, nil)
 	_, err = a.Apply(ctx, plan)
 	require.NoError(t, err)
-	hostIP, err := dockerCLI("network", "inspect", "-f", "{{(index .IPAM.Config 0).Gateway}}", "pando-"+id)
+	hostIP, err := networkGateway("pando-" + id)
 	require.NoError(t, err)
 	require.NotEmpty(t, hostIP)
 	out, ok := inApp(id, "web", "wget -q -O - -T 5 http://"+hostIP+":18080/")
@@ -106,7 +137,7 @@ func TestR187_ARestrictedAppReachesOnlyWhatItsRulesAllowThroughTheGateway(t *tes
 	}}}
 	_, err = a.Apply(ctx, plan)
 	require.NoError(t, err)
-	gwIP, err := dockerCLI("network", "inspect", "-f", "{{(index .IPAM.Config 0).Gateway}}", "pando-"+id+"-outbound")
+	gwIP, err := networkGateway("pando-" + id + "-outbound")
 	require.NoError(t, err)
 	internal, err := dockerCLI("network", "inspect", "-f", "{{.Internal}}", "pando-"+id+"-internal")
 	require.NoError(t, err)
