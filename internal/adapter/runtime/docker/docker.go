@@ -73,6 +73,12 @@ type Adapter struct {
 
 	// subnetMu serializes choosing an app network's address block.
 	subnetMu sync.Mutex
+
+	// What the egress gateway runs from when it is Pando's own image, read
+	// once from Pando's container (egress.go).
+	selfMu      sync.Mutex
+	selfKnown   bool
+	selfGateway gatewayImage
 }
 
 // Config is the adapter's configuration.
@@ -116,6 +122,14 @@ type Config struct {
 	// of `sandboxed` satisfied by a runtime that was never installed would
 	// admit exactly the work it was set to keep out.
 	OCIRuntime string `json:"oci_runtime,omitempty"`
+
+	// EgressGatewayImage is the image a restricted app's egress gateway runs
+	// from (R-187, egress.go): any image with Pando's binary at
+	// /usr/local/bin/pando. Empty is the image Pando's own container runs,
+	// which is right for the shipped Compose file. Pando run on the host has
+	// no container to take it from, and without this set the adapter reports
+	// that it cannot restrict egress (R-186).
+	EgressGatewayImage string `json:"egress_gateway_image,omitempty"`
 }
 
 // New builds an unconfigured adapter.
@@ -235,7 +249,7 @@ func isolationOf(ociRuntime string) spec.IsolationClass {
 }
 
 // Capabilities reports what this adapter can do (R-254).
-func (a *Adapter) Capabilities(context.Context) (api.RuntimeCapabilities, error) {
+func (a *Adapter) Capabilities(ctx context.Context) (api.RuntimeCapabilities, error) {
 	class := isolationOf(a.config.OCIRuntime)
 	observes := a.observes()
 
@@ -291,6 +305,12 @@ func (a *Adapter) Capabilities(context.Context) (api.RuntimeCapabilities, error)
 
 		// An edge in front of Pando (R-174, edge.go).
 		SupportsEdge: true,
+
+		// An internal network and a gateway in front of it (R-187, egress.go)
+		// — when there is an image to run the gateway from. Pando on the host
+		// with none configured cannot, and says so: the planner then refuses a
+		// restricted plan rather than deploying it unrestricted (R-186).
+		SupportsEgressRestriction: a.egressGateway(ctx).ref != "",
 	}, nil
 }
 
@@ -330,8 +350,44 @@ func (a *Adapter) Apply(ctx context.Context, p api.BundlePlan) (api.BundleHandle
 			"Pando will not start an app on a shared network.")
 	}
 
-	networkID, err := a.ensureNetwork(ctx, p.BundleID)
+	// R-186, R-187: restricted rules put the bundle on a network with no
+	// route out and a gateway in front of it; anything else runs exactly as
+	// it did before egress rules existed. See egress.go.
+	restricted := p.Network.Egress.Restricted()
+	var (
+		gateway gatewayImage
+		rules   string
+		proxy   map[string]string
+	)
+	if restricted {
+		gateway = a.egressGateway(ctx)
+		if gateway.ref == "" {
+			// The planner refuses this plan first (SupportsEgressRestriction),
+			// so reaching here is a plan made against another adapter's
+			// capabilities. Refused rather than run with the rules ignored.
+			return api.BundleHandle{}, errs.New(errs.PlanCapabilityUnsupported,
+				"This app's egress rules restrict where it may connect, and the Docker runtime has no image to run Pando's egress gateway from, so it cannot enforce them.").
+				WithRemedy("Run Pando in a container, as the shipped Compose file does, or set the Docker runtime's egress_gateway_image to an image of Pando.")
+		}
+		var err error
+		if rules, err = egressRulesJSON(p.Network.Egress); err != nil {
+			return api.BundleHandle{}, err
+		}
+		proxy = proxyEnv(p)
+	}
+
+	networkID, err := a.ensureNetwork(ctx, p.BundleID, restricted)
 	if err != nil {
+		return api.BundleHandle{}, err
+	}
+
+	// The gateway before any workload, so a workload that connects out the
+	// moment it starts finds it there.
+	if restricted {
+		if err := a.ensureGateway(ctx, p, gateway, rules, networkID); err != nil {
+			return api.BundleHandle{}, err
+		}
+	} else if err := a.removeGateway(ctx, p.BundleID); err != nil {
 		return api.BundleHandle{}, err
 	}
 
@@ -349,23 +405,29 @@ func (a *Adapter) Apply(ctx context.Context, p api.BundlePlan) (api.BundleHandle
 	}
 	for _, w := range ordered(p.Workloads) {
 		a.waitForDependencies(ctx, p.BundleID, w, planned)
-		if err := a.applyWorkload(ctx, p, w, networkID); err != nil {
+		if err := a.applyWorkload(ctx, p, w, networkID, workloadEnv(w, proxy)); err != nil {
 			return api.BundleHandle{}, err
 		}
 	}
 
+	// The network of the other posture, if the bundle just switched. Its
+	// workloads have moved, so it is removed if nothing is left on it, and
+	// left for ReclaimNetworks if only Pando is (see egress.go).
+	a.removeIdleNetwork(ctx, workloadNetworkName(p.BundleID, !restricted))
+
 	return api.BundleHandle{BundleID: p.BundleID, Handle: networkID}, nil
 }
 
-func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.WorkloadPlan, networkID string) error {
+func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.WorkloadPlan, networkID string, envVars map[string]string) error {
 	name := containerName(p.BundleID, w.Name)
+	networkName := workloadNetworkName(p.BundleID, p.Network.Egress.Restricted())
 
 	existing, err := a.findContainer(ctx, p.BundleID, w.Name)
 	if err != nil {
 		return err
 	}
 	if existing != nil {
-		matches, err := a.matchesPlan(ctx, existing.ID, w)
+		matches, err := a.matchesPlan(ctx, existing.ID, w, networkName, envVars)
 		if err != nil {
 			return err
 		}
@@ -386,12 +448,9 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 		return err
 	}
 
-	env := make([]string, 0, len(w.Env))
-	for k, v := range w.Env {
-		// Reveal happens here, at the edge, writing into the container's own
-		// configuration. The adapter received secret.Value and never learned
-		// which entries were sensitive.
-		env = append(env, k+"="+v.Reveal())
+	env := make([]string, 0, len(envVars))
+	for k, v := range envVars {
+		env = append(env, k+"="+v)
 	}
 
 	exposed := nat.PortSet{}
@@ -473,7 +532,7 @@ func (a *Adapter) applyWorkload(ctx context.Context, p api.BundlePlan, w api.Wor
 	// R-026). Publishing here would be a bypass.
 	netCfg := &network.NetworkingConfig{
 		EndpointsConfig: map[string]*network.EndpointSettings{
-			bundleNetworkName(p.BundleID): {NetworkID: networkID, Aliases: []string{w.Name}},
+			networkName: {NetworkID: networkID, Aliases: []string{w.Name}},
 		},
 	}
 
@@ -632,6 +691,11 @@ func (a *Adapter) Observe(ctx context.Context, ref api.BundleRef) (api.ObservedB
 
 	observed := api.ObservedBundle{Exists: len(containers) > 0}
 	for _, c := range containers {
+		if isGateway(c.Labels) {
+			// Pando's, not the app's: it is not a workload the plan names,
+			// and reporting it as one would be drift nothing could fix.
+			continue
+		}
 		inspect, err := a.cli.ContainerInspect(ctx, c.ID)
 		if err != nil {
 			// A container that vanished between list and inspect is drift the
@@ -768,14 +832,18 @@ func (a *Adapter) Destroy(ctx context.Context, ref api.BundleRef, opts api.Destr
 	// holding it is gone and the removal needs no disconnect at all. The
 	// containers — which hold the memory and CPU — are already gone by here,
 	// which is the part that matters.
-	if err := a.cli.NetworkRemove(ctx, bundleNetworkName(ref.BundleID)); err != nil {
-		if cerrdefs.IsNotFound(err) {
-			return nil
-		}
-		// Left behind on purpose. Reported at debug volume rather than as a
-		// failure, because the teardown did succeed at everything that costs
-		// the host something to keep.
-		return nil
+	//
+	// Every network the bundle may have: the ordinary one, and the two a
+	// restricted bundle adds (egress.go). The gateway's outbound network has
+	// only the gateway on it, which went with the containers above.
+	for _, name := range []string{
+		bundleNetworkName(ref.BundleID), internalNetworkName(ref.BundleID), outboundNetworkName(ref.BundleID),
+	} {
+		// Not found is the usual answer for two of the three, and one still
+		// holding Pando is left behind on purpose — not a failure, because the
+		// teardown did succeed at everything that costs the host something to
+		// keep.
+		_ = a.cli.NetworkRemove(ctx, name)
 	}
 	return nil
 }
@@ -820,7 +888,7 @@ func (a *Adapter) ReclaimNetworks(ctx context.Context, owns func(bundleID string
 		// existed, unable to start again (issue #55). Only a network no
 		// container belongs to, running or not, is reclaimed.
 		bundle := full.Labels[labelBundle]
-		if !ownedBundle(owns, bundle) || a.bundleHasContainers(ctx, bundle) {
+		if !ownedBundle(owns, bundle) || a.networkHasContainers(ctx, bundle, full.Name) {
 			continue
 		}
 		if err := a.cli.NetworkRemove(ctx, n.ID); err == nil {
@@ -840,14 +908,31 @@ func ownedBundle(owns func(string) bool, bundle string) bool {
 	return owns == nil || owns(bundle)
 }
 
-// bundleHasContainers reports whether any container, in any state, belongs to
-// the bundle. An error counts as yes: keeping a network is always safe.
-func (a *Adapter) bundleHasContainers(ctx context.Context, bundleID string) bool {
+// networkHasContainers reports whether any container of the bundle, in any
+// state, belongs to the network. An error counts as yes: keeping a network is
+// always safe.
+//
+// Per network rather than per bundle, because a bundle that switched egress
+// posture has moved its containers to another network (egress.go), and the
+// one it left is exactly what this exists to collect. A container whose
+// networks the daemon did not list counts as on every one.
+func (a *Adapter) networkHasContainers(ctx context.Context, bundleID, networkName string) bool {
 	list, err := a.cli.ContainerList(ctx, container.ListOptions{
 		All:     true,
 		Filters: filters.NewArgs(filters.Arg("label", labelBundle+"="+bundleID)),
 	})
-	return err != nil || len(list) > 0
+	if err != nil {
+		return true
+	}
+	for _, c := range list {
+		if c.NetworkSettings == nil || len(c.NetworkSettings.Networks) == 0 {
+			return true
+		}
+		if _, ok := c.NetworkSettings.Networks[networkName]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // RejoinNetworks puts this Pando container back on the network of every app
@@ -889,6 +974,11 @@ func (a *Adapter) RejoinNetworks(ctx context.Context, owns func(bundleID string)
 		// deploy attaches us, and until then there is nothing to reach.
 		full, err := a.cli.NetworkInspect(ctx, n.ID, network.InspectOptions{})
 		if err != nil || len(full.Containers) == 0 || !ownedBundle(owns, full.Labels[labelBundle]) {
+			continue
+		}
+		if full.Labels[labelEgressNetwork] == egressNetworkOutbound {
+			// The network an egress gateway leaves through holds nothing
+			// Pando's proxy reaches (egress.go).
 			continue
 		}
 		if err := a.attachProxy(ctx, n.ID); err != nil {
@@ -1112,8 +1202,11 @@ var _ api.RuntimeAdapter = (*Adapter)(nil)
 
 // --- helpers ---------------------------------------------------------------
 
-func (a *Adapter) ensureNetwork(ctx context.Context, bundleID string) (string, error) {
-	name := bundleNetworkName(bundleID)
+// ensureNetwork makes the network a bundle's workloads run on and joins Pando
+// to it. restricted chooses which: the ordinary bridge, or the internal one a
+// restricted bundle runs on with no route out (egress.go).
+func (a *Adapter) ensureNetwork(ctx context.Context, bundleID string, restricted bool) (string, error) {
+	name := workloadNetworkName(bundleID, restricted)
 
 	existing, err := a.cli.NetworkList(ctx, network.ListOptions{
 		Filters: filters.NewArgs(filters.Arg("name", name)),
@@ -1121,6 +1214,14 @@ func (a *Adapter) ensureNetwork(ctx context.Context, bundleID string) (string, e
 	if err == nil {
 		for _, n := range existing {
 			if n.Name == name {
+				if restricted && !n.Internal {
+					// A network by this name with a route out is not one
+					// Pando made, and running a restricted app on it would
+					// enforce nothing.
+					return "", errs.Newf(errs.AdapterFailed,
+						"A Docker network named %s exists and has a route out, so this app's egress rules could not be enforced on it.", name).
+						WithRemedy("Remove that network with: docker network rm " + name + " — then deploy the app again.")
+				}
 				// Attached on every pass, not only when the network is new.
 				//
 				// Pando's container is joined to each app's private network —
@@ -1142,24 +1243,22 @@ func (a *Adapter) ensureNetwork(ctx context.Context, bundleID string) (string, e
 		}
 	}
 
-	// Internal: false would let workloads reach the internet directly, which is
-	// what EgressMode governs; the isolation that matters for R-025 is that
-	// each bundle gets its own network, so no app can reach another's.
-	created, err := a.createNetwork(ctx, name, network.CreateOptions{
+	// An unrestricted bundle's network has a route out (Internal: false),
+	// exactly as before egress rules existed (R-186); the isolation that
+	// matters for R-025 is that each bundle gets its own network, so no app
+	// can reach another's. A restricted bundle's has none, and its only way
+	// out is the gateway (R-187).
+	opts := network.CreateOptions{
 		Driver: "bridge",
 		Labels: map[string]string{labelBundle: bundleID, labelManaged: "true"},
-	})
+	}
+	if restricted {
+		opts.Internal = true
+		opts.Labels[labelEgressNetwork] = egressNetworkInternal
+	}
+	created, err := a.createNetwork(ctx, name, opts)
 	if err != nil {
-		// Docker's default address pool holds about thirty /16 networks, and
-		// Pando takes one per app (R-025). An install that grows past that
-		// fails here with a message naming subnets, which tells an operator
-		// nothing about what to do.
-		if strings.Contains(err.Error(), "address pools") {
-			return "", errs.Wrap(errs.CapacityWouldOversubscribe,
-				"This machine has run out of private networks, so no more apps can start on it.", err).
-				WithRemedy("Docker reserves a fixed pool of network addresses, and Pando uses one per app. Raise it by setting default-address-pools in /etc/docker/daemon.json — for example a /16 base with /24 subnets gives 256 apps instead of about 30 — then restart Docker. Deleting apps you no longer need also frees them.")
-		}
-		return "", errs.Wrap(errs.AdapterFailed, "Could not set up the app's private network.", err)
+		return "", networkFailure(err, "Could not set up the app's private network.")
 	}
 
 	if err := a.attachProxy(ctx, created.ID); err != nil {
@@ -1373,8 +1472,14 @@ func (a *Adapter) findContainer(ctx context.Context, bundleID, workload string) 
 // Compared on image, command, and environment. Environment is included because
 // a rotated secret must cause a recreate (R-193) and the container's own config
 // is the only place the adapter can see it — core detects the same drift
-// state-side by fingerprint, and this is the adapter's half.
-func (a *Adapter) matchesPlan(ctx context.Context, containerID string, w api.WorkloadPlan) (bool, error) {
+// state-side by fingerprint, and this is the adapter's half. env is the
+// environment the container should have: the plan's, with the egress proxy
+// variables when the bundle is restricted (workloadEnv).
+//
+// And on network: a bundle that switched egress posture runs on another
+// network (egress.go), and a container still on the old one is on a network
+// with the wrong route out.
+func (a *Adapter) matchesPlan(ctx context.Context, containerID string, w api.WorkloadPlan, networkName string, env map[string]string) (bool, error) {
 	inspect, err := a.cli.ContainerInspect(ctx, containerID)
 	if err != nil {
 		return false, errs.Wrap(errs.AdapterUnavailable, "Could not read the app's configuration.", err)
@@ -1392,14 +1497,20 @@ func (a *Adapter) matchesPlan(ctx context.Context, containerID string, w api.Wor
 		return false, nil
 	}
 
+	if inspect.NetworkSettings != nil && inspect.NetworkSettings.Networks != nil {
+		if _, ok := inspect.NetworkSettings.Networks[networkName]; !ok {
+			return false, nil
+		}
+	}
+
 	existing := map[string]string{}
 	for _, kv := range inspect.Config.Env {
 		if k, v, ok := strings.Cut(kv, "="); ok {
 			existing[k] = v
 		}
 	}
-	for k, want := range w.Env {
-		if existing[k] != want.Reveal() {
+	for k, want := range env {
+		if existing[k] != want {
 			return false, nil
 		}
 	}
@@ -1577,6 +1688,7 @@ func Info() api.KindInfo {
 			{Key: "total_memory_bytes", Label: "Memory available", Type: "int", Help: "Bytes Pando may allocate.", Default: "The whole machine"},
 			{Key: "total_disk_bytes", Label: "Disk available", Type: "int", Help: "Bytes of disk Pando may allocate."},
 			{Key: "network_pool", Label: "App network range", Type: "string", Help: "The IPv4 range each app's private network takes 64 addresses from. \"off\" uses Docker's own pool, which holds about 30 networks.", Default: defaultNetworkPool},
+			{Key: "egress_gateway_image", Label: "Egress gateway image", Type: "string", Help: "The image an app's egress gateway runs from when its egress rules restrict anything: any image with Pando's binary at /usr/local/bin/pando. Without one, and with Pando not running in a container, apps whose egress is restricted cannot be deployed.", Default: "The image Pando's own container runs"},
 			{Key: "oci_runtime", Label: "Container runtime", Type: "string", Help: "The runtime Docker starts apps with, by the name it is registered under in daemon.json. \"runsc\" (gVisor) or a Kata runtime makes this a sandboxed runtime, which host policy can require; the port and file-write checks when an app is added then cannot see inside the sandbox, so Pando asks for the port instead.", Default: "Docker's default, runc"},
 		},
 	}

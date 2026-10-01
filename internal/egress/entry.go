@@ -58,6 +58,12 @@ func Parse(raw string) (Entry, error) {
 		return e, nil
 	}
 
+	if scheme, rest, ok := strings.Cut(s, "://"); ok {
+		// The likeliest mistake of all: pasting the URL a client calls.
+		host, _, _ := strings.Cut(rest, "/")
+		return e, fmt.Errorf("%q is a URL, and an egress entry is a destination. Write the hostname alone, such as %s, without %s:// or a path", s, host, scheme)
+	}
+
 	host, port, err := splitPort(s)
 	if err != nil {
 		return e, err
@@ -70,10 +76,21 @@ func Parse(raw string) (Entry, error) {
 		if err != nil {
 			return e, fmt.Errorf("%q is not a valid address range. Write it as an address and a prefix length, such as 10.0.0.0/8 or 2001:db8::/32", s)
 		}
+		// ::ffff:10.0.0.0/104 is 10.0.0.0/8 written as IPv6. Connections are
+		// matched on the unmapped address (MatchesAddr), so the range is
+		// unmapped too or it would never match anything.
+		if a := p.Addr(); a.Is4In6() && p.Bits() >= 96 {
+			p = netip.PrefixFrom(a.Unmap(), p.Bits()-96)
+		}
 		e.Prefix = p.Masked()
 		return e, nil
 	}
 	if a, err := netip.ParseAddr(host); err == nil {
+		if a.Zone() != "" {
+			// fe80::1%eth0 names an interface on some host, not a
+			// destination: the zone means nothing inside the gateway.
+			return e, fmt.Errorf("%q names a network interface after %%, which an egress entry cannot use. Write the address without it, such as fe80::1", s)
+		}
 		e.Prefix = netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen())
 		return e, nil
 	}
@@ -227,16 +244,41 @@ func (e Entry) Key() string {
 }
 
 // Private reports whether an address is one R-181's private-range switch
-// refuses: RFC 1918, loopback, link-local, unique-local, carrier-grade NAT and
-// unspecified. Link-local covers 169.254.169.254, the cloud metadata address,
-// which is the destination this switch most often exists to protect.
+// refuses: RFC 1918, loopback, link-local, unique-local, carrier-grade NAT,
+// "this network" (0.0.0.0/8, which Linux connects to the local host) and the
+// deprecated IPv6 site-local range. Link-local covers 169.254.169.254, the
+// cloud metadata address, which is the destination this switch most often
+// exists to protect.
+//
+// An IPv4 address carried inside IPv6 — mapped (::ffff:10.0.0.1) or behind
+// NAT64 (64:ff9b::a00:1) — is judged by the IPv4 address it carries, or a
+// private address could be reached by spelling it differently.
 func Private(a netip.Addr) bool {
 	a = a.Unmap()
+	if a.Is6() && nat64.Contains(a) {
+		b := a.As16()
+		a = netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]})
+	}
 	if a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() ||
 		a.IsLinkLocalMulticast() || a.IsUnspecified() || a.IsInterfaceLocalMulticast() {
 		return true
 	}
-	return cgnat.Contains(a)
+	for _, p := range privateRanges {
+		if p.Contains(a) {
+			return true
+		}
+	}
+	return false
 }
 
-var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+var (
+	nat64 = netip.MustParsePrefix("64:ff9b::/96")
+
+	privateRanges = []netip.Prefix{
+		netip.MustParsePrefix("100.64.0.0/10"), // carrier-grade NAT
+		netip.MustParsePrefix("0.0.0.0/8"),     // this network
+		netip.MustParsePrefix("255.255.255.255/32"),
+		netip.MustParsePrefix("fec0::/10"),      // site-local, deprecated
+		netip.MustParsePrefix("64:ff9b:1::/48"), // local-use NAT64
+	}
+)

@@ -103,16 +103,34 @@ type Decision struct {
 
 // AllowsName reports whether a hostname could be let out on some address —
 // the check made before resolving it. A denylist that names the host refuses
-// it outright; an allowlist lets it through to be decided per address, since
-// an address or range entry may still allow it.
+// it outright. An allowlist refuses it only when nothing on it could match:
+// no entry names the host, and no address or range entry covers the port, so
+// no address it could resolve to would be allowed. Otherwise the name is let
+// through to be decided per address by Allows.
+//
+// Refusing here, before the name is resolved, is not only cheaper. A gateway
+// that resolved every name it was asked for would carry whatever an app
+// spelled into a DNS query, to a resolver outside the app — a way out for
+// data the allowlist exists to keep in.
 func (c *Compiled) AllowsName(host string, port int) Decision {
 	for _, l := range c.layers {
-		if l.mode != Denylist {
-			continue
-		}
-		for _, e := range l.entries {
-			if e.MatchesName(host, port) {
-				return Decision{Reason: fmt.Sprintf("%s is on the %s denylist (%s)", host, owner(l.from), e.Raw)}
+		switch l.mode {
+		case Denylist:
+			for _, e := range l.entries {
+				if e.MatchesName(host, port) {
+					return Decision{Reason: fmt.Sprintf("%s is on the %s denylist (%s)", host, owner(l.from), e.Raw)}
+				}
+			}
+		case Allowlist:
+			possible := false
+			for _, e := range l.entries {
+				if e.MatchesName(host, port) || (e.Prefix.IsValid() && e.portMatches(port)) {
+					possible = true
+					break
+				}
+			}
+			if !possible {
+				return Decision{Reason: notAllowlisted(host, port, l.from)}
 			}
 		}
 	}
@@ -124,6 +142,9 @@ func (c *Compiled) AllowsName(host string, port int) Decision {
 func (c *Compiled) Allows(host string, port int, addr netip.Addr) Decision {
 	addr = addr.Unmap()
 	if c.blockPrivate && Private(addr) {
+		if a, err := netip.ParseAddr(host); err == nil && a.Unmap() == addr {
+			return Decision{Reason: fmt.Sprintf("%s is a private address, and private addresses are blocked", addr)}
+		}
 		return Decision{Reason: fmt.Sprintf("%s resolves to %s, a private address, and private addresses are blocked", host, addr)}
 	}
 	for _, l := range c.layers {
@@ -141,11 +162,17 @@ func (c *Compiled) Allows(host string, port int, addr netip.Addr) Decision {
 			}
 		case Allowlist:
 			if matched == "" {
-				return Decision{Reason: fmt.Sprintf("%s is not on the %s allowlist", host, owner(l.from))}
+				return Decision{Reason: notAllowlisted(host, port, l.from)}
 			}
 		}
 	}
 	return Decision{Allowed: true}
+}
+
+// notAllowlisted names the port, because an entry for the same host on
+// another port would otherwise make the refusal read as a contradiction.
+func notAllowlisted(host string, port int, from string) string {
+	return fmt.Sprintf("%s on port %d is not on the %s allowlist", host, port, owner(from))
 }
 
 func owner(from string) string {
