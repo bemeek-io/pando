@@ -15,6 +15,7 @@ import (
 	"github.com/trypando/pando/internal/adapter/api"
 	"github.com/trypando/pando/internal/config"
 	"github.com/trypando/pando/internal/core/address"
+	"github.com/trypando/pando/internal/core/approval"
 	"github.com/trypando/pando/internal/core/assertion"
 	"github.com/trypando/pando/internal/core/assist"
 	"github.com/trypando/pando/internal/core/audit"
@@ -105,8 +106,13 @@ type Server struct {
 	// Security scores apps and answers where one stands (R-310). Nil on an
 	// installation with no scanner, where the endpoints say so rather than
 	// returning a zero.
-	Security   Security
-	Deployer   *deploy.Runner
+	Security Security
+	Deployer *deploy.Runner
+
+	// Approvals starts every deploy, and asks for, records and acts on the
+	// approval of those that need one (R-154 – R-159).
+	Approvals *approval.Service
+
 	Logs       *deploy.LogStore
 	Secrets    *state.Secrets
 	Detections *state.Detections
@@ -524,6 +530,10 @@ func (s *Server) Routes() http.Handler {
 			r.Post("/{backupID}/restore", s.handleRestoreBackup)
 		})
 
+		// Deploys waiting for approval, across every app the caller may view
+		// (R-154): what an approver works through.
+		r.Get("/approvals", s.handleListApprovals)
+
 		r.Route("/apps", func(r chi.Router) {
 			r.Get("/", s.handleListApps)
 			r.Post("/", s.handleCreateApp)
@@ -608,6 +618,12 @@ func (s *Server) Routes() http.Handler {
 					r.Post("/rollback", s.handleRollback)
 					r.Get("/{depID}", s.handleGetDeployment)
 					r.Get("/{depID}/logs", s.handleDeploymentLogs)
+
+					// Deploy approval (R-154 – R-159). Behind app.view to
+					// reach; who may decide is install.deploys.approve or
+					// app.deploy.approve, which the service checks.
+					r.Post("/{depID}/approve", s.handleApproveDeploy)
+					r.Post("/{depID}/reject", s.handleRejectDeploy)
 				})
 
 				// Public with a passcode (R-075a): the passcode page's two calls,

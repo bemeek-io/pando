@@ -140,6 +140,42 @@ func (s *AuthzStore) InstallVerbsFor(ctx context.Context, p authz.Principal) ([]
 	return verbs, nil
 }
 
+// DeployApprovers returns the active people who may approve a deploy of the
+// app: holders of install.deploys.approve, and holders of app.deploy.approve
+// on this app, directly or through a group (R-155). For telling them a
+// request is waiting (R-159), not for deciding whether they may: that is
+// the authorizer's, which also applies host policy.
+func (s *AuthzStore) DeployApprovers(ctx context.Context, appID string) ([]string, error) {
+	rows, err := s.db.Query(ctx, `
+		WITH holding AS (
+		    SELECT g.principal_kind, g.principal_id
+		    FROM grants g JOIN roles r ON r.id = g.role_id
+		    WHERE g.plane = 'control'
+		      AND ((g.app_id IS NULL AND $2 = ANY (r.verbs))
+		        OR (g.app_id = $1 AND $3 = ANY (r.verbs)))
+		)
+		SELECT u.id FROM users u
+		WHERE u.status = 'active' AND u.deleted_at IS NULL
+		  AND (u.id IN (SELECT principal_id FROM holding WHERE principal_kind = 'user')
+		    OR u.id IN (SELECT m.user_id FROM effective_group_members m
+		                JOIN holding h ON h.principal_kind = 'group' AND h.principal_id = m.group_id))
+		ORDER BY u.id`,
+		appID, string(authz.InstallDeploysApprove), string(authz.AppDeployApprove))
+	if err != nil {
+		return nil, errs.Wrap(errs.Internal, "Could not read who may approve this app's deploys.", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var userID string
+		if err := rows.Scan(&userID); err != nil {
+			return nil, errs.Wrap(errs.Internal, "Could not read who may approve this app's deploys.", err)
+		}
+		out = append(out, userID)
+	}
+	return out, rows.Err()
+}
+
 // IsOwner reports whether userID is the app's owner of record (R-031).
 func (s *AuthzStore) IsOwner(ctx context.Context, appID, userID string) (bool, error) {
 	if userID == "" {

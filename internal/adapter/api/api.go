@@ -998,6 +998,10 @@ const (
 	NotifyDeployFailed    NotificationKind = "deploy_failed"
 	NotifyPolicyViolation NotificationKind = "policy_violation"
 	NotifyBackupFailed    NotificationKind = "backup_failed"
+
+	// NotifyDeployApproval: a deploy is waiting for somebody's approval, or
+	// a request somebody made was answered (R-159).
+	NotifyDeployApproval NotificationKind = "deploy_approval"
 )
 
 // NotifyAdapter delivers notifications.

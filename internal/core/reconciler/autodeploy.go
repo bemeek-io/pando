@@ -6,6 +6,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/trypando/pando/internal/core/approval"
+	"github.com/trypando/pando/internal/core/policy"
 	"github.com/trypando/pando/internal/core/spec"
 	"github.com/trypando/pando/internal/core/state"
 )
@@ -32,6 +34,17 @@ type AutoDeploy struct {
 	Resolver    RefResolver
 	Enqueue     func(ctx context.Context, dep state.Deployment, rev state.Revision)
 	Logger      *zap.Logger
+
+	// Policy is host policy as it is now. An app whose deploys need approval
+	// does not auto-deploy (R-158); nil reads as no policy, so nothing is
+	// skipped for it.
+	Policy PolicyLoader
+}
+
+// PolicyLoader reads host policy, per poll rather than cached (R-274): an
+// administrator who starts requiring approval stops the next poll.
+type PolicyLoader interface {
+	Load(ctx context.Context) (policy.Document, error)
 }
 
 // RefResolver turns a ref into the commit it currently points at.
@@ -66,15 +79,26 @@ func (a *AutoDeploy) Poll(ctx context.Context) {
 		return
 	}
 
+	var doc policy.Document
+	if a.Policy != nil && len(apps) > 0 {
+		if doc, err = a.Policy.Load(ctx); err != nil {
+			// Skipping the poll rather than polling without policy: deploying
+			// an app that may need approval without asking is the one
+			// outcome this must not produce.
+			a.Logger.Warn("could not read host policy; skipping this auto-deploy poll", zap.Error(err))
+			return
+		}
+	}
+
 	for _, app := range apps {
-		if err := a.pollOne(ctx, app); err != nil {
+		if err := a.pollOne(ctx, doc, app); err != nil {
 			a.Logger.Warn("could not check for new commits",
 				zap.String("app_id", app.ID), zap.Error(err))
 		}
 	}
 }
 
-func (a *AutoDeploy) pollOne(ctx context.Context, app state.App) error {
+func (a *AutoDeploy) pollOne(ctx context.Context, doc policy.Document, app state.App) error {
 	// Skipped, not queued. A queue on a fast-moving branch produces a backlog
 	// nobody wants, and the next poll picks up whatever is newest anyway.
 	inFlight, err := a.Deployments.InFlight(ctx, app.ID)
@@ -85,6 +109,17 @@ func (a *AutoDeploy) pollOne(ctx context.Context, app state.App) error {
 	rev, found, err := a.Apps.RevisionByID(ctx, app.PinnedSpecID)
 	if err != nil || !found {
 		return err
+	}
+
+	// R-158: auto-deploy and approval do not combine. A spec that turns
+	// auto-deploy on is refused while approval is required, so this is an
+	// app that already auto-deployed when policy started requiring approval
+	// for it. It stops; it does not queue a request per push, which is the
+	// backlog nobody wants to read. The app's status says so to the console.
+	if approval.BlocksAutoDeploy(doc, app.ID, rev.Body) {
+		a.Logger.Info("auto-deploy skipped: this app's deploys need approval",
+			zap.String("app_id", app.ID))
+		return nil
 	}
 
 	head, err := a.Resolver.Resolve(ctx, rev.Body.Source)

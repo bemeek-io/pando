@@ -46,13 +46,29 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	JSON(w, http.StatusOK, map[string]any{
+	body := map[string]any{
 		"app_id":    plan.AppID,
 		"revision":  rev.Revision,
 		"checks":    plan.Checks,
 		"workloads": len(plan.Bundle.Workloads),
 		"volumes":   len(plan.Bundle.Volumes),
-	})
+	}
+
+	// Whether deploying it would wait for somebody's approval, and why
+	// (R-154), so nobody finds out only after pressing Deploy.
+	if s.Approvals != nil {
+		reasons, err := s.Approvals.Needed(r.Context(), app, rev, state.TriggerManual)
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		described := make([]state.ApprovalReason, 0, len(reasons))
+		for _, reason := range reasons {
+			described = append(described, state.ApprovalReason{Reason: string(reason), Message: reason.Message()})
+		}
+		body["approval"] = map[string]any{"required": len(reasons) > 0, "reasons": described}
+	}
+	JSON(w, http.StatusOK, body)
 }
 
 // handleAdapterKinds lists the kinds of adapter this build can run and the

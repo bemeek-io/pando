@@ -155,6 +155,7 @@ func TestR261_EveryCommandIsPresentAndDocumented(t *testing.T) {
 	for _, want := range []string{
 		"login", "app", "deploy", "exec", "slot", "plan", "logs",
 		"secret", "grant", "rollback", "export", "backup", "policy", "token", "mcp",
+		"approvals",
 	} {
 		require.True(t, names[want], "missing the %s command", want)
 	}

@@ -262,6 +262,16 @@ func (r *Registry) ServicesFor(t spec.SlotType) (ServicesAdapter, string, bool) 
 	return nil, "", false
 }
 
+// Notify returns a notification adapter by reference (R-231).
+func (r *Registry) Notify(ref string) (NotifyAdapter, bool) {
+	a, ok := r.Get(ref)
+	if !ok {
+		return nil, false
+	}
+	n, ok := a.(NotifyAdapter)
+	return n, ok
+}
+
 // Backup returns a backup adapter by reference (R-217).
 func (r *Registry) Backup(ref string) (BackupAdapter, bool) {
 	a, ok := r.Get(ref)

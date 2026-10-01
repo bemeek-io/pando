@@ -59,6 +59,36 @@ export interface Deployment {
   started_at: string;
   finished_at?: string;
   created_by: string;
+  spec_revision?: number;
+  requested_by_name?: string;
+  approvals_required?: number;
+  approval_expires_at?: string;
+  approval_reasons?: (ApprovalReason[] | null);
+  approvals?: (ApprovalDecision[] | null);
+  can_decide?: boolean;
+}
+
+export interface AwaitingApproval {
+  id: string;
+  app_id: string;
+  spec_id: string;
+  trigger: string;
+  status: string;
+  result_state?: string;
+  error_code?: string;
+  error_detail?: string;
+  started_at: string;
+  finished_at?: string;
+  created_by: string;
+  spec_revision?: number;
+  requested_by_name?: string;
+  approvals_required?: number;
+  approval_expires_at?: string;
+  approval_reasons?: (ApprovalReason[] | null);
+  approvals?: (ApprovalDecision[] | null);
+  can_decide?: boolean;
+  app_name: string;
+  app_slug: string;
 }
 
 export interface Detection {
@@ -196,7 +226,15 @@ export interface Document {
   public_sharing?: string;
   min_build_isolation?: number;
   min_runtime_isolation?: number;
+  egress_mode?: string;
+  egress_list?: (string[] | null);
+  egress_block_private?: boolean;
+  egress_loosening?: string;
   egress_allowlist?: (string[] | null);
+  deploy_approval_required?: boolean;
+  deploy_approval_apps?: (string[] | null);
+  deploy_approval_count?: number;
+  deploy_approval_expiry_hours?: number;
   require_backup_before_destroy?: boolean;
   max_token_lifetime_days?: number;
   max_log_disk_bytes?: number;
@@ -313,6 +351,19 @@ export interface DetectionSummary {
   updated_at: string;
 }
 
+export interface ApprovalReason {
+  reason: string;
+  message: string;
+}
+
+export interface ApprovalDecision {
+  principal_id: string;
+  principal_name: string;
+  decision: string;
+  comment?: string;
+  decided_at: string;
+}
+
 export interface TrialObservation {
   ran?: boolean;
   started?: boolean;
@@ -419,6 +470,7 @@ export interface Deploy {
   strategy: string;
   auto_deploy: AutoDeploy;
   auto_rollback: boolean;
+  require_approval?: boolean;
 }
 
 export interface Health {
@@ -439,6 +491,10 @@ export interface Resources {
 
 export interface Egress {
   mode: string;
+  list?: (string[] | null);
+  add?: (string[] | null);
+  remove?: (string[] | null);
+  block_private?: boolean;
   allowlist?: (string[] | null);
 }
 
