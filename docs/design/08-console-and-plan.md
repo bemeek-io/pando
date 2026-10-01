@@ -339,7 +339,9 @@ loosening is a blocker; the rest are notes. Wherever a restriction is in effect 
 body text, not a tooltip: only HTTP and HTTPS through Pando's gateway leave the app, even under a
 denylist. The settings read the installation's rules from `GET /apps/{id}/egress`, so an owner without
 `install.view` edits against what they can see; the controls follow the caller's `verbs` (tighten,
-loosen) like every other control.
+loosen) like every other control. As the draft changes the editor asks the server with a dry-run save
+(design 04 §2.3) and shows its answer — the refusal as written, or what the draft newly loosens and
+whether deploying it would need approval — and Save stays off while the server would refuse.
 
 **Deploy approval** — R-154 – R-159.
 A deploy that waits says so where it was started, with the reasons and how many approvals it needs,

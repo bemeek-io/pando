@@ -209,6 +209,24 @@ func (a *Authorizer) Allows(ctx context.Context, p Principal, appID string, verb
 	return denial == nil, nil
 }
 
+// PreviewControl is CheckControl's answer without auditing a denial: the same
+// refusal, with the same reason, for a dry run that asks what would happen
+// and changes nothing. A denial nobody suffered is not an event (design 06 §6).
+func (a *Authorizer) PreviewControl(ctx context.Context, p Principal, appID string, verb Verb) error {
+	if InstallScoped(verb) {
+		return errs.Newf(errs.Internal,
+			"%s is an installation-wide permission and cannot be checked against an app.", verb)
+	}
+	if p.Kind == KindSystem {
+		return nil
+	}
+	denial, err := a.control(ctx, p, appID, verb)
+	if err != nil {
+		return err
+	}
+	return denial
+}
+
 // AllowsInstall reports whether CheckInstall would allow the verb, without
 // auditing a denial. For a decision with two ways to be allowed — deploy
 // approval is install.deploys.approve or app.deploy.approve (R-155) — where

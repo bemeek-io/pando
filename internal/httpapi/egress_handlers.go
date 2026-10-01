@@ -41,11 +41,17 @@ func (s *Server) pinnedSpec(ctx context.Context, app state.App) (*spec.AppSpec, 
 // pinned spec (R-158, R-182 – R-184). Every handler that writes a revision
 // from content the caller supplied calls it, after validation.
 func (s *Server) gateSpec(r *http.Request, app state.App, pinned, next *spec.AppSpec) (specgate.Result, error) {
+	return s.gateSpecWith(r, s.Authz, app, pinned, next)
+}
+
+// gateSpecWith is gateSpec asking a given authorizer: specgate.Quiet for a
+// dry run, so a refusal is reported and not audited.
+func (s *Server) gateSpecWith(r *http.Request, az specgate.Authorizer, app state.App, pinned, next *spec.AppSpec) (specgate.Result, error) {
 	doc, err := s.hostPolicy(r.Context())
 	if err != nil {
 		return specgate.Result{}, err
 	}
-	return specgate.Check(r.Context(), s.Authz, PrincipalFrom(r.Context()), specgate.Change{
+	return specgate.Check(r.Context(), az, PrincipalFrom(r.Context()), specgate.Change{
 		AppID: app.ID, Policy: doc, Pinned: pinned, Next: next,
 	})
 }
@@ -122,4 +128,41 @@ func (s *Server) egressRevision(r *http.Request, app state.App) (state.Revision,
 			WithRemedy("List the app's revisions with GET /apps/{id}/specs, or leave revision out for the pinned spec.")
 	}
 	return rev, found, err
+}
+
+// writeDryRun is the answer to POST /apps/{id}/specs?dry_run=true for a spec
+// a save would accept: the egress rules it would run with, what it newly
+// loosens, and whether deploying it would need approval and why (R-154,
+// R-188). Measured as a deploy would measure it, against what the app last
+// ran, so the console's preview is the server's decision.
+func (s *Server) writeDryRun(w http.ResponseWriter, r *http.Request, app state.App, next *spec.AppSpec, gated specgate.Result) {
+	doc, err := s.hostPolicy(r.Context())
+	if err != nil {
+		Error(w, r, err)
+		return
+	}
+
+	reasons := []state.ApprovalReason{}
+	if s.Approvals != nil {
+		needed, err := s.Approvals.NeededFor(r.Context(), app, next)
+		if err != nil {
+			Error(w, r, err)
+			return
+		}
+		for _, reason := range needed {
+			reasons = append(reasons, state.ApprovalReason{Reason: string(reason), Message: reason.Message()})
+		}
+	}
+
+	loosenings := gated.Loosenings
+	if loosenings == nil {
+		loosenings = []corepolicy.Loosening{}
+	}
+	JSON(w, http.StatusOK, map[string]any{
+		"dry_run":        true,
+		"egress":         doc.EgressFor(next.Egress),
+		"egress_changed": gated.EgressChanged,
+		"new_loosenings": loosenings,
+		"approval":       map[string]any{"required": len(reasons) > 0, "reasons": reasons},
+	})
 }

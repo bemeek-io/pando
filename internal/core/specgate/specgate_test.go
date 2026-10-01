@@ -264,3 +264,32 @@ func TestR154_ThePlanSaysWhetherApprovalIsNeeded(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// TestR184_ADryRunRefusesWithoutAuditing asserts specgate.Quiet: the same
+// refusal a save gets, in the same words, with nothing written to the audit
+// log, because a dry run attempts nothing.
+func TestR184_ADryRunRefusesWithoutAuditing(t *testing.T) {
+	ctx := context.Background()
+	pinned := withEgress(spec.Egress{})
+
+	for _, c := range []struct {
+		who  string
+		next *spec.AppSpec
+		verb string
+	}{
+		{"editor", withEgress(tighten), "app.egress.tighten"},
+		{"operator", withEgress(loosen), "app.egress.loosen"},
+	} {
+		az, a := newAuthorizer()
+		_, saved := specgate.Check(ctx, az, user(c.who), specgate.Change{AppID: appID, Policy: allowlist(""), Pinned: pinned, Next: c.next})
+		require.Equal(t, errs.PermVerbRequired, errs.CodeOf(saved), c.who)
+		require.NotEmpty(t, a.denied, "a save's refusal is audited")
+
+		az, a = newAuthorizer()
+		_, dry := specgate.Check(ctx, specgate.Quiet(az), user(c.who), specgate.Change{AppID: appID, Policy: allowlist(""), Pinned: pinned, Next: c.next})
+		require.Equal(t, errs.CodeOf(saved), errs.CodeOf(dry), c.who)
+		require.Equal(t, errs.As(saved).Message, errs.As(dry).Message, c.who)
+		require.Contains(t, errs.As(dry).Message, c.verb)
+		require.Empty(t, a.denied, "%s: a dry run audits nothing", c.who)
+	}
+}

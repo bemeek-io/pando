@@ -9,8 +9,10 @@
 // `egress` the ordinary way: a new revision, taking effect at the next deploy.
 //
 // The editor is offered on app.egress.tighten or app.egress.loosen (R-184).
-// Which change needs which is the server's decision, made on save against
-// what the app runs with now, and its refusal is shown as it is written.
+// Which change needs which is the server's decision. The editor asks for it
+// as the draft changes, with a dry-run save that runs every check a save runs
+// and writes nothing, and shows the answer — a refusal as it is written, or
+// what the draft loosens and whether its deploy would need approval.
 
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -27,6 +29,7 @@ import { LineSkeleton, Loading } from '../ui/Loading';
 import {
   appModeWords,
   draftOf,
+  dryRunWords,
   fromWords,
   gateWords,
   installMode,
@@ -35,7 +38,7 @@ import {
   sameDraft,
   specOf,
 } from './egress';
-import type { EgressDraft, EgressResponse } from './egress';
+import type { DryRunResult, EgressDraft, EgressResponse } from './egress';
 import { useNewestSpec } from './newestSpec';
 import { AppVerb, useCan } from './verbs';
 
@@ -217,6 +220,21 @@ function EditEgress({
   const gate = gateWords(data.install.loosening);
   const loosens = `This loosens the installation’s rules. ${gate.label}: ${gate.detail}`;
 
+  // The server's decision on the draft, asked once typing pauses.
+  const [settled, setSettled] = useState<EgressDraft>(start);
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(draft), 400);
+    return () => clearTimeout(t);
+  }, [draft]);
+  const changed = !sameDraft(settled, start);
+  const decision = useQuery({
+    queryKey: ['apps', appID, 'egress-dry-run', specOf(settled)],
+    queryFn: () => api.post<DryRunResult>(`/apps/${appID}/specs?dry_run=true`, { ...spec, egress: specOf(settled) }),
+    enabled: changed,
+    retry: false,
+  });
+  const verdict = changed && settled === draft ? decision : undefined;
+
   const save = useMutation({
     mutationFn: () => api.post(`/apps/${appID}/specs`, { ...spec, egress: specOf(draft) }),
     onSuccess: () => {
@@ -238,7 +256,7 @@ function EditEgress({
           </Button>
           <Button
             variant="primary"
-            disabled={save.isPending || sameDraft(draft, start)}
+            disabled={save.isPending || sameDraft(draft, start) || Boolean(verdict?.isError)}
             onClick={() => save.mutate()}
           >
             {save.isPending ? 'Saving' : 'Save'}
@@ -342,6 +360,12 @@ function EditEgress({
           ))}
         </fieldset>
 
+        {verdict?.isError && <Banner tone="failed">{refusal(verdict.error)}</Banner>}
+        {verdict?.data && dryRunWords(verdict.data).length > 0 && (
+          <Banner tone="info">
+            {dryRunWords(verdict.data).join(' ')}
+          </Banner>
+        )}
         {save.isError && <Banner tone="failed">{refusal(save.error)}</Banner>}
       </div>
     </Dialog>

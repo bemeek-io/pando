@@ -308,3 +308,83 @@ func TestR188_ThePlanAndTheEgressEndpointShowTheMergedRules(t *testing.T) {
 	require.GreaterOrEqual(t, got.Code, 400)
 	require.NotEqual(t, http.StatusInternalServerError, got.Code)
 }
+
+// dryRun is what POST /apps/{id}/specs?dry_run=true answers for a spec a
+// save would accept.
+type dryRun struct {
+	DryRun        bool                       `json:"dry_run"`
+	Egress        corepolicy.EffectiveEgress `json:"egress"`
+	EgressChanged bool                       `json:"egress_changed"`
+	NewLoosenings []corepolicy.Loosening     `json:"new_loosenings"`
+	Approval      struct {
+		Required bool `json:"required"`
+		Reasons  []struct {
+			Reason string `json:"reason"`
+		} `json:"reasons"`
+	} `json:"approval"`
+}
+
+func (i *install) revisionCount(s *session, appID string) int {
+	i.t.Helper()
+	got := i.do(s, http.MethodGet, "/apps/"+appID+"/specs", nil)
+	require.Equal(i.t, http.StatusOK, got.Code, got.String())
+	var out struct {
+		Revisions []json.RawMessage `json:"revisions"`
+	}
+	got.JSON(i.t, &out)
+	return len(out.Revisions)
+}
+
+// TestR188_ADryRunSaveShowsTheServersDecisionAndWritesNothing asserts that
+// ?dry_run=true answers what a save would — the merged rules, what is newly
+// loosened, whether the deploy would need approval (R-154, R-188), and the
+// same refusals with the same codes — without writing a revision.
+func TestR188_ADryRunSaveShowsTheServersDecisionAndWritesNothing(t *testing.T) {
+	t.Parallel()
+	i := newInstall(t)
+	admin := i.admin()
+	appID := i.appWithSpec(admin, "notes")
+	olive := i.user("olive")
+	i.grantControl(appID, olive, "role_operator")
+	i.setPolicy(func(d *corepolicy.Document) {
+		d.EgressMode = spec.EgressAllowlist
+		d.EgressList = []string{"api.github.com"}
+		d.EgressLoosening = corepolicy.EgressLooseningApproval
+	})
+	before := i.revisionCount(admin, appID)
+	path := "/apps/" + appID + "/specs?dry_run=true"
+
+	// Accepted: the decision, and nothing written.
+	got := i.do(olive, http.MethodPost, path, specWithEgress(map[string]any{"add": []string{"api.stripe.com"}}))
+	require.Equal(t, http.StatusOK, got.Code, got.String())
+	var out dryRun
+	got.JSON(t, &out)
+	require.True(t, out.DryRun)
+	require.True(t, out.EgressChanged)
+	require.Len(t, out.NewLoosenings, 1)
+	require.Equal(t, corepolicy.LoosenAllowlistAdd, out.NewLoosenings[0].Kind)
+	require.Equal(t, "api.stripe.com", out.NewLoosenings[0].Entry)
+	require.Len(t, out.Egress.List, 2, "the merged list the app would run with")
+	require.True(t, out.Approval.Required)
+	require.Equal(t, "egress_loosening", out.Approval.Reasons[0].Reason)
+	require.Equal(t, before, i.revisionCount(admin, appID), "a dry run writes no revision")
+
+	// Refused: the same code a save gets.
+	i.setPolicy(func(d *corepolicy.Document) { d.EgressLoosening = corepolicy.EgressLooseningForbidden })
+	refused := i.do(olive, http.MethodPost, path, specWithEgress(map[string]any{"add": []string{"api.stripe.com"}}))
+	require.Equal(t, http.StatusConflict, refused.Code, refused.String())
+	require.Equal(t, "PLAN_EGRESS_LOOSENING_FORBIDDEN", refused.ErrorCode())
+
+	i.setPolicy(func(d *corepolicy.Document) { d.EgressLoosening = corepolicy.EgressLooseningVerb })
+	refused = i.do(olive, http.MethodPost, path, specWithEgress(map[string]any{"add": []string{"api.stripe.com"}}))
+	require.Equal(t, http.StatusForbidden, refused.Code, refused.String())
+	require.Equal(t, "PERM_VERB_REQUIRED", refused.ErrorCode())
+	msg, _ := refused.envelope(t)
+	require.Contains(t, msg, "app.egress.loosen")
+
+	// A spec that does not validate is refused as a save would refuse it.
+	bad := i.do(olive, http.MethodPost, path, specWithEgress(map[string]any{"add": []string{"http://not an entry"}}))
+	require.Equal(t, "VALID_INVALID", bad.ErrorCode(), bad.String())
+
+	require.Equal(t, before, i.revisionCount(admin, appID))
+}

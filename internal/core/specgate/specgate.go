@@ -29,6 +29,28 @@ type Authorizer interface {
 	CheckControl(ctx context.Context, p authz.Principal, appID string, verb authz.Verb) error
 }
 
+// Previewer answers CheckControl's question without auditing a denial.
+// *authz.Authorizer is one, through PreviewControl.
+type Previewer interface {
+	Allows(ctx context.Context, p authz.Principal, appID string, verb authz.Verb) (bool, error)
+	PreviewControl(ctx context.Context, p authz.Principal, appID string, verb authz.Verb) error
+}
+
+// Quiet is an Authorizer for a dry run: every question is answered as it
+// would be for a real save, and no refusal is written to the audit log,
+// because nothing was attempted.
+func Quiet(az Previewer) Authorizer { return quiet{az} }
+
+type quiet struct{ az Previewer }
+
+func (q quiet) Allows(ctx context.Context, p authz.Principal, appID string, verb authz.Verb) (bool, error) {
+	return q.az.Allows(ctx, p, appID, verb)
+}
+
+func (q quiet) CheckControl(ctx context.Context, p authz.Principal, appID string, verb authz.Verb) error {
+	return q.az.PreviewControl(ctx, p, appID, verb)
+}
+
 // Change is one revision somebody wants to write.
 type Change struct {
 	AppID string

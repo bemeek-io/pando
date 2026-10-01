@@ -17,6 +17,7 @@ import (
 	"github.com/trypando/pando/internal/core/authz"
 	"github.com/trypando/pando/internal/core/backup"
 	"github.com/trypando/pando/internal/core/spec"
+	"github.com/trypando/pando/internal/core/specgate"
 	"github.com/trypando/pando/internal/core/state"
 	"github.com/trypando/pando/internal/errs"
 	"github.com/trypando/pando/internal/id"
@@ -616,6 +617,17 @@ func (s *Server) handleCreateSpec(w http.ResponseWriter, r *http.Request) {
 	body.SchemaVersion = spec.SchemaVersion
 	body.AppID = app.ID
 
+	// ?dry_run=true answers exactly as a save would and writes nothing: the
+	// same defaults, validation and gates, refusals with the same codes and
+	// words, but no revision, no audit event, and no audited denial — nothing
+	// was attempted. What the console's editors ask on every edit, so they
+	// show the server's decision instead of guessing it.
+	dryRun := r.URL.Query().Get("dry_run") == "true"
+	var gate specgate.Authorizer = s.Authz
+	if dryRun {
+		gate = specgate.Quiet(s.Authz)
+	}
+
 	// Defaults, before validation.
 	//
 	// These used to be applied only on the detection path, so a hand-written
@@ -652,7 +664,7 @@ func (s *Server) handleCreateSpec(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if override {
-			if err := s.Authz.CheckControl(r.Context(), p, app.ID, authz.AppRoutingOverride); err != nil {
+			if err := gate.CheckControl(r.Context(), p, app.ID, authz.AppRoutingOverride); err != nil {
 				Error(w, r, err)
 				return
 			}
@@ -667,8 +679,14 @@ func (s *Server) handleCreateSpec(w http.ResponseWriter, r *http.Request) {
 	// Egress (R-182 – R-184) and auto-deploy under approval (R-158), judged
 	// against the pinned spec. After validation, so an entry that does not
 	// parse is reported as such rather than resolved around.
-	if _, err := s.gateSpec(r, app, pinned, &body); err != nil {
+	gated, err := s.gateSpecWith(r, gate, app, pinned, &body)
+	if err != nil {
 		Error(w, r, err)
+		return
+	}
+
+	if dryRun {
+		s.writeDryRun(w, r, app, &body, gated)
 		return
 	}
 

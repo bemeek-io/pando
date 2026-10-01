@@ -194,6 +194,13 @@ func (s *Service) Needed(ctx context.Context, app state.App, rev state.Revision,
 	return reasons, err
 }
 
+// NeededFor is Needed for a spec that has not been saved: what deploying a
+// draft would need, for a dry-run save to show before anything is written.
+func (s *Service) NeededFor(ctx context.Context, app state.App, next *spec.AppSpec) ([]Reason, error) {
+	_, reasons, err := s.needs(ctx, app, state.Revision{Body: next}, state.TriggerManual)
+	return reasons, err
+}
+
 func (s *Service) needs(ctx context.Context, app state.App, rev state.Revision, trigger string) (policy.Document, []Reason, error) {
 	doc, err := s.Policy.Load(ctx)
 	if err != nil {

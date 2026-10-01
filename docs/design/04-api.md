@@ -119,7 +119,7 @@ GET /api/v1/apps/{id}/detection
 ```
 GET  /api/v1/apps/{id}/specs                     revision list
 GET  /api/v1/apps/{id}/specs/{rev}
-POST /api/v1/apps/{id}/specs                     create a new revision (edit)
+POST /api/v1/apps/{id}/specs                     create a new revision (edit); ?dry_run=true writes nothing
 GET  /api/v1/apps/{id}/specs/{a}/diff/{b}        classified diff (§01 4)
 
 POST /api/v1/apps/{id}/deployments                deploy a revision
@@ -133,6 +133,15 @@ POST /api/v1/apps/{id}:plan                       dry run — plan without apply
 GET  /api/v1/apps/{id}/egress                     install rules + effective rules; app.view (R-188)
 GET  /api/v1/approvals                            deploys awaiting approval on apps the caller can view
 ```
+
+**[D] A spec save can be a dry run.** `POST /specs?dry_run=true` runs everything a save runs —
+defaults, validation, the routing-override check, the egress gate, the auto-deploy refusal — and
+writes nothing: no revision, no audit event, and no audited denial, because nothing was attempted
+(`Authorizer.PreviewControl`, `specgate.Quiet`). A spec it would refuse is refused with the save's own
+code and words. One it would accept answers 200 with `egress` (the merged rules it would run with),
+`egress_changed`, `new_loosenings`, and `approval: {required, reasons}`, measured as a deploy measures
+it, against what the app last ran. The console's egress editor asks it as the draft changes, so what
+it shows is the server's decision rather than its own reading of the rules.
 
 **[D] Deploy approval (R-154 – R-159).** `POST /deployments` takes the same request whether or not
 approval is needed. When it is, the answer is still 202, with the deployment in status

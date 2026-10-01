@@ -173,3 +173,34 @@ export function listEdits(mode: InstallMode): {
   }
   return null;
 }
+
+/**
+ * What `POST /apps/{id}/specs?dry_run=true` answers for a draft the server
+ * would accept: the same checks a save runs, with nothing written. A draft it
+ * would refuse comes back as the save's own refusal.
+ */
+export interface DryRunResult {
+  dry_run: true;
+  egress: EffectiveEgress;
+  egress_changed: boolean;
+  new_loosenings: Loosening[];
+  approval: { required: boolean; reasons: Array<{ reason: string; message: string }> };
+}
+
+/**
+ * The server's decision on a draft, as sentences: what it newly loosens, and
+ * whether deploying it would need approval. Empty when the draft changes
+ * nothing worth saying.
+ */
+export function dryRunWords(r: DryRunResult): string[] {
+  const out: string[] = [];
+  if (r.new_loosenings.length === 0) {
+    if (r.egress_changed) out.push('This stays within the installation’s rules.');
+  } else {
+    out.push(...r.new_loosenings.map((l) => l.message));
+  }
+  if (r.approval.required) {
+    out.push(`Deploying it needs approval. ${r.approval.reasons.map((reason) => reason.message).join(' ')}`);
+  }
+  return out;
+}
