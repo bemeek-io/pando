@@ -33,9 +33,10 @@ export const InstallVerb = {
   AdaptersManage: 'install.adapters.manage',
   AuditRead: 'install.audit.read',
   BackupManage: 'install.backup.manage',
-  /** Every app, read-only / every app, every app verb (R-081). */
+  /** app.view and app.grants.manage on every app (R-081). Each app verb has
+   *  an install.apps.* counterpart; these are the two the console asks about. */
   AppsView: 'install.apps.view',
-  AppsManage: 'install.apps.manage',
+  AppsGrantsManage: 'install.apps.grants.manage',
   TokensManage: 'install.tokens.manage',
   /** Approve any deploy that needs approval, on any app (R-155). */
   DeploysApprove: 'install.deploys.approve',

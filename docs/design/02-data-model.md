@@ -174,7 +174,7 @@ CREATE TABLE roles (
 );
 ```
 
-**[D]** Built-in rows (`viewer`, `operator`, `owner`, `administrator`, `creator`) are seeded by migration and protected by a trigger against `UPDATE`/`DELETE` (R-081). New verbs added in a later Pando version are added to built-in roles **by migration**, which is the mechanism R-081 promises.
+**[D]** Built-in rows (`viewer`, `operator`, `owner`, `administrator`, `creator`, `app viewer`, `app manager`, `auditor`) are seeded by migration and protected by a trigger against `UPDATE`/`DELETE` (R-081). New verbs added in a later Pando version are added to built-in roles **by migration**, which is the mechanism R-081 promises.
 
 **[D]** Migration 000039 is the worked example (issues #79, #39). It renames `app.egress.override` to
 `app.egress.loosen` in **every** role that held it, custom roles included, and in host policy's

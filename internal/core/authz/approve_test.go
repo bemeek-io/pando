@@ -46,15 +46,15 @@ func TestR155_AllowsInstallAnswersWithoutAuditingADenial(t *testing.T) {
 	require.Error(t, err, "an app verb is refused install-wide (R-080)")
 }
 
-// TestR155_ManagingEveryAppIsNotApprovingItsDeploys asserts that
-// install.apps.manage, which stands for every other app verb on every app,
-// does not stand for app.deploy.approve.
+// TestR155_ManagingEveryAppIsNotApprovingItsDeploys asserts that App manager,
+// which holds every other app verb's install-wide counterpart, does not
+// approve deploys: install.deploys.approve is that verb's, and the role
+// leaves it out as Owner leaves out app.deploy.approve.
 func TestR155_ManagingEveryAppIsNotApprovingItsDeploys(t *testing.T) {
 	ctx := context.Background()
 	s := newStore()
 	s.userStatus[bob] = "active"
-	s.roles["role_manager"] = authz.Role{ID: "role_manager", Verbs: []authz.Verb{authz.InstallAppsManage}}
-	s.install = []authz.Grant{{Plane: "control", PrincipalKind: "user", PrincipalID: bob, RoleID: "role_manager"}}
+	s.install = []authz.Grant{{Plane: "control", PrincipalKind: "user", PrincipalID: bob, RoleID: authz.RoleAppManager}}
 	a := authz.New(s, nil, nil)
 	bobP := authz.Principal{Kind: authz.KindUser, ID: bob, UserID: bob, Status: "active"}
 

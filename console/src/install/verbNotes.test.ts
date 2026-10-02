@@ -20,4 +20,9 @@ describe('every verb the console knows says what it lets somebody do', () => {
   it('has no note for a verb that no longer exists', () => {
     expect(VERB_NOTES['app.egress.override']).toBeUndefined();
   });
+
+  // Issue #81 replaced install.apps.manage with the App manager role.
+  it('has no note for the retired install.apps.manage bundle', () => {
+    expect(VERB_NOTES['install.apps.manage']).toBeUndefined();
+  });
 });

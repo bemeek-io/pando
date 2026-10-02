@@ -220,8 +220,8 @@ by itself. The consequence is always stated with it: *anyone on the internet, wi
 
 **R-080 [D]** Control-plane permissions are individual verbs, in two scopes. **App-scoped** verbs are
 held through a grant on one app. **Install-scoped** verbs are held through a grant with no app, and
-confer nothing on any particular app — except the two `install.apps.*` verbs, which confer the same
-app verbs on every app.
+confer nothing on any particular app — except the `install.apps.*` verbs, each of which confers one
+app verb on every app, including apps created after the grant (issue #81).
 
 Install-scoped:
 
@@ -233,11 +233,33 @@ Install-scoped:
 | `install.adapters.manage` | Configure adapters |
 | `install.audit.read` | Read the install-wide audit log |
 | `install.backup.manage` | Take, verify and restore backups (R-212–R-216) |
-| `install.apps.view` | See every app read-only: `app.view` and `app.logs.read` on each, without a grant on it |
-| `install.apps.manage` | Manage every app: every app-scoped verb on each, without a grant on it |
 | `install.tokens.manage` | List, create and revoke service tokens (R-060) |
 | `install.deploys.approve` | Approve or reject any deploy that needs approval, on any app, including one's own (R-155) |
 | `app.create` | Create an app. Install-scoped despite the name: there is no app yet when it is checked |
+| `install.apps.*` | One per app verb, below: that app verb on every app, without a grant on it |
+
+Every app verb has exactly one install-scoped counterpart, which grants it on every app and nothing
+else. There are no bundles; a combination is a role. Host policy is asked about the app verb, so a verb
+it disables stays disabled for someone holding it install-wide (R-272). None of them is use: opening
+an app still needs a data grant or ownership (R-072, R-087).
+
+| App verb | Install-wide counterpart |
+|---|---|
+| `app.view` | `install.apps.view` |
+| `app.logs.read` | `install.apps.logs.read` |
+| `app.deploy` | `install.apps.deploy` |
+| `app.restart` | `install.apps.restart` |
+| `app.spec.edit` | `install.apps.spec.edit` |
+| `app.secrets.write` | `install.apps.secrets.write` |
+| `app.secrets.read` | `install.apps.secrets.read` |
+| `app.exec` | `install.apps.exec` |
+| `app.grants.manage` | `install.apps.grants.manage` |
+| `app.routing.override` | `install.apps.routing.override` |
+| `app.resources.override` | `install.apps.resources.override` |
+| `app.egress.tighten` | `install.apps.egress.tighten` |
+| `app.egress.loosen` | `install.apps.egress.loosen` |
+| `app.deploy.approve` | `install.deploys.approve` |
+| `app.delete` | `install.apps.delete` |
 
 App-scoped:
 
@@ -259,7 +281,7 @@ App-scoped:
 | `app.deploy.approve` | Approve or reject a deploy of this app that needs approval (R-155). In no built-in role |
 | `app.delete` | Delete the app |
 
-**R-081 [D]** Five **immutable** built-in roles ship out of the box. They cannot be edited; Pando may add newly-introduced verbs to them across versions.
+**R-081 [D]** Eight **immutable** built-in roles ship out of the box. They cannot be edited; Pando may add newly-introduced verbs to them across versions.
 
 | Role | Scope | Verbs |
 |---|---|---|
@@ -268,17 +290,20 @@ App-scoped:
 | **Owner** | app | All app-scoped verbs except `app.deploy.approve` (R-155) |
 | **Administrator** | install | All install-scoped verbs |
 | **Creator** | install | `app.create` — makes apps, and so owns and manages the ones it makes (R-073), and nothing else |
+| **App viewer** | install | The counterparts of Viewer's verbs: `install.apps.view`, `install.apps.logs.read` |
+| **App manager** | install | The counterparts of Owner's verbs: every `install.apps.*` verb, and not `install.deploys.approve` |
+| **Auditor** | install | `install.audit.read`, `install.apps.view`, `install.apps.logs.read` — sees every app and the audit log, changes nothing |
 
 Owner and Administrator partition the catalog but for one verb, and neither contains a verb from the
 other's scope. The exception is `app.deploy.approve`, which no built-in role holds: signing off on a
 deploy is a trust an installation hands out deliberately, to people it names (R-155). An
-Owner of every app in the installation still administers nothing. An Administrator holds
-`install.apps.manage`, so it can view and manage **any** app, whoever made it, with every app verb
-but `app.deploy.approve` — it approves through `install.deploys.approve` instead — subject to host
-policy like everyone (R-272). It is still not the app's owner of record (R-031), and
+Owner of every app in the installation still administers nothing. An Administrator holds every
+install verb, `install.apps.*` among them, so it can view and manage **any** app, whoever made it, with
+every app verb — approving deploys through `install.deploys.approve` — subject to host policy like
+everyone (R-272). It is still not the app's owner of record (R-031), and
 managing an app is not using it: opening an app through the proxy still needs a data grant or
-ownership (R-072, R-087). A custom role may hold `install.apps.view` alone, to see every app and
-change none.
+ownership (R-072, R-087). App viewer, App manager and Auditor are Viewer and Owner on every
+app, and the security reviewer's role; a custom role may hold any one `install.apps.*` verb alone.
 
 **R-082 [D]** Custom roles may be composed from the verb list and assigned to users or groups. A role's name is unique ignoring case and surrounding spaces, and no custom role may take the name of a built-in one.
 
@@ -564,7 +589,7 @@ reference is dropped. It describes and never acts. Any signed-in user may ask.
 
 Approval is a human sign-off on a change. It is not a test gate (R-011).
 
-**R-155 [D]** **Two verbs approve.** Anyone holding `install.deploys.approve` may approve or reject any deploy on any app. The Administrator role holds it. Anyone holding `app.deploy.approve` on an app may approve or reject deploys of that app. No built-in role holds it, so an installation grants it through a custom role (R-082). Either verb may approve its holder's own request. An installation that wants two people keeps the verb from the people who deploy. `install.apps.manage` does not stand for `app.deploy.approve`.
+**R-155 [D]** **Two verbs approve.** Anyone holding `install.deploys.approve` may approve or reject any deploy on any app. The Administrator role holds it. Anyone holding `app.deploy.approve` on an app may approve or reject deploys of that app. No built-in role holds it, so an installation grants it through a custom role (R-082). Either verb may approve its holder's own request. An installation that wants two people keeps the verb from the people who deploy. App manager does not hold `install.deploys.approve`.
 
 **R-156 [D]** **A request is tied to one spec revision**, and so to one commit (R-120). Approving it deploys that revision through the ordinary plan and deploy path. The plan runs again at approval, because policy may have changed while the request waited. A newer request for the same app supersedes an older one that is still waiting. Host policy sets how many approvals a deploy needs (default one) and how long a request waits before it expires (default seven days; zero means never). A rejection by any approver ends the request.
 

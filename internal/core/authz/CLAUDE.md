@@ -66,19 +66,28 @@ not imply `app.view`. Implication graphs are where authorization bugs live. The 
 sensible combinations instead.
 
 The single exception is deliberate and lives in one table, `everyApp`, read in one place,
-`CheckControl` step 6b: `install.apps.manage` is every app verb on every app, `install.apps.view` is
-`app.view` + `app.logs.read` on every app (R-081). Do not read it anywhere else, and never in
+`CheckControl` step 6b: each app verb has one install-wide counterpart — `install.apps.deploy` is
+`app.deploy` on every app, `install.deploys.approve` is `app.deploy.approve` (R-080, R-081, issue #81).
+One verb per verb, never a bundle; a bundle is a role (App viewer, App manager, Auditor). A new app
+verb has no counterpart until one is written into the table, and
+`TestR080_EveryAppVerbHasOneInstallCounterpart` fails until then. Do not read it anywhere else, and never in
 `CheckData`. `AppVerbs` and `Allows` go through the same `control` function, so what the console
 shows as editable cannot disagree with what `CheckControl` allows.
 
-Built-in roles (`viewer`, `operator`, `owner`) are seeded by migration and trigger-protected (R-081).
+Built-in roles (`viewer`, `operator`, `owner`, and the install-scoped `administrator`, `creator`,
+`app viewer`, `app manager`, `auditor`) are seeded by migration and trigger-protected (R-081).
 A new verb in a later Pando version is added to built-in roles **by migration**. That is the only
 sanctioned way built-in role contents change.
 
 ## Audit
 
-**Every denial is audited, not only successes.** A denial pattern is the signal that matters for
-detecting misuse, and it is the thing most commonly left out.
+**Every denial is audited, not only successes.** And an app verb allowed through an install-wide grant
+rather than one on the app is audited too (`ThroughInstall`, `authz.install_wide`), except
+`app.view` and `app.logs.read`, which the console asks constantly. Only `CheckControl` records it;
+`AppVerbs`, `Allows` and `PreviewControl` decide what to show and record nothing.
+
+A denial pattern is the signal that matters for detecting
+misuse, and it is the thing most commonly left out.
 
 Audit is written **before** the privileged action, not after. An exec session that fails to open is
 still recorded as attempted (R-228).

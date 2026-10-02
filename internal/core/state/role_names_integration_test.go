@@ -23,16 +23,16 @@ func TestR082_ACustomRoleCannotTakeAnExistingRolesName(t *testing.T) {
 	app := []authz.Verb{authz.AppView}
 	install := []authz.Verb{authz.InstallAuditRead}
 
-	for _, name := range []string{"Administrator", "viewer", " OWNER ", "Creator", "operator"} {
+	for _, name := range []string{"Administrator", "viewer", " OWNER ", "Creator", "operator", "Auditor", "App Viewer", "app manager"} {
 		_, err := roles.CreateCustom(ctx, name, "app", app)
 		require.Error(t, err, name)
 		require.ErrorContains(t, err, "built-in role", name)
 	}
 
-	_, err := roles.CreateCustom(ctx, "Auditor", "install", install)
+	_, err := roles.CreateCustom(ctx, "Audit readers", "install", install)
 	require.NoError(t, err)
-	_, err = roles.CreateCustom(ctx, "auditor ", "install", install)
-	require.ErrorContains(t, err, `already a role called "Auditor"`)
+	_, err = roles.CreateCustom(ctx, "audit readers ", "install", install)
+	require.ErrorContains(t, err, `already a role called "Audit readers"`)
 
 	// And the database says so on its own, whatever the code does.
 	_, err = db.Exec(ctx,

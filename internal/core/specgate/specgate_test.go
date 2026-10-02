@@ -47,6 +47,9 @@ func (a *auditor) Denied(_ context.Context, _ authz.Principal, _ string, v authz
 	a.denied = append(a.denied, v)
 }
 
+func (a *auditor) ThroughInstall(context.Context, authz.Principal, string, authz.Verb, authz.Verb, authz.Grant) {
+}
+
 func newAuthorizer() (*authz.Authorizer, *auditor) {
 	base := []authz.Verb{authz.AppView, authz.AppSpecEdit, authz.AppDeploy}
 	with := func(vs ...authz.Verb) authz.Role {

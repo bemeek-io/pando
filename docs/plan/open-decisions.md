@@ -274,8 +274,8 @@ Issue #39 asked for a request-then-approve flow for change control. Its question
    was to keep the rule simple and put the control in who holds the verb. `install.deploys.approve`
    (Administrator) approves anything; `app.deploy.approve` (no built-in role, granted through a custom
    role) approves one app's. An install that wants two people keeps the verb from the people who
-   deploy (R-155). Owner does not get `app.deploy.approve`, and `install.apps.manage` does not stand
-   for it. Agents' tokens are denied both by default (`agent_disabled_verbs`): approval is a human
+   deploy (R-155). Owner does not get `app.deploy.approve`, and App manager does not hold
+   `install.deploys.approve`, its install-wide counterpart. Agents' tokens are denied both by default (`agent_disabled_verbs`): approval is a human
    sign-off.
 5. **Do requests expire?** Yes, after `deploy_approval_expiry_hours` (default 168, seven days; 0 means
    never). A newer request for the same app supersedes an older waiting one (R-156).

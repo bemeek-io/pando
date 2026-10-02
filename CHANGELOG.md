@@ -74,8 +74,19 @@ Unreleased above it. -->
   that ran needs no approval; auto-deploy is refused while approval is required. The console has an
   **Approvals** screen; the API, `pando approvals` and three MCP tools do the same. Agent tokens
   cannot approve by default.
+- **Permissions on every app, one at a time** (#81). Each app permission has an installation-wide
+  counterpart that grants it on every app, including apps added later: `install.apps.deploy`,
+  `install.apps.logs.read`, `install.apps.secrets.read` and so on. A group gets "read every app's logs"
+  once instead of a grant on each app. Three new built-in installation roles: **App viewer** (see every
+  app and its logs), **App manager** (Owner on every app, without approving deploys) and **Auditor**
+  (every app's view and logs, and the audit log). A change allowed through one of these, rather than a
+  grant on the app, is written to the audit log as `authz.install_wide`, naming the grant.
 
 ### Changed
+
+- `install.apps.manage` is gone; the **App manager** role holds its thirteen verbs. `install.apps.view`
+  now means seeing every app only, and every role that held it also holds `install.apps.logs.read`, so
+  what it allowed is unchanged.
 
 - An install has at most one AI adapter per provider, and an AI adapter has no default: each AI
   function is off until assigned. The existing AI adapter keeps plan repair, answering detection's
@@ -129,6 +140,12 @@ Unreleased above it. -->
   backup" only when one was taken.
 
 ### Upgrade notes
+
+- Migration 000040 replaces `install.apps.manage` with its thirteen `install.apps.*` verbs in every role
+  that held it, custom roles included, adds `install.apps.logs.read` wherever `install.apps.view` was,
+  and adds the App viewer, App manager and Auditor roles. A custom role already named one of those is
+  renamed with " (custom)". Scripts that create a role with `install.apps.manage` need the new verbs,
+  or a grant of `role_app_manager`.
 
 - Migration 000039 renames `app.egress.override` to `app.egress.loosen` in every role that held it,
   custom roles included, and in host policy's disabled-verb lists. Scripts that name the old verb need

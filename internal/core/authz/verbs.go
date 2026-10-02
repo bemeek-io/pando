@@ -27,18 +27,33 @@ const (
 	// source allowlist would hand it to everyone who could edit one.
 	InstallBackupManage Verb = "install.backup.manage"
 
-	// InstallAppsView and InstallAppsManage are the two install verbs that
-	// reach into apps: seeing every app read-only, and managing every app with
-	// every app verb. They are what makes an administrator able to look after
-	// an app somebody else made without first being granted it — the one
-	// sanctioned way an install grant bears on an app, evaluated in exactly one
-	// place, CheckControl (see everyApp). Separate verbs so a custom role can
-	// let someone look at every app and change none of them.
+	// The install.apps.* verbs are each app verb's install-wide counterpart:
+	// install.apps.deploy is app.deploy on every app, including apps made
+	// later (issue #81). They are how an install grant bears on an app — the
+	// one sanctioned way, read in exactly one place, CheckControl, through the
+	// table in everyApp. One verb per app verb rather than bundles, so a
+	// custom role can carry "read every app's logs" without "deploy every
+	// app", and so a group gets a permission once instead of a grant on each
+	// app. The old bundles, install.apps.view as Viewer and
+	// install.apps.manage as Owner on every app, are built-in roles now:
+	// App viewer and App manager (R-081).
 	//
-	// Control plane only. Neither appears in CheckData: using an app still
-	// needs a data grant or ownership (R-072, R-087).
-	InstallAppsView   Verb = "install.apps.view"
-	InstallAppsManage Verb = "install.apps.manage"
+	// Control plane only. None appears in CheckData: using an app still needs
+	// a data grant or ownership (R-072, R-087).
+	InstallAppsView              Verb = "install.apps.view"
+	InstallAppsLogsRead          Verb = "install.apps.logs.read"
+	InstallAppsDeploy            Verb = "install.apps.deploy"
+	InstallAppsRestart           Verb = "install.apps.restart"
+	InstallAppsSpecEdit          Verb = "install.apps.spec.edit"
+	InstallAppsSecretsWrite      Verb = "install.apps.secrets.write"
+	InstallAppsSecretsRead       Verb = "install.apps.secrets.read"
+	InstallAppsExec              Verb = "install.apps.exec"
+	InstallAppsGrantsManage      Verb = "install.apps.grants.manage"
+	InstallAppsRoutingOverride   Verb = "install.apps.routing.override"
+	InstallAppsResourcesOverride Verb = "install.apps.resources.override"
+	InstallAppsEgressTighten     Verb = "install.apps.egress.tighten"
+	InstallAppsEgressLoosen      Verb = "install.apps.egress.loosen"
+	InstallAppsDelete            Verb = "install.apps.delete"
 
 	// InstallTokensManage covers service tokens (R-060): listing, creating and
 	// revoking them. Its own verb rather than install.users.manage's, because a
@@ -48,10 +63,11 @@ const (
 	InstallTokensManage Verb = "install.tokens.manage"
 
 	// InstallDeploysApprove approves or rejects any deploy that needs
-	// approval, on any app, including the holder's own (R-155). The install
-	// half of approval; app.deploy.approve is the per-app half. Not reached
-	// through install.apps.manage: approval is a trust an installation hands
-	// out on purpose, and managing apps does not imply it.
+	// approval, on any app, including the holder's own (R-155). It is
+	// app.deploy.approve's install-wide counterpart, older than the
+	// install.apps.* verbs and named for what it does rather than renamed to
+	// match them. Not in App manager: approval is a trust an installation
+	// hands out on purpose, and managing apps does not imply it.
 	InstallDeploysApprove Verb = "install.deploys.approve"
 
 	// AppCreate is install-scoped despite its name: there is no app yet when it
@@ -106,7 +122,19 @@ var Verbs = []Verb{
 	InstallAuditRead,
 	InstallBackupManage,
 	InstallAppsView,
-	InstallAppsManage,
+	InstallAppsLogsRead,
+	InstallAppsDeploy,
+	InstallAppsRestart,
+	InstallAppsSpecEdit,
+	InstallAppsSecretsWrite,
+	InstallAppsSecretsRead,
+	InstallAppsExec,
+	InstallAppsGrantsManage,
+	InstallAppsRoutingOverride,
+	InstallAppsResourcesOverride,
+	InstallAppsEgressTighten,
+	InstallAppsEgressLoosen,
+	InstallAppsDelete,
 	InstallTokensManage,
 	InstallDeploysApprove,
 	AppCreate,
@@ -149,11 +177,11 @@ const (
 	RoleOperator = "role_operator"
 	RoleOwner    = "role_owner"
 
-	// RoleAdministrator is install-scoped and holds no app verbs — but it holds
-	// install.apps.manage, which CheckControl reads as every app verb on every
-	// app (R-081). An administrator can look after any app without a grant on
-	// it. They are still not its owner: R-031's owner of record is unchanged,
-	// and using the app still needs a data grant (R-087).
+	// RoleAdministrator is install-scoped and holds every install verb and no
+	// app verb — but the install.apps.* verbs among them are every app verb
+	// on every app (R-081), so an administrator can look after any app
+	// without a grant on it. They are still not its owner: R-031's owner of
+	// record is unchanged, and using the app still needs a data grant (R-087).
 	RoleAdministrator = "role_administrator"
 
 	// RoleCreator is install-scoped and holds one verb, app.create. A creator
@@ -161,6 +189,19 @@ const (
 	// (R-073) — not because this role says anything about apps — so they
 	// manage those and nothing else in the installation.
 	RoleCreator = "role_creator"
+
+	// RoleAppViewer and RoleAppManager are the Viewer and the Owner on every
+	// app, install-scoped: the counterparts of each of their app verbs. They
+	// replace the install.apps.view and install.apps.manage bundles, so a
+	// grant of either reads the same as one of those did (issue #81).
+	// App manager does not approve deploys, as Owner does not (R-155).
+	RoleAppViewer  = "role_app_viewer"
+	RoleAppManager = "role_app_manager"
+
+	// RoleAuditor sees every app, reads its logs and reads the audit log, and
+	// changes nothing: the security group's role (issue #81). Not
+	// install.view — the accounts, adapters and policy are not what it audits.
+	RoleAuditor = "role_auditor"
 )
 
 // Role is a named set of verbs.
@@ -200,11 +241,11 @@ func InstallScoped(v Verb) bool {
 	switch v {
 	case InstallView, InstallUsersManage, InstallPolicyManage,
 		InstallAdaptersManage, InstallAuditRead, InstallBackupManage,
-		InstallAppsView, InstallAppsManage, InstallTokensManage,
-		InstallDeploysApprove, AppCreate:
+		InstallTokensManage, InstallDeploysApprove, AppCreate:
 		return true
 	default:
-		return false
+		_, ok := everyApp[v]
+		return ok
 	}
 }
 
@@ -219,21 +260,51 @@ func AppVerbs() []Verb {
 	return out
 }
 
-// everyApp is the whole of how an install grant bears on an app: the app
-// verbs each of the two install.apps verbs stands for, on every app.
+// everyApp is the whole of how an install grant bears on an app: each app
+// verb's install-wide counterpart, which CheckControl reads as that app verb
+// on every app (R-081, issue #81).
 //
-// This is the one place an install verb implies app verbs, and it is a table
-// rather than a rule so that it can be read in one look. install.apps.view is
-// the Viewer role's verbs; install.apps.manage is the Owner role's (R-081),
-// which is every app verb but app.deploy.approve. Approving deploys is
-// install.deploys.approve's, checked on its own (R-155).
-func everyApp(install Verb, verb Verb) bool {
-	switch install {
-	case InstallAppsManage:
-		return !InstallScoped(verb) && verb != AppDeployApprove
-	case InstallAppsView:
-		return verb == AppView || verb == AppLogsRead
-	default:
-		return false
+// This is the one place an install verb implies an app verb, and it is a
+// table rather than a rule — not "strip install.apps. and prepend app." — so
+// that it can be read in one look, and so a verb added to the catalog has no
+// counterpart until somebody writes one here on purpose. One install verb per
+// app verb, never a bundle: a bundle is a role (App viewer, App manager).
+//
+// Keyed by the install verb. TestR080_EveryAppVerbHasOneInstallCounterpart
+// holds it to exactly one entry per app verb.
+var everyApp = map[Verb]Verb{
+	InstallAppsView:              AppView,
+	InstallAppsLogsRead:          AppLogsRead,
+	InstallAppsDeploy:            AppDeploy,
+	InstallAppsRestart:           AppRestart,
+	InstallAppsSpecEdit:          AppSpecEdit,
+	InstallAppsSecretsWrite:      AppSecretsWrite,
+	InstallAppsSecretsRead:       AppSecretsRead,
+	InstallAppsExec:              AppExec,
+	InstallAppsGrantsManage:      AppGrantsManage,
+	InstallAppsRoutingOverride:   AppRoutingOverride,
+	InstallAppsResourcesOverride: AppResourceOverride,
+	InstallAppsEgressTighten:     AppEgressTighten,
+	InstallAppsEgressLoosen:      AppEgressLoosen,
+	InstallDeploysApprove:        AppDeployApprove,
+	InstallAppsDelete:            AppDelete,
+}
+
+// EveryApp returns the app verb an install verb stands for on every app, and
+// whether it stands for one. For listing and explaining access; deciding it
+// is CheckControl's.
+func EveryApp(install Verb) (Verb, bool) {
+	v, ok := everyApp[install]
+	return v, ok
+}
+
+// InstallCounterpart returns the install verb that stands for an app verb on
+// every app, and whether there is one.
+func InstallCounterpart(app Verb) (Verb, bool) {
+	for install, v := range everyApp {
+		if v == app {
+			return install, true
+		}
 	}
+	return "", false
 }

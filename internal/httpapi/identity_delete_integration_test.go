@@ -155,9 +155,11 @@ func TestR081_EveryBuiltInRoleIsListed(t *testing.T) {
 	}
 
 	require.Equal(t,
-		[]string{"role_administrator", "role_creator", "role_owner", "role_operator", "role_viewer"},
+		[]string{"role_administrator", "role_app_manager", "role_auditor", "role_app_viewer", "role_creator",
+			"role_owner", "role_operator", "role_viewer"},
 		list("?scope=all"), "installation roles first, broadest first")
-	require.Equal(t, []string{"role_administrator", "role_creator"}, list(""), "the default is unchanged")
+	require.Equal(t, []string{"role_administrator", "role_app_manager", "role_app_viewer", "role_auditor", "role_creator"},
+		list(""), "the default is unchanged: installation roles, by name")
 	require.Equal(t, []string{"role_owner", "role_operator", "role_viewer"}, list("?scope=app"))
 	require.Equal(t, http.StatusBadRequest, i.do(admin, http.MethodGet, "/roles?scope=everything", nil).Code)
 }
