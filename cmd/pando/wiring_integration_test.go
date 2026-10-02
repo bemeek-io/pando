@@ -390,6 +390,36 @@ func TestEveryAuthorizationDenialIsAudited(t *testing.T) {
 	require.Equal(t, string(errs.PermDenied), records[0].Detail["code"])
 }
 
+// An app verb allowed through an install-wide grant is recorded as such, with
+// the grant that carried it (issue #81): the log says the access came from
+// the installation, not from a grant on this app.
+func TestR080_AccessThroughAnInstallGrantIsRecorded(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := connected(t)
+
+	auditDenials{audit.New(db.Pool)}.ThroughInstall(ctx,
+		authz.Principal{Kind: authz.KindToken, ID: "tok_01HQ8", UserID: "usr_01HQ8"},
+		"app_01HQ8", authz.AppDeploy, authz.InstallAppsDeploy,
+		authz.Grant{ID: "gr_01HQ8", PrincipalKind: "group", PrincipalID: "grp_01HQ8", RoleID: authz.RoleAppManager})
+
+	records, err := audit.NewReader(db.Pool).List(ctx, audit.Query{Action: "authz.install_wide"})
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	got := records[0]
+	require.Equal(t, "app_01HQ8", got.AppID)
+	require.Equal(t, "tok_01HQ8", got.PrincipalID)
+	require.Equal(t, "usr_01HQ8", got.OnBehalfOf)
+	require.Equal(t, "grant", got.TargetKind)
+	require.Equal(t, "gr_01HQ8", got.TargetID)
+	require.Equal(t, map[string]any{
+		"verb":    string(authz.AppDeploy),
+		"through": string(authz.InstallAppsDeploy),
+		"role":    authz.RoleAppManager,
+		"holder":  "group:grp_01HQ8",
+	}, got.Detail)
+}
+
 // The reconciler acts with no principal — nobody asked for a drift correction,
 // which is the point of it. Recorded as a system action so "who restarted this"
 // has an answer, and the answer is Pando.
