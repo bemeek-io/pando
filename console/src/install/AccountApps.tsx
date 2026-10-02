@@ -75,11 +75,13 @@ export function AccountApps({
     queryKey: ['roles', 'app'],
     queryFn: () => api.get<{ roles: Role[] }>('/roles?scope=app'),
   });
-  // Every app is manageable by someone holding install.apps.manage, so for
-  // them — and only them — the list offers access to an app the principal
-  // does not have yet. Anyone else manages the apps they were granted, from
-  // each app's Sharing tab.
-  const everyApp = useInstallVerb(InstallVerb.AppsManage);
+  // Someone who sees every app and manages access to every app
+  // (install.apps.view and install.apps.grants.manage) can be offered an app
+  // the principal does not have yet. Anyone else manages the apps they were
+  // granted, from each app's Sharing tab.
+  const seesEveryApp = useInstallVerb(InstallVerb.AppsView);
+  const sharesEveryApp = useInstallVerb(InstallVerb.AppsGrantsManage);
+  const everyApp = seesEveryApp && sharesEveryApp;
   const [adding, setAdding] = useState(false);
 
   const rows = access.data?.apps ?? [];

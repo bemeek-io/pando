@@ -1366,7 +1366,8 @@ func warnIfRetriesAreFast(logger *zap.Logger, schedule []time.Duration) {
 		zap.String("note", "this is a testing setting (R-149). An app that cannot start will be retried this often, forever."))
 }
 
-// auditDenials writes an audit event for every authorization denial.
+// auditDenials writes an audit event for every authorization denial, and for
+// every change allowed through an install-wide grant.
 //
 // Every denial, not only successes: a denial pattern is the signal that matters
 // for detecting misuse, and it is the thing most commonly left out.
@@ -1380,6 +1381,27 @@ func (a auditDenials) Denied(ctx context.Context, p authz.Principal, appID strin
 		Action:        "authz.denied",
 		AppID:         appID,
 		Detail:        map[string]any{"verb": string(verb), "code": string(code)},
+	})
+}
+
+// ThroughInstall records an app verb allowed by an install-wide grant rather
+// than one on the app (issue #81): the audit log says the access came from
+// the installation, through which verb and which grant.
+func (a auditDenials) ThroughInstall(ctx context.Context, p authz.Principal, appID string, verb, through authz.Verb, grant authz.Grant) {
+	_ = a.writer.Write(ctx, audit.Event{
+		PrincipalKind: audit.PrincipalKind(p.Kind),
+		PrincipalID:   p.ID,
+		OnBehalfOf:    p.UserID,
+		Action:        "authz.install_wide",
+		AppID:         appID,
+		TargetKind:    "grant",
+		TargetID:      grant.ID,
+		Detail: map[string]any{
+			"verb":    string(verb),
+			"through": string(through),
+			"role":    grant.RoleID,
+			"holder":  grant.PrincipalKind + ":" + grant.PrincipalID,
+		},
 	})
 }
 

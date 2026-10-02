@@ -40,6 +40,9 @@ func newStore() *store {
 			authz.RoleOperator:      {ID: authz.RoleOperator, Name: "operator", Builtin: true, Verbs: []authz.Verb{authz.AppView, authz.AppLogsRead, authz.AppDeploy, authz.AppRestart, authz.AppSpecEdit, authz.AppSecretsWrite, authz.AppEgressTighten}},
 			authz.RoleOwner:         {ID: authz.RoleOwner, Name: "owner", Builtin: true, Verbs: appVerbs()},
 			authz.RoleAdministrator: {ID: authz.RoleAdministrator, Name: "administrator", Builtin: true, Verbs: installVerbs()},
+			authz.RoleAppViewer:     {ID: authz.RoleAppViewer, Name: "app viewer", Builtin: true, Verbs: []authz.Verb{authz.InstallAppsView, authz.InstallAppsLogsRead}},
+			authz.RoleAppManager:    {ID: authz.RoleAppManager, Name: "app manager", Builtin: true, Verbs: appManagerVerbs()},
+			authz.RoleAuditor:       {ID: authz.RoleAuditor, Name: "auditor", Builtin: true, Verbs: []authz.Verb{authz.InstallAuditRead, authz.InstallAppsView, authz.InstallAppsLogsRead}},
 		},
 	}
 }
@@ -53,6 +56,17 @@ func appVerbs() []authz.Verb {
 		if !authz.InstallScoped(v) && v != authz.AppDeployApprove {
 			out = append(out, v)
 		}
+	}
+	return out
+}
+
+// appManagerVerbs is App manager's set: the install-wide counterpart of each of
+// the Owner's verbs, which is every app verb's but app.deploy.approve's.
+func appManagerVerbs() []authz.Verb {
+	var out []authz.Verb
+	for _, v := range appVerbs() {
+		c, _ := authz.InstallCounterpart(v)
+		out = append(out, c)
 	}
 	return out
 }
@@ -159,10 +173,22 @@ func (d denyingPolicy) Allows(_ context.Context, p authz.Principal, v authz.Verb
 	return errs.New(errs.PolicyExecDisabled, "Running commands in apps is turned off for this installation.")
 }
 
-type recorder struct{ denials int }
+type recorder struct {
+	denials int
+	through []throughInstall
+}
+
+type throughInstall struct {
+	appID, grantID string
+	verb, through  authz.Verb
+}
 
 func (r *recorder) Denied(context.Context, authz.Principal, string, authz.Verb, errs.Code) {
 	r.denials++
+}
+
+func (r *recorder) ThroughInstall(_ context.Context, _ authz.Principal, appID string, verb, through authz.Verb, g authz.Grant) {
+	r.through = append(r.through, throughInstall{appID: appID, grantID: g.ID, verb: verb, through: through})
 }
 
 // --- fixtures --------------------------------------------------------------
@@ -416,16 +442,19 @@ func TestSystemPrincipalBypassesGrantsButIsStillAPrincipal(t *testing.T) {
 }
 
 func TestVerbCatalogIsClosed(t *testing.T) {
-	// 15 app verbs plus the eleven install-scoped ones (O-17, R-217, R-080's
-	// install.apps.*, install.tokens.manage and install.deploys.approve). The
-	// count is here deliberately: R-080 says the catalog is fixed, so adding a
-	// verb should require editing a test rather than only a constant.
-	require.Len(t, authz.Verbs, 26)
+	// 15 app verbs, and 23 install-scoped ones: the nine that stand on their
+	// own (O-17, R-217, install.tokens.manage, install.deploys.approve,
+	// app.create) and the fourteen install.apps.* counterparts of app verbs
+	// (issue #81). The count is here deliberately: R-080 says the catalog is
+	// fixed, so adding a verb should require editing a test rather than only a
+	// constant.
+	require.Len(t, authz.Verbs, 38)
 	require.True(t, authz.IsVerb(authz.AppEgressTighten), "R-184's verbs must exist")
 	require.True(t, authz.IsVerb(authz.AppEgressLoosen), "R-184's verbs must exist")
 	require.False(t, authz.IsVerb(authz.Verb("app.egress.override")), "renamed to app.egress.loosen by issue #79")
 	require.True(t, authz.IsVerb(authz.AppDeployApprove), "R-155's verbs must exist")
 	require.True(t, authz.IsVerb(authz.InstallDeploysApprove), "R-155's verbs must exist")
+	require.False(t, authz.IsVerb(authz.Verb("install.apps.manage")), "a bundle, replaced by the App manager role in issue #81")
 	require.False(t, authz.IsVerb(authz.Verb("app.do.anything")))
 
 	var install, app int
@@ -436,8 +465,44 @@ func TestVerbCatalogIsClosed(t *testing.T) {
 			app++
 		}
 	}
-	require.Equal(t, 11, install)
+	require.Equal(t, 23, install)
 	require.Equal(t, 15, app)
+}
+
+// TestR080_EveryAppVerbHasOneInstallCounterpart asserts issue #81's table:
+// every app verb has exactly one install-scoped verb standing for it on every
+// app, and every install verb stands for at most one app verb. A verb added
+// to the catalog fails here until its counterpart is written into everyApp
+// on purpose.
+func TestR080_EveryAppVerbHasOneInstallCounterpart(t *testing.T) {
+	seen := map[authz.Verb]authz.Verb{}
+	for _, v := range authz.AppVerbs() {
+		c, ok := authz.InstallCounterpart(v)
+		require.True(t, ok, "%s has no install-wide counterpart", v)
+		require.True(t, authz.IsVerb(c), "%s's counterpart %s is not in the catalog", v, c)
+		require.True(t, authz.InstallScoped(c), "%s's counterpart %s must be install-scoped (R-080)", v, c)
+		back, ok := authz.EveryApp(c)
+		require.True(t, ok)
+		require.Equal(t, v, back)
+		_, dup := seen[c]
+		require.False(t, dup, "%s stands for two app verbs", c)
+		seen[c] = v
+	}
+
+	// The install verbs that are not counterparts stand for nothing on an app.
+	for _, v := range authz.Verbs {
+		if !authz.InstallScoped(v) {
+			_, ok := authz.EveryApp(v)
+			require.False(t, ok, "an app verb is not an install counterpart: %s", v)
+			continue
+		}
+		if _, ok := seen[v]; !ok {
+			_, stands := authz.EveryApp(v)
+			require.False(t, stands, "%s", v)
+		}
+	}
+	require.Equal(t, authz.AppDeployApprove, seen[authz.InstallDeploysApprove],
+		"install.deploys.approve is app.deploy.approve's counterpart (R-155)")
 }
 
 // TestR080_InstallVerbRequiresAnInstallGrant asserts install-level
@@ -468,8 +533,8 @@ func TestR080_InstallVerbRequiresAnInstallGrant(t *testing.T) {
 	require.NoError(t, a.CheckInstall(ctx, bobP, authz.InstallUsersManage))
 	require.NoError(t, a.CheckInstall(ctx, bobP, authz.AppCreate))
 
-	// It reaches into every app through install.apps.manage (R-081) — and
-	// only through it: an install role without that verb reaches none.
+	// It reaches into every app through the install.apps.* verbs (R-081) —
+	// and only through them: an install role without one reaches none.
 	require.NoError(t, a.CheckControl(ctx, bobP, "app_other", authz.AppDelete),
 		"an administrator manages every app")
 	s.roles["role_audit_only"] = authz.Role{ID: "role_audit_only", Verbs: []authz.Verb{authz.InstallAuditRead, authz.InstallUsersManage}}
@@ -478,9 +543,10 @@ func TestR080_InstallVerbRequiresAnInstallGrant(t *testing.T) {
 		"no install verb but install.apps.* bears on an app")
 }
 
-// TestR081_AdministratorsLookAfterEveryAppButDoNotUseIt asserts the two
-// install.apps verbs: manage is every app verb on every app, view is the
-// Viewer's two, host policy still comes first, and neither opens an app.
+// TestR081_AdministratorsLookAfterEveryAppButDoNotUseIt asserts the
+// Administrator's reach: every app verb on every app, through the install.apps.*
+// counterparts and install.deploys.approve; host policy still comes first; and
+// none of it opens an app.
 func TestR081_AdministratorsLookAfterEveryAppButDoNotUseIt(t *testing.T) {
 	ctx := context.Background()
 	s := newStore()
@@ -490,12 +556,6 @@ func TestR081_AdministratorsLookAfterEveryAppButDoNotUseIt(t *testing.T) {
 
 	a := authz.New(s, nil, nil)
 	for _, v := range authz.AppVerbs() {
-		if v == authz.AppDeployApprove {
-			// R-155: approval is install.deploys.approve's, checked on its
-			// own. Managing every app does not stand for it.
-			require.Error(t, a.CheckControl(ctx, adminP, app, v), v)
-			continue
-		}
 		require.NoError(t, a.CheckControl(ctx, adminP, app, v), v)
 	}
 	// Managing is not using (R-087): the data plane still needs a grant.
@@ -508,14 +568,108 @@ func TestR081_AdministratorsLookAfterEveryAppButDoNotUseIt(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, verbs, authz.AppExec)
 	require.Contains(t, verbs, authz.AppDelete)
+}
 
-	// A custom role that can see every app and change none.
-	s.roles["role_auditor"] = authz.Role{ID: "role_auditor", Verbs: []authz.Verb{authz.InstallAppsView}}
-	s.install = []authz.Grant{{Plane: "control", PrincipalKind: "user", PrincipalID: bob, RoleID: "role_auditor"}}
-	verbs, err = a.AppVerbs(ctx, adminP, app)
+// TestR081_BuiltInInstallRolesStandForAppRolesOnEveryApp asserts the roles
+// that replaced the install.apps.view and install.apps.manage bundles (issue
+// #81): App viewer is the Viewer on every app, App manager the Owner on every
+// app — which does not approve deploys (R-155) — and Auditor sees every app and
+// reads its logs and changes nothing.
+func TestR081_BuiltInInstallRolesStandForAppRolesOnEveryApp(t *testing.T) {
+	ctx := context.Background()
+	s := newStore()
+	bobP := activeUser(bob)
+	a := authz.New(s, nil, nil)
+
+	verbsAs := func(role string) []authz.Verb {
+		s.install = []authz.Grant{{Plane: "control", PrincipalKind: "user", PrincipalID: bob, RoleID: role}}
+		verbs, err := a.AppVerbs(ctx, bobP, app)
+		require.NoError(t, err)
+		return verbs
+	}
+
+	require.Equal(t, s.roles[authz.RoleViewer].Verbs, verbsAs(authz.RoleAppViewer))
+	require.Equal(t, s.roles[authz.RoleOwner].Verbs, verbsAs(authz.RoleAppManager))
+	require.Equal(t, []authz.Verb{authz.AppView, authz.AppLogsRead}, verbsAs(authz.RoleAuditor))
+
+	s.install = []authz.Grant{{Plane: "control", PrincipalKind: "user", PrincipalID: bob, RoleID: authz.RoleAuditor}}
+	require.NoError(t, a.CheckInstall(ctx, bobP, authz.InstallAuditRead))
+	require.Error(t, a.CheckInstall(ctx, bobP, authz.InstallView), "an auditor does not see accounts or adapters")
+	require.Error(t, a.CheckControl(ctx, bobP, app, authz.AppDeploy))
+	require.Error(t, a.CheckData(ctx, bobP, app), "reading every app's logs is not opening one (R-087)")
+}
+
+// TestR080_EachInstallCounterpartStandsForItsAppVerbAlone asserts issue #81:
+// a custom install role holding one install.apps.* verb holds that app verb on
+// every app, including one made after the grant, and no other — there is no
+// implication graph (R-082), not even to app.view.
+func TestR080_EachInstallCounterpartStandsForItsAppVerbAlone(t *testing.T) {
+	ctx := context.Background()
+	s := newStore()
+	bobP := activeUser(bob)
+	a := authz.New(s, nil, nil)
+
+	for _, v := range authz.AppVerbs() {
+		c, _ := authz.InstallCounterpart(v)
+		s.roles["role_one"] = authz.Role{ID: "role_one", Verbs: []authz.Verb{c}}
+		s.install = []authz.Grant{{Plane: "control", PrincipalKind: "user", PrincipalID: bob, RoleID: "role_one"}}
+		for _, appID := range []string{app, "app_made_later"} {
+			verbs, err := a.AppVerbs(ctx, bobP, appID)
+			require.NoError(t, err)
+			require.Equal(t, []authz.Verb{v}, verbs, "%s on %s", c, appID)
+		}
+		require.Error(t, a.CheckData(ctx, bobP, app), "%s is control plane only (R-087)", c)
+	}
+}
+
+// TestR272_PolicyDeniesAnAppVerbHeldInstallWide asserts that host policy is
+// asked about the app verb, so disabling it disables it for everyone holding
+// its install-wide counterpart too — for agents alone, when it is agents'.
+func TestR272_PolicyDeniesAnAppVerbHeldInstallWide(t *testing.T) {
+	ctx := context.Background()
+	s := newStore()
+	s.roles["role_exec_everywhere"] = authz.Role{ID: "role_exec_everywhere", Verbs: []authz.Verb{authz.InstallAppsExec}}
+	s.install = []authz.Grant{{Plane: "control", PrincipalKind: "user", PrincipalID: bob, RoleID: "role_exec_everywhere"}}
+
+	require.NoError(t, authz.New(s, nil, nil).CheckControl(ctx, activeUser(bob), app, authz.AppExec))
+	require.Error(t, authz.New(s, denyingPolicy{verb: authz.AppExec}, nil).CheckControl(ctx, activeUser(bob), app, authz.AppExec))
+
+	s.userStatus[bob] = "active"
+	agent := authz.Principal{Kind: authz.KindToken, ID: "tok_1", UserID: bob}
+	agents := authz.New(s, denyingPolicy{verb: authz.AppExec, agentsOnly: true}, nil)
+	require.Error(t, agents.CheckControl(ctx, agent, app, authz.AppExec))
+	require.NoError(t, agents.CheckControl(ctx, activeUser(bob), app, authz.AppExec))
+}
+
+// TestR080_AccessThroughAnInstallGrantIsAudited asserts issue #81's audit
+// rule: a change allowed by an install-wide grant rather than one on the app
+// records which install verb and which grant allowed it. A grant on the app
+// records nothing extra, and neither do the two reads the console asks
+// constantly, nor the checks that only decide what to show.
+func TestR080_AccessThroughAnInstallGrantIsAudited(t *testing.T) {
+	ctx := context.Background()
+	s := newStore()
+	bobP := activeUser(bob)
+	s.install = []authz.Grant{{ID: "gr_install", Plane: "control", PrincipalKind: "user", PrincipalID: bob, RoleID: authz.RoleAppManager}}
+	rec := &recorder{}
+	a := authz.New(s, nil, rec)
+
+	require.NoError(t, a.CheckControl(ctx, bobP, app, authz.AppDeploy))
+	require.Equal(t, []throughInstall{{appID: app, grantID: "gr_install", verb: authz.AppDeploy, through: authz.InstallAppsDeploy}}, rec.through)
+
+	require.NoError(t, a.CheckControl(ctx, bobP, app, authz.AppView))
+	require.NoError(t, a.CheckControl(ctx, bobP, app, authz.AppLogsRead))
+	_, err := a.AppVerbs(ctx, bobP, app)
 	require.NoError(t, err)
-	require.Equal(t, []authz.Verb{authz.AppView, authz.AppLogsRead}, verbs)
-	require.Error(t, a.CheckControl(ctx, adminP, app, authz.AppDeploy))
+	_, err = a.Allows(ctx, bobP, app, authz.AppDelete)
+	require.NoError(t, err)
+	require.NoError(t, a.PreviewControl(ctx, bobP, app, authz.AppDelete))
+	require.Len(t, rec.through, 1, "reads and previews are not recorded")
+
+	// The same verb through a grant on the app is an ordinary allow.
+	s.control["app_owned"] = []authz.Grant{{ID: "gr_app", Plane: "control", PrincipalKind: "user", PrincipalID: bob, RoleID: authz.RoleOwner}}
+	require.NoError(t, a.CheckControl(ctx, bobP, "app_owned", authz.AppDeploy))
+	require.Len(t, rec.through, 1)
 }
 
 // AppVerbs is what the console shows as editable, so it must say exactly what

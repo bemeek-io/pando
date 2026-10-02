@@ -400,9 +400,10 @@ func TestR155_AnOwnerCannotApproveByDefault(t *testing.T) {
 	require.Empty(t, a.starts.ids())
 }
 
-// TestR155_InstallAppsManageAloneCannotApprove asserts that managing every
-// app does not stand for app.deploy.approve.
-func TestR155_InstallAppsManageAloneCannotApprove(t *testing.T) {
+// TestR155_AppManagerCannotApprove asserts that managing every app does not
+// stand for app.deploy.approve: the built-in App manager holds every other
+// app verb's install-wide counterpart and not install.deploys.approve.
+func TestR155_AppManagerCannotApprove(t *testing.T) {
 	t.Parallel()
 	a := newApprovals(t)
 	admin := a.admin()
@@ -410,8 +411,7 @@ func TestR155_InstallAppsManageAloneCannotApprove(t *testing.T) {
 	a.policy(func(d *corepolicy.Document) { d.DeployApprovalRequired = true })
 
 	manager := a.user("manager")
-	roleID := a.customRole(admin, "app manager", "install", "install.apps.manage")
-	got := a.do(admin, http.MethodPut, "/users/"+a.userID(manager)+"/role", map[string]any{"role_id": roleID})
+	got := a.do(admin, http.MethodPut, "/users/"+a.userID(manager)+"/role", map[string]any{"role_id": "role_app_manager"})
 	require.Equal(t, http.StatusOK, got.Code, got.String())
 
 	// It manages the app — it can deploy it — and still cannot approve.

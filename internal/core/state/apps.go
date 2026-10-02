@@ -235,7 +235,7 @@ func (a *Apps) ListForPrincipal(ctx context.Context, p authz.Principal) ([]App, 
 }
 
 // ListAll returns every app, for a principal whose install role reaches every
-// app (install.apps.view or install.apps.manage, R-081). The caller decides
+// app with app.view (install.apps.view, R-081). The caller decides
 // that; this only reads.
 func (a *Apps) ListAll(ctx context.Context) ([]App, error) {
 	return a.listControl(ctx, `WHERE a.deleted_at IS NULL`)

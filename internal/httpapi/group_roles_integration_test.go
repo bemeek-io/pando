@@ -29,7 +29,7 @@ func TestR078_ANewTeamMemberGetsWhatTheTeamHas(t *testing.T) {
 	require.Equal(t, http.StatusCreated, i.do(admin, http.MethodPost, "/apps/"+appID+"/grants", map[string]any{
 		"plane": "control", "principal_kind": "group", "principal_id": team.ID, "role_id": "role_operator",
 	}).Code)
-	auditor := i.customRole(admin, "auditor", "install", "install.audit.read")
+	auditor := i.customRole(admin, "audit readers", "install", "install.audit.read")
 	require.Equal(t, http.StatusOK,
 		i.do(admin, http.MethodPut, "/groups/"+team.ID+"/role", map[string]string{"role_id": auditor}).Code)
 

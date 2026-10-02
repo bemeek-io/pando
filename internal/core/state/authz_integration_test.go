@@ -149,7 +149,7 @@ func TestR081_AdministratorIsImmutableToo(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestR081_CreatorHoldsOnlyAppCreate asserts the fifth built-in role: install
+// TestR081_CreatorHoldsOnlyAppCreate asserts the Creator built-in role: install
 // scope, one verb, and the same protection as the others. What a creator can
 // manage beyond that comes from owning what they made (R-073), not from here.
 func TestR081_CreatorHoldsOnlyAppCreate(t *testing.T) {
@@ -169,6 +169,59 @@ func TestR081_CreatorHoldsOnlyAppCreate(t *testing.T) {
 	require.Error(t, err, "widening the creator role at runtime must be refused")
 	_, err = db.Exec(ctx, `DELETE FROM roles WHERE id = $1`, authz.RoleCreator)
 	require.Error(t, err)
+}
+
+// TestR081_InstallRolesStandForAppRolesOnEveryApp asserts the built-in roles
+// issue #81 seeds against the Go catalog, so the migration and authz.everyApp
+// cannot drift apart: Administrator holds every install verb and no app verb;
+// App viewer and App manager hold the install-wide counterparts of exactly the
+// Viewer's and the Owner's verbs; Auditor holds the audit log and App viewer's
+// two; and each is as immutable as the others.
+func TestR081_InstallRolesStandForAppRolesOnEveryApp(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := connected(t)
+	store := state.NewAuthzStore(db)
+
+	role := func(id string) authz.Role {
+		r, err := store.Role(ctx, id)
+		require.NoError(t, err)
+		require.True(t, r.Builtin, id)
+		for _, v := range r.Verbs {
+			require.True(t, authz.IsVerb(v), "%s holds %s, which is not in the catalog", id, v)
+		}
+		return r
+	}
+	counterparts := func(appRole string) []authz.Verb {
+		var out []authz.Verb
+		for _, v := range role(appRole).Verbs {
+			c, ok := authz.InstallCounterpart(v)
+			require.True(t, ok, v)
+			out = append(out, c)
+		}
+		return out
+	}
+
+	var install []authz.Verb
+	for _, v := range authz.Verbs {
+		if authz.InstallScoped(v) {
+			install = append(install, v)
+		}
+	}
+	require.ElementsMatch(t, install, role(authz.RoleAdministrator).Verbs)
+	require.ElementsMatch(t, counterparts(authz.RoleViewer), role(authz.RoleAppViewer).Verbs)
+	require.ElementsMatch(t, counterparts(authz.RoleOwner), role(authz.RoleAppManager).Verbs)
+	require.NotContains(t, role(authz.RoleAppManager).Verbs, authz.InstallDeploysApprove, "R-155")
+	require.ElementsMatch(t,
+		append([]authz.Verb{authz.InstallAuditRead}, counterparts(authz.RoleViewer)...),
+		role(authz.RoleAuditor).Verbs)
+
+	for _, id := range []string{authz.RoleAppViewer, authz.RoleAppManager, authz.RoleAuditor} {
+		_, err := db.Exec(ctx, `UPDATE roles SET verbs = verbs || 'install.users.manage' WHERE id = $1`, id)
+		require.Error(t, err, "%s must not be widened at runtime (R-081)", id)
+		_, err = db.Exec(ctx, `DELETE FROM roles WHERE id = $1`, id)
+		require.Error(t, err, id)
+	}
 }
 
 // TestR080_GrantScopeIsEnforcedByTheDatabase asserts the structural half of

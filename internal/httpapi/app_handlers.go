@@ -256,8 +256,10 @@ func (s *Server) withDetections(ctx context.Context, apps []state.App) ([]state.
 }
 
 // seesEveryApp reports whether the caller's install role reaches every app
-// (install.apps.view or install.apps.manage, R-081), so the list shows them
-// all — the same answer CheckControl gives for app.view on each.
+// with app.view (install.apps.view, R-081), so the list shows them all — the
+// same answer CheckControl gives for app.view on each. Holding another
+// install.apps.* verb without it is not seeing every app: there is no
+// implication graph (R-082), and app.delete does not imply app.view.
 func (s *Server) seesEveryApp(r *http.Request, p authz.Principal) (bool, error) {
 	if s.Verbs == nil || p.Kind == authz.KindAnonymous {
 		return false, nil
@@ -267,7 +269,7 @@ func (s *Server) seesEveryApp(r *http.Request, p authz.Principal) (bool, error) 
 		return false, err
 	}
 	for _, v := range held {
-		if v == string(authz.InstallAppsView) || v == string(authz.InstallAppsManage) {
+		if v == string(authz.InstallAppsView) {
 			return true, nil
 		}
 	}

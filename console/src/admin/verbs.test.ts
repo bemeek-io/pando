@@ -18,7 +18,7 @@ describe('can', () => {
 });
 
 describe('changesAnything', () => {
-  // install.apps.view gives app.view and app.logs.read on every app, and
+  // The App viewer role gives app.view and app.logs.read on every app, and
   // nothing else: somebody holding it can look but not change.
   it('is false for view and logs alone', () => {
     expect(changesAnything(['app.view', 'app.logs.read'])).toBe(false);

@@ -354,8 +354,14 @@ var Verbs = []Verb{
     // Install-scoped: held through a grant with no app (§2.1).
     "install.view", "install.users.manage", "install.policy.manage",
     "install.adapters.manage", "install.audit.read", "install.backup.manage",
-    "install.apps.view", "install.apps.manage", "install.tokens.manage",
-    "install.deploys.approve", "app.create",
+    "install.tokens.manage", "install.deploys.approve", "app.create",
+
+    // Install-scoped: each one app verb on every app (issue #81). See below.
+    "install.apps.view", "install.apps.logs.read", "install.apps.deploy",
+    "install.apps.restart", "install.apps.spec.edit", "install.apps.secrets.write",
+    "install.apps.secrets.read", "install.apps.exec", "install.apps.grants.manage",
+    "install.apps.routing.override", "install.apps.resources.override",
+    "install.apps.egress.tighten", "install.apps.egress.loosen", "install.apps.delete",
 
     // App-scoped.
     "app.view", "app.logs.read", "app.deploy", "app.restart",
@@ -410,20 +416,46 @@ case approval was turned on to prevent. Either verb may approve its holder's own
 not enforce two people, an install that wants two keeps the verb from the people who deploy. By default
 both are in `agent_disabled_verbs` (design 04 §3): approval is a human sign-off.
 
-**[D]** Administrator holds every install verb and no app verb; Owner holds every app verb but
-`app.deploy.approve`. The two partition the catalog **but for that one verb**, which neither holds.
-Two of the install verbs stand for app verbs, and they are the only ones that do:
-`install.apps.manage` stands for every app verb on every app **except `app.deploy.approve`**, and
-`install.apps.view` for the Viewer's two (`app.view`, `app.logs.read`). So an administrator can look
-after any app without a grant on it (R-081). This is an implication, the one this design allows between
-verbs, and it lives in exactly one place — `CheckControl`, step 6b, reading the table in
-`authz.everyApp` — after the app's own grants and after host policy, which still denies an
-administrator (R-272). `CheckData` does not read it: managing an app is not using it, and R-087's line
-holds on the data plane — the supported path to *use* an app is a data grant or ownership.
+**[D] Every app verb has one install-wide counterpart** (issue #81, R-080). `install.apps.deploy` is
+`app.deploy` on every app, including apps created after the grant; `install.apps.secrets.read` is
+`app.secrets.read` on every app; and so on, one for one, with `install.deploys.approve` as
+`app.deploy.approve`'s (it is older than the rest and kept its name). So a security group can see every
+app, read its logs and its secrets, and change nothing, with one grant and no list to keep current.
+This is an implication, the one this design allows between verbs, and it lives in exactly one place —
+`CheckControl`, step 6b, reading the table in `authz.everyApp` — after the app's own grants and after
+host policy. Policy is asked about the *app* verb, so a verb it disables stays disabled for whoever
+holds it install-wide, administrators included (R-272). `CheckData` does not read it: managing an app
+is not using it, and R-087's line holds on the data plane — the supported path to *use* an app is a
+data grant or ownership.
 
-**[D]** The `app.deploy.approve` exception is deliberate (R-155). Managing every app is not a mandate
-to sign off on every deploy; an administrator approves through `install.deploys.approve`, a verb of its
-own that a custom install-scoped role can carry or leave out independently of `install.apps.manage`.
+Approach A of the issue, chosen over an "every app" grant target: the counterparts are install verbs
+in install roles, so the R-080 mechanism (`grants (role_id, role_scope) → roles (id, scope)` and its
+CHECKs) is unchanged, at the cost of fourteen more verbs in the catalog. Every app verb gets one,
+`app.secrets.read`, `app.exec` and `app.grants.manage` included, with no warning on assigning them: an
+installation that hands out exec everywhere has decided to, and R-086 already says what exec means.
+
+`everyApp` is a table, not a rule: one install verb to one app verb, never a bundle. A combination is a
+role. The two bundles that came before, `install.apps.view` (Viewer's two verbs on every app) and
+`install.apps.manage` (Owner's on every app), were replaced by migration 000040 with built-in roles:
+**App viewer** and **App manager**. `install.apps.view` remains, meaning `app.view` alone; every role
+that held it gained `install.apps.logs.read`, and every role holding `install.apps.manage` holds its
+thirteen verbs instead. A third, **Auditor**, holds `install.audit.read` with App viewer's two — the
+issue's security reviewer — and not `install.view`, because the accounts and adapters are not what it
+audits. A new app verb has no counterpart until one is written into the table, and
+`TestR080_EveryAppVerbHasOneInstallCounterpart` fails until it is.
+
+**[D]** Administrator holds every install verb and no app verb; Owner holds every app verb but
+`app.deploy.approve`. Through the counterparts, an administrator holds every app verb on every app,
+approval included.
+
+**[D]** App manager leaves out `install.deploys.approve` as Owner leaves out `app.deploy.approve`
+(R-155). Managing every app is not a mandate to sign off on every deploy; an installation hands that
+verb out on purpose, through Administrator or a custom role.
+
+**[D]** Of the counterparts, only `install.apps.view` opens up the app list. `GET /apps` shows
+every app to a principal holding it, and otherwise the apps they hold a grant on: holding
+`install.apps.restart` alone restarts any app whose ID you have and does not reveal the others, because
+there is no implication graph, not even to `app.view`.
 The approval service accepts either: `install.deploys.approve` install-wide, or `app.deploy.approve` on
 the app. It asks the install verb first with `Authorizer.AllowsInstall`, which answers without auditing
 a denial, so an approver holding only the app verb does not leave a spurious refusal in the log; only a
@@ -457,6 +489,16 @@ console confirms each with its own wording, naming whose access goes and whose s
 ## 6. Audit integration
 
 **[D]** Every authorization **denial** is audited, not only successes. A denial pattern is the signal that matters for detecting misuse, and it is the thing most commonly left out.
+
+**[D] Reaching an app through an install grant is audited** (issue #81). When `CheckControl` allows
+an app verb through an install-wide counterpart rather than a grant on the app, it writes
+`authz.install_wide`: the app, the verb, the install verb that stood for it, and the grant, role and
+holder that carried it. So the log says the access came from everywhere and not from this app.
+`AppVerbs`, `Allows` and `PreviewControl` decide what to show and write nothing, like denials.
+
+**[P]** `app.view` and `app.logs.read` are not recorded this way. The console asks `app.view` on every
+app screen and `app.logs.read` every few seconds while logs are open; a row for each would bury the
+changes the record is for, and neither read is audited for anyone holding it on the app either.
 
 **[D] Use is audited, once per visit (R-227, O-22).** An allowed request writes `app.use` the first time
 its visit is seen: a browser's visit is a cookie in Pando's namespace (`pando_visit_<app>`, set on the

@@ -158,8 +158,8 @@ that will be refused.
 needed, `pending` or later once it has enough and has started. It re-runs the plan first, because
 policy may have changed while the request waited (R-156); a plan-time refusal comes back as the plan's
 own error. `reject` returns 200 with the deployment `rejected`; one rejection ends a request. Either
-verb may decide its holder's own request (R-155). `install.apps.manage` does not stand for
-`app.deploy.approve` (design 06 §5). A rollback to a revision that previously ran is never held for
+verb may decide its holder's own request (R-155). The App manager role does not hold
+`install.deploys.approve` (design 06 §5). A rollback to a revision that previously ran is never held for
 approval, and restarts and secret rotations are not deploys (R-157).
 
 **[D]** `GET /approvals` returns `{"approvals": [deployment + app_name, app_slug]}` for
@@ -383,7 +383,7 @@ difference is scope rather than size. `dr_bundle` is the whole installation, nee
 one app's data, names that app in `app_id`, and needs `app.deploy` **on that app** — the same verb as
 restoring it, because taking a copy and putting it back are two halves of one operation and an owner
 who may do the destructive half should not need an administrator for the safe one. It is checked with
-`CheckControl`, so an administrator reaches it through `install.apps.manage` like any other app verb
+`CheckControl`, so an administrator reaches it through `install.apps.deploy` like any other app verb
 (R-081); it is not `install.backup.manage` with a filter, which is a different question.
 
 **[P]** A rolling backup is encrypted under the install's own secrets key, not a typed passphrase.

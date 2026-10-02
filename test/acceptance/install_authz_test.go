@@ -205,7 +205,13 @@ func TestR265_TheServerReportsWhatTheConsoleScopesOn(t *testing.T) {
 	require.ElementsMatch(t, []string{
 		"install.view", "install.users.manage", "install.policy.manage",
 		"install.adapters.manage", "install.audit.read", "install.backup.manage",
-		"app.create",
+		"install.tokens.manage", "install.deploys.approve", "app.create",
+		// Each app verb on every app (issue #81).
+		"install.apps.view", "install.apps.logs.read", "install.apps.deploy",
+		"install.apps.restart", "install.apps.spec.edit", "install.apps.secrets.write",
+		"install.apps.secrets.read", "install.apps.exec", "install.apps.grants.manage",
+		"install.apps.routing.override", "install.apps.resources.override",
+		"install.apps.egress.tighten", "install.apps.egress.loosen", "install.apps.delete",
 	}, held)
 
 	// An ordinary account: the key is present and the list is empty. Present,
